@@ -1,0 +1,25 @@
+[package]
+name = "algorithm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "lib"
+path = "src/lib.rs"
+
+[dependencies]
+# @NOTE: database and cache
+diesel = { version = "2.2.0", features = ["postgres", "r2d2"] }
+redis = { version = "0.26.1", features = ["aio", "tokio-comp"] }
+
+# @NOTE: models
+juniper    = "0.16"
+serde      = "1.0.123"
+serde_json = "1.0.44"
+
+# @NOTE: web
+actix-web  = "4"
+actix-rt   = "2.10.0"
+actix      = "0.13.5"
+dotenvy    = "0.15.7"
+env_logger = "0.8.2"

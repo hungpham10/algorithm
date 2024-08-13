@@ -48,3 +48,42 @@ Thumbs.db
 *.mov
 *.wmv
 
+.idea
+.vagrant
+
+kuberntes/setup/kube-config
+kuberntes/setup/join-command
+kuberntes/setup/certificate-key
+
+###vim###
+
+[._]*.s[a-w][a-z]
+[._]s[a-w][a-z]
+*.un~
+Session.vim
+.netrwhist
+*~
+
+kubernetes/setup/certificate-key
+kubernetes/setup/join-command
+kubernetes/setup/kube-config
+kubernetes/setup/keycloak.crt
+
+*.tar.gz
+
+# Ignore user data
+user_data_*.cfg
+
+# Ignore terragrunt
+.terragrunt-*
+.terragrunt-cache/
+
+# Ignore vscode
+.DS_Store
+
+# Ignore dotenv
+.env
+
+# Added by cargo
+/target
+vendor
