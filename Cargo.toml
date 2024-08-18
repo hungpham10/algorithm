@@ -9,6 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # @NOTE: database and cache
+influxdb = { version = "0.7.2", features = ["derive"] }
 diesel = { version = "2.2.0", features = ["postgres", "r2d2"] }
 redis = { version = "0.26.1", features = ["aio", "tokio-comp"] }
 
@@ -18,8 +19,17 @@ serde      = "1.0.123"
 serde_json = "1.0.44"
 
 # @NOTE: web
-actix-web  = "4"
+actix-web  = { version = "4", features = ["openssl"] }
 actix-rt   = "2.10.0"
+openssl    = "0.10.28"
 actix      = "0.13.5"
 dotenvy    = "0.15.7"
 env_logger = "0.8.2"
+
+# @NOTE: schedule tasks
+tokio_schedule = "0.3.0"
+cron-parser = "0.8.1"
+chrono = "0.4.22"
+futures = "0.3"
+tokio = { version = "1.26.0", features = ["full"] }
+reqwest = { version = "0.11.9", features = ["json", "blocking"] }

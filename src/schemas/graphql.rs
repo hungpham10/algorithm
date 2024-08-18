@@ -58,7 +58,7 @@ pub struct Mutation;
 
 #[graphql_object(context = Context)]
 impl Mutation {
-    fn hello(ctx: &Context, _data: String) -> FieldResult<&str> {
+    fn hello(_ctx: &Context, _data: String) -> FieldResult<&str> {
         Ok("hello")
     }
 }

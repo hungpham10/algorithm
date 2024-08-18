@@ -2,23 +2,33 @@
 extern crate serde;
 
 use std::sync::Arc;
-use actix::Addr;
 use actix_web::{
     web, get, post, middleware, 
     App, HttpServer, 
+    http::Method,
     Error, HttpRequest, HttpResponse,
 };
-use actix_web::{
-    http::Method,
-};
+use actix::Addr;
 use juniper::http::{
     graphiql::graphiql_source, 
     GraphQLRequest,
 };
 
+use chrono::Utc;
+use tokio_schedule::{every, Job};
+
 use ::lib::actors::redis::{
-    RedisActor,
+    RedisActor, InfoCommand,
     connect_to_redis,
+};
+use ::lib::actors::vps::{
+    VpsActor, GetPriceCommand,
+    connect_to_vps,
+};
+use ::lib::actors::cron::{
+    CronResolver, 
+    TickCommand, ScheduleCommand, 
+    connect_to_cron,
 };
 use ::lib::helpers::{
     create_graphql_schema, create_graphql_context, 
@@ -67,13 +77,13 @@ pub async fn playground() -> HttpResponse {
 #[post("/graphql")]
 async fn graphql(
     req:    HttpRequest,
-    schema: web::Data<Arc<SchemaGraphQL>>,
+schema: web::Data<Arc<SchemaGraphQL>>,
     query:  Option<web::Query<GraphQLRequest>>,
     body:   Option<web::Json<GraphQLRequest>>,
     db:     web::Data<PgPool>,
     cache:  web::Data<Addr<RedisActor>>,
 ) -> Result<HttpResponse, Error> {
-    let headers = req.headers();
+    //let headers = req.headers();
 
     // fetch data from
     // query string if this is a GET
@@ -111,6 +121,13 @@ async fn health(
         .into())
 }
 
+async fn call_vps_to_get_prices(vps: Arc<Addr<VpsActor>>) {
+    let val = vps.send(GetPriceCommand)
+        .await
+        .unwrap();
+    print!("{:?}", val);
+}
+
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
@@ -119,16 +136,59 @@ async fn main() -> std::io::Result<()> {
     std::env::set_var("RUST_LOG", "actix_web=info");
     env_logger::init();
 
+    let pool = connect_to_postgres_pool(
+        std::env::var("POSTGRES_DSN").unwrap()
+    );
+    let cache = connect_to_redis(
+        std::env::var("REDIS_DSN").unwrap(),
+    ).await;
     let schema = std::sync::Arc::new(
         create_graphql_schema(),
     );
 
-    let pool = connect_to_postgres_pool(
-        std::env::var("POSTGRES_DSN").unwrap()
-    );
-    let cache = connect_to_redis(std::env::var("REDIS_DSN").unwrap()).await;
+    let mut resolver = CronResolver::new();
+    let vps = Arc::new(connect_to_vps(
+        vec![
+            "ACB".to_string(),
+            "TCB".to_string(),
+        ],
+    ));
 
-    // @NOTE: define static routes
+    resolver.resolve("vps.get_price_command".to_string(), move || {
+        let vps = vps.clone();
+
+        async move {
+            call_vps_to_get_prices(vps.clone()).await;
+        }
+    });
+
+    let cron = connect_to_cron(
+        resolver.into(),
+        pool.clone().into(),
+        cache.clone().into(),
+    );
+    let schedule = cron.clone();
+
+    // @NOTE: mapping cronjobs
+    actix_rt::spawn(async move {
+        let every_second = every(1)
+            .seconds()
+            .in_timezone(&Utc)
+            .perform(|| async {
+                cron.clone().send(TickCommand)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            });
+        every_second.await;
+    });
+
+    schedule.send(ScheduleCommand{
+        cron:  "* * * * *".to_string(), 
+        route: "vps.get_price_command".to_string(),
+    }).await.unwrap();
+
+    // @NOTE: mapping routes
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(cache.clone()))
