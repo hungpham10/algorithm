@@ -8,6 +8,7 @@ use actix_web::{
     http::Method,
     Error, HttpRequest, HttpResponse,
 };
+use influxdb::{Client as InfluxClient};
 use actix::Addr;
 use juniper::http::{
     graphiql::graphiql_source, 
@@ -129,6 +130,7 @@ async fn main() -> std::io::Result<()> {
     std::env::set_var("RUST_LOG", "actix_web=info");
     env_logger::init();
 
+    let mut resolver = CronResolver::new();
     let pool = connect_to_postgres_pool(
         std::env::var("POSTGRES_DSN").unwrap()
     );
@@ -138,9 +140,20 @@ async fn main() -> std::io::Result<()> {
     let schema = std::sync::Arc::new(
         create_graphql_schema(),
     );
+    let tsdb = Arc::new(
+        InfluxClient::new(
+            std::env::var("INFLUXDB_URI").unwrap(),
+            std::env::var("INFLUXDB_BUCKET").unwrap(),
+        ) 
+        .with_token(std::env::var("INFLUXDB_TOKEN").unwrap())
+    );
 
-    let mut resolver = CronResolver::new();
-    let vps  = connect_to_vps(&mut resolver, list_of_vn30().await);
+    let vps  = connect_to_vps(
+        &mut resolver,
+        tsdb.clone(),
+        list_of_vn30().await,
+    );
+
     let cron = connect_to_cron(
         resolver.into(),
         pool.clone().into(),

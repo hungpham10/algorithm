@@ -182,12 +182,9 @@ pub async fn list_of_vn30() -> Vec<String> {
 
 pub fn connect_to_vps(
     resolver: &mut CronResolver,
-    stocks: Vec<String>
+    tsdb:     Arc<InfluxClient>,
+    stocks:   Vec<String>,
 ) -> Addr<VpsActor> {
-    let tsdb = Arc::new(
-        InfluxClient::new("https://eu-central-1-1.aws.cloud2.influxdata.com", "stock")
-            .with_token("Ofc_aX-g0Lik8TnhWqhEl7BomHk5l6aDHaRDAVgFjjV42OwAtUe5tDuWb6mEnpyXWyvM4lw7nQjXbsFvTbXQ-w=="),
-    );
     let actor = VpsActor::new(stocks).start();
     let vps = actor.clone();
 
