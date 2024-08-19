@@ -23,7 +23,7 @@ use ::lib::actors::redis::{
 };
 use ::lib::actors::vps::{
     VpsActor, GetPriceCommand,
-    connect_to_vps,
+    connect_to_vps, list_of_vn30,
 };
 use ::lib::actors::cron::{
     CronResolver, 
@@ -121,13 +121,6 @@ async fn health(
         .into())
 }
 
-async fn call_vps_to_get_prices(vps: Arc<Addr<VpsActor>>) {
-    let val = vps.send(GetPriceCommand)
-        .await
-        .unwrap();
-    print!("{:?}", val);
-}
-
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
@@ -147,27 +140,18 @@ async fn main() -> std::io::Result<()> {
     );
 
     let mut resolver = CronResolver::new();
-    let vps = Arc::new(connect_to_vps(
-        vec![
-            "ACB".to_string(),
-            "TCB".to_string(),
-        ],
-    ));
-
-    resolver.resolve("vps.get_price_command".to_string(), move || {
-        let vps = vps.clone();
-
-        async move {
-            call_vps_to_get_prices(vps.clone()).await;
-        }
-    });
-
+    let vps  = connect_to_vps(&mut resolver, list_of_vn30().await);
     let cron = connect_to_cron(
         resolver.into(),
         pool.clone().into(),
         cache.clone().into(),
     );
-    let schedule = cron.clone();
+    let scheduler = cron.clone();
+
+    scheduler.send(ScheduleCommand{
+        cron:  "* 2-10 * * 1-5".to_string(), 
+        route: "vps.get_price_command".to_string(),
+    }).await.unwrap();
 
     // @NOTE: mapping cronjobs
     actix_rt::spawn(async move {
@@ -175,18 +159,10 @@ async fn main() -> std::io::Result<()> {
             .seconds()
             .in_timezone(&Utc)
             .perform(|| async {
-                cron.clone().send(TickCommand)
-                    .await
-                    .unwrap()
-                    .unwrap();
+                cron.clone().send(TickCommand).await;
             });
         every_second.await;
     });
-
-    schedule.send(ScheduleCommand{
-        cron:  "* * * * *".to_string(), 
-        route: "vps.get_price_command".to_string(),
-    }).await.unwrap();
 
     // @NOTE: mapping routes
     HttpServer::new(move || {
