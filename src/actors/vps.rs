@@ -7,7 +7,6 @@ use reqwest::{
     Client as HttpClient, 
     Error as HttpError,
 };
-use chrono::{DateTime, Utc};
 use futures::future;
 
 use actix::prelude::*;
@@ -16,6 +15,7 @@ use actix::Addr;
 use influxdb::{Client as InfluxClient, InfluxDbWriteable};
 
 use crate::actors::cron::CronResolver;
+use crate::schemas::tsdb::Order;
 
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -55,26 +55,6 @@ pub struct Price {
     pub CWListedShare: String,
     pub sType: String,
     pub sBenefit: String,
-}
-
-#[derive(InfluxDbWriteable)]
-#[allow(non_snake_case)]
-struct Order {
-    time: DateTime<Utc>,
-
-    PricePlus1:  f64,
-    PricePlus2:  f64,
-    PricePlus3:  f64,
-    PriceMinus1: f64,
-    PriceMinus2: f64,
-    PriceMinus3: f64,
-
-    VolumePlus1:  i64,
-    VolumePlus2:  i64,
-    VolumePlus3:  i64,
-    VolumeMinus1: i64,
-    VolumeMinus2: i64,
-    VolumeMinus3: i64,
 }
 
 #[derive(Debug, Clone)]
