@@ -19,7 +19,7 @@ pub struct DnseActor {
 impl DnseActor {
     fn new() -> Self {
         Self {
-            timeout: 4,
+            timeout: 60,
         }
     }
 }
@@ -128,7 +128,7 @@ async fn fetch_ohcl_by_stock(
                     h:        Vec::<f64>::new(),
                     l:        Vec::<f64>::new(),
                     v:        Vec::<i32>::new(),
-                    nextTime: 0,
+                    nextTime: -1,
                 },
             };
 
