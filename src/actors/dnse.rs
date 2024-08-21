@@ -37,12 +37,24 @@ struct Ohcl {
 }
 
 #[derive(GraphQLObject)]
+#[graphql(description = "Information about japaness candle stick")]
 pub struct CandleStick {
+    #[graphql(description = "timestamp")]
     pub t: i32,
+
+    #[graphql(description = "open price")]
     pub o: f64,
+
+    #[graphql(description = "highest price")]
     pub h: f64,
+
+    #[graphql(description = "close price")]
     pub c: f64,
+
+    #[graphql(description = "lowest price")]
     pub l: f64,
+
+    #[graphql(description = "volume")]
     pub v: i32,
 }
 
