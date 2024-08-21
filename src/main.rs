@@ -22,8 +22,12 @@ use ::lib::actors::redis::{
     RedisActor, InfoCommand,
     connect_to_redis,
 };
+use ::lib::actors::dnse::{
+    DnseActor,
+    connect_to_dnse,
+};
 use ::lib::actors::vps::{
-    VpsActor, GetPriceCommand,
+    VpsActor,
     connect_to_vps, list_of_vn30,
 };
 use ::lib::actors::cron::{
@@ -81,7 +85,9 @@ async fn graphql(
 schema: web::Data<Arc<SchemaGraphQL>>,
     query:  Option<web::Query<GraphQLRequest>>,
     body:   Option<web::Json<GraphQLRequest>>,
-    db:     web::Data<PgPool>,
+    vps:    web::Data<Addr<VpsActor>>,
+    dnse:   web::Data<Addr<DnseActor>>,
+    pool:   web::Data<PgPool>,
     cache:  web::Data<Addr<RedisActor>>,
 ) -> Result<HttpResponse, Error> {
     //let headers = req.headers();
@@ -95,7 +101,9 @@ schema: web::Data<Arc<SchemaGraphQL>>,
     };
 
     let ctx = create_graphql_context(
-        (*db).clone(),
+        (*vps).clone(),
+        (*dnse).clone(),
+        (*pool).clone(),
         (*cache).clone(),
     );
 
@@ -131,14 +139,9 @@ async fn main() -> std::io::Result<()> {
     env_logger::init();
 
     let mut resolver = CronResolver::new();
+
     let pool = connect_to_postgres_pool(
         std::env::var("POSTGRES_DSN").unwrap()
-    );
-    let cache = connect_to_redis(
-        std::env::var("REDIS_DSN").unwrap(),
-    ).await;
-    let schema = std::sync::Arc::new(
-        create_graphql_schema(),
     );
     let tsdb = Arc::new(
         InfluxClient::new(
@@ -147,12 +150,20 @@ async fn main() -> std::io::Result<()> {
         ) 
         .with_token(std::env::var("INFLUXDB_TOKEN").unwrap())
     );
+    let cache = connect_to_redis(
+        std::env::var("REDIS_DSN").unwrap(),
+    ).await;
+
+    let schema = std::sync::Arc::new(
+        create_graphql_schema(),
+    );
 
     let vps  = connect_to_vps(
         &mut resolver,
         tsdb.clone(),
         list_of_vn30().await,
     );
+    let dnse = connect_to_dnse();
 
     let cron = connect_to_cron(
         resolver.into(),
@@ -172,7 +183,8 @@ async fn main() -> std::io::Result<()> {
             .seconds()
             .in_timezone(&Utc)
             .perform(|| async {
-                cron.clone().send(TickCommand).await;
+                let _ = cron.clone().send(TickCommand)
+                    .await;
             });
         every_second.await;
     });
@@ -183,6 +195,8 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(cache.clone()))
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(schema.clone()))
+            .app_data(web::Data::new(vps.clone()))
+            .app_data(web::Data::new(dnse.clone()))
             .wrap(middleware::Logger::default())
             .service(health)
             .service(graphql)

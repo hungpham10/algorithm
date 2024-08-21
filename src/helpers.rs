@@ -6,6 +6,8 @@ use diesel::r2d2::{Pool, PooledConnection, ConnectionManager};
 use diesel::pg::PgConnection;
 
 use crate::schemas::graphql::{Query, Mutation, Context};
+use crate::actors::vps::VpsActor;
+use crate::actors::dnse::DnseActor;
 use crate::actors::redis::RedisActor;
 
 pub type SchemaGraphQL = RootNode<'static, Query, Mutation, EmptySubscription<Context>>;
@@ -29,8 +31,15 @@ pub fn create_graphql_schema() -> SchemaGraphQL {
     )
 }
 
-pub fn create_graphql_context(pool: Arc<PgPool>, cache: Arc<Addr<RedisActor>>) -> Context {
+pub fn create_graphql_context(
+    vps:   Arc<Addr<VpsActor>>,
+    dnse:  Arc<Addr<DnseActor>>,
+    pool:  Arc<PgPool>, 
+    cache: Arc<Addr<RedisActor>>,
+) -> Context {
     Context {
+        vps:   vps,
+        dnse:  dnse,
         pool:  pool,
         cache: cache,
     }

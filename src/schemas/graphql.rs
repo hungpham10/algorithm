@@ -8,10 +8,14 @@ use juniper::{
 
 use diesel::prelude::*;
 use crate::helpers::{PgConn, PgPool};
+use crate::actors::vps::{VpsActor, UpdateStocksCommand};
+use crate::actors::dnse::{DnseActor, GetOHCLCommand, CandleStick};
 use crate::actors::redis::{RedisActor, InfoCommand};
 
 #[derive(Clone)]
 pub struct Context {
+    pub vps:   Arc<Addr<VpsActor>>,
+    pub dnse:  Arc<Addr<DnseActor>>,
     pub pool:  Arc<PgPool>,
     pub cache: Arc<Addr<RedisActor>>,
 }
@@ -46,11 +50,27 @@ impl Query {
         Ok(results)
     }
 
-    async fn info(ctx: &Context) -> FieldResult<String> {
-        let res = ctx.cache.send(InfoCommand)
+    async fn ohcl(
+        ctx:        &Context, 
+        resolution: String,
+        stock:      String,
+        from:       i32,
+        to:         i32,
+    ) -> FieldResult<Vec<CandleStick>> {
+        // @NOTE: cache OHCL to redis and reuse it later if needs
+        let res = ctx.dnse.send(GetOHCLCommand{
+                resolution: resolution,
+                stock:      stock,
+                from:       from,
+                to:         to,
+            })
             .await
-            .unwrap().unwrap().unwrap();
-        Ok(res)
+            .unwrap();
+
+        match res {
+            Ok(res) => Ok(res),
+            Err(error) => Ok(Vec::<CandleStick>::new()),
+        }
     }
 }
 
@@ -58,8 +78,16 @@ pub struct Mutation;
 
 #[graphql_object(context = Context)]
 impl Mutation {
-    fn hello(_ctx: &Context, _data: String) -> FieldResult<&str> {
-        Ok("hello")
+    async fn watch(ctx: &Context, stocks: Vec<String>) -> FieldResult<Vec<String>> {
+        let ok = ctx.vps.send(UpdateStocksCommand{ stocks: stocks.clone() })
+            .await
+            .unwrap();
+
+        if ok {
+            Ok(stocks.clone())
+        } else {
+            Err("cannot update list stocks watching".into())
+        }
     }
 }
 

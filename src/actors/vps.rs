@@ -76,15 +76,33 @@ pub struct VpsActor {
 
 impl VpsActor {
     fn new(stocks: Vec<String>) -> Self {
-        VpsActor{
+        Self {
             stocks:  stocks,
-            timeout: 4,
+            timeout: 60,
         }
     }
 }
 
 impl Actor for VpsActor {
     type Context = Context<Self>;
+}
+
+#[derive(Message, Debug)]
+#[rtype(result = "bool")]
+pub struct UpdateStocksCommand {
+    pub stocks: Vec<String>,
+}
+
+impl Handler<UpdateStocksCommand> for VpsActor {
+    type Result = ResponseFuture<bool>;
+
+    fn handle(&mut self, msg: UpdateStocksCommand, _: &mut Self::Context) -> Self::Result { 
+        self.stocks = msg.stocks.clone();
+
+        Box::pin(async move {
+            true
+        })
+    }
 }
 
 #[derive(Message, Debug)]
@@ -137,7 +155,7 @@ async fn fetch_price_depth_per_block(
     block:  &Vec<String>,
     timeout: u64,
 ) -> Result<Vec<Price>, HttpError> {
-    let mut resp = client.get(format!(
+    let resp = client.get(format!(
             "https://bgapidatafeed.vps.com.vn/getliststockdata/{}",
             (*block).join(","),
         ))
@@ -146,7 +164,7 @@ async fn fetch_price_depth_per_block(
         .await;
 
     match resp {
-        Ok(mut resp) => resp.json::<Vec<Price>>().await,
+        Ok(resp) => resp.json::<Vec<Price>>().await,
         Err(error) => Err(error),
     }
 }
@@ -194,7 +212,7 @@ pub fn connect_to_vps(
 
                     Order {
                         // @NOTE: clock
-                        time:          chrono::offset::Utc::now().into(),
+                        time: chrono::offset::Utc::now().into(),
 
                         // @NOTE: price
                         PricePlus1:   g4[0].parse::<f64>().unwrap(),
