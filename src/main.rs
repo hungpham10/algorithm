@@ -22,6 +22,9 @@ use ::lib::actors::redis::{
     RedisActor, InfoCommand,
     connect_to_redis,
 };
+use ::lib::actors::fireant::{
+    connect_to_fireant,
+};
 use ::lib::actors::dnse::{
     DnseActor,
     connect_to_dnse,
@@ -158,12 +161,18 @@ async fn main() -> std::io::Result<()> {
         create_graphql_schema(),
     );
 
-    let vps  = connect_to_vps(
+    let dnse    = connect_to_dnse();
+    let vps     = connect_to_vps(
         &mut resolver,
         tsdb.clone(),
         list_of_vn30().await,
     );
-    let dnse = connect_to_dnse();
+    let fireant = connect_to_fireant(
+        &mut resolver,
+        pool.clone().into(),
+        cache.clone().into(),
+        std::env::var("FIREANT_TOKEN").unwrap(),
+    );
 
     let cron = connect_to_cron(
         resolver.into(),
@@ -172,9 +181,14 @@ async fn main() -> std::io::Result<()> {
     );
     let scheduler = cron.clone();
 
-    scheduler.send(ScheduleCommand{
+    let _ = scheduler.send(ScheduleCommand{
         cron:  "* 2-10 * * 1-5".to_string(), 
         route: "vps.get_price_command".to_string(),
+    }).await.unwrap();
+
+    let _ = scheduler.send(ScheduleCommand{
+        cron: "0 0 * * *".to_string(),
+        route: "fireant.count_sentiment_per_stock".to_string(),
     }).await.unwrap();
 
     // @NOTE: mapping cronjobs
@@ -197,6 +211,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(schema.clone()))
             .app_data(web::Data::new(vps.clone()))
             .app_data(web::Data::new(dnse.clone()))
+            .app_data(web::Data::new(fireant.clone()))
             .wrap(middleware::Logger::default())
             .service(health)
             .service(graphql)

@@ -8,9 +8,9 @@ use juniper::{
 
 use diesel::prelude::*;
 use crate::helpers::{PgConn, PgPool};
+use crate::actors::redis::RedisActor;
 use crate::actors::vps::{VpsActor, UpdateStocksCommand};
 use crate::actors::dnse::{DnseActor, GetOHCLCommand, CandleStick};
-use crate::actors::redis::{RedisActor, InfoCommand};
 
 #[derive(Clone)]
 pub struct Context {

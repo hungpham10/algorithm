@@ -7,3 +7,14 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    tbl_fireant_mention (id) {
+        id -> Integer,
+        symbol -> Varchar,
+        mention -> Integer,
+        positive -> Integer,
+        negative -> Integer,
+        created_at -> Timestamp,
+    }
+}
+

@@ -49,7 +49,6 @@ impl CronResolver {
                     callback().await; 
                 },
                 None => { 
-                    println!("{}", route);
                     cnt -= 1; 
                 },
             }
@@ -131,6 +130,7 @@ impl Handler<TickCommand> for CronActor {
 
     fn handle(&mut self, _msg: TickCommand, _: &mut Self::Context) -> Self::Result {
         let mut targets = Vec::<String>::new();
+        let mut cnt = 0;
         let clock_now = Utc::now();
 
         if clock_now.timestamp() == self.clock {
@@ -138,12 +138,14 @@ impl Handler<TickCommand> for CronActor {
                 Err(CronError{ code: 0 })
             });
         } else {
-            self.clock = clock_now.timestamp();
         }
 
-        let tick_now = self.tick.fetch_add(1, Ordering::SeqCst); 
+        let tick_now = self.tick.fetch_add(
+            clock_now.timestamp() - self.clock, 
+            Ordering::SeqCst
+        ); 
         let resolver = self.resolver.clone();
-
+        
         for _ in 0..self.timekeeper.size() {
             let wrapped = self.timekeeper.get_mut();
 
@@ -153,7 +155,6 @@ impl Handler<TickCommand> for CronActor {
 
             let plus_1 = Utc.timestamp_opt(clock_now.timestamp() + 1, 0).unwrap();
             let target = wrapped.unwrap().clone();
-
             if tick_now != target.timer {
                 break;
             }
@@ -167,8 +168,11 @@ impl Handler<TickCommand> for CronActor {
 
             if self.timekeeper.pop() {
                 targets.push(target.route.clone());
+                cnt += 1;
             }
         }
+
+        self.clock = clock_now.timestamp();
 
         return Box::pin(async move {
             Ok(resolver.perform(targets)
