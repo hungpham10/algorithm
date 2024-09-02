@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS  public.tbl_fireant_mention (
 	created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS  public.tbl_cron (
+CREATE TABLE IF NOT EXISTS  public.tbl_crons (
 	id       SERIAL       PRIMARY KEY,
 	interval VARCHAR(100) NOT NULL,
 	resolver TEXT         NOT NULL	
