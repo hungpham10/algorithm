@@ -2,7 +2,7 @@ diesel::table! {
     tbl_crons (id) {
         id -> Int4,
         interval -> Varchar,
-        route -> Varchar,
+        resolver -> Varchar,
     }
 }
 
