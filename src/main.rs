@@ -34,7 +34,7 @@ use ::lib::actors::vps::{
     connect_to_vps, list_of_vn30,
 };
 use ::lib::actors::cron::{
-    CronResolver, 
+    CronResolver, CronActor,
     TickCommand, ScheduleCommand, 
     connect_to_cron,
 };
@@ -44,6 +44,9 @@ use ::lib::helpers::{
 
     connect_to_postgres_pool,
     PgPool, 
+};
+use ::lib::init::{
+    load_and_map_schedulers_with_resolvers,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -179,17 +182,21 @@ async fn main() -> std::io::Result<()> {
         pool.clone().into(),
         cache.clone().into(),
     );
-    let scheduler = cron.clone();
 
-    let _ = scheduler.send(ScheduleCommand{
-        cron:  "* 2-10 * * 1-5".to_string(), 
-        route: "vps.get_price_command".to_string(),
-    }).await.unwrap();
+    load_and_map_schedulers_with_resolvers(
+        pool.clone(),
+        cron.clone(),
+    ).await;
 
-    let _ = scheduler.send(ScheduleCommand{
-        cron: "0 0 * * *".to_string(),
-        route: "fireant.count_sentiment_per_stock".to_string(),
-    }).await.unwrap();
+    //let _ = scheduler.send(ScheduleCommand{
+    //    cron:  "* 2-10 * * 1-5".to_string(), 
+    //    route: "vps.get_price_command".to_string(),
+    //}).await.unwrap();
+
+    //let _ = scheduler.send(ScheduleCommand{
+    //    cron: "0 0 * * *".to_string(),
+    //    route: "fireant.count_sentiment_per_stock".to_string(),
+    //}).await.unwrap();
 
     // @NOTE: mapping cronjobs
     actix_rt::spawn(async move {

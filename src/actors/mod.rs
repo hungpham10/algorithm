@@ -1,3 +1,4 @@
+pub mod simulator;
 pub mod fireant;
 pub mod redis;
 pub mod cron;

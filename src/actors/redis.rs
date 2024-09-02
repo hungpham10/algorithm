@@ -41,6 +41,24 @@ impl Handler<InfoCommand> for RedisActor {
     }
 }
 
+#[derive(Message, Debug)]
+#[rtype(result = "Result<Option<String>, redis::RedisError>")]
+pub struct GetCommand;
+
+impl Handler<GetCommand> for RedisActor {
+    type Result = ResponseFuture<Result<Option<String>, redis::RedisError>>;
+
+    fn handle(&mut self, _msg: GetCommand, _: &mut Self::Context) -> Self::Result {
+        let mut con = self.conn.clone();
+        let cmd = redis::cmd("INFO");
+
+        Box::pin(async move {
+            cmd.query_async(&mut con)
+                .await
+        })
+    }
+}
+
 pub async fn connect_to_redis(redis_dsn: String) -> Addr<RedisActor> {
     RedisActor::new(redis_dsn)
         .await

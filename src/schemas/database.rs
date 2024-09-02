@@ -1,3 +1,10 @@
+diesel::table! {
+    tbl_crons (id) {
+        id -> Int4,
+        interval -> Varchar,
+        route -> Varchar,
+    }
+}
 
 diesel::table! {
     tbl_users (id) {
