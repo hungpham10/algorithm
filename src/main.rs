@@ -188,16 +188,6 @@ async fn main() -> std::io::Result<()> {
         cron.clone(),
     ).await;
 
-    //let _ = scheduler.send(ScheduleCommand{
-    //    cron:  "* 2-10 * * 1-5".to_string(), 
-    //    route: "vps.get_price_command".to_string(),
-    //}).await.unwrap();
-
-    //let _ = scheduler.send(ScheduleCommand{
-    //    cron: "0 0 * * *".to_string(),
-    //    route: "fireant.count_sentiment_per_stock".to_string(),
-    //}).await.unwrap();
-
     // @NOTE: mapping cronjobs
     actix_rt::spawn(async move {
         let every_second = every(1)
