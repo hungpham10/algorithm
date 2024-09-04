@@ -145,8 +145,8 @@ async fn fetch_order_per_stock(
 
 pub fn connect_to_tcbs(
     resolver: &mut CronResolver,
-    stocks:   Vec<String>,
     pool:     Arc<PgPool>,
+    stocks:   Vec<String>,
 ) -> Addr<TcbsActor> {
     use crate::schemas::database::tbl_tcbs_orders::dsl::*;
 
@@ -159,53 +159,63 @@ pub fn connect_to_tcbs(
 
         async move {
             let mut dbconn = pool.get().unwrap();
-            let datapoints = tcbs.send(GetOrderCommand{ page: 0 })
-                .await
-                .unwrap();
-            
-            let _ = datapoints.iter()
-                .map(|response| {
-                    let val_symbol = &response.ticker;
+            let mut page = 0;
 
-                    let rows = response.data.iter()
-                        .map(move |point| {
-                            let mut val_side = 1;
-                            let hms = point.t.split(":").collect::<Vec<&str>>();
-                            let val_price = (point.p as f32) / 1000.0;
-                            let val_volume = point.v as i32;
-                            let val_ordered_at = Utc::now()
-                                .with_timezone(&Ho_Chi_Minh)
-                                .with_time(
-                                    NaiveTime::from_hms_opt(
-                                        hms[0].parse::<u32>().unwrap(),
-                                        hms[1].parse::<u32>().unwrap(),
-                                        hms[2].parse::<u32>().unwrap(),
-                                    ).unwrap(),
+            loop {
+                let datapoints = tcbs.send(GetOrderCommand{ page: page })
+                    .await
+                    .unwrap();
+
+                if datapoints.len() == 0 {
+                    break;
+                }
+
+                let _ = datapoints.iter()
+                    .map(|response| {
+                        let val_symbol = &response.ticker;
+
+                        let rows = response.data.iter()
+                            .map(move |point| {
+                                let mut val_side = 1;
+                                let hms = point.t.split(":").collect::<Vec<&str>>();
+                                let val_price = (point.p as f32) / 1000.0;
+                                let val_volume = point.v as i32;
+                                let val_ordered_at = Utc::now()
+                                    .with_timezone(&Ho_Chi_Minh)
+                                    .with_time(
+                                        NaiveTime::from_hms_opt(
+                                            hms[0].parse::<u32>().unwrap(),
+                                            hms[1].parse::<u32>().unwrap(),
+                                            hms[2].parse::<u32>().unwrap(),
+                                        ).unwrap(),
+                                    )
+                                    .unwrap()
+                                    .naive_utc();
+
+                                if point.a == "SD" {
+                                    val_side = 2;
+                                } else if point.a == "" {
+                                    val_side = 3;
+                                }
+
+                                (
+                                    symbol.eq(val_symbol.clone()),
+                                    side.eq(val_side),
+                                    price.eq(val_price),
+                                    volume.eq(val_volume),
+                                    ordered_at.eq(val_ordered_at.clone()),
                                 )
-                                .unwrap()
-                                .naive_utc();
+                            })
+                            .collect::<Vec<_>>();
 
-                            if point.a == "SD" {
-                                val_side = 2;
-                            } else if point.a == "" {
-                                val_side = 3;
-                            }
+                        diesel::insert_into(tbl_tcbs_orders)
+                            .values(&rows)
+                            .execute(&mut dbconn)
+                    })
+                    .collect::<Vec<_>>();
 
-                            (
-                                symbol.eq(val_symbol.clone()),
-                                side.eq(val_side),
-                                price.eq(val_price),
-                                volume.eq(val_volume),
-                                ordered_at.eq(val_ordered_at.clone()),
-                            )
-                        })
-                        .collect::<Vec<_>>();
-
-                    diesel::insert_into(tbl_tcbs_orders)
-                        .values(&rows)
-                        .execute(&mut dbconn)
-                })
-                .collect::<Vec<_>>();
+                page += 1;
+            }
         }
     });
  

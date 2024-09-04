@@ -33,6 +33,10 @@ use ::lib::actors::vps::{
     VpsActor,
     connect_to_vps, list_of_vn30,
 };
+use ::lib::actors::tcbs::{
+    TcbsActor,
+    connect_to_tcbs, 
+};
 use ::lib::actors::cron::{
     CronResolver, CronActor,
     TickCommand, ScheduleCommand, 
@@ -177,6 +181,11 @@ async fn main() -> std::io::Result<()> {
         tsdb.clone(),
         list_of_vn30().await,
     );
+    let tcbs    = connect_to_tcbs(
+        &mut resolver,
+        pool.clone().into(),
+        list_of_vn30().await,
+    );
     let fireant = connect_to_fireant(
         &mut resolver,
         pool.clone().into(),
@@ -215,6 +224,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(schema.clone()))
             .app_data(web::Data::new(vps.clone()))
             .app_data(web::Data::new(dnse.clone()))
+            .app_data(web::Data::new(tcbs.clone()))
             .app_data(web::Data::new(fireant.clone()))
             .wrap(middleware::Logger::default())
             .service(health)
