@@ -3,10 +3,8 @@ use std::time::Duration;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
-use reqwest::{
-    Client as HttpClient, 
-    Error as HttpError,
-};
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient, reqwest::Error as HttpError};
+use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use futures::future;
 
 use actix::prelude::*;
@@ -129,7 +127,11 @@ async fn fetch_price_depth(
     stocks: &Vec<String>,
     timeout: u64,
 ) -> Vec<Price> {
-    let client = Arc::new(HttpClient::default());
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(100);
+    let client = Arc::new(ClientBuilder::new(reqwest::Client::new())
+        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+        .build(),
+    );
     let blocks: Vec<Vec<String>>  = (*stocks).chunks(100)
         .map(|block| {
             block.iter()
@@ -164,8 +166,11 @@ async fn fetch_price_depth_per_block(
         .await;
 
     match resp {
-        Ok(resp) => resp.json::<Vec<Price>>().await,
-        Err(error) => Err(error),
+        Ok(resp) => match resp.json::<Vec<Price>>().await {
+            Ok(resp) => Ok(resp),
+            Err(error) => Err(VpsError{ message: format!("{:?}", error) }),
+        },
+        Err(error) => Err(VpsError{ message: format!("{:?}", error) },
     }
 }
 
@@ -193,7 +198,7 @@ pub fn connect_to_vps(
         async move {
             let datapoints = vps.send(GetPriceCommand)
                 .await
-                .unwrap();
+                .unwrap_or(Vec::<Price>::new());
 
             let order_insert = datapoints.iter()
                 .map(|point| {
