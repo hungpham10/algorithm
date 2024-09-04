@@ -7,6 +7,9 @@ edition = "2021"
 name = "lib"
 path = "src/lib.rs"
 
+[profile.release]
+debug = true
+
 [dependencies]
 # @NOTE: database and cache
 influxdb = { version = "0.7.2", features = ["derive"] }
@@ -34,5 +37,8 @@ cron-parser = "0.8.1"
 chrono-tz = "0.9.0"
 chrono = "0.4.22"
 futures = "0.3"
+log = "0.4.22"
 tokio = { version = "1.26.0", features = ["full"] }
-reqwest = { version = "0.11.9", features = ["json", "blocking"] }
+reqwest = { version = "0.12.7", features = ["json", "blocking"] }
+reqwest-retry = "0.6.1"
+reqwest-middleware = "0.3.3"

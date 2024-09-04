@@ -15,6 +15,7 @@ use juniper::http::{
     GraphQLRequest,
 };
 
+use log::{info, error};
 use chrono::Utc;
 use tokio_schedule::{every, Job};
 
@@ -147,10 +148,6 @@ async fn main() -> std::io::Result<()> {
     // @NOTE: configure logging
     std::env::set_var("RUST_LOG", "actix_web=info");
     env_logger::init();
-
-    std::panic::set_hook(Box::new(|panic_info| {
-        error!("Catch a panic: {}", panic_info);
-    }));
 
     let mut resolver = CronResolver::new();
     let _guard = sentry::init((

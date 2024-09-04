@@ -3,10 +3,8 @@ use std::time::Duration;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
-use reqwest::{
-    Client as HttpClient, 
-    Error as HttpError,
-};
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient, reqwest::Error as HttpError};
+use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use futures::future;
 
 use chrono::{Utc, NaiveTime};
@@ -110,7 +108,12 @@ async fn fetch_orders(
     page: usize,
     page_size: usize,
 ) -> Vec<OrderResponse> {
-    let client = Arc::new(HttpClient::default());
+    //let client = Arc::new(HttpClient::default());
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(100);
+    let client = Arc::new(ClientBuilder::new(reqwest::Client::new())
+        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+        .build(),
+    );
 
     future::try_join_all(
             stocks.iter().map(move |stock| {
@@ -129,7 +132,7 @@ async fn fetch_order_per_stock(
     timeout: u64,
     page: usize,
     page_size: usize,
-) -> Result<OrderResponse, HttpError> {
+) -> Result<OrderResponse, TcbsError> {
     let resp = client.get(format!(
             "https://apipubaws.tcbs.com.vn/stock-insight/v1/intraday/{}/his/paging?page={}&size={}&headIndex={}",
             stock,
@@ -141,8 +144,11 @@ async fn fetch_order_per_stock(
         .await;
 
     match resp {
-        Ok(resp) => resp.json::<OrderResponse>().await,
-        Err(error) => Err(error),
+        Ok(resp) => match resp.json::<OrderResponse>().await {
+            Ok(resp) => Ok(resp),
+            Err(error) => Err(TcbsError{ message: format!("{:?}", error) }),
+        },
+        Err(error) => Err(TcbsError{ message: format!("{:?}", error) }),
     }
 }
 
@@ -167,7 +173,7 @@ pub fn connect_to_tcbs(
             loop {
                 let datapoints = &tcbs.send(GetOrderCommand{ page: page })
                     .await
-                    .unwrap();
+                    .unwrap_or(Vec::<OrderResponse>::new());
                 let mut keep = false;
 
                 for point in datapoints {
