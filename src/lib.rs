@@ -6,4 +6,4 @@ pub mod analytic;
 pub mod actors;
 pub mod schemas;
 pub mod helpers;
-pub mod init;
+pub mod load;

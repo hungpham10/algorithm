@@ -1,16 +1,9 @@
+
 diesel::table! {
     tbl_crons (id) {
         id -> Int4,
         interval -> Varchar,
         resolver -> Varchar,
-    }
-}
-
-diesel::table! {
-    tbl_users (id) {
-        id -> Int4,
-        username -> Varchar,
-        password -> Varchar,
     }
 }
 
@@ -25,3 +18,13 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    tbl_tcbs_orders (id) {
+        id -> Integer,
+        symbol -> Varchar,
+        side -> Integer,
+        price -> Float,
+        volume -> Integer,
+        ordered_at -> Timestamp,
+    }
+}

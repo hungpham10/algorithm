@@ -45,7 +45,7 @@ use ::lib::helpers::{
     connect_to_postgres_pool,
     PgPool, 
 };
-use ::lib::init::{
+use ::lib::load::{
     load_and_map_schedulers_with_resolvers,
 };
 
@@ -145,6 +145,13 @@ async fn main() -> std::io::Result<()> {
     env_logger::init();
 
     let mut resolver = CronResolver::new();
+    let _guard = sentry::init((
+        std::env::var("SENTRY_DSN").unwrap(),
+        sentry::ClientOptions {
+            release: sentry::release_name!(),
+            ..Default::default()
+        },
+    ));
 
     let pool = connect_to_postgres_pool(
         std::env::var("POSTGRES_DSN").unwrap()

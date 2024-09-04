@@ -1,11 +1,10 @@
 use std::sync::Arc;
 use std::fmt;
 
-use diesel::prelude::*;
 use actix::prelude::*;
 use actix::Addr;
 
-use chrono::{TimeZone, Utc};
+use chrono::Utc;
 
 use crate::helpers::{PgConn, PgPool};
 use crate::actors::redis::RedisActor;
