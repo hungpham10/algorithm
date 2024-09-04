@@ -35,6 +35,7 @@ impl fmt::Display for TcbsError {
 pub struct TcbsActor {
     stocks:  Vec<String>,
     timeout: u64,
+    page_size: usize,
 }
 
 
@@ -43,6 +44,7 @@ impl TcbsActor {
         Self {
             stocks:  stocks,
             timeout: 60,
+            page_size: 100,
         }
     }
 }
@@ -91,9 +93,10 @@ impl Handler<GetOrderCommand> for TcbsActor {
     fn handle(&mut self, msg: GetOrderCommand, _: &mut Self::Context) -> Self::Result { 
         let stocks = self.stocks.clone();
         let timeout = self.timeout;
+        let page_size = self.page_size;
 
         Box::pin(async move {
-            let datapoints = fetch_orders(&stocks, timeout, msg.page, 100)
+            let datapoints = fetch_orders(&stocks, timeout, msg.page, page_size)
                 .await;
 
             return datapoints;
@@ -162,12 +165,16 @@ pub fn connect_to_tcbs(
             let mut page = 0;
 
             loop {
-                let datapoints = tcbs.send(GetOrderCommand{ page: page })
+                let datapoints = &tcbs.send(GetOrderCommand{ page: page })
                     .await
                     .unwrap();
+                let mut keep = false;
 
-                if datapoints.len() == 0 {
-                    break;
+                for point in datapoints {
+                    if point.size > 0 {
+                        keep = true;
+                        break;
+                    }
                 }
 
                 let _ = datapoints.iter()
