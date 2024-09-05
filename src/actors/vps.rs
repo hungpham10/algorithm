@@ -156,7 +156,7 @@ async fn fetch_price_depth_per_block(
     client: Arc<HttpClient>,
     block:  &Vec<String>,
     timeout: u64,
-) -> Result<Vec<Price>, HttpError> {
+) -> Result<Vec<Price>, VpsError> {
     let resp = client.get(format!(
             "https://bgapidatafeed.vps.com.vn/getliststockdata/{}",
             (*block).join(","),
@@ -170,7 +170,7 @@ async fn fetch_price_depth_per_block(
             Ok(resp) => Ok(resp),
             Err(error) => Err(VpsError{ message: format!("{:?}", error) }),
         },
-        Err(error) => Err(VpsError{ message: format!("{:?}", error) },
+        Err(error) => Err(VpsError{ message: format!("{:?}", error) }),
     }
 }
 
@@ -238,6 +238,7 @@ pub fn connect_to_vps(
                 })
                 .collect::<Vec<_>>();
 
+            println!("{:?}", order_insert);
             tsdb.clone().query(order_insert).await;
         }
     });
