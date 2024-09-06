@@ -76,7 +76,7 @@ impl VpsActor {
     fn new(stocks: Vec<String>) -> Self {
         Self {
             stocks:  stocks,
-            timeout: 60,
+            timeout: 300,
         }
     }
 }
