@@ -1,13 +1,10 @@
-use std::time::Duration;
-use std::sync::Arc;
 use std::fmt;
+use std::sync::Arc;
+use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
 use juniper::GraphQLObject;
-use reqwest::{
-    Client as HttpClient, 
-    Error as HttpError,
-};
+use reqwest::{Client as HttpClient, Error as HttpError};
+use serde::{Deserialize, Serialize};
 
 use actix::prelude::*;
 use actix::Addr;
@@ -18,9 +15,7 @@ pub struct DnseActor {
 
 impl DnseActor {
     fn new() -> Self {
-        Self {
-            timeout: 60,
-        }
+        Self { timeout: 60 }
     }
 }
 
@@ -64,7 +59,7 @@ impl Actor for DnseActor {
 
 #[derive(Debug, Clone)]
 pub struct DnseError {
-    message: String
+    message: String,
 }
 
 impl fmt::Display for DnseError {
@@ -74,35 +69,40 @@ impl fmt::Display for DnseError {
 }
 
 #[derive(Message, Debug)]
+#[rtype(result = "bool")]
+pub struct HealthCommand;
+
+impl Handler<HealthCommand> for DnseActor {
+    type Result = ResponseFuture<bool>;
+
+    fn handle(&mut self, _msg: HealthCommand, _: &mut Self::Context) -> Self::Result {
+        Box::pin(async move { true })
+    }
+}
+
+#[derive(Message, Debug)]
 #[rtype(result = "Result<Vec<CandleStick>, HttpError>")]
 pub struct GetOHCLCommand {
     pub resolution: String,
-    pub stock:      String,
-    pub from:       i32,
-    pub to:         i32,
+    pub stock: String,
+    pub from: i32,
+    pub to: i32,
 }
 
 impl Handler<GetOHCLCommand> for DnseActor {
     type Result = ResponseFuture<Result<Vec<CandleStick>, HttpError>>;
 
-    fn handle(&mut self, msg: GetOHCLCommand, _: &mut Self::Context) -> Self::Result { 
+    fn handle(&mut self, msg: GetOHCLCommand, _: &mut Self::Context) -> Self::Result {
         let resolution = msg.resolution.clone();
-        let stock      = msg.stock.clone();
-        let from       = msg.from;
-        let to         = msg.to;
-        let timeout    = self.timeout;
+        let stock = msg.stock.clone();
+        let from = msg.from;
+        let to = msg.to;
+        let timeout = self.timeout;
 
         Box::pin(async move {
-            let client     = Arc::new(HttpClient::default());
-            let datapoints = fetch_ohcl_by_stock(
-                    client.clone(),
-                    &stock,
-                    &resolution,
-                    from,
-                    to,
-                    timeout,
-                )
-                .await;
+            let client = Arc::new(HttpClient::default());
+            let datapoints =
+                fetch_ohcl_by_stock(client.clone(), &stock, &resolution, from, to, timeout).await;
 
             return datapoints;
         })
@@ -110,12 +110,12 @@ impl Handler<GetOHCLCommand> for DnseActor {
 }
 
 async fn fetch_ohcl_by_stock(
-    client:     Arc<HttpClient>,
-    stock:      &String,
+    client: Arc<HttpClient>,
+    stock: &String,
     resolution: &String,
-    from:       i32, 
-    to:         i32,
-    timeout:    u64,
+    from: i32,
+    to: i32,
+    timeout: u64,
 ) -> Result<Vec<CandleStick>, HttpError> {
     let resp = client.get(format!(
             "https://services.entrade.com.vn/chart-api/v2/ohlcs/stock?from={}&to={}&symbol={}&resolution={}",
@@ -129,23 +129,23 @@ async fn fetch_ohcl_by_stock(
         .await;
 
     match resp {
-        Ok(resp) => { 
+        Ok(resp) => {
             let mut candles = Vec::<CandleStick>::new();
-            let ohcl        = match resp.json::<Ohcl>().await {
+            let ohcl = match resp.json::<Ohcl>().await {
                 Ok(ohcl) => ohcl,
-                Err(_)   => Ohcl{
-                    t:        Vec::<i32>::new(),
-                    o:        Vec::<f64>::new(),
-                    c:        Vec::<f64>::new(),
-                    h:        Vec::<f64>::new(),
-                    l:        Vec::<f64>::new(),
-                    v:        Vec::<i32>::new(),
+                Err(_) => Ohcl {
+                    t: Vec::<i32>::new(),
+                    o: Vec::<f64>::new(),
+                    c: Vec::<f64>::new(),
+                    h: Vec::<f64>::new(),
+                    l: Vec::<f64>::new(),
+                    v: Vec::<i32>::new(),
                     nextTime: -1,
                 },
             };
 
             for i in 0..ohcl.t.len() {
-                candles.push(CandleStick{
+                candles.push(CandleStick {
                     t: ohcl.t[i],
                     o: ohcl.o[i],
                     h: ohcl.h[i],
@@ -162,6 +162,5 @@ async fn fetch_ohcl_by_stock(
 }
 
 pub fn connect_to_dnse() -> Addr<DnseActor> {
-    DnseActor::new()
-        .start()
+    DnseActor::new().start()
 }

@@ -1,26 +1,22 @@
-use std::time::Duration;
-use std::sync::Arc;
-use std::fmt;
 use std::collections::BTreeMap;
+use std::fmt;
+use std::sync::Arc;
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use reqwest::header::AUTHORIZATION;
+use reqwest_middleware::ClientWithMiddleware as HttpClient;
 use serde::{Deserialize, Serialize};
-use reqwest::{
-    Client as HttpClient, 
-    Error as HttpError,
 
-    header::AUTHORIZATION, 
-};
-use diesel::prelude::*;
 use actix::prelude::*;
 use actix::Addr;
+use diesel::prelude::*;
 
-use crate::helpers::{PgConn, PgPool};
-use crate::actors::redis::RedisActor;
 use crate::actors::cron::CronResolver;
-use crate::analytic::Sentiment;
+use crate::actors::redis::RedisActor;
 use crate::analytic::mention::Mention;
-
+use crate::analytic::Sentiment;
+use crate::helpers::PgPool;
 
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -32,7 +28,7 @@ pub struct User {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Symbol {
     pub symbol: String,
-    pub price:  Option<f32>,
+    pub price: Option<f32>,
     pub change: Option<f32>,
     pub percentChange: f32,
 }
@@ -42,39 +38,39 @@ pub struct Symbol {
 pub struct Post {
     // @NOTE: data for analysis
     pub originalContent: String,
-    pub taggedSymbols:   Vec<Symbol>,
+    pub taggedSymbols: Vec<Symbol>,
 
     // @NOTE: post profile
-    pub postID:    u64,
-    pub user:      User,
-    pub link:      Option<String>,
-    pub date:      String,
-    pub priority:  i32,
+    pub postID: u64,
+    pub user: User,
+    pub link: Option<String>,
+    pub date: String,
+    pub priority: i32,
     pub sentiment: i32,
 
     // @NOTE: flags
-    pub isTop:    bool,
+    pub isTop: bool,
     pub hasImage: bool,
-    pub hasFile:  bool,
+    pub hasFile: bool,
 
     // @NOTE: counters
-    pub totalLikes:   u32,
-    pub totalShares:  u32,
-    pub totalReplies: u32,    
+    pub totalLikes: u32,
+    pub totalShares: u32,
+    pub totalReplies: u32,
 }
 
 pub struct FireantActor {
     timeout: u64,
-    limit:   usize,
-    token:   String,
+    limit: usize,
+    token: String,
 }
 
 impl FireantActor {
     fn new(token: String) -> Self {
         Self {
             timeout: 60,
-            limit:   100,
-            token:   token.clone(),
+            limit: 100,
+            token: token.clone(),
         }
     }
 }
@@ -85,7 +81,7 @@ impl Actor for FireantActor {
 
 #[derive(Debug, Clone)]
 pub struct FireantError {
-    message: String
+    message: String,
 }
 
 impl fmt::Display for FireantError {
@@ -95,33 +91,49 @@ impl fmt::Display for FireantError {
 }
 
 #[derive(Message, Debug)]
-#[rtype(result = "Result<BTreeMap<String, Sentiment>, HttpError>")]
+#[rtype(result = "bool")]
+pub struct HealthCommand;
+
+impl Handler<HealthCommand> for FireantActor {
+    type Result = ResponseFuture<bool>;
+
+    fn handle(&mut self, _msg: HealthCommand, _: &mut Self::Context) -> Self::Result {
+        Box::pin(async move { true })
+    }
+}
+
+#[derive(Message, Debug)]
+#[rtype(result = "Result<BTreeMap<String, Sentiment>, FireantError>")]
 pub struct CountSentimentPerStockCommand {
     from: i64,
-    to:   i64,
+    to: i64,
 }
 
 impl Handler<CountSentimentPerStockCommand> for FireantActor {
-    type Result = ResponseFuture<Result<BTreeMap<String, Sentiment>, HttpError>>;
+    type Result = ResponseFuture<Result<BTreeMap<String, Sentiment>, FireantError>>;
 
-    fn handle(&mut self, msg: CountSentimentPerStockCommand, _: &mut Self::Context) -> Self::Result { 
+    fn handle(
+        &mut self,
+        msg: CountSentimentPerStockCommand,
+        _: &mut Self::Context,
+    ) -> Self::Result {
         let timeout = self.timeout;
-        let limit   = self.limit;
-        let token   = self.token.clone();
-        let from    = msg.from;
-        let to      = msg.to;
+        let limit = self.limit;
+        let token = self.token.clone();
+        let from = msg.from;
+        let to = msg.to;
 
         Box::pin(async move {
-            let client     = Arc::new(HttpClient::default());
+            let client = Arc::new(HttpClient::default());
             let datapoints = statistic_posts_by_stock_in_timerange(
-                    client.clone(),
-                    from,
-                    to,
-                    timeout,
-                    limit,
-                    token.clone(),
-                )
-                .await;
+                client.clone(),
+                from,
+                to,
+                timeout,
+                limit,
+                token.clone(),
+            )
+            .await;
 
             return datapoints;
         })
@@ -129,13 +141,13 @@ impl Handler<CountSentimentPerStockCommand> for FireantActor {
 }
 
 async fn statistic_posts_by_stock_in_timerange(
-    client:  Arc<HttpClient>,
-    from:    i64,
-    to:      i64,
+    client: Arc<HttpClient>,
+    from: i64,
+    to: i64,
     timeout: u64,
-    limit:   usize,
-    token:   String,
-) -> Result<BTreeMap<String, Sentiment>, HttpError> {
+    limit: usize,
+    token: String,
+) -> Result<BTreeMap<String, Sentiment>, FireantError> {
     let mut statistic = BTreeMap::<String, Sentiment>::new();
     let mut offset: usize = 0;
 
@@ -148,7 +160,8 @@ async fn statistic_posts_by_stock_in_timerange(
             limit,
             timeout,
             token.clone(),
-        ).await;
+        )
+        .await;
 
         match resp {
             Ok(posts) => {
@@ -157,9 +170,8 @@ async fn statistic_posts_by_stock_in_timerange(
                     break;
                 }
 
-                let time_happen = DateTime::parse_from_rfc3339(
-                    posts.last().unwrap().date.as_str(),
-                ).unwrap();
+                let time_happen =
+                    DateTime::parse_from_rfc3339(posts.last().unwrap().date.as_str()).unwrap();
 
                 model.count_mention_by_symbol(&mut statistic, &posts);
                 model.count_sentiment_vote_by_symbol(&mut statistic, &posts);
@@ -169,9 +181,11 @@ async fn statistic_posts_by_stock_in_timerange(
                 }
 
                 offset += limit;
-            },
+            }
             Err(error) => {
-                return Err(error);
+                return Err(FireantError {
+                    message: format!("{:?}", error),
+                });
             }
         }
     }
@@ -180,16 +194,16 @@ async fn statistic_posts_by_stock_in_timerange(
 }
 
 async fn fetch_batch_of_posts_from_fireant(
-    client:  Arc<HttpClient>,
-    offset:  usize,
-    limit:   usize,
+    client: Arc<HttpClient>,
+    offset: usize,
+    limit: usize,
     timeout: u64,
-    token:   String,
-) -> Result<Vec<Post>, HttpError> {
-    let resp = client.get(format!(
+    token: String,
+) -> Result<Vec<Post>, FireantError> {
+    let resp = client
+        .get(format!(
             "https://restv2.fireant.vn/posts?type=0&offset={}&limit={}",
-            offset,
-            limit
+            offset, limit
         ))
         .header(AUTHORIZATION, token)
         .timeout(Duration::from_secs(timeout))
@@ -197,60 +211,56 @@ async fn fetch_batch_of_posts_from_fireant(
         .await;
 
     match resp {
-        Ok(resp) => {
-            match resp.json::<Vec<Post>>().await {
-                Ok(posts) => Ok(posts),
-                Err(error) => {
-                    println!("{:?}", error);
-                    Ok(Vec::<Post>::new())
-                },
-            }
-        }
-        Err(error) => {
-            println!("{:?}", error);
-            Err(error)
-        }
+        Ok(resp) => match resp.json::<Vec<Post>>().await {
+            Ok(posts) => Ok(posts),
+            Err(error) => Err(FireantError {
+                message: format!("{:?}", error),
+            }),
+        },
+        Err(error) => Err(FireantError {
+            message: format!("{:?}", error),
+        }),
     }
 }
 
 pub fn connect_to_fireant(
     resolver: &mut CronResolver,
-    pool:     Arc<PgPool>,
-    cache:    Arc<Addr<RedisActor>>, 
-    token:    String,
+    pool: Arc<PgPool>,
+    cache: Arc<Addr<RedisActor>>,
+    token: String,
 ) -> Addr<FireantActor> {
     use crate::schemas::database::tbl_fireant_mention::dsl::*;
 
-    let actor   = FireantActor::new(format!("Bearer {}", token)).start();
+    let actor = FireantActor::new(format!("Bearer {}", token)).start();
     let fireant = actor.clone();
 
     resolver.resolve("fireant.count_sentiment_per_stock".to_string(), move || {
         let fireant = fireant.clone();
-        let pool    = pool.clone();
-        let time    = Utc::now().timestamp();
+        let pool = pool.clone();
+        let time = Utc::now().timestamp();
 
         async move {
             let mut dbconn = pool.get().unwrap();
-            let from       = time - 24*60*60;
-            let to         = time;
-            let sentiments = fireant.send(CountSentimentPerStockCommand{
-                    from: from,
-                    to:   to,
-                })
+            let from = time - 24 * 60 * 60;
+            let to = time;
+            let sentiments = fireant
+                .send(CountSentimentPerStockCommand { from: from, to: to })
                 .await
-                .unwrap().unwrap(); 
+                .unwrap()
+                .unwrap();
 
-            let rows = sentiments.iter()
+            let rows = sentiments
+                .iter()
                 .map(|(name, value)| {
                     (
-                        symbol.eq(name), 
-                        mention.eq(value.mention), 
-                        positive.eq(value.votes.positive), 
+                        symbol.eq(name),
+                        mention.eq(value.mention),
+                        positive.eq(value.votes.positive),
                         negative.eq(value.votes.negative),
                     )
                 })
                 .collect::<Vec<_>>();
-                
+
             diesel::insert_into(tbl_fireant_mention)
                 .values(&rows)
                 .execute(&mut dbconn);
@@ -259,4 +269,3 @@ pub fn connect_to_fireant(
 
     return actor;
 }
-

@@ -1,58 +1,26 @@
 #[macro_use]
 extern crate serde;
 
-use std::sync::Arc;
-use actix_web::{
-    web, get, post, middleware, 
-    App, HttpServer, 
-    http::Method,
-    Error, HttpRequest, HttpResponse,
-};
-use influxdb::{Client as InfluxClient};
 use actix::Addr;
-use juniper::http::{
-    graphiql::graphiql_source, 
-    GraphQLRequest,
-};
+use actix_web::{http::Method, web, App, Error, HttpRequest, HttpResponse, HttpServer};
+use influxdb::Client as InfluxClient;
+use juniper::http::{graphiql::graphiql_source, GraphQLRequest};
 
-use log::{info, error};
+use std::sync::Arc;
+
 use chrono::Utc;
 use tokio_schedule::{every, Job};
 
-use ::lib::actors::redis::{
-    RedisActor, InfoCommand,
-    connect_to_redis,
-};
-use ::lib::actors::fireant::{
-    connect_to_fireant,
-};
-use ::lib::actors::dnse::{
-    DnseActor,
-    connect_to_dnse,
-};
-use ::lib::actors::vps::{
-    VpsActor,
-    connect_to_vps, list_of_vn30,
-};
-use ::lib::actors::tcbs::{
-    TcbsActor,
-    connect_to_tcbs, 
-};
-use ::lib::actors::cron::{
-    CronResolver, CronActor,
-    TickCommand, ScheduleCommand, 
-    connect_to_cron,
-};
+use ::lib::actors::cron::{connect_to_cron, CronActor, CronResolver, TickCommand};
+use ::lib::actors::dnse::{connect_to_dnse, DnseActor};
+use ::lib::actors::fireant::{connect_to_fireant, FireantActor};
+use ::lib::actors::redis::{connect_to_redis, InfoCommand, RedisActor};
+use ::lib::actors::tcbs::{connect_to_tcbs, TcbsActor};
+use ::lib::actors::vps::{connect_to_vps, list_of_vn30, VpsActor};
 use ::lib::helpers::{
-    create_graphql_schema, create_graphql_context, 
-    SchemaGraphQL,
-
-    connect_to_postgres_pool,
-    PgPool, 
+    connect_to_postgres_pool, create_graphql_context, create_graphql_schema, PgPool, SchemaGraphQL,
 };
-use ::lib::load::{
-    load_and_map_schedulers_with_resolvers,
-};
+use ::lib::load::load_and_map_schedulers_with_resolvers;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphQlErrorLocation {
@@ -82,7 +50,6 @@ impl GraphQLErrors {
     }
 }
 
-#[get("/")]
 pub async fn playground() -> HttpResponse {
     let html = graphiql_source("/graphql", None);
     HttpResponse::Ok()
@@ -90,16 +57,15 @@ pub async fn playground() -> HttpResponse {
         .body(html)
 }
 
-#[post("/graphql")]
 async fn graphql(
-    req:    HttpRequest,
-schema: web::Data<Arc<SchemaGraphQL>>,
-    query:  Option<web::Query<GraphQLRequest>>,
-    body:   Option<web::Json<GraphQLRequest>>,
-    vps:    web::Data<Addr<VpsActor>>,
-    dnse:   web::Data<Addr<DnseActor>>,
-    pool:   web::Data<PgPool>,
-    cache:  web::Data<Addr<RedisActor>>,
+    req: HttpRequest,
+    schema: web::Data<Arc<SchemaGraphQL>>,
+    query: Option<web::Query<GraphQLRequest>>,
+    body: Option<web::Json<GraphQLRequest>>,
+    vps: web::Data<Addr<VpsActor>>,
+    dnse: web::Data<Addr<DnseActor>>,
+    pool: web::Data<PgPool>,
+    cache: web::Data<Addr<RedisActor>>,
 ) -> Result<HttpResponse, Error> {
     //let headers = req.headers();
 
@@ -108,7 +74,7 @@ schema: web::Data<Arc<SchemaGraphQL>>,
     // body if this is a POST
     let data = match *req.method() {
         Method::GET => query.unwrap().into_inner(),
-        _           => body.unwrap().into_inner(),
+        _ => body.unwrap().into_inner(),
     };
 
     let ctx = create_graphql_context(
@@ -118,38 +84,34 @@ schema: web::Data<Arc<SchemaGraphQL>>,
         (*cache).clone(),
     );
 
-    Ok(HttpResponse::Ok()
-        .json(
-            data.execute(
-                &schema,
-                &ctx,
-            ).await,
-        ),
-    )
+    Ok(HttpResponse::Ok().json(data.execute(&schema, &ctx).await))
 }
 
-#[get("/health")]
 async fn health(
-    cache:  web::Data<Addr<RedisActor>>,
+    cache: web::Data<Addr<RedisActor>>,
+    cron: web::Data<Addr<CronActor>>,
+    vps: web::Data<Addr<VpsActor>>,
+    dnse: web::Data<Addr<DnseActor>>,
+    tcbs: web::Data<Addr<TcbsActor>>,
+    fireant: web::Data<Addr<FireantActor>>,
 ) -> actix_web::Result<HttpResponse> {
-    let _ = cache.send(InfoCommand)
+    let _ = cache.send(InfoCommand).await.unwrap().unwrap().unwrap();
+    let _ = cron.send(lib::actors::cron::HealthCommand).await.unwrap();
+    let _ = vps.send(lib::actors::vps::HealthCommand).await.unwrap();
+    let _ = dnse.send(lib::actors::dnse::HealthCommand).await.unwrap();
+    let _ = tcbs.send(lib::actors::tcbs::HealthCommand).await.unwrap();
+    let _ = fireant
+        .send(lib::actors::fireant::HealthCommand)
         .await
-        .unwrap().unwrap().unwrap();
+        .unwrap();
 
-    Ok(HttpResponse::Ok()
-        .body("OK")
-        .into())
+    Ok(HttpResponse::Ok().body("OK").into())
 }
 
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
 
-    // @NOTE: configure logging
-    std::env::set_var("RUST_LOG", "actix_web=info");
-    env_logger::init();
-
-    let mut resolver = CronResolver::new();
     let _guard = sentry::init((
         std::env::var("SENTRY_DSN").unwrap(),
         sentry::ClientOptions {
@@ -158,68 +120,43 @@ async fn main() -> std::io::Result<()> {
         },
     ));
 
-    let pool = connect_to_postgres_pool(
-        std::env::var("POSTGRES_DSN").unwrap()
-    );
+    let mut resolver = CronResolver::new();
+    let pool = connect_to_postgres_pool(std::env::var("POSTGRES_DSN").unwrap());
     let tsdb = Arc::new(
         InfluxClient::new(
             std::env::var("INFLUXDB_URI").unwrap(),
             std::env::var("INFLUXDB_BUCKET").unwrap(),
-        ) 
-        .with_token(std::env::var("INFLUXDB_TOKEN").unwrap())
+        )
+        .with_token(std::env::var("INFLUXDB_TOKEN").unwrap()),
     );
-    let cache = connect_to_redis(
-        std::env::var("REDIS_DSN").unwrap(),
-    ).await;
-
-    let schema = std::sync::Arc::new(
-        create_graphql_schema(),
-    );
-
-    let dnse    = connect_to_dnse();
-    let vps     = connect_to_vps(
-        &mut resolver,
-        tsdb.clone(),
-        list_of_vn30().await,
-    );
-    let tcbs    = connect_to_tcbs(
-        &mut resolver,
-        pool.clone().into(),
-        list_of_vn30().await,
-    );
+    let cache = connect_to_redis(std::env::var("REDIS_DSN").unwrap()).await;
+    let schema = std::sync::Arc::new(create_graphql_schema());
+    let dnse = connect_to_dnse();
+    let vps = connect_to_vps(&mut resolver, tsdb.clone(), list_of_vn30().await);
+    let tcbs = connect_to_tcbs(&mut resolver, pool.clone().into(), list_of_vn30().await);
     let fireant = connect_to_fireant(
         &mut resolver,
         pool.clone().into(),
         cache.clone().into(),
         std::env::var("FIREANT_TOKEN").unwrap(),
     );
+    let cron = connect_to_cron(resolver.into(), pool.clone().into(), cache.clone().into());
+    let background = cron.clone();
 
-    let cron = connect_to_cron(
-        resolver.into(),
-        pool.clone().into(),
-        cache.clone().into(),
-    );
-
-    load_and_map_schedulers_with_resolvers(
-        pool.clone(),
-        cron.clone(),
-    ).await;
+    load_and_map_schedulers_with_resolvers(pool.clone(), cron.clone()).await;
 
     // @NOTE: mapping cronjobs
     actix_rt::spawn(async move {
-        let every_second = every(1)
-            .seconds()
-            .in_timezone(&Utc)
-            .perform(|| async {
-                let _ = cron.clone().send(TickCommand)
-                    .await;
-            });
+        let every_second = every(1).seconds().in_timezone(&Utc).perform(|| async {
+            let _ = cron.clone().send(TickCommand).await;
+        });
         every_second.await;
     });
 
     // @NOTE: mapping routes
     HttpServer::new(move || {
         App::new()
+            .app_data(web::Data::new(background.clone()))
             .app_data(web::Data::new(cache.clone()))
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(schema.clone()))
@@ -227,10 +164,9 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(dnse.clone()))
             .app_data(web::Data::new(tcbs.clone()))
             .app_data(web::Data::new(fireant.clone()))
-            .wrap(middleware::Logger::default())
-            .service(health)
-            .service(graphql)
-            .service(playground)
+            .route("/health", web::get().to(health))
+            .route("/graphql", web::post().to(graphql))
+            .route("/", web::get().to(playground))
     })
     .bind(("0.0.0.0", 3000))?
     .run()

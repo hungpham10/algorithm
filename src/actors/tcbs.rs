@@ -1,27 +1,25 @@
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
-use std::fmt;
 
-use serde::{Deserialize, Serialize};
-use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient, reqwest::Error as HttpError};
-use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use futures::future;
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient};
+use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
+use serde::{Deserialize, Serialize};
 
-use chrono::{Utc, NaiveTime};
-use chrono_tz::{Asia::Ho_Chi_Minh, Tz};
+use chrono::{NaiveTime, Utc};
+use chrono_tz::Asia::Ho_Chi_Minh;
 
-use diesel::prelude::*;
 use actix::prelude::*;
 use actix::Addr;
+use diesel::prelude::*;
 
-use influxdb::{Client as InfluxClient, InfluxDbWriteable};
-
-use crate::helpers::{PgConn, PgPool};
 use crate::actors::cron::CronResolver;
+use crate::helpers::PgPool;
 
 #[derive(Debug, Clone)]
 pub struct TcbsError {
-    message: String
+    message: String,
 }
 
 impl fmt::Display for TcbsError {
@@ -31,24 +29,35 @@ impl fmt::Display for TcbsError {
 }
 
 pub struct TcbsActor {
-    stocks:  Vec<String>,
+    stocks: Vec<String>,
     timeout: u64,
     page_size: usize,
 }
 
-
 impl TcbsActor {
     fn new(stocks: Vec<String>) -> Self {
         Self {
-            stocks:  stocks,
+            stocks: stocks,
             timeout: 60,
-            page_size: 100,
+            page_size: 1000,
         }
     }
 }
 
 impl Actor for TcbsActor {
     type Context = Context<Self>;
+}
+
+#[derive(Message, Debug)]
+#[rtype(result = "bool")]
+pub struct HealthCommand;
+
+impl Handler<HealthCommand> for TcbsActor {
+    type Result = ResponseFuture<bool>;
+
+    fn handle(&mut self, _msg: HealthCommand, _: &mut Self::Context) -> Self::Result {
+        Box::pin(async move { true })
+    }
 }
 
 #[allow(non_snake_case)]
@@ -81,21 +90,20 @@ pub struct OrderResponse {
 
 #[derive(Message, Debug)]
 #[rtype(result = "Vec<OrderResponse>")]
-pub struct GetOrderCommand{
+pub struct GetOrderCommand {
     page: usize,
 }
 
 impl Handler<GetOrderCommand> for TcbsActor {
     type Result = ResponseFuture<Vec<OrderResponse>>;
 
-    fn handle(&mut self, msg: GetOrderCommand, _: &mut Self::Context) -> Self::Result { 
+    fn handle(&mut self, msg: GetOrderCommand, _: &mut Self::Context) -> Self::Result {
         let stocks = self.stocks.clone();
         let timeout = self.timeout;
         let page_size = self.page_size;
 
         Box::pin(async move {
-            let datapoints = fetch_orders(&stocks, timeout, msg.page, page_size)
-                .await;
+            let datapoints = fetch_orders(&stocks, timeout, msg.page, page_size).await;
 
             return datapoints;
         })
@@ -108,21 +116,22 @@ async fn fetch_orders(
     page: usize,
     page_size: usize,
 ) -> Vec<OrderResponse> {
-    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(100);
-    let client = Arc::new(ClientBuilder::new(reqwest::Client::new())
-        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-        .build(),
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(1);
+    let client = Arc::new(
+        ClientBuilder::new(reqwest::Client::new())
+            .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+            .build(),
     );
 
     future::try_join_all(
-            stocks.iter().map(move |stock| {
-                fetch_order_per_stock(client.clone(), stock, timeout, page, page_size)
-            })
-        )
-        .await
-        .unwrap()
-        .into_iter()
-        .collect::<Vec<_>>()
+        stocks.iter().map(move |stock| {
+            fetch_order_per_stock(client.clone(), stock, timeout, page, page_size)
+        }),
+    )
+    .await
+    .unwrap()
+    .into_iter()
+    .collect::<Vec<_>>()
 }
 
 async fn fetch_order_per_stock(
@@ -145,16 +154,20 @@ async fn fetch_order_per_stock(
     match resp {
         Ok(resp) => match resp.json::<OrderResponse>().await {
             Ok(resp) => Ok(resp),
-            Err(error) => Err(TcbsError{ message: format!("{:?}", error) }),
+            Err(error) => Err(TcbsError {
+                message: format!("{:?}", error),
+            }),
         },
-        Err(error) => Err(TcbsError{ message: format!("{:?}", error) }),
+        Err(error) => Err(TcbsError {
+            message: format!("{:?}", error),
+        }),
     }
 }
 
 pub fn connect_to_tcbs(
     resolver: &mut CronResolver,
-    pool:     Arc<PgPool>,
-    stocks:   Vec<String>,
+    pool: Arc<PgPool>,
+    stocks: Vec<String>,
 ) -> Addr<TcbsActor> {
     use crate::schemas::database::tbl_tcbs_orders::dsl::*;
 
@@ -170,23 +183,22 @@ pub fn connect_to_tcbs(
             let mut page = 0;
 
             loop {
-                let datapoints = &tcbs.send(GetOrderCommand{ page: page })
-                    .await
-                    .unwrap_or(Vec::<OrderResponse>::new());
-                let mut keep = false;
+                let datapoints = &tcbs.send(GetOrderCommand { page: page }).await.unwrap(); //_or(Vec::<OrderResponse>::new());
 
                 for point in datapoints {
                     if point.size > 0 {
-                        keep = true;
                         break;
                     }
                 }
 
-                let _ = datapoints.iter()
+                let _ = datapoints
+                    .iter()
                     .map(|response| {
                         let val_symbol = &response.ticker;
 
-                        let rows = response.data.iter()
+                        let rows = response
+                            .data
+                            .iter()
                             .map(move |point| {
                                 let mut val_side = 1;
                                 let hms = point.t.split(":").collect::<Vec<&str>>();
@@ -199,7 +211,8 @@ pub fn connect_to_tcbs(
                                             hms[0].parse::<u32>().unwrap(),
                                             hms[1].parse::<u32>().unwrap(),
                                             hms[2].parse::<u32>().unwrap(),
-                                        ).unwrap(),
+                                        )
+                                        .unwrap(),
                                     )
                                     .unwrap()
                                     .naive_utc();
@@ -230,7 +243,6 @@ pub fn connect_to_tcbs(
             }
         }
     });
- 
+
     return actor.clone();
 }
-

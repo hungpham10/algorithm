@@ -1,9 +1,7 @@
 use std::sync::Arc;
 use std::fmt;
-
 use actix::prelude::*;
 use actix::Addr;
-
 use chrono::Utc;
 
 use crate::helpers::{PgConn, PgPool};
@@ -13,14 +11,14 @@ use crate::actors::cron::CronResolver;
 
 /* @NOTE: how our simulator works?
  *  - Each player will have limited money
- *  - Money will be reduced over the time, we call it inflation, money will 
+ *  - Money will be reduced over the time, we call it inflation, money will
  *  keep value but fee for burning will remain to simulate how player suviver
  *  with limited money
  *  - When order happens, players must wait 2.5 working days to sell stock
  *
  *  Which formular will be used?
  *  Decision(x) = Sigmoid(a*x + b)
- *  
+ *
  */
 
 #[derive(Debug, Clone)]
@@ -101,7 +99,7 @@ impl Handler<EvaluateFitnessCommand> for SimulatorActor {
 
     fn handle(&mut self, _msg: EvaluateFitnessCommand, _: &mut Self::Context) -> Self::Result {
         Box::pin(async move {
-            Ok(None) 
+            Ok(None)
         })
     }
 }
@@ -115,7 +113,7 @@ impl Handler<DoSelectionCommand> for SimulatorActor {
 
     fn handle(&mut self, _msg: DoSelectionCommand, _: &mut Self::Context) -> Self::Result {
         Box::pin(async move {
-            Ok(None) 
+            Ok(None)
         })
     }
 }
@@ -143,7 +141,7 @@ impl Handler<DoMutationCommand> for SimulatorActor {
 
     fn handle(&mut self, _msg: DoMutationCommand, _: &mut Self::Context) -> Self::Result {
         Box::pin(async move {
-            Ok(None) 
+            Ok(None)
         })
     }
 }
@@ -151,7 +149,7 @@ impl Handler<DoMutationCommand> for SimulatorActor {
 pub fn connect_to_simulator(
     resolver: &mut CronResolver,
     pool:     Arc<PgPool>,
-    cache:    Arc<Addr<RedisActor>>, 
+    cache:    Arc<Addr<RedisActor>>,
     token:    String,
     n_player: usize,
 ) -> Addr<SimulatorActor> {
@@ -179,7 +177,7 @@ pub fn connect_to_simulator(
 fn review_settlement_cycle(
     resolver: &mut CronResolver,
     pool:     Arc<PgPool>,
-    cache:    Arc<Addr<RedisActor>>, 
+    cache:    Arc<Addr<RedisActor>>,
     simulator: Arc<Addr<SimulatorActor>>,
 ) {
     resolver.resolve("simulator.review_settlement_cycle".to_string(), move || {
@@ -195,7 +193,7 @@ fn review_settlement_cycle(
 fn review_and_put_orders(
     resolver:  &mut CronResolver,
     pool:      Arc<PgPool>,
-    cache:     Arc<Addr<RedisActor>>, 
+    cache:     Arc<Addr<RedisActor>>,
     simulator: Arc<Addr<SimulatorActor>>,
     n_player:  usize,
 ) {
