@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::error;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -6,6 +7,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use reqwest::header::AUTHORIZATION;
 use reqwest_middleware::ClientWithMiddleware as HttpClient;
+use sentry::capture_error;
 use serde::{Deserialize, Serialize};
 
 use actix::prelude::*;
@@ -89,6 +91,8 @@ impl fmt::Display for FireantError {
         write!(f, "{}", self.message)
     }
 }
+
+impl error::Error for FireantError {}
 
 #[derive(Message, Debug)]
 #[rtype(result = "bool")]
@@ -243,11 +247,26 @@ pub fn connect_to_fireant(
             let mut dbconn = pool.get().unwrap();
             let from = time - 24 * 60 * 60;
             let to = time;
-            let sentiments = fireant
+            let sentiments = match fireant
                 .send(CountSentimentPerStockCommand { from: from, to: to })
                 .await
-                .unwrap()
-                .unwrap();
+            {
+                Ok(resp) => match resp {
+                    Ok(sentiments) => sentiments,
+                    Err(error) => {
+                        capture_error(&error);
+
+                        // @NOTE: ignore this error, only return empty BTreeMap
+                        BTreeMap::<String, Sentiment>::new()
+                    }
+                },
+                Err(error) => {
+                    capture_error(&error);
+
+                    // @NOTE: ignore this error, only return empty BTreeMap
+                    BTreeMap::<String, Sentiment>::new()
+                }
+            };
 
             let rows = sentiments
                 .iter()

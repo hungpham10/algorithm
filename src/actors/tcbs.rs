@@ -1,3 +1,4 @@
+use std::error;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -5,6 +6,7 @@ use std::time::Duration;
 use futures::future;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
+use sentry::capture_error;
 use serde::{Deserialize, Serialize};
 
 use chrono::{NaiveTime, Utc};
@@ -28,6 +30,8 @@ impl fmt::Display for TcbsError {
     }
 }
 
+impl error::Error for TcbsError {}
+
 pub struct TcbsActor {
     stocks: Vec<String>,
     timeout: u64,
@@ -37,9 +41,9 @@ pub struct TcbsActor {
 impl TcbsActor {
     fn new(stocks: Vec<String>) -> Self {
         Self {
-            stocks: stocks,
+            stocks,
             timeout: 60,
-            page_size: 1000,
+            page_size: 100,
         }
     }
 }
@@ -183,7 +187,15 @@ pub fn connect_to_tcbs(
             let mut page = 0;
 
             loop {
-                let datapoints = &tcbs.send(GetOrderCommand { page: page }).await.unwrap(); //_or(Vec::<OrderResponse>::new());
+                let datapoints = &match tcbs.send(GetOrderCommand { page }).await {
+                    Ok(datapoints) => datapoints,
+                    Err(error) => {
+                        capture_error(&error);
+
+                        // @NOTE: ignore this error, only return empty BTreeMap
+                        Vec::<OrderResponse>::new()
+                    }
+                };
 
                 for point in datapoints {
                     if point.size > 0 {

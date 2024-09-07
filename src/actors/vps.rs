@@ -1,3 +1,4 @@
+use std::error;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -5,6 +6,7 @@ use std::time::Duration;
 use futures::future;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
+use sentry::capture_error;
 use serde::{Deserialize, Serialize};
 
 use actix::prelude::*;
@@ -65,6 +67,8 @@ impl fmt::Display for VpsError {
         write!(f, "{}", self.message)
     }
 }
+
+impl error::Error for VpsError {}
 
 pub struct VpsActor {
     stocks: Vec<String>,
@@ -204,11 +208,15 @@ pub fn connect_to_vps(
         let tsdb = tsdb.clone();
 
         async move {
-            let datapoints = vps
-                .send(GetPriceCommand)
-                .await
-                .unwrap_or(Vec::<Price>::new());
+            let datapoints = match vps.send(GetPriceCommand).await {
+                Ok(datapoints) => datapoints,
+                Err(error) => {
+                    capture_error(&error);
 
+                    // @NOTE: ignore this error, only return empty BTreeMap
+                    Vec::<Price>::new()
+                }
+            };
             let order_insert = datapoints
                 .iter()
                 .map(|point| {
