@@ -179,6 +179,7 @@ async fn statistic_posts_by_stock_in_timerange(
 
                 model.count_mention_by_symbol(&mut statistic, &posts);
                 model.count_sentiment_vote_by_symbol(&mut statistic, &posts);
+                model.count_youtube_link_by_symbol(&mut statistic, &posts);
 
                 if time_happen.timestamp() < from || posts.len() < limit {
                     break;

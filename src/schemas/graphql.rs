@@ -1,6 +1,7 @@
 use actix::Addr;
 use juniper::{graphql_object, FieldResult};
 use std::sync::Arc;
+use chrono::Utc;
 
 use crate::actors::dnse::{CandleStick, DnseActor, GetOHCLCommand};
 use crate::actors::redis::RedisActor;
@@ -21,6 +22,10 @@ pub struct Query;
 
 #[graphql_object(context = Context)]
 impl Query {
+    async fn clock(ctx: &Context) -> FieldResult<String> {
+        Ok(Utc::now().to_string())
+    }
+
     async fn ohcl(
         ctx: &Context,
         resolution: String,
