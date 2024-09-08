@@ -248,7 +248,7 @@ pub fn connect_to_fireant(
             let from = time - 24 * 60 * 60;
             let to = time;
             let sentiments = match fireant
-                .send(CountSentimentPerStockCommand { from: from, to: to })
+                .send(CountSentimentPerStockCommand { from, to })
                 .await
             {
                 Ok(resp) => match resp {
@@ -276,6 +276,7 @@ pub fn connect_to_fireant(
                         mention.eq(value.mention),
                         positive.eq(value.votes.positive),
                         negative.eq(value.votes.negative),
+                        promotion.eq(value.promotion),
                     )
                 })
                 .collect::<Vec<_>>();

@@ -10,9 +10,49 @@ struct SentimentTransform {
     sentiment: i32,
 }
 
+struct LinkTransform {
+    symbol: String,
+    have_link: bool,
+}
+
 impl Mention {
     pub fn new() -> Self {
         Self {}
+    }
+
+    pub fn count_youtube_link_by_symbol(
+        &self,
+        result: &mut BTreeMap<String, Sentiment>,
+        posts: &Vec<fireant::Post>,
+    ) {
+        posts
+            .iter()
+            .map(move |post| {
+                let have_link = match &post.link {
+                    Some(link) => link.len() > 0,
+                    None => false,
+                };
+
+                post.taggedSymbols
+                    .iter()
+                    .map(move |tag| LinkTransform {
+                        have_link,
+                        symbol: tag.symbol.clone(),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(move |link| {
+                result
+                    .entry(link.symbol.clone())
+                    .or_insert(Sentiment::new())
+                    .promotion += 1;
+            })
+            .collect::<Vec<_>>();
     }
 
     pub fn count_mention_by_symbol(

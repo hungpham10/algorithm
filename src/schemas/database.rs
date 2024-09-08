@@ -1,4 +1,3 @@
-
 diesel::table! {
     tbl_crons (id) {
         id -> Int4,
@@ -14,6 +13,7 @@ diesel::table! {
         mention -> Integer,
         positive -> Integer,
         negative -> Integer,
+        promotion -> Integer,
         created_at -> Timestamp,
     }
 }

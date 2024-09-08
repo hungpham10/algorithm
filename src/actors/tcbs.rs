@@ -120,7 +120,7 @@ async fn fetch_orders(
     page: usize,
     page_size: usize,
 ) -> Vec<OrderResponse> {
-    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(1);
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(100);
     let client = Arc::new(
         ClientBuilder::new(reqwest::Client::new())
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))

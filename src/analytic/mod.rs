@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 #[graphql(description = "Count number of vote per sentiment comments from users")]
 pub struct Voting {
     pub positive: i32,
-    pub neutral:  i32,
+    pub neutral: i32,
     pub negative: i32,
 }
 
@@ -17,16 +17,20 @@ pub struct Sentiment {
 
     #[graphql(description = "Vote couting replying by user")]
     pub votes: Voting,
+
+    #[graphql(description = "")]
+    pub promotion: i32,
 }
 
 impl Sentiment {
     fn new() -> Self {
         Self {
-            votes:   Voting {
+            votes: Voting {
                 positive: 0,
-                neutral:  0,
+                neutral: 0,
                 negative: 0,
             },
+            promotion: 0,
             mention: 0,
         }
     }

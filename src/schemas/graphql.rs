@@ -32,10 +32,10 @@ impl Query {
         let res = ctx
             .dnse
             .send(GetOHCLCommand {
-                resolution: resolution,
-                stock: stock,
-                from: from,
-                to: to,
+                resolution,
+                stock,
+                from,
+                to,
             })
             .await
             .unwrap();
