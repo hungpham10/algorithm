@@ -47,10 +47,12 @@ impl Mention {
             .collect::<Vec<_>>()
             .into_iter()
             .map(move |link| {
-                result
-                    .entry(link.symbol.clone())
-                    .or_insert(Sentiment::new())
-                    .promotion += 1;
+                if link.have_link {
+                    result
+                        .entry(link.symbol.clone())
+                        .or_insert(Sentiment::new())
+                        .promotion += 1;
+                }
             })
             .collect::<Vec<_>>();
     }
