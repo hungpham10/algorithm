@@ -6,8 +6,11 @@ use diesel::r2d2::{Pool, PooledConnection, ConnectionManager};
 use diesel::pg::PgConnection;
 
 use crate::schemas::graphql::{Query, Mutation, Context};
+use crate::actors::cron::CronActor;
 use crate::actors::vps::VpsActor;
 use crate::actors::dnse::DnseActor;
+use crate::actors::tcbs::TcbsActor;
+use crate::actors::fireant::FireantActor;
 use crate::actors::redis::RedisActor;
 
 pub type SchemaGraphQL = RootNode<'static, Query, Mutation, EmptySubscription<Context>>;
@@ -25,23 +28,28 @@ pub fn connect_to_postgres_pool(pg_dsn: String) -> PgPool {
 
 pub fn create_graphql_schema() -> SchemaGraphQL {
     SchemaGraphQL::new(
-        Query {}, 
+        Query {},
         Mutation {},
         EmptySubscription::new(),
     )
 }
 
 pub fn create_graphql_context(
-    vps:   Arc<Addr<VpsActor>>,
-    dnse:  Arc<Addr<DnseActor>>,
-    pool:  Arc<PgPool>, 
-    cache: Arc<Addr<RedisActor>>,
+    cron:    Arc<Addr<CronActor>>,
+    vps:     Arc<Addr<VpsActor>>,
+    dnse:    Arc<Addr<DnseActor>>,
+    tcbs:    Arc<Addr<TcbsActor>>,
+    fireant: Arc<Addr<FireantActor>>,
+    pool:    Arc<PgPool>,
+    cache:   Arc<Addr<RedisActor>>,
 ) -> Context {
     Context {
-        vps:   vps,
-        dnse:  dnse,
-        pool:  pool,
-        cache: cache,
+        cron:    cron,
+        vps:     vps,
+        dnse:    dnse,
+        tcbs:    tcbs,
+        fireant: fireant,
+        pool:    pool,
+        cache:   cache,
     }
 }
-

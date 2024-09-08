@@ -62,8 +62,11 @@ async fn graphql(
     schema: web::Data<Arc<SchemaGraphQL>>,
     query: Option<web::Query<GraphQLRequest>>,
     body: Option<web::Json<GraphQLRequest>>,
+    cron: web::Data<Addr<CronActor>>,
     vps: web::Data<Addr<VpsActor>>,
+    tcbs: web::Data<Addr<TcbsActor>>,
     dnse: web::Data<Addr<DnseActor>>,
+    fireant: web::Data<Addr<FireantActor>>,
     pool: web::Data<PgPool>,
     cache: web::Data<Addr<RedisActor>>,
 ) -> Result<HttpResponse, Error> {
@@ -78,8 +81,11 @@ async fn graphql(
     };
 
     let ctx = create_graphql_context(
+        (*cron).clone(),
         (*vps).clone(),
         (*dnse).clone(),
+        (*tcbs).clone(),
+        (*fireant).clone(),
         (*pool).clone(),
         (*cache).clone(),
     );

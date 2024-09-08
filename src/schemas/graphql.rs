@@ -3,6 +3,9 @@ use juniper::{graphql_object, FieldResult};
 use std::sync::Arc;
 use chrono::Utc;
 
+use crate::actors::cron::{CronActor, PerformCommand};
+use crate::actors::tcbs::TcbsActor;
+use crate::actors::fireant::FireantActor;
 use crate::actors::dnse::{CandleStick, DnseActor, GetOHCLCommand};
 use crate::actors::redis::RedisActor;
 use crate::actors::vps::{UpdateStocksCommand, VpsActor};
@@ -10,8 +13,11 @@ use crate::helpers::PgPool;
 
 #[derive(Clone)]
 pub struct Context {
+    pub cron: Arc<Addr<CronActor>>,
     pub vps: Arc<Addr<VpsActor>>,
     pub dnse: Arc<Addr<DnseActor>>,
+    pub tcbs:    Arc<Addr<TcbsActor>>,
+    pub fireant: Arc<Addr<FireantActor>>,
     pub pool: Arc<PgPool>,
     pub cache: Arc<Addr<RedisActor>>,
 }
@@ -22,7 +28,14 @@ pub struct Query;
 
 #[graphql_object(context = Context)]
 impl Query {
-    async fn clock(ctx: &Context) -> FieldResult<String> {
+    async fn cron_perform(ctx: &Context, target: String) -> FieldResult<i32> {
+        Ok(ctx.cron.send(PerformCommand{ target })
+            .await
+            .unwrap()
+            .unwrap() as i32)
+    }
+
+    async fn status(ctx: &Context) -> FieldResult<String> {
         Ok(Utc::now().to_string())
     }
 

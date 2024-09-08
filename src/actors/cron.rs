@@ -169,6 +169,23 @@ impl Handler<TickCommand> for CronActor {
 }
 
 #[derive(Message, Debug)]
+#[rtype(result = "Result<usize, CronError>")]
+pub struct PerformCommand {
+    pub target: String
+}
+
+impl Handler<PerformCommand> for CronActor {
+    type Result = ResponseFuture<Result<usize, CronError>>;
+
+    fn handle(&mut self, msg: PerformCommand, _: &mut Self::Context) -> Self::Result {
+        let target = vec![msg.target];
+        let resolver = self.resolver.clone();
+
+        return Box::pin(async move { Ok(resolver.perform(target).await) });
+    }
+}
+
+#[derive(Message, Debug)]
 #[rtype(result = "Result<i64, CronError>")]
 pub struct ScheduleCommand {
     pub cron: String,
