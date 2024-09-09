@@ -232,20 +232,20 @@ pub fn connect_to_vps(
                         time: chrono::offset::Utc::now().into(),
 
                         // @NOTE: price
-                        PricePlus1: g4[0].parse::<f64>().unwrap(),
-                        PricePlus2: g5[0].parse::<f64>().unwrap(),
-                        PricePlus3: g5[0].parse::<f64>().unwrap(),
-                        PriceMinus1: g1[0].parse::<f64>().unwrap(),
-                        PriceMinus2: g2[0].parse::<f64>().unwrap(),
-                        PriceMinus3: g3[0].parse::<f64>().unwrap(),
+                        PricePlus1: g4[0].parse::<f64>().unwrap_or(0.0 as f64),
+                        PricePlus2: g5[0].parse::<f64>().unwrap_or(0.0 as f64),
+                        PricePlus3: g5[0].parse::<f64>().unwrap_or(0.0 as f64),
+                        PriceMinus1: g1[0].parse::<f64>().unwrap_or(0.0 as f64),
+                        PriceMinus2: g2[0].parse::<f64>().unwrap_or(0.0 as f64),
+                        PriceMinus3: g3[0].parse::<f64>().unwrap_or(0.0 as f64),
 
                         // @NOTE: volume
-                        VolumePlus1: g4[1].parse::<i64>().unwrap(),
-                        VolumePlus2: g5[1].parse::<i64>().unwrap(),
-                        VolumePlus3: g6[1].parse::<i64>().unwrap(),
-                        VolumeMinus1: g1[1].parse::<i64>().unwrap(),
-                        VolumeMinus2: g2[1].parse::<i64>().unwrap(),
-                        VolumeMinus3: g3[1].parse::<i64>().unwrap(),
+                        VolumePlus1: g4[1].parse::<i64>().unwrap_or(0 as i64),
+                        VolumePlus2: g5[1].parse::<i64>().unwrap_or(0 as i64),
+                        VolumePlus3: g6[1].parse::<i64>().unwrap_or(0 as i64),
+                        VolumeMinus1: g1[1].parse::<i64>().unwrap_or(0 as i64),
+                        VolumeMinus2: g2[1].parse::<i64>().unwrap_or(0 as i64),
+                        VolumeMinus3: g3[1].parse::<i64>().unwrap_or(0 as i64),
                     }
                     .into_query(point.sym.clone())
                 })
