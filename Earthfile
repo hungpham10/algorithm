@@ -24,7 +24,7 @@ server-release:
 	    apt install -y postgresql-client    && \
 	    apt install -y ca-certificates
 
-	ENTRYPOINT ["/app/endpoint.sh", "/algorithm", "/sql"]
+	ENTRYPOINT ["/app/endpoint.sh", "/algorithm", "/sql", "collect"]
 	EXPOSE 3000
 	SAVE IMAGE algorithm:latest
 

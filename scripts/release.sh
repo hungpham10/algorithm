@@ -35,9 +35,15 @@ function prepare() {
 }
 
 function boot() {
-  $1
+  $1 $@
 }
 
-prepare $2
-boot $1
+CMD=$1
+SQL=$2
+
+shift
+shift
+
+prepare $SQL
+boot $CMD $@
 exit $?

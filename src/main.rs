@@ -24,10 +24,10 @@ fn main() {
         .with_token(std::env::var("INFLUXDB_TOKEN").unwrap()),
     );
 
-    match std::env::args().nth(1).unwrap().as_str() {
+    match std::env::args().nth(2).unwrap().as_str() {
         "collect" => collect(tsdb, pool),
         "chat" => chat(),
         "ggcolab" => ggcolab(),
-        &_ => todo!(),
+        unknown => todo!("not yet implement {}", unknown),
     }.unwrap();
 }
