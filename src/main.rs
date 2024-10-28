@@ -7,6 +7,8 @@ use ::lib::cmds::{chat::chat, ggcolab::ggcolab, collect::collect};
 fn main() {
     dotenvy::dotenv().ok();
 
+    env_logger::init();
+
     let _guard = sentry::init((
         std::env::var("SENTRY_DSN").unwrap(),
         sentry::ClientOptions {
