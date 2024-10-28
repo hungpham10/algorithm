@@ -16,6 +16,9 @@ influxdb = { version = "0.7.2", features = ["derive"] }
 diesel = { version = "2.2.0", features = ["postgres", "r2d2", "chrono"] }
 redis = { version = "0.26.1", features = ["aio", "tokio-comp"] }
 
+# @NOTE: genetic algorithm
+rand = "0.8.5"
+
 # @NOTE: models
 juniper    = "0.16"
 serde      = "1.0.123"
@@ -42,3 +45,9 @@ tokio = { version = "1.26.0", features = ["full"] }
 reqwest = { version = "0.12.7", features = ["json", "blocking"] }
 reqwest-retry = "0.6.1"
 reqwest-middleware = "0.3.3"
+
+# @NOTE: client
+ctrlc = "3.4"
+
+# @NOTE: control to play some automate server from client
+playwright = "0.0.20"

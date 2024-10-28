@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use log::info;
 use reqwest::header::AUTHORIZATION;
 use reqwest_middleware::ClientWithMiddleware as HttpClient;
 use sentry::capture_error;
@@ -282,9 +283,16 @@ pub fn connect_to_fireant(
                 })
                 .collect::<Vec<_>>();
 
-            diesel::insert_into(tbl_fireant_mention)
+            match diesel::insert_into(tbl_fireant_mention)
                 .values(&rows)
-                .execute(&mut dbconn);
+                .execute(&mut dbconn) {
+                Ok(cnt) => {
+                    info!("Fireant: Insert {} to tbl_fireant_mention", cnt);
+                },
+                Err(error) => {
+                    capture_error(&error);
+                },
+            }
         }
     });
 

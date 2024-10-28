@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::future;
+use log::info;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use sentry::capture_error;
@@ -251,7 +252,14 @@ pub fn connect_to_vps(
                 })
                 .collect::<Vec<_>>();
 
-            tsdb.clone().query(order_insert).await;
+            match tsdb.clone().query(order_insert).await {
+                Ok(query) => {
+                    info!("VPS: Done query {}", query);
+                },
+                Err(error) => {
+                    capture_error(&error); 
+                }
+            }
         }
     });
 

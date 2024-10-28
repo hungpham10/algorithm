@@ -2,27 +2,97 @@ use std::sync::Arc;
 use std::fmt;
 use actix::prelude::*;
 use actix::Addr;
+use rand::Rng;
 use chrono::Utc;
 
+use crate::algorithm::genetic::{Genetic, Player};
 use crate::helpers::{PgConn, PgPool};
 use crate::actors::redis::RedisActor;
 use crate::actors::cron::CronResolver;
 
 
-/* @NOTE: how our simulator works?
- *  - Each player will have limited money
- *  - Money will be reduced over the time, we call it inflation, money will
- *  keep value but fee for burning will remain to simulate how player suviver
- *  with limited money
- *  - When order happens, players must wait 2.5 working days to sell stock
- *
- *  Which formular will be used?
- *  Decision(x) = Sigmoid(a*x + b)
- *
- */
+#[derive(Debug, Clone)]
+struct Candle {
+    open: f64,
+    close: f64,
+    high: f64,
+    low: f64,
+    volume: f64,
+}
 
 #[derive(Debug, Clone)]
-struct Player {
+struct Investor {
+    datasource: Arc<Vec<Candle>>,
+    arguments: Vec<f64>,
+    risks: Vec<f64>,
+    history: Vec<f64>,
+    stock: f64,
+    fund: f64,
+    money: f64,
+}
+
+impl Investor { 
+    fn new(
+        lookback_order_history: usize,
+        lookback_candle_history: usize, 
+        money: f64,
+        batch_money_for_fund: usize,
+        arg_gen_min: f64, arg_gen_max: f64,
+    ) -> Self {
+        Self {
+            arguments: (0..(5 * lookback_candle_history)).map(|_| rng.gen_range(arg_gen_min..arg_gen_max)).collect(),
+            risks: (0..lookback_order_history).map(|_| )
+            stock: 0.0,
+            fund: money / (batch_money_for_fund as f64),
+            money: money,
+        }
+    }
+
+    fn datasource(&mut self, datasource: Arc<Vec<Candle>>) {
+        self.datasource = datasource;
+    }
+
+    fn stock(&mut self, stock: f64) {
+        self.stock = stock
+    }
+
+    fn money(&mut self, money: f64) {
+        self.money = money
+    }
+}
+
+impl Player for Investor { 
+    fn initialize(&mut self) {
+        /* @NOTE: 
+         * f = a[1]*c[0] + a[1]*c[1] + ... + a[n]*c[n]
+         * m = m - c[0]*a[0]*tanh(f)
+         *
+         * a[5*i + 0]*d[i].o
+         * a[5*i + 1]*d[i].h
+         * a[5*i + 2]*d[i].c
+         * a[5*i + 3]*d[i].l
+         * a[5*i + 4]*d[i].v
+         */
+    }
+
+    fn evaluate(&self) -> f64 {
+        let mut f = 0.0 as f64;
+
+        // @TODO: do we need a flag to add support calculation with volume or not
+        for i in (0..self.arguments.len()).step_by(5) {
+            f += self.arguments[5*i + 0] * self.datasource[i].o +
+                 self.arguments[5*i + 1] * self.datasource[i].h +
+                 self.arguments[5*i + 2] * self.datasource[i].c +
+                 self.arguments[5*i + 3] * self.datasource[i].l +
+                 self.arguments[5*i + 4] * self.datasource[i].v;
+        }
+
+        // @TODO: how manage risk and reward
+
+        // @TODO: decision making
+        m -= f.tanh();
+        return f;
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -37,14 +107,30 @@ impl fmt::Display for SimulatorError {
 }
 
 pub struct SimulatorActor {
-    players: Vec<Player>,
+    controler: Arc<Genetic<Investor>>,
 }
 
 impl SimulatorActor {
-    fn new(n_player: usize) -> Self {
+    fn new(n_player: usize, lookback: usize, money: f64, min: f64, max: f64) -> Self {
         Self {
-            players: vec![Player{}; n_player],
+            controler: Arc::new(Genetic::<Investor>::new(
+                (0..n_player).map(|_| Investor::new(10, lookback, money, 100, min, max)).collect(),
+                n_player,
+                Self::crossover,
+            )),
         }
+    }
+
+    fn crossover(
+        controller: &Genetic<Investor>,
+        father_ctx: &Investor, father_id: usize, 
+        mother_ctx: &Investor, mother_id: usize,
+        session_id: i64,
+    ) -> Investor {
+        let mut rng = rand::thread_rng();
+        
+        Investor(
+        )
     }
 }
 
