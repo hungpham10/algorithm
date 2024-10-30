@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 use crate::actors::fireant;
 use crate::analytic::Sentiment;
 
-pub struct Mention {}
+pub struct Mention {
+}
 
 struct SentimentTransform {
     symbol: String,
@@ -25,7 +26,7 @@ impl Mention {
         result: &mut BTreeMap<String, Sentiment>,
         posts: &Vec<fireant::Post>,
     ) {
-        posts
+        let _ = posts
             .iter()
             .map(move |post| {
                 let have_link = match &post.link {
@@ -62,7 +63,7 @@ impl Mention {
         result: &mut BTreeMap<String, Sentiment>,
         posts: &Vec<fireant::Post>,
     ) {
-        posts
+        let _ = posts
             .iter()
             .map(move |post| {
                 post.taggedSymbols
@@ -89,7 +90,7 @@ impl Mention {
         result: &mut BTreeMap<String, Sentiment>,
         posts: &Vec<fireant::Post>,
     ) {
-        posts
+        let _ = posts
             .iter()
             .map(move |post| {
                 post.taggedSymbols
