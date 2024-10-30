@@ -16,7 +16,7 @@ use crate::actors::redis::{connect_to_redis, InfoCommand, RedisActor};
 use crate::actors::tcbs::{connect_to_tcbs, TcbsActor};
 use crate::actors::vps::{connect_to_vps, list_of_vn30, VpsActor};
 use crate::helpers::{
-    create_graphql_context, create_graphql_schema, PgPool, SchemaGraphQL,
+    connect_to_postgres_pool, create_graphql_context, create_graphql_schema, PgPool, SchemaGraphQL,
 };
 use crate::load::load_and_map_schedulers_with_resolvers;
 
@@ -110,11 +110,19 @@ async fn health(
 }
 
 #[actix_rt::main]
-pub async fn collect(
-    tsdb: Arc<InfluxClient>,
-    pool: Arc<PgPool>,
-) -> std::io::Result<()> {
+pub async fn collect() -> std::io::Result<()> {
+    env_logger::init();
+
     let mut resolver = CronResolver::new();
+    let pool = connect_to_postgres_pool(std::env::var("POSTGRES_DSN").unwrap());
+    let tsdb = Arc::new(
+        InfluxClient::new(
+            std::env::var("INFLUXDB_URI").unwrap(),
+            std::env::var("INFLUXDB_BUCKET").unwrap(),
+        )
+        .with_token(std::env::var("INFLUXDB_TOKEN").unwrap()),
+    );
+
     let cache = connect_to_redis(std::env::var("REDIS_DSN").unwrap()).await;
     let schema = std::sync::Arc::new(create_graphql_schema());
     let dnse = connect_to_dnse();
