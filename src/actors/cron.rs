@@ -2,10 +2,13 @@ use std::boxed::Box;
 use std::clone::Clone;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::time::Instant;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
+
+use log::{info, debug, error};
 
 use chrono::{TimeZone, Utc};
 
@@ -44,16 +47,21 @@ impl CronResolver {
         let mut cnt = routes.len();
 
         for route in routes.iter() {
+            debug!("Perform route {}", route);
+
+            let start = Instant::now();
+
             match self.resolvers.get(route) {
                 Some(callback) => {
                     callback().await;
+
+                    debug!("Perform route {} took {:?}", route, start.elapsed());
                 }
                 None => {
                     cnt -= 1;
                 }
             }
         }
-
         return cnt;
     }
 

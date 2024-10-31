@@ -1,7 +1,6 @@
 use crate::actors::cron::{CronActor, ScheduleCommand};
 use crate::helpers::PgPool;
 
-use std::sync::Arc;
 use actix::Addr;
 use diesel::prelude::*;
 

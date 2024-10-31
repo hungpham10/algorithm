@@ -3,8 +3,10 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+use log::{info, debug};
+
 use futures::future;
-use log::info;
+
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use sentry::capture_error;
@@ -218,6 +220,8 @@ pub fn connect_to_vps(
                     Vec::<Price>::new()
                 }
             };
+            debug!("collect {} datapoints", datapoints.len());
+
             let order_insert = datapoints
                 .iter()
                 .map(|point| {
@@ -251,6 +255,8 @@ pub fn connect_to_vps(
                     .into_query(point.sym.clone())
                 })
                 .collect::<Vec<_>>();
+
+            debug!("convert {} datapoints to {} queries", datapoints.len(), order_insert.len());
 
             match tsdb.clone().query(order_insert).await {
                 Ok(query) => {
