@@ -2,7 +2,7 @@ use std::boxed::Box;
 use std::clone::Clone;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -34,12 +34,14 @@ type AsyncCallback = Box<dyn Fn() -> Pin<Box<dyn Future<Output = ()>>>>;
 
 pub struct CronResolver {
     resolvers: BTreeMap<String, AsyncCallback>,
+    timeout: u64,
 }
 
 impl CronResolver {
     pub fn new() -> Self {
         CronResolver {
             resolvers: BTreeMap::new(),
+            timeout: 30,
         }
     }
 
@@ -53,7 +55,12 @@ impl CronResolver {
 
             match self.resolvers.get(route) {
                 Some(callback) => {
-                    callback().await;
+                    tokio::time::timeout(
+                        Duration::from_secs(self.timeout), 
+                        callback(),
+                    )
+                    .await
+                    .ok();
 
                     debug!("Perform route {} took {:?}", route, start.elapsed());
                 }
