@@ -23,7 +23,7 @@ use crate::helpers::PgPool;
 pub struct Task {
     id: i64,
     timer: i64,
-    timeout: i64,
+    timeout: i32,
     route: String,
     interval: String,
 }
@@ -44,7 +44,7 @@ impl CronResolver {
         }
     }
 
-    pub async fn perform(&self, routes: Vec<String>, timeouts: Vec<u64>) -> usize {
+    pub async fn perform(&self, routes: Vec<String>, timeouts: Vec<i32>) -> usize {
         let mut cnt = routes.len();
 
         for (i, route) in routes.iter().enumerate() {
@@ -55,7 +55,7 @@ impl CronResolver {
             match self.resolvers.get(route) {
                 Some(callback) => {
                     tokio::time::timeout(
-                        Duration::from_secs(timeouts[i]), 
+                        Duration::from_secs(timeouts[i] as u64), 
                         callback(),
                     )
                     .await
@@ -139,7 +139,7 @@ impl Handler<TickCommand> for CronActor {
 
     fn handle(&mut self, _msg: TickCommand, _: &mut Self::Context) -> Self::Result {
         let mut targets = Vec::<String>::new();
-        let mut timeouts = Vec::<u64>::new();
+        let mut timeouts = Vec::<i32>::new();
         let clock_now = Utc::now();
 
         if clock_now.timestamp() == self.clock {
@@ -187,7 +187,8 @@ impl Handler<TickCommand> for CronActor {
 #[derive(Message, Debug)]
 #[rtype(result = "Result<usize, CronError>")]
 pub struct PerformCommand {
-    pub target: String
+    pub target: String,
+    pub timeout: i32,
 }
 
 impl Handler<PerformCommand> for CronActor {
@@ -195,9 +196,10 @@ impl Handler<PerformCommand> for CronActor {
 
     fn handle(&mut self, msg: PerformCommand, _: &mut Self::Context) -> Self::Result {
         let target = vec![msg.target];
+        let timeout = vec![msg.timeout];
         let resolver = self.resolver.clone();
 
-        return Box::pin(async move { Ok(resolver.perform(target).await) });
+        return Box::pin(async move { Ok(resolver.perform(target, timeout).await) });
     }
 }
 
@@ -205,7 +207,7 @@ impl Handler<PerformCommand> for CronActor {
 #[rtype(result = "Result<i64, CronError>")]
 pub struct ScheduleCommand {
     pub cron: String,
-    pub timeout: i64,
+    pub timeout: i32,
     pub route: String,
 }
 

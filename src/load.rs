@@ -7,7 +7,7 @@ use diesel::prelude::*;
 #[derive(Queryable, Clone)]
 struct Cron {
     id: i32,
-    timeout: i64,
+    timeout: i32,
     interval: String,
     resolver: String,
 }
