@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
-use std::error;
 use std::fmt;
+use std::error;
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use log::info;
+use log::{info, error};
 use reqwest::header::AUTHORIZATION;
 use reqwest_middleware::ClientWithMiddleware as HttpClient;
 use sentry::capture_error;
@@ -33,7 +33,7 @@ pub struct Symbol {
     pub symbol: String,
     pub price: Option<f32>,
     pub change: Option<f32>,
-    pub percentChange: f32,
+    pub percentChange: Option<f32>,
 }
 
 #[allow(non_snake_case)]
@@ -255,15 +255,17 @@ pub fn connect_to_fireant(
             {
                 Ok(resp) => match resp {
                     Ok(sentiments) => sentiments,
-                    Err(error) => {
-                        capture_error(&error);
+                    Err(err) => {
+                        capture_error(&err);
+                        error!("{}", err);
 
                         // @NOTE: ignore this error, only return empty BTreeMap
                         BTreeMap::<String, Sentiment>::new()
                     }
                 },
-                Err(error) => {
-                    capture_error(&error);
+                Err(err) => {
+                    capture_error(&err);
+                    error!("{}", err);
 
                     // @NOTE: ignore this error, only return empty BTreeMap
                     BTreeMap::<String, Sentiment>::new()
@@ -282,7 +284,7 @@ pub fn connect_to_fireant(
                     )
                 })
                 .collect::<Vec<_>>();
-
+    
             match diesel::insert_into(tbl_fireant_mention)
                 .values(&rows)
                 .execute(&mut dbconn) {
