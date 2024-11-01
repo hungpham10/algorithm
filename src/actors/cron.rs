@@ -23,6 +23,7 @@ use crate::helpers::PgPool;
 pub struct Task {
     id: i64,
     timer: i64,
+    timeout: i64,
     route: String,
     interval: String,
 }
@@ -34,21 +35,19 @@ type AsyncCallback = Box<dyn Fn() -> Pin<Box<dyn Future<Output = ()>>>>;
 
 pub struct CronResolver {
     resolvers: BTreeMap<String, AsyncCallback>,
-    timeout: u64,
 }
 
 impl CronResolver {
     pub fn new() -> Self {
         CronResolver {
             resolvers: BTreeMap::new(),
-            timeout: 30,
         }
     }
 
-    pub async fn perform(&self, routes: Vec<String>) -> usize {
+    pub async fn perform(&self, routes: Vec<String>, timeouts: Vec<u64>) -> usize {
         let mut cnt = routes.len();
 
-        for route in routes.iter() {
+        for (i, route) in routes.iter().enumerate() {
             debug!("Perform route {}", route);
 
             let start = Instant::now();
@@ -56,7 +55,7 @@ impl CronResolver {
             match self.resolvers.get(route) {
                 Some(callback) => {
                     tokio::time::timeout(
-                        Duration::from_secs(self.timeout), 
+                        Duration::from_secs(timeouts[i]), 
                         callback(),
                     )
                     .await
@@ -140,6 +139,7 @@ impl Handler<TickCommand> for CronActor {
 
     fn handle(&mut self, _msg: TickCommand, _: &mut Self::Context) -> Self::Result {
         let mut targets = Vec::<String>::new();
+        let mut timeouts = Vec::<u64>::new();
         let clock_now = Utc::now();
 
         if clock_now.timestamp() == self.clock {
@@ -174,12 +174,13 @@ impl Handler<TickCommand> for CronActor {
 
             if self.timekeeper.pop() {
                 targets.push(target.route.clone());
+                timeouts.push(target.timeout.clone());
             }
         }
 
         self.clock = clock_now.timestamp();
 
-        return Box::pin(async move { Ok(resolver.perform(targets).await) });
+        return Box::pin(async move { Ok(resolver.perform(targets, timeouts).await) });
     }
 }
 
@@ -204,6 +205,7 @@ impl Handler<PerformCommand> for CronActor {
 #[rtype(result = "Result<i64, CronError>")]
 pub struct ScheduleCommand {
     pub cron: String,
+    pub timeout: i64,
     pub route: String,
 }
 
@@ -217,6 +219,7 @@ impl Handler<ScheduleCommand> for CronActor {
         if let Ok(next) = cron_parser::parse(msg.cron.as_str(), &now) {
             self.timekeeper.push(Task {
                 id: id as i64,
+                timeout: msg.timeout,
                 timer: next.timestamp() - now.timestamp(),
                 route: msg.route.clone(),
                 interval: msg.cron.clone(),

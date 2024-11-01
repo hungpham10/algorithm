@@ -7,6 +7,7 @@ use diesel::prelude::*;
 #[derive(Queryable, Clone)]
 struct Cron {
     id: i32,
+    timeout: i64,
     interval: String,
     resolver: String,
 }
@@ -21,6 +22,7 @@ pub async fn load_and_map_schedulers_with_resolvers(pool: PgPool, scheduler: Add
         let _ = scheduler
             .send(ScheduleCommand {
                 cron: cron.interval,
+                timeout: cron.timeout,
                 route: cron.resolver,
             })
             .await

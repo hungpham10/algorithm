@@ -1,6 +1,7 @@
 diesel::table! {
     tbl_crons (id) {
         id -> Int4,
+        timeout -> Int4,
         interval -> Varchar,
         resolver -> Varchar,
     }

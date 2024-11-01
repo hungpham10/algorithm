@@ -1,0 +1,1 @@
+ALTER TABLE public.tbl_crons ADD COLUMN IF NOT EXISTS timeout INT4 DEFAULT 30;
