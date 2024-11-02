@@ -6,17 +6,17 @@ build-backend:
 	FROM rust:latest
 
 	COPY . .
-	RUN cd backend && cargo build --release
+	RUN cd ./backend && cargo build --release
 
-	SAVE ARTIFACT ./backend/target/release/algorithm AS LOCAL algorithm
+	SAVE ARTIFACT ./target/release/algorithm AS LOCAL algorithm
 
 build-frontend:
 	FROM node:23.0.0-bullseye
 
 	COPY . .
-	RUN cd frontend && npm install -g pnpm
-	RUN cd frontend && pnpm i
-	RUN cd frontend && pnpm run build
+	RUN cd ./frontend && npm install -g pnpm
+	RUN cd ./frontend && pnpm i
+	RUN cd ./frontend && pnpm run build
 
 	SAVE ARTIFACT ./frontend/dist AS LOCAL dist
 
@@ -38,4 +38,6 @@ server-release:
 	SAVE IMAGE algorithm:latest
 
 release:
+	BUILD +build-backend
+	BUILD +build-frontend
 	BUILD +server-release
