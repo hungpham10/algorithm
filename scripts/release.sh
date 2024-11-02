@@ -35,7 +35,10 @@ function prepare() {
 }
 
 function boot() {
-  $1 $@
+  CMD=$1
+
+  shift
+  $CMD $@
 }
 
 CMD=$1

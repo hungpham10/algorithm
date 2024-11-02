@@ -2,20 +2,29 @@ VERSION 0.7
 FROM rust:latest
 WORKDIR /app
 
-deps:
+build-backend:
+	FROM rust:latest
+
 	COPY . .
+	RUN cd backend && cargo build --release
 
-build:
-	FROM +deps
+	SAVE ARTIFACT ./backend/target/release/algorithm AS LOCAL algorithm
 
-	RUN cargo build --release
+build-frontend:
+	FROM node:23.0.0-bullseye
 
-	SAVE ARTIFACT ./target/release/algorithm AS LOCAL algorithm
+	COPY . .
+	RUN cd frontend && npm install -g pnpm
+	RUN cd frontend && pnpm i
+	RUN cd frontend && pnpm run build
+
+	SAVE ARTIFACT ./frontend/dist AS LOCAL dist
 
 server-release:
 	FROM ubuntu:latest
 
-	COPY +build/algorithm .
+	COPY +build-backend/algorithm ./server
+	COPY +build-frontend/dist ./static
 	COPY sql/system ./sql
 	COPY scripts/release.sh /app/endpoint.sh
 	
@@ -24,7 +33,7 @@ server-release:
 	    apt install -y postgresql-client    && \
 	    apt install -y ca-certificates
 
-	ENTRYPOINT ["/app/endpoint.sh", "/algorithm", "/sql", "collect"]
+	ENTRYPOINT ["/app/endpoint.sh", "./server", "/sql", "collect"]
 	EXPOSE 3000
 	SAVE IMAGE algorithm:latest
 

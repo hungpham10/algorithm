@@ -1,56 +1,6 @@
-[package]
-name = "algorithm"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+resolver = "2"
+members = ["backend"]
 
-[lib]
-name = "lib"
-path = "src/lib.rs"
-
-[profile.release]
-debug = true
-
-[dependencies]
-# @NOTE: database and cache
-influxdb = { version = "0.7.2", default-features = false, features = ["derive", "serde", "h1-client"] }
-diesel = { version = "2.2.0", features = ["postgres", "r2d2", "chrono"] }
-redis = { version = "0.26.1", features = ["aio", "tokio-comp"] }
-
-# @NOTE: genetic algorithm
-rand = "0.8.5"
-
-# @NOTE: models
-juniper    = "0.16"
-serde      = "1.0.123"
-serde_json = "1.0.44"
-
-# @NOTE: configuration 
-hypertune = "0.5.1"
-
-# @NOTE: web
-actix-web    = { version = "4", features = ["openssl"] }
-actix-rt     = "2.10.0"
-sentry       = "0.34.0"
-sentry-actix = "0.34.0"
-openssl      = "0.10.28"
-actix        = "0.13.5"
-dotenvy      = "0.15.7"
-env_logger   = "0.8.2"
-
-# @NOTE: schedule tasks
-tokio_schedule = "0.3.0"
-cron-parser = "0.8.1"
-chrono-tz = "0.9.0"
-chrono = "0.4.22"
-futures = "0.3"
-log = "0.4.22"
-tokio = { version = "1.26.0", features = ["full"] }
-reqwest = { version = "0.12.7", features = ["json", "blocking"] }
-reqwest-retry = "0.6.1"
-reqwest-middleware = "0.3.3"
-
-# @NOTE: client
-ctrlc = "3.4"
-
-# @NOTE: control to play some automate server from client
-playwright = "0.0.20"
+[patch.crates-io]
+rquickjs-core = { git = "https://github.com/stefan-gorules/rquickjs.git", branch = "master" }
