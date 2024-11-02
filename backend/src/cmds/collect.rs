@@ -1,9 +1,11 @@
 use actix::Addr;
+use actix_files::{NamedFile, Files};
 use actix_web::{http::Method, web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use influxdb::Client as InfluxClient;
 use juniper::http::{graphiql::graphiql_source, GraphQLRequest};
 use serde::{Deserialize, Serialize};
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::Utc;
@@ -109,6 +111,15 @@ async fn health(
     Ok(HttpResponse::Ok().body("OK").into())
 }
 
+async fn simulate() -> actix_web::Result<HttpResponse> {
+    Ok(HttpResponse::Ok().body("OK").into())
+}
+
+async fn serve_static_files(req: HttpRequest) -> actix_web::Result<NamedFile> {
+    let path: PathBuf = req.match_info().query("filename").parse().unwrap();
+    Ok(NamedFile::open(path)?)
+}
+
 #[actix_rt::main]
 pub async fn collect() -> std::io::Result<()> {
     env_logger::init();
@@ -160,7 +171,9 @@ pub async fn collect() -> std::io::Result<()> {
             .app_data(web::Data::new(fireant.clone()))
             .route("/health", web::get().to(health))
             .route("/graphql", web::post().to(graphql))
-            .route("/", web::get().to(playground))
+            .route("/api/v1/simulate", web::post().to(simulate))
+            .route("/playground", web::get().to(playground))
+            .service(Files::new("/", "./static").index_file("index.html"))
     })
     .bind(("0.0.0.0", 3000))?
     .run()

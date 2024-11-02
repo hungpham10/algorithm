@@ -178,7 +178,7 @@ pub fn connect_to_tcbs(
     let actor = TcbsActor::new(stocks).start();
     let tcbs = actor.clone();
 
-    resolver.resolve("tcbs.get_order_command".to_string(), move || {
+    resolver.resolve("tcbs.get_order_command".to_string(), move |from, to| {
         let tcbs = tcbs.clone();
         let pool = pool.clone();
 

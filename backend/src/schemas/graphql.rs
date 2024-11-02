@@ -28,9 +28,15 @@ pub struct Query;
 
 #[graphql_object(context = Context)]
 impl Query {
-    async fn cron_perform(ctx: &Context, target: String, timeout: i32) -> FieldResult<i32> {
+    async fn cron_perform(
+        ctx: &Context, 
+        target: String, 
+        timeout: i32,
+        from: i32,
+        to: i32,
+    ) -> FieldResult<i32> {
         Ok(ctx.cron
-            .send(PerformCommand { target, timeout })
+            .send(PerformCommand { target, timeout, from, to })
             .await
             .unwrap()
             .unwrap() as i32)

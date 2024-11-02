@@ -11,7 +11,7 @@ fn main() {
         },
     ));
 
-    match std::env::args().nth(2).unwrap().as_str() {
+    match std::env::args().nth(1).unwrap().as_str() {
         "collect" => collect(),
         "chat" => chat(),
         "ggcolab" => ggcolab(),

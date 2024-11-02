@@ -240,7 +240,7 @@ pub fn connect_to_fireant(
     let actor = FireantActor::new(format!("Bearer {}", token)).start();
     let fireant = actor.clone();
 
-    resolver.resolve("fireant.count_sentiment_per_stock".to_string(), move || {
+    resolver.resolve("fireant.count_sentiment_per_stock".to_string(), move |from, to| {
         let fireant = fireant.clone();
         let pool = pool.clone();
         let time = Utc::now().timestamp();

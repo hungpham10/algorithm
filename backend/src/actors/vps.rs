@@ -206,7 +206,7 @@ pub fn connect_to_vps(
     let actor = VpsActor::new(stocks).start();
     let vps = actor.clone();
 
-    resolver.resolve("vps.get_price_command".to_string(), move || {
+    resolver.resolve("vps.get_price_command".to_string(), move |from, to| {
         let vps = vps.clone();
         let tsdb = tsdb.clone();
 

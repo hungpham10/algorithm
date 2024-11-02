@@ -31,7 +31,7 @@ pub struct Task {
 unsafe impl Send for Task {}
 unsafe impl Sync for Task {}
 
-type AsyncCallback = Box<dyn Fn() -> Pin<Box<dyn Future<Output = ()>>>>;
+type AsyncCallback = Box<dyn Fn(Option<i32>, Option<i32>) -> Pin<Box<dyn Future<Output = ()>>>>;
 
 pub struct CronResolver {
     resolvers: BTreeMap<String, AsyncCallback>,
@@ -44,7 +44,13 @@ impl CronResolver {
         }
     }
 
-    pub async fn perform(&self, routes: Vec<String>, timeouts: Vec<i32>) -> usize {
+    pub async fn perform(
+        &self, 
+        routes: Vec<String>, 
+        timeouts: Vec<i32>, 
+        from: Option<i32>, 
+        to: Option<i32>,
+    ) -> usize {
         let mut cnt = routes.len();
 
         for (i, route) in routes.iter().enumerate() {
@@ -56,7 +62,7 @@ impl CronResolver {
                 Some(callback) => {
                     tokio::time::timeout(
                         Duration::from_secs(timeouts[i] as u64), 
-                        callback(),
+                        callback(from, to),
                     )
                     .await
                     .ok();
@@ -73,12 +79,12 @@ impl CronResolver {
 
     pub fn resolve<C, F>(&mut self, route: String, callback: C)
     where
-        C: Fn() -> F,
+        C: Fn(Option<i32>, Option<i32>) -> F,
         C: 'static,
         F: Future<Output = ()> + 'static,
     {
         self.resolvers
-            .insert(route.clone(), Box::new(move || Box::pin(callback())));
+            .insert(route.clone(), Box::new(move |from, to| Box::pin(callback(from, to))));
     }
 }
 
@@ -180,7 +186,7 @@ impl Handler<TickCommand> for CronActor {
 
         self.clock = clock_now.timestamp();
 
-        return Box::pin(async move { Ok(resolver.perform(targets, timeouts).await) });
+        return Box::pin(async move { Ok(resolver.perform(targets, timeouts, None, None).await) });
     }
 }
 
@@ -189,6 +195,8 @@ impl Handler<TickCommand> for CronActor {
 pub struct PerformCommand {
     pub target: String,
     pub timeout: i32,
+    pub from: i32,
+    pub to: i32,
 }
 
 impl Handler<PerformCommand> for CronActor {
@@ -199,7 +207,9 @@ impl Handler<PerformCommand> for CronActor {
         let timeout = vec![msg.timeout];
         let resolver = self.resolver.clone();
 
-        return Box::pin(async move { Ok(resolver.perform(target, timeout).await) });
+        return Box::pin(async move { 
+            Ok(resolver.perform(target, timeout, Some(msg.from), Some(msg.to)).await) 
+        });
     }
 }
 
