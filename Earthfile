@@ -25,9 +25,14 @@ server-release:
 
 	COPY +build-backend/algorithm ./server
 	COPY +build-frontend/dist ./static
+	COPY assets assets
 	COPY sql/system ./sql
 	COPY scripts/release.sh /app/endpoint.sh
-	
+
+	RUN cp -av ./assets/honeygain/$(uname -m)/honeygain ./honeygain || true
+	RUN cp -av ./assets/honeygain/$(uname -m)/libhg.so.* /usr/lib/ || true
+	RUN cp -av ./assets/honeygain/$(uname -m)/libmsquic.so.* /usr/lib/ || true
+	RUN rm -fr ./assets
 
 	RUN apt update                          && \
 	    apt install -y postgresql-client    && \

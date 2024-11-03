@@ -1,4 +1,7 @@
+use std::os::unix::process;
+
 use crate::actors::cron::{CronActor, ScheduleCommand};
+use crate::actors::process::{ProcessActor, RunCommand};
 use crate::helpers::PgPool;
 
 use actix::Addr;
@@ -10,6 +13,13 @@ struct Cron {
     timeout: i32,
     interval: String,
     resolver: String,
+}
+#[derive(Queryable, Clone)]
+struct Process {
+    id: i32,
+    instance: String,
+    command: String,
+    arguments: String,
 }
 
 pub async fn load_and_map_schedulers_with_resolvers(pool: PgPool, scheduler: Addr<CronActor>) {
@@ -27,5 +37,24 @@ pub async fn load_and_map_schedulers_with_resolvers(pool: PgPool, scheduler: Add
             })
             .await
             .unwrap();
+    }
+}
+
+pub async fn load_sub_processes(pool: PgPool, target: String, manager: Addr<ProcessActor>) {
+    use crate::schemas::database::tbl_processes::dsl::*;
+
+    let mut dbconn = pool.get().unwrap();
+    let processes = tbl_processes
+        .filter(instance.eq(target))
+        .limit(10)
+        .load::<Process>(&mut dbconn)
+        .unwrap();
+    for process in processes {
+        let _ = manager.send(RunCommand{ 
+            command: process.command, 
+            arguments: process.arguments.split(' ').map(String::from).collect(),
+        })
+        .await
+        .unwrap();
     }
 }

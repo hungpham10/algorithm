@@ -29,3 +29,12 @@ diesel::table! {
         ordered_at -> Timestamp,
     }
 }
+
+diesel::table! {
+    tbl_processes (id) {
+        id -> Int4,
+        instance -> Varchar,
+        command -> Varchar,
+        arguments -> Varchar,
+    }
+}

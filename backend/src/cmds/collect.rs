@@ -1,11 +1,11 @@
 use actix::Addr;
-use actix_files::{NamedFile, Files};
+use actix_files::Files;
 use actix_web::{http::Method, web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use influxdb::Client as InfluxClient;
 use juniper::http::{graphiql::graphiql_source, GraphQLRequest};
+use log::info;
 use serde::{Deserialize, Serialize};
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::Utc;
@@ -14,13 +14,14 @@ use tokio_schedule::{every, Job};
 use crate::actors::cron::{connect_to_cron, CronActor, CronResolver, TickCommand};
 use crate::actors::dnse::{connect_to_dnse, DnseActor};
 use crate::actors::fireant::{connect_to_fireant, FireantActor};
+use crate::actors::process::{connect_to_process_manager, RunCommand};
 use crate::actors::redis::{connect_to_redis, InfoCommand, RedisActor};
 use crate::actors::tcbs::{connect_to_tcbs, TcbsActor};
 use crate::actors::vps::{connect_to_vps, list_of_vn30, VpsActor};
 use crate::helpers::{
     connect_to_postgres_pool, create_graphql_context, create_graphql_schema, PgPool, SchemaGraphQL,
 };
-use crate::load::load_and_map_schedulers_with_resolvers;
+use crate::load::{load_and_map_schedulers_with_resolvers, load_sub_processes};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphQlErrorLocation {
@@ -115,16 +116,12 @@ async fn simulate() -> actix_web::Result<HttpResponse> {
     Ok(HttpResponse::Ok().body("OK").into())
 }
 
-async fn serve_static_files(req: HttpRequest) -> actix_web::Result<NamedFile> {
-    let path: PathBuf = req.match_info().query("filename").parse().unwrap();
-    Ok(NamedFile::open(path)?)
-}
-
 #[actix_rt::main]
 pub async fn collect() -> std::io::Result<()> {
     env_logger::init();
 
     let mut resolver = CronResolver::new();
+    let processer = connect_to_process_manager();
     let pool = connect_to_postgres_pool(std::env::var("POSTGRES_DSN").unwrap());
     let tsdb = Arc::new(
         InfluxClient::new(
@@ -149,6 +146,7 @@ pub async fn collect() -> std::io::Result<()> {
     let background = cron.clone();
 
     load_and_map_schedulers_with_resolvers(pool.clone(), cron.clone()).await;
+    load_sub_processes(pool.clone(), std::env::var("INSTANCE").unwrap(), processer).await;
 
     // @NOTE: mapping cronjobs
     actix_rt::spawn(async move {
