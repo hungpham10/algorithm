@@ -32,11 +32,11 @@ impl Query {
         ctx: &Context, 
         target: String, 
         timeout: i32,
-        from: i32,
-        to: i32,
+        from: Option<i32>,
+        to: Option<i32>,
     ) -> FieldResult<i32> {
         Ok(ctx.cron
-            .send(PerformCommand { target, timeout, from, to })
+            .send(PerformCommand { target, timeout, from: from.unwrap_or(0), to: to.unwrap_or(0) })
             .await
             .unwrap()
             .unwrap() as i32)
