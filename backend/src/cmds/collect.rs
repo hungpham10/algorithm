@@ -3,7 +3,6 @@ use actix_files::Files;
 use actix_web::{http::Method, web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use influxdb::Client as InfluxClient;
 use juniper::http::{graphiql::graphiql_source, GraphQLRequest};
-use log::info;
 use serde::{Deserialize, Serialize};
 
 use std::sync::Arc;
@@ -14,14 +13,14 @@ use tokio_schedule::{every, Job};
 use crate::actors::cron::{connect_to_cron, CronActor, CronResolver, TickCommand};
 use crate::actors::dnse::{connect_to_dnse, DnseActor};
 use crate::actors::fireant::{connect_to_fireant, FireantActor};
-use crate::actors::process::{connect_to_process_manager, RunCommand};
+use crate::actors::process::{connect_to_process_manager, ProcessActor, RunCommand};
 use crate::actors::redis::{connect_to_redis, InfoCommand, RedisActor};
 use crate::actors::tcbs::{connect_to_tcbs, TcbsActor};
 use crate::actors::vps::{connect_to_vps, list_of_vn30, VpsActor};
 use crate::helpers::{
     connect_to_postgres_pool, create_graphql_context, create_graphql_schema, PgPool, SchemaGraphQL,
 };
-use crate::load::{load_and_map_schedulers_with_resolvers, load_sub_processes};
+use crate::load::{load_and_map_schedulers_with_resolvers, load_sub_processes_from_pgpool};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphQlErrorLocation {
@@ -94,22 +93,27 @@ async fn graphql(
 async fn health(
     cache: web::Data<Addr<RedisActor>>,
     cron: web::Data<Addr<CronActor>>,
+    processer: web::Data<Arc<Addr<ProcessActor>>>,
     vps: web::Data<Addr<VpsActor>>,
     dnse: web::Data<Addr<DnseActor>>,
     tcbs: web::Data<Addr<TcbsActor>>,
     fireant: web::Data<Addr<FireantActor>>,
 ) -> actix_web::Result<HttpResponse> {
-    let _ = cache.send(InfoCommand).await.unwrap().unwrap().unwrap();
-    let _ = cron.send(crate::actors::cron::HealthCommand).await.unwrap();
-    let _ = vps.send(crate::actors::vps::HealthCommand).await.unwrap();
-    let _ = dnse.send(crate::actors::dnse::HealthCommand).await.unwrap();
-    let _ = tcbs.send(crate::actors::tcbs::HealthCommand).await.unwrap();
-    let _ = fireant
+    let cache_status = cache.send(InfoCommand).await.unwrap().unwrap().unwrap();
+    let cron_tick = cron.send(crate::actors::cron::HealthCommand).await.unwrap();
+    let vps_ok = vps.send(crate::actors::vps::HealthCommand).await.unwrap();
+    let dnse_ok = dnse.send(crate::actors::dnse::HealthCommand).await.unwrap();
+    let tcbs_ok = tcbs.send(crate::actors::tcbs::HealthCommand).await.unwrap();
+    let fireant_ok = fireant
         .send(crate::actors::fireant::HealthCommand)
         .await
         .unwrap();
 
-    Ok(HttpResponse::Ok().body("OK").into())
+    if cache_status.len() > 0 && cron_tick > 0 && vps_ok && dnse_ok && tcbs_ok && fireant_ok {
+        Ok(HttpResponse::Ok().body("OK").into())
+    } else {
+        Ok(HttpResponse::ServiceUnavailable().body("Failed").into())
+    }
 }
 
 async fn simulate() -> actix_web::Result<HttpResponse> {
@@ -142,11 +146,11 @@ pub async fn collect() -> std::io::Result<()> {
         cache.clone().into(),
         std::env::var("FIREANT_TOKEN").unwrap(),
     );
-    let cron = connect_to_cron(resolver.into(), pool.clone().into(), cache.clone().into());
-    let background = cron.clone();
+    let cron = connect_to_cron(resolver.into());
+    let background: Addr<CronActor> = cron.clone();
 
     load_and_map_schedulers_with_resolvers(pool.clone(), cron.clone()).await;
-    load_sub_processes(pool.clone(), std::env::var("INSTANCE").unwrap(), processer).await;
+    load_sub_processes_from_pgpool(pool.clone(), std::env::var("INSTANCE").unwrap(), processer.clone()).await;
 
     // @NOTE: mapping cronjobs
     actix_rt::spawn(async move {
@@ -167,6 +171,7 @@ pub async fn collect() -> std::io::Result<()> {
             .app_data(web::Data::new(dnse.clone()))
             .app_data(web::Data::new(tcbs.clone()))
             .app_data(web::Data::new(fireant.clone()))
+            .app_data(web::Data::new(processer.clone()))
             .route("/health", web::get().to(health))
             .route("/graphql", web::post().to(graphql))
             .route("/api/v1/simulate", web::post().to(simulate))

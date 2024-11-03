@@ -1,5 +1,8 @@
 use std::error;
 use std::fmt;
+use std::io::BufReader;
+use std::io::Read;
+use std::sync::Arc;
 use std::process::{Command, Child, Stdio};
 
 use log::{info, debug, error};
@@ -8,6 +11,8 @@ use sentry::capture_error;
 
 use actix::prelude::*;
 use actix::Addr;
+
+use crate::schemas::database::tbl_processes::arguments;
 
 #[derive(Debug, Clone)]
 pub struct ProcessError {
@@ -24,12 +29,16 @@ impl error::Error for ProcessError {}
 
 pub struct ProcessActor {
     processes: Vec<Child>,
+    commands: Vec<String>,
+    arguments: Vec<Vec<String>>,
 }
 
 impl ProcessActor {
     fn new() -> Self {
         Self {
             processes: Vec::<Child>::new(),
+            commands: Vec::<String>::new(),
+            arguments: Vec::<Vec<String>>::new(),
         }
     }
 }
@@ -46,7 +55,29 @@ impl Handler<HealthCommand> for ProcessActor {
     type Result = ResponseFuture<bool>;
 
     fn handle(&mut self, _msg: HealthCommand, _: &mut Self::Context) -> Self::Result {
-        Box::pin(async move { true })
+        let mut status = true;
+
+        for mut child in &mut self.processes {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    if !status.success() {
+                        error!("Process {} failed with status {}", child.id(), status);
+                    } else {
+                        info!("Proces {} exited successfully", child.id());
+                    }
+                }
+                Ok(None) => {
+                }
+                Err(err) => {
+                    capture_error(&err);
+                    error!("Error checking process fails: {}", err); 
+
+                    return Box::pin(async move { false });
+                }
+            }
+        }
+
+        return Box::pin(async move { status });
     }
 }
 
@@ -61,14 +92,20 @@ impl Handler<RunCommand> for ProcessActor {
     type Result = ResponseFuture<bool>;
 
     fn handle(&mut self, msg: RunCommand, _ctx: &mut Self::Context) -> Self::Result {
+        let command = msg.command.clone();
+        let args = msg.arguments.clone();
         let result = Command::new(msg.command)
             .args(msg.arguments)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn();
+
         match result {
-            Ok(command) => {
-                self.processes.push(command);
+            Ok(child) => {
+                self.processes.push(child);
+                self.commands.push(command.clone());
+                self.arguments.push(args.clone());
+
                 Box::pin(async move { true })
             }
             Err(err) => {
@@ -80,6 +117,6 @@ impl Handler<RunCommand> for ProcessActor {
     }
 }
 
-pub fn connect_to_process_manager() -> Addr<ProcessActor> {
-    ProcessActor::new().start()
+pub fn connect_to_process_manager() -> Arc<Addr<ProcessActor>> {
+    Arc::new(ProcessActor::new().start())
 }

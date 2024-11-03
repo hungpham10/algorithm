@@ -15,9 +15,7 @@ use chrono::{TimeZone, Utc};
 use actix::prelude::*;
 use actix::Addr;
 
-use crate::actors::redis::RedisActor;
 use crate::algorithm::heap::Heap;
-use crate::helpers::PgPool;
 
 #[derive(Debug, Clone)]
 pub struct Task {
@@ -96,12 +94,10 @@ pub struct CronActor {
 
     // @NOTE: dependencies
     resolver: Arc<CronResolver>,
-    pool: Arc<PgPool>,
-    cache: Arc<Addr<RedisActor>>,
 }
 
 impl CronActor {
-    fn new(resolver: Arc<CronResolver>, pool: Arc<PgPool>, cache: Arc<Addr<RedisActor>>) -> Self {
+    fn new(resolver: Arc<CronResolver>) -> Self {
         CronActor {
             timekeeper: Heap::<Task>::new(|l: &Task, r: &Task| -> i64 {
                 if r.timer == l.timer {
@@ -112,8 +108,6 @@ impl CronActor {
             }),
             clock: Utc::now().timestamp(),
             tick: AtomicI64::new(1),
-            pool: pool,
-            cache: cache,
             resolver: resolver,
         }
     }
@@ -258,10 +252,6 @@ impl Handler<HealthCommand> for CronActor {
     }
 }
 
-pub fn connect_to_cron(
-    resolver: Arc<CronResolver>,
-    pool: Arc<PgPool>,
-    cache: Arc<Addr<RedisActor>>,
-) -> Addr<CronActor> {
-    CronActor::new(resolver, pool, cache).start()
+pub fn connect_to_cron(resolver: Arc<CronResolver>) -> Addr<CronActor> {
+    CronActor::new(resolver).start()
 }

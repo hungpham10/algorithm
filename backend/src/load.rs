@@ -1,4 +1,4 @@
-use std::os::unix::process;
+use std::sync::Arc;
 
 use crate::actors::cron::{CronActor, ScheduleCommand};
 use crate::actors::process::{ProcessActor, RunCommand};
@@ -40,7 +40,7 @@ pub async fn load_and_map_schedulers_with_resolvers(pool: PgPool, scheduler: Add
     }
 }
 
-pub async fn load_sub_processes(pool: PgPool, target: String, manager: Addr<ProcessActor>) {
+pub async fn load_sub_processes_from_pgpool(pool: PgPool, target: String, manager: Arc<Addr<ProcessActor>>) {
     use crate::schemas::database::tbl_processes::dsl::*;
 
     let mut dbconn = pool.get().unwrap();
