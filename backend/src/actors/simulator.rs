@@ -6,10 +6,9 @@ use rand::Rng;
 use chrono::Utc;
 
 use crate::algorithm::genetic::{Genetic, Player};
-use crate::helpers::{PgConn, PgPool};
+use crate::helpers::PgPool;
 use crate::actors::redis::RedisActor;
 use crate::actors::cron::CronResolver;
-
 
 #[derive(Debug, Clone)]
 struct Candle {
@@ -21,78 +20,166 @@ struct Candle {
 }
 
 #[derive(Debug, Clone)]
-struct Investor {
+struct SimulatorContext {
     datasource: Arc<Vec<Candle>>,
-    arguments: Vec<f64>,
-    risks: Vec<f64>,
-    history: Vec<f64>,
-    stock: f64,
-    fund: f64,
+    lookback_order_history: usize,
+    lookback_candle_history: usize, 
+    batch_money_for_fund: usize,
+    arg_gen_min: f64, 
+    arg_gen_max: f64,
     money: f64,
+    orders: Arc<Vec<f64>>,
+}
+#[derive(Debug, Clone)]
+struct Investor {
+    context: Arc<SimulatorContext>,
+    market_arguments: Vec<f64>,
+    risk_arguments: Vec<f64>,
+    fund: f64,
+    pool: Arc<PgPool>,
+    cache: Arc<Addr<RedisActor>>,
 }
 
 impl Investor { 
     fn new(
-        lookback_order_history: usize,
-        lookback_candle_history: usize, 
-        money: f64,
-        batch_money_for_fund: usize,
-        arg_gen_min: f64, arg_gen_max: f64,
+        context: Arc<SimulatorContext>,
+        pool: Arc<PgPool>,
+        cache: Arc<Addr<RedisActor>>,
     ) -> Self {
+        let mut rng = rand::thread_rng();
+        let lookback_order_history = &context.lookback_order_history;
+        let lookback_candle_history = &context.lookback_candle_history;
+        let batch_money_for_fund = &context.batch_money_for_fund;
+        let arg_gen_min = &context.arg_gen_min;
+        let arg_gen_max = &context.arg_gen_max;
+        let money = &context.money;
+
         Self {
-            arguments: (0..(5 * lookback_candle_history)).map(|_| rng.gen_range(arg_gen_min..arg_gen_max)).collect(),
-            risks: (0..lookback_order_history).map(|_| )
-            stock: 0.0,
-            fund: money / (batch_money_for_fund as f64),
-            money: money,
+            context: context.clone(),
+            market_arguments: (0..(5 * (*lookback_candle_history))).map(|_| rng.gen_range(*arg_gen_min..*arg_gen_max)).collect(),
+            risk_arguments: (0..(*lookback_order_history)).map(|_| rng.gen::<f64>()).collect(),
+            fund: (*money) / ((*batch_money_for_fund) as f64),
+            pool: pool.clone(),
+            cache: cache.clone(),
         }
     }
 
-    fn datasource(&mut self, datasource: Arc<Vec<Candle>>) {
-        self.datasource = datasource;
+    fn sigmoid(x: f64) -> f64 {
+        1.0 / (1.0 + (-x).exp())
     }
 
-    fn stock(&mut self, stock: f64) {
-        self.stock = stock
+    fn tanh(x: f64) -> f64 {
+        x.tanh()
     }
 
-    fn money(&mut self, money: f64) {
-        self.money = money
+    fn merge_using_random_picking_argument_base_on_dominance(
+        father_obj: &Investor, father_assets: f64,
+        mother_obj: &Investor, mother_assets: f64,
+        rng: &mut impl Rng,
+    ) -> Self {
+        let mut market_arguments = vec![0.0; father_obj.market_arguments.len()];
+        let mut risk_arguments = vec![0.0; father_obj.risk_arguments.len()];
+        let dominance = father_assets / mother_assets;
+
+        // @NOTE: random picks market arguments base on dominance indicator
+        for i in 0..market_arguments.len() {
+            if rng.gen::<f64>() < dominance { 
+                market_arguments[i] = father_obj.market_arguments[i];
+            } else {
+                market_arguments[i] = mother_obj.market_arguments[i];
+            }
+        }
+
+        // @NOTE: random picks risk arguments base on dominance indicator
+        for i in 0..risk_arguments.len() {
+            if rng.gen::<f64>() < dominance { 
+                risk_arguments[i] = father_obj.risk_arguments[i];
+            } else {
+                risk_arguments[i] = mother_obj.risk_arguments[i];
+            }
+        }
+
+        Self {
+            context: father_obj.context.clone(),
+            market_arguments: market_arguments,
+            risk_arguments: risk_arguments,
+            fund: (father_obj.fund + mother_obj.fund)/2.0,
+            cache: father_obj.cache.clone(),
+            pool: father_obj.pool.clone(),
+        }
     }
 }
 
 impl Player for Investor { 
     fn initialize(&mut self) {
-        /* @NOTE: 
-         * f = a[1]*c[0] + a[1]*c[1] + ... + a[n]*c[n]
-         * m = m - c[0]*a[0]*tanh(f)
-         *
-         * a[5*i + 0]*d[i].o
-         * a[5*i + 1]*d[i].h
-         * a[5*i + 2]*d[i].c
-         * a[5*i + 3]*d[i].l
-         * a[5*i + 4]*d[i].v
-         */
+        // @TODO: configure each investor
+        // - Load market arguments from databases
+        // - Load risk arguments from databases
+        // - Load order history from databases
     }
+   
+    fn estimate(&self) -> f64 {
+        let mut money = self.context.money;
+        let mut stock = 0.0;
+        let mut scroll = 0 as usize;
+        let mut orders = (*self.context.orders).clone();
 
-    fn evaluate(&self) -> f64 {
-        let mut f = 0.0 as f64;
+        for i in 0..(self.context.datasource.len() - self.market_arguments.len()/5) {
+            let mut count_selling_order = 0;
+            let mut count_buying_order = 0;
+            let mut reward = 0.0;
+            let mut risk = 0.0;
+            let mut j = 0 as usize;
 
-        // @TODO: do we need a flag to add support calculation with volume or not
-        for i in (0..self.arguments.len()).step_by(5) {
-            f += self.arguments[5*i + 0] * self.datasource[i].o +
-                 self.arguments[5*i + 1] * self.datasource[i].h +
-                 self.arguments[5*i + 2] * self.datasource[i].c +
-                 self.arguments[5*i + 3] * self.datasource[i].l +
-                 self.arguments[5*i + 4] * self.datasource[i].v;
+            // @NOTE: estimate market flow using market arguments to adapt and follow candles
+            for k in 0..self.market_arguments.len()/5 {
+                reward += self.market_arguments[5*k + 0] * self.context.datasource[k + i].open +
+                     self.market_arguments[5*k + 1] * self.context.datasource[k + i].high +
+                     self.market_arguments[5*k + 2] * self.context.datasource[k + i].close +
+                     self.market_arguments[5*k + 3] * self.context.datasource[k + i].low +
+                     self.market_arguments[5*k + 4] * self.context.datasource[k + i].volume;
+            }
+
+            // @NOTE: count number kind of orders
+            for order in &orders {
+                if *order < 0.0 {
+                    count_selling_order += 1;
+                } else {
+                    count_buying_order += 1;
+                }
+            }
+
+            // @NOTE: how manage risk and reward using risk arguments to adjust during orders
+            for order in orders.iter().rev() {
+                if j >= count_buying_order - count_selling_order {
+                    break;
+                }
+
+                if *order > 0.0 {
+                    risk += self.risk_arguments[j] * (*order);
+                    j += 1;
+                }
+            } 
+
+            // @NOTE: formular to calculate money and stock
+            let decison = Investor::tanh(reward) * Investor::sigmoid(risk);
+            let fund_stock = self.fund / self.context.datasource[i].close;
+            let fund_money = self.fund;
+
+            if decison > 0.9 && money > fund_money {
+                orders.push(self.context.datasource[i].close);
+                stock += fund_stock;
+                money -= fund_money;
+            } else if decison < 0.9 && stock > self.fund / self.context.datasource[i].close {
+                orders.push(-self.context.datasource[i].close);
+                stock -= fund_stock;
+                money += fund_money;
+            }
         }
 
-        // @TODO: how manage risk and reward
-
-        // @TODO: decision making
-        m -= f.tanh();
-        return f;
+        return money + stock*self.context.datasource[self.context.datasource.len() - 1].close;
     }
+
 }
 
 #[derive(Debug, Clone)]
@@ -107,29 +194,57 @@ impl fmt::Display for SimulatorError {
 }
 
 pub struct SimulatorActor {
-    controler: Arc<Genetic<Investor>>,
+    controler: Genetic<Investor>,
+    datasource: Arc<Vec<Candle>>,
 }
 
 impl SimulatorActor {
-    fn new(n_player: usize, lookback: usize, money: f64, min: f64, max: f64) -> Self {
+    fn new(
+        n_player: usize, 
+        lookback_history: usize, 
+        lookback_order: usize,
+        money: f64, 
+        min: f64, max: f64,
+        candles: Vec<Candle>,
+        cache: Arc<Addr<RedisActor>>,
+        pool: Arc<PgPool>,
+    ) -> Self {
+        let datasource = Arc::new(candles);
+        let context = Arc::new(SimulatorContext{
+            datasource: datasource.clone(),
+            lookback_candle_history: lookback_history, 
+            lookback_order_history: lookback_order, 
+            money: money,
+            orders: Arc::new(Vec::<f64>::new()),
+            batch_money_for_fund: 100, 
+            arg_gen_min: min, 
+            arg_gen_max: max,
+        });
+
         Self {
-            controler: Arc::new(Genetic::<Investor>::new(
-                (0..n_player).map(|_| Investor::new(10, lookback, money, 100, min, max)).collect(),
+            datasource: datasource.clone(),
+            controler: Genetic::<Investor>::new(
+                (0..n_player).map(|_| Investor::new(context.clone(), pool.clone(), cache.clone())).collect(),
                 n_player,
                 Self::crossover,
-            )),
+            ),
         }
     }
 
     fn crossover(
-        controller: &Genetic<Investor>,
+        controler: &Genetic<Investor>,
         father_ctx: &Investor, father_id: usize, 
         mother_ctx: &Investor, mother_id: usize,
         session_id: i64,
     ) -> Investor {
         let mut rng = rand::thread_rng();
-        
-        Investor(
+        let father_assets = controler.get(father_id).estimate(session_id);
+        let mother_assets = controler.get(mother_id).estimate(session_id);
+
+        Investor::merge_using_random_picking_argument_base_on_dominance(
+            father_ctx, father_assets,
+            mother_ctx, mother_assets,
+            &mut rng,
         )
     }
 }
@@ -178,40 +293,17 @@ impl Handler<OrderCommand> for SimulatorActor {
 
 #[derive(Message, Debug)]
 #[rtype(result = "Result<Option<()>, SimulatorError>")]
-pub struct EvaluateFitnessCommand;
+pub struct EvaluateFitnessCommand {
+    number_of_couple: usize,
+    session: i64,
+}
 
 impl Handler<EvaluateFitnessCommand> for SimulatorActor {
     type Result = ResponseFuture<Result<Option<()>, SimulatorError>>;
 
-    fn handle(&mut self, _msg: EvaluateFitnessCommand, _: &mut Self::Context) -> Self::Result {
-        Box::pin(async move {
-            Ok(None)
-        })
-    }
-}
+    fn handle(&mut self, msg: EvaluateFitnessCommand, _: &mut Self::Context) -> Self::Result {
+        self.controler.evolute(msg.number_of_couple, msg.session);
 
-#[derive(Message, Debug)]
-#[rtype(result = "Result<Option<()>, SimulatorError>")]
-pub struct DoSelectionCommand;
-
-impl Handler<DoSelectionCommand> for SimulatorActor {
-    type Result = ResponseFuture<Result<Option<()>, SimulatorError>>;
-
-    fn handle(&mut self, _msg: DoSelectionCommand, _: &mut Self::Context) -> Self::Result {
-        Box::pin(async move {
-            Ok(None)
-        })
-    }
-}
-
-#[derive(Message, Debug)]
-#[rtype(result = "Result<Option<()>, SimulatorError>")]
-pub struct DoCrossoverCommand;
-
-impl Handler<DoCrossoverCommand> for SimulatorActor {
-    type Result = ResponseFuture<Result<Option<()>, SimulatorError>>;
-
-    fn handle(&mut self, _msg: DoCrossoverCommand, _: &mut Self::Context) -> Self::Result {
         Box::pin(async move {
             Ok(None)
         })
@@ -236,12 +328,28 @@ pub fn connect_to_simulator(
     resolver: &mut CronResolver,
     pool:     Arc<PgPool>,
     cache:    Arc<Addr<RedisActor>>,
-    token:    String,
     n_player: usize,
+    n_children: usize,
+    candles:  Vec<Candle>,
 ) -> Addr<SimulatorActor> {
-    let actor   = SimulatorActor::new(n_player)
-        .start();
+    let actor   = SimulatorActor::new(
+            n_player,
+            200,
+            10,
+            200_000_000.0,
+            -100.0,
+            100.0,
+            candles,
+            cache.clone(),
+            pool.clone(),
+        ).start();
     let simulator: Arc<Addr<SimulatorActor>> = actor.clone().into();
+
+    train_investors(
+        resolver,
+        simulator.clone(),
+        n_children,
+    );
 
     review_settlement_cycle(
         resolver,
@@ -260,14 +368,35 @@ pub fn connect_to_simulator(
     return actor;
 }
 
+fn train_investors(
+    resolver: &mut CronResolver,
+    simulator: Arc<Addr<SimulatorActor>>,
+    number_of_couple: usize,
+) {
+    resolver.resolve("simulator.train_investors".to_string(), move |session, _| {
+        let simulator = simulator.clone();
+        async move {
+            simulator.send(
+                EvaluateFitnessCommand{
+                    number_of_couple: number_of_couple,
+                    session: session.unwrap() as i64,
+                },
+            )
+                .await;
+        }
+    });
+}
+
 fn review_settlement_cycle(
     resolver: &mut CronResolver,
     pool:     Arc<PgPool>,
     cache:    Arc<Addr<RedisActor>>,
     simulator: Arc<Addr<SimulatorActor>>,
 ) {
-    resolver.resolve("simulator.review_settlement_cycle".to_string(), move || {
+    resolver.resolve("simulator.review_settlement_cycle".to_string(), move |_, _| {
         let simulator = simulator.clone();
+        let pool      = pool.clone();
+        let cache     = cache.clone();
 
         async move {
             simulator.send(UpdateSettlementCycleCommand)
@@ -283,9 +412,10 @@ fn review_and_put_orders(
     simulator: Arc<Addr<SimulatorActor>>,
     n_player:  usize,
 ) {
-    resolver.resolve("simulator.review_and_put_orders".to_string(), move || {
+    resolver.resolve("simulator.review_and_put_orders".to_string(), move |_, _| {
         let simulator = simulator.clone();
         let pool      = pool.clone();
+        let cache     = cache.clone();
         let time      = Utc::now().timestamp();
 
         async move {
@@ -301,3 +431,4 @@ fn review_and_put_orders(
         }
     });
 }
+

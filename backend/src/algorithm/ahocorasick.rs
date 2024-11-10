@@ -199,7 +199,6 @@ impl AhoCorasick {
     pub fn similar(&self, sample: String) -> bool {
         let blocks = (self.split_fn)(&sample);
         let mut state = 0 as usize;
-        let mut c = 0 as usize;
         let mut i = 0 as usize;
 
         if !self.is_optimized {
@@ -223,9 +222,6 @@ impl AhoCorasick {
 
                 // @NOTE: if state still be on the first state, this indicates 
                 //        that we not find any possible flow
-                if state == 0 {
-                    c = i;
-                }
                 is_first_state = true;
             }
 
@@ -263,7 +259,6 @@ impl AhoCorasick {
 
                     state = self.failure_mapping[state];
 
-                    c += 1;
                     continue;
                 } else {
                     state = next_state;

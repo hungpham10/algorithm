@@ -3,8 +3,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use juniper::GraphQLObject;
-use reqwest::{Client as HttpClient, Error as HttpError, Response as HttpResponse};
+use reqwest::{Client as HttpClient};
 use serde::{Deserialize, Serialize};
 
 use actix::prelude::*;
@@ -172,7 +171,7 @@ fn resolve_estimate_container_cpu_utilization_momentum(
 ) {
     resolver.resolve(
         "prometheus.estimate_cpu_usage_momentum".to_string(),
-        move || {
+        move |_, _| {
             let prom = prom.clone();
             let cache = cache.clone();
 

@@ -8,7 +8,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
-use log::{info, debug, error};
+use log::{debug};
 
 use chrono::{TimeZone, Utc};
 

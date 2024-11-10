@@ -13,7 +13,7 @@ use tokio_schedule::{every, Job};
 use crate::actors::cron::{connect_to_cron, CronActor, CronResolver, TickCommand};
 use crate::actors::dnse::{connect_to_dnse, DnseActor};
 use crate::actors::fireant::{connect_to_fireant, FireantActor};
-use crate::actors::process::{connect_to_process_manager, HealthCommand, ProcessActor, RunCommand};
+use crate::actors::process::{connect_to_process_manager, HealthCommand, ProcessActor};
 use crate::actors::redis::{connect_to_redis, InfoCommand, RedisActor};
 use crate::actors::tcbs::{connect_to_tcbs, TcbsActor};
 use crate::actors::vps::{connect_to_vps, list_of_vn30, VpsActor};

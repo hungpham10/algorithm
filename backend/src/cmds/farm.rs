@@ -18,7 +18,7 @@ async fn health(
 pub async fn farm() -> std::io::Result<()> {
     env_logger::init();
 
-    let mut resolver = CronResolver::new();
+    let resolver = CronResolver::new();
     let processer = connect_to_process_manager();
 
     let cron = connect_to_cron(resolver.into());

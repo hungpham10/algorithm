@@ -1,18 +1,14 @@
 use std::error;
 use std::fmt;
-use std::io::BufReader;
-use std::io::Read;
 use std::sync::Arc;
 use std::process::{Command, Child, Stdio};
 
-use log::{info, debug, error};
+use log::{info, error};
 
 use sentry::capture_error;
 
 use actix::prelude::*;
 use actix::Addr;
-
-use crate::schemas::database::tbl_processes::arguments;
 
 #[derive(Debug, Clone)]
 pub struct ProcessError {

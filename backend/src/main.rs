@@ -1,4 +1,4 @@
-use ::lib::cmds::{chat::chat, ggcolab::ggcolab, collect::collect, farm::farm};
+use ::lib::cmds::{chat::chat, ggcolab::ggcolab, collect::collect};
 
 fn main() {
     dotenvy::dotenv().ok();
@@ -15,7 +15,6 @@ fn main() {
         "collect" => collect(),
         "chat" => chat(),
         "ggcolab" => ggcolab(),
-        "farm" => farm(),
         unknown => todo!("not yet implement {}", unknown),
     }.unwrap();
 }

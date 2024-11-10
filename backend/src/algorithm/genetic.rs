@@ -1,7 +1,7 @@
 use rand::Rng;
 
 #[derive(Debug)]
-struct Individual<T> {
+pub struct Individual<T> {
     player:  T,
     session: i64,
     fitness: f64,
@@ -75,6 +75,10 @@ impl <T: Player + Clone + std::fmt::Debug> Genetic<T> {
         for player in &mut self.population {
             player.initialize();
         }
+    }
+
+    pub fn get(&self, index: usize) -> &Individual<T> {
+        return &self.population[index];
     }
 
     pub fn evolute(&mut self, number_of_couple: usize, session: i64) {
@@ -179,7 +183,7 @@ mod tests {
     }
 
     fn merging_crossover(
-        controller: &Genetic<TestPlayer>,
+        _controller: &Genetic<TestPlayer>,
         father_ctx: &TestPlayer, father_id: usize, 
         mother_ctx: &TestPlayer, mother_id: usize,
         session_id: i64,
