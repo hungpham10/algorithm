@@ -36,14 +36,12 @@ struct Investor {
     market_arguments: Vec<f64>,
     risk_arguments: Vec<f64>,
     fund: f64,
-    pool: Arc<PgPool>,
     cache: Arc<Addr<RedisActor>>,
 }
 
 impl Investor { 
     fn new(
         context: Arc<SimulatorContext>,
-        pool: Arc<PgPool>,
         cache: Arc<Addr<RedisActor>>,
     ) -> Self {
         let mut rng = rand::thread_rng();
@@ -59,7 +57,6 @@ impl Investor {
             market_arguments: (0..(5 * (*lookback_candle_history))).map(|_| rng.gen_range(*arg_gen_min..*arg_gen_max)).collect(),
             risk_arguments: (0..(*lookback_order_history)).map(|_| rng.gen::<f64>()).collect(),
             fund: (*money) / ((*batch_money_for_fund) as f64),
-            pool: pool.clone(),
             cache: cache.clone(),
         }
     }
@@ -105,17 +102,13 @@ impl Investor {
             risk_arguments: risk_arguments,
             fund: (father_obj.fund + mother_obj.fund)/2.0,
             cache: father_obj.cache.clone(),
-            pool: father_obj.pool.clone(),
         }
     }
 }
 
 impl Player for Investor { 
     fn initialize(&mut self) {
-        // @TODO: configure each investor
-        // - Load market arguments from databases
-        // - Load risk arguments from databases
-        // - Load order history from databases
+        // @TODO: pull metadata of each investor from redis
     }
    
     fn estimate(&self) -> f64 {
@@ -175,7 +168,10 @@ impl Player for Investor {
                 stock -= fund_stock;
                 money += fund_money;
             }
+
         }
+
+        // @TODO: push investors metadata to redis if needs
 
         return money + stock*self.context.datasource[self.context.datasource.len() - 1].close;
     }
@@ -224,7 +220,7 @@ impl SimulatorActor {
         Self {
             datasource: datasource.clone(),
             controler: Genetic::<Investor>::new(
-                (0..n_player).map(|_| Investor::new(context.clone(), pool.clone(), cache.clone())).collect(),
+                (0..n_player).map(|_| Investor::new(context.clone(), cache.clone())).collect(),
                 n_player,
                 Self::crossover,
             ),
@@ -373,18 +369,23 @@ fn train_investors(
     simulator: Arc<Addr<SimulatorActor>>,
     number_of_couple: usize,
 ) {
-    resolver.resolve("simulator.train_investors".to_string(), move |session, _| {
-        let simulator = simulator.clone();
-        async move {
-            simulator.send(
-                EvaluateFitnessCommand{
-                    number_of_couple: number_of_couple,
-                    session: session.unwrap() as i64,
-                },
-            )
+    resolver.resolve("simulator.perform_training_investors".to_string(), 
+        move |arguments, _, _| {
+            let simulator = simulator.clone();
+            let session = arguments.get("session")
+                .map_or(0, |session| (*session).parse::<i64>().unwrap());
+
+            async move {
+                let _ = simulator.send(
+                    EvaluateFitnessCommand{
+                        number_of_couple: number_of_couple,
+                        session: session,
+                    },
+                )
                 .await;
+            }
         }
-    });
+    );
 }
 
 fn review_settlement_cycle(
@@ -393,16 +394,18 @@ fn review_settlement_cycle(
     cache:    Arc<Addr<RedisActor>>,
     simulator: Arc<Addr<SimulatorActor>>,
 ) {
-    resolver.resolve("simulator.review_settlement_cycle".to_string(), move |_, _| {
-        let simulator = simulator.clone();
-        let pool      = pool.clone();
-        let cache     = cache.clone();
+    resolver.resolve("simulator.review_settlement_cycle".to_string(), 
+        move |arguments, _, _| {
+            let simulator = simulator.clone();
+            let pool      = pool.clone();
+            let cache     = cache.clone();
 
-        async move {
-            simulator.send(UpdateSettlementCycleCommand)
-                .await;
+            async move {
+                let _ = simulator.send(UpdateSettlementCycleCommand)
+                    .await;
+            }
         }
-    });
+    );
 }
 
 fn review_and_put_orders(
@@ -412,23 +415,25 @@ fn review_and_put_orders(
     simulator: Arc<Addr<SimulatorActor>>,
     n_player:  usize,
 ) {
-    resolver.resolve("simulator.review_and_put_orders".to_string(), move |_, _| {
-        let simulator = simulator.clone();
-        let pool      = pool.clone();
-        let cache     = cache.clone();
-        let time      = Utc::now().timestamp();
+    resolver.resolve("simulator.review_and_put_orders".to_string(), 
+        move |arguments, _, _| {
+            let simulator = simulator.clone();
+            let pool      = pool.clone();
+            let cache     = cache.clone();
+            let time      = Utc::now().timestamp();
 
-        async move {
-            let decisions = (1..n_player)
-                .map(move |id| {
-                    simulator.send(OrderCommand{
-                        id:     id as i64,
-                        symbol: "".to_string(),
-                        is_buy: true,
+            async move {
+                let decisions = (1..n_player)
+                    .map(move |id| {
+                        simulator.send(OrderCommand{
+                            id:     id as i64,
+                            symbol: "".to_string(),
+                            is_buy: true,
+                        })
                     })
-                })
-                .collect::<Vec<_>>();
+                    .collect::<Vec<_>>();
+            }
         }
-    });
+    );
 }
 

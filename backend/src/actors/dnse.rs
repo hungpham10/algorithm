@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use juniper::GraphQLObject;
+use log::info;
 use reqwest::{Client as HttpClient, Error as HttpError};
 use serde::{Deserialize, Serialize};
 
@@ -22,12 +23,12 @@ impl DnseActor {
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct Ohcl {
-    pub t: Vec<i32>,
-    pub o: Vec<f64>,
-    pub c: Vec<f64>,
-    pub h: Vec<f64>,
-    pub l: Vec<f64>,
-    pub v: Vec<i32>,
+    pub t: Option<Vec<i32>>,
+    pub o: Option<Vec<f64>>,
+    pub c: Option<Vec<f64>>,
+    pub h: Option<Vec<f64>>,
+    pub l: Option<Vec<f64>>,
+    pub v: Option<Vec<i32>>,
     pub nextTime: i64,
 }
 
@@ -85,8 +86,8 @@ impl Handler<HealthCommand> for DnseActor {
 pub struct GetOHCLCommand {
     pub resolution: String,
     pub stock: String,
-    pub from: i32,
-    pub to: i32,
+    pub from: i64,
+    pub to: i64,
 }
 
 impl Handler<GetOHCLCommand> for DnseActor {
@@ -113,14 +114,14 @@ async fn fetch_ohcl_by_stock(
     client: Arc<HttpClient>,
     stock: &String,
     resolution: &String,
-    from: i32,
-    to: i32,
+    from: i64,
+    to: i64,
     timeout: u64,
 ) -> Result<Vec<CandleStick>, HttpError> {
     let resp = client.get(format!(
             "https://services.entrade.com.vn/chart-api/v2/ohlcs/stock?from={}&to={}&symbol={}&resolution={}",
-            from,
-            to,
+            from / 1000,
+            to / 1000,
             (*stock),
             (*resolution),
         ))
@@ -130,29 +131,37 @@ async fn fetch_ohcl_by_stock(
 
     match resp {
         Ok(resp) => {
-            let mut candles = Vec::<CandleStick>::new();
-            let ohcl = match resp.json::<Ohcl>().await {
-                Ok(ohcl) => ohcl,
-                Err(_) => Ohcl {
-                    t: Vec::<i32>::new(),
-                    o: Vec::<f64>::new(),
-                    c: Vec::<f64>::new(),
-                    h: Vec::<f64>::new(),
-                    l: Vec::<f64>::new(),
-                    v: Vec::<i32>::new(),
-                    nextTime: -1,
-                },
-            };
+            info!("{:?}", resp);
 
-            for i in 0..ohcl.t.len() {
-                candles.push(CandleStick {
-                    t: ohcl.t[i],
-                    o: ohcl.o[i],
-                    h: ohcl.h[i],
-                    c: ohcl.c[i],
-                    l: ohcl.l[i],
-                    v: ohcl.v[i],
-                })
+            let mut candles = Vec::<CandleStick>::new();
+            let ohcl = resp.json::<Ohcl>().await.unwrap();
+
+            if let Some(t) = ohcl.t {
+                for i in 0..t.len() {
+                    candles.push(CandleStick {
+                        t: t[i],
+                        o: match ohcl.o.as_ref() {
+                            Some(o) => o[i],
+                            None => 0.0,
+                        },
+                        h: match ohcl.h.as_ref() {
+                            Some(h) => h[i],
+                            None => 0.0,
+                        },
+                        c: match ohcl.c.as_ref() {
+                            Some(c) => c[i],
+                            None => 0.0,
+                        },
+                        l: match ohcl.l.as_ref() {
+                            Some(l) => l[i],
+                            None => 0.0,
+                        },
+                        v: match ohcl.v.as_ref() {
+                            Some(v) => v[i],
+                            None => 0,
+                        },
+                    })
+                }
             }
 
             Ok(candles)

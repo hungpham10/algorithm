@@ -1,4 +1,4 @@
-use ::lib::cmds::{chat::chat, ggcolab::ggcolab, collect::collect};
+use ::lib::cmds::{chat::chat, ggcolab::ggcolab, server::server};
 
 fn main() {
     dotenvy::dotenv().ok();
@@ -12,7 +12,7 @@ fn main() {
     ));
 
     match std::env::args().nth(1).unwrap().as_str() {
-        "collect" => collect(),
+        "server" => server(),
         "chat" => chat(),
         "ggcolab" => ggcolab(),
         unknown => todo!("not yet implement {}", unknown),

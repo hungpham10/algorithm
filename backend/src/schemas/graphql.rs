@@ -1,6 +1,8 @@
 use actix::Addr;
-use chrono::Utc;
-use juniper::{graphql_object, FieldResult};
+use chrono::{NaiveDateTime, Utc};
+use juniper::{graphql_object, FieldResult, GraphQLInputObject};
+
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::actors::cron::{CronActor, PerformCommand};
@@ -26,17 +28,39 @@ impl juniper::Context for Context {}
 
 pub struct Query;
 
+#[derive(GraphQLInputObject)]
+struct Pair {
+    key: String,
+    value: String,
+}
+
 #[graphql_object(context = Context)]
 impl Query {
     async fn cron_perform(
-        ctx: &Context, 
-        target: String, 
+        ctx: &Context,
+        target: String,
         timeout: i32,
+        arguments: Option<Vec<Pair>>,
         from: Option<i32>,
         to: Option<i32>,
     ) -> FieldResult<i32> {
-        Ok(ctx.cron
-            .send(PerformCommand { target, timeout, from: from.unwrap_or(0), to: to.unwrap_or(0) })
+        let mut mapping = BTreeMap::<String, String>::new();
+
+        if let Some(arguments) = arguments {
+            for pair in arguments {
+                mapping.insert(pair.key, pair.value);
+            }
+        }
+
+        Ok(ctx
+            .cron
+            .send(PerformCommand {
+                target,
+                timeout,
+                mapping,
+                from: from.unwrap_or(0),
+                to: to.unwrap_or(0),
+            })
             .await
             .unwrap()
             .unwrap() as i32)
@@ -50,8 +74,8 @@ impl Query {
         ctx: &Context,
         resolution: String,
         stock: String,
-        from: i32,
-        to: i32,
+        from: f64,
+        to: f64,
     ) -> FieldResult<Vec<CandleStick>> {
         // @NOTE: cache OHCL to redis and reuse it later if needs
         let res = ctx
@@ -59,8 +83,8 @@ impl Query {
             .send(GetOHCLCommand {
                 resolution,
                 stock,
-                from,
-                to,
+                from: from as i64,
+                to: to as i64,
             })
             .await
             .unwrap();

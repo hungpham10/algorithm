@@ -1,5 +1,5 @@
 pub mod simulator;
-//pub mod prometheus;
+pub mod prometheus;
 pub mod process;
 pub mod cron;
 pub mod dnse;

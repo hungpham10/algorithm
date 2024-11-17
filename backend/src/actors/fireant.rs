@@ -240,17 +240,22 @@ pub fn connect_to_fireant(
     let actor = FireantActor::new(format!("Bearer {}", token)).start();
     let fireant = actor.clone();
 
-    resolver.resolve("fireant.count_sentiment_per_stock".to_string(), move |from, to| {
+    resolver.resolve("fireant.count_sentiment_per_stock".to_string(), move |arguments, mut from, mut to| {
         let fireant = fireant.clone();
         let pool = pool.clone();
-        let time = Utc::now().timestamp();
+
+        if to < 0 {
+            to = Utc::now().timestamp() as i32;
+        }
+
+        if from < 0 || from >= to {
+            from = to - 24*60*60;
+        }
 
         async move {
             let mut dbconn = pool.get().unwrap();
-            let from = time - 24 * 60 * 60;
-            let to = time;
             let sentiments = match fireant
-                .send(CountSentimentPerStockCommand { from, to })
+                .send(CountSentimentPerStockCommand { from: from as i64, to: to as i64 })
                 .await
             {
                 Ok(resp) => match resp {

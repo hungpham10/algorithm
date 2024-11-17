@@ -29,7 +29,7 @@ pub struct Task {
 unsafe impl Send for Task {}
 unsafe impl Sync for Task {}
 
-type AsyncCallback = Box<dyn Fn(Option<i32>, Option<i32>) -> Pin<Box<dyn Future<Output = ()>>>>;
+type AsyncCallback = Box<dyn Fn(BTreeMap<String, String>, i32, i32) -> Pin<Box<dyn Future<Output = ()>>>>;
 
 pub struct CronResolver {
     resolvers: BTreeMap<String, AsyncCallback>,
@@ -42,12 +42,17 @@ impl CronResolver {
         }
     }
 
+    pub fn commands(&self) -> Vec<String> {
+        self.resolvers.keys().map(|k| k.to_string()).collect()
+    }
+
     pub async fn perform(
         &self, 
         routes: Vec<String>, 
         timeouts: Vec<i32>, 
-        from: Option<i32>, 
-        to: Option<i32>,
+        arguments: BTreeMap<String, String>,
+        from: i32, 
+        to: i32,
     ) -> usize {
         let mut cnt = routes.len();
 
@@ -60,7 +65,7 @@ impl CronResolver {
                 Some(callback) => {
                     tokio::time::timeout(
                         Duration::from_secs(timeouts[i] as u64), 
-                        callback(from, to),
+                        callback(arguments.clone(), from, to),
                     )
                     .await
                     .ok();
@@ -77,12 +82,16 @@ impl CronResolver {
 
     pub fn resolve<C, F>(&mut self, route: String, callback: C)
     where
-        C: Fn(Option<i32>, Option<i32>) -> F,
+        C: Fn(BTreeMap<String, String>, i32, i32) -> F,
         C: 'static,
         F: Future<Output = ()> + 'static,
     {
         self.resolvers
-            .insert(route.clone(), Box::new(move |from, to| Box::pin(callback(from, to))));
+            .insert(
+                route.clone(), Box::new(move |arguments, from, to| 
+                    Box::pin(callback(arguments, from, to))
+                )
+            );
     }
 }
 
@@ -110,6 +119,10 @@ impl CronActor {
             tick: AtomicI64::new(1),
             resolver: resolver,
         }
+    }
+
+    pub fn commands(&self) -> Vec<String> {
+        self.resolver.commands()
     }
 }
 
@@ -180,7 +193,15 @@ impl Handler<TickCommand> for CronActor {
 
         self.clock = clock_now.timestamp();
 
-        return Box::pin(async move { Ok(resolver.perform(targets, timeouts, None, None).await) });
+        return Box::pin(async move { 
+            Ok(resolver.perform(
+                targets, 
+                timeouts, 
+                BTreeMap::<String, String>::new(), 
+                -1, 
+                -1).await
+            ) 
+        });
     }
 }
 
@@ -189,6 +210,7 @@ impl Handler<TickCommand> for CronActor {
 pub struct PerformCommand {
     pub target: String,
     pub timeout: i32,
+    pub mapping: BTreeMap<String, String>,
     pub from: i32,
     pub to: i32,
 }
@@ -202,7 +224,7 @@ impl Handler<PerformCommand> for CronActor {
         let resolver = self.resolver.clone();
 
         return Box::pin(async move { 
-            Ok(resolver.perform(target, timeout, Some(msg.from), Some(msg.to)).await) 
+            Ok(resolver.perform(target, timeout, msg.mapping, msg.from, msg.to).await) 
         });
     }
 }

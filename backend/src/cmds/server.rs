@@ -1,8 +1,9 @@
 use actix::Addr;
 use actix_files::Files;
-use actix_web::{http::Method, web, App, Error, HttpRequest, HttpResponse, HttpServer};
+use actix_web::{http::Method, middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use influxdb::Client as InfluxClient;
 use juniper::http::{graphiql::graphiql_source, GraphQLRequest};
+
 use serde::{Deserialize, Serialize};
 
 use std::sync::Arc;
@@ -109,13 +110,16 @@ async fn health(
         .await
         .unwrap();
 
-    let process_stats = processer.send(HealthCommand)
-        .await
-        .unwrap();
+    let process_stats = processer.send(HealthCommand).await.unwrap();
 
-    if cache_status.len() > 0 && cron_tick > 0 && 
-            vps_ok && dnse_ok && tcbs_ok && fireant_ok &&
-            process_stats {
+    if cache_status.len() > 0
+        && cron_tick > 0
+        && vps_ok
+        && dnse_ok
+        && tcbs_ok
+        && fireant_ok
+        && process_stats
+    {
         Ok(HttpResponse::Ok().body("OK").into())
     } else {
         Ok(HttpResponse::ServiceUnavailable().body("Failed").into())
@@ -127,7 +131,7 @@ async fn simulate() -> actix_web::Result<HttpResponse> {
 }
 
 #[actix_rt::main]
-pub async fn collect() -> std::io::Result<()> {
+pub async fn server() -> std::io::Result<()> {
     env_logger::init();
 
     let mut resolver = CronResolver::new();
@@ -156,7 +160,12 @@ pub async fn collect() -> std::io::Result<()> {
     let background: Addr<CronActor> = cron.clone();
 
     load_and_map_schedulers_with_resolvers(pool.clone(), cron.clone()).await;
-    load_sub_processes_from_pgpool(pool.clone(), std::env::var("INSTANCE").unwrap(), processer.clone()).await;
+    load_sub_processes_from_pgpool(
+        pool.clone(),
+        std::env::var("INSTANCE").unwrap(),
+        processer.clone(),
+    )
+    .await;
 
     // @NOTE: mapping cronjobs
     actix_rt::spawn(async move {
@@ -169,6 +178,7 @@ pub async fn collect() -> std::io::Result<()> {
     // @NOTE: mapping routes
     HttpServer::new(move || {
         App::new()
+            .wrap(middleware::Logger::default())
             .app_data(web::Data::new(background.clone()))
             .app_data(web::Data::new(cache.clone()))
             .app_data(web::Data::new(pool.clone()))
@@ -188,4 +198,3 @@ pub async fn collect() -> std::io::Result<()> {
     .run()
     .await
 }
-
