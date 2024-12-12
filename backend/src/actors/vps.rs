@@ -3,7 +3,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use log::{info, debug};
+use log::{debug, info};
 
 use futures::future;
 
@@ -91,14 +91,10 @@ impl Actor for VpsActor {
     type Context = Context<Self>;
 }
 
-#[derive(Message, Debug)]
-#[rtype(result = "bool")]
-pub struct HealthCommand;
-
-impl Handler<HealthCommand> for VpsActor {
+impl Handler<super::HealthCommand> for VpsActor {
     type Result = ResponseFuture<bool>;
 
-    fn handle(&mut self, _msg: HealthCommand, _: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, _msg: super::HealthCommand, _: &mut Self::Context) -> Self::Result {
         Box::pin(async move { true })
     }
 }
@@ -190,12 +186,94 @@ async fn fetch_price_depth_per_block(
 }
 
 pub async fn list_of_vn30() -> Vec<String> {
-    reqwest::get("https://bgapidatafeed.vps.com.vn/listvn30")
+    reqwest::get("https://bgapidatafeed.vps.com.vn/getlistckindex/VN30")
         .await
         .unwrap()
         .json::<Vec<String>>()
         .await
         .unwrap()
+}
+
+pub async fn list_of_vn100() -> Vec<String> {
+    reqwest::get("https://bgapidatafeed.vps.com.vn/getlistckindex/VN100")
+        .await
+        .unwrap()
+        .json::<Vec<String>>()
+        .await
+        .unwrap()
+}
+
+pub async fn list_of_industry(industry: &str) -> Vec<String> {
+    match industry {
+        "petroleum" => reqwest::get("https://histdatafeed.vps.com.vn/industry/symbols/0500")
+            .await
+            .unwrap()
+            .json::<Vec<String>>()
+            .await
+            .unwrap(),
+        "chemical" => reqwest::get("https://histdatafeed.vps.com.vn/industry/symbols/1300")
+            .await
+            .unwrap()
+            .json::<Vec<String>>()
+            .await
+            .unwrap(),
+        "basic resources" => reqwest::get("https://histdatafeed.vps.com.vn/industry/symbols/1700")
+            .await
+            .unwrap()
+            .json::<Vec<String>>()
+            .await
+            .unwrap(),
+        "construction & building materials" => {
+            reqwest::get("https://histdatafeed.vps.com.vn/industry/symbols/2300")
+                .await
+                .unwrap()
+                .json::<Vec<String>>()
+                .await
+                .unwrap()
+        }
+        "industrial goods & services" => {
+            reqwest::get("https://histdatafeed.vps.com.vn/industry/symbols/2700")
+                .await
+                .unwrap()
+                .json::<Vec<String>>()
+                .await
+                .unwrap()
+        }
+        "cars & car parts" => reqwest::get("https://histdatafeed.vps.com.vn/industry/symbols/3300")
+            .await
+            .unwrap()
+            .json::<Vec<String>>()
+            .await
+            .unwrap(),
+        "food & beverage" => reqwest::get("https://histdatafeed.vps.com.vn/industry/symbols/3500")
+            .await
+            .unwrap()
+            .json::<Vec<String>>()
+            .await
+            .unwrap(),
+        "personal & household goods" => {
+            reqwest::get("https://histdatafeed.vps.com.vn/industry/symbols/3700")
+                .await
+                .unwrap()
+                .json::<Vec<String>>()
+                .await
+                .unwrap()
+        }
+        "medical" => reqwest::get("https://histdatafeed.vps.com.vn/industry/symbols/4500")
+            .await
+            .unwrap()
+            .json::<Vec<String>>()
+            .await
+            .unwrap(),
+        "retail" => reqwest::get("https://histdatafeed.vps.com.vn/industry/symbols/5300")
+            .await
+            .unwrap()
+            .json::<Vec<String>>()
+            .await
+            .unwrap(),
+        // @TODO: điền tiếp các phần còn thiếu
+        _ => Vec::<String>::new(),
+    }
 }
 
 pub fn connect_to_vps(
@@ -206,68 +284,75 @@ pub fn connect_to_vps(
     let actor = VpsActor::new(stocks).start();
     let vps = actor.clone();
 
-    resolver.resolve("vps.get_price_command".to_string(), move |arguments, from, to| {
-        let vps = vps.clone();
-        let tsdb = tsdb.clone();
+    resolver.resolve(
+        "vps.get_price_command".to_string(),
+        move |arguments, from, to| {
+            let vps = vps.clone();
+            let tsdb = tsdb.clone();
 
-        async move {
-            let datapoints = match vps.send(GetPriceCommand).await {
-                Ok(datapoints) => datapoints,
-                Err(error) => {
-                    capture_error(&error);
+            async move {
+                let datapoints = match vps.send(GetPriceCommand).await {
+                    Ok(datapoints) => datapoints,
+                    Err(error) => {
+                        capture_error(&error);
 
-                    // @NOTE: ignore this error, only return empty BTreeMap
-                    Vec::<Price>::new()
-                }
-            };
-            debug!("collect {} datapoints", datapoints.len());
-
-            let order_insert = datapoints
-                .iter()
-                .map(|point| {
-                    let g1 = point.g1.split("|").collect::<Vec<&str>>();
-                    let g2 = point.g2.split("|").collect::<Vec<&str>>();
-                    let g3 = point.g3.split("|").collect::<Vec<&str>>();
-                    let g4 = point.g4.split("|").collect::<Vec<&str>>();
-                    let g5 = point.g5.split("|").collect::<Vec<&str>>();
-                    let g6 = point.g6.split("|").collect::<Vec<&str>>();
-
-                    Order {
-                        // @NOTE: clock
-                        time: chrono::offset::Utc::now().into(),
-
-                        // @NOTE: price
-                        PricePlus1: g4[0].parse::<f64>().unwrap_or(0.0 as f64),
-                        PricePlus2: g5[0].parse::<f64>().unwrap_or(0.0 as f64),
-                        PricePlus3: g5[0].parse::<f64>().unwrap_or(0.0 as f64),
-                        PriceMinus1: g1[0].parse::<f64>().unwrap_or(0.0 as f64),
-                        PriceMinus2: g2[0].parse::<f64>().unwrap_or(0.0 as f64),
-                        PriceMinus3: g3[0].parse::<f64>().unwrap_or(0.0 as f64),
-
-                        // @NOTE: volume
-                        VolumePlus1: g4[1].parse::<i64>().unwrap_or(0 as i64),
-                        VolumePlus2: g5[1].parse::<i64>().unwrap_or(0 as i64),
-                        VolumePlus3: g6[1].parse::<i64>().unwrap_or(0 as i64),
-                        VolumeMinus1: g1[1].parse::<i64>().unwrap_or(0 as i64),
-                        VolumeMinus2: g2[1].parse::<i64>().unwrap_or(0 as i64),
-                        VolumeMinus3: g3[1].parse::<i64>().unwrap_or(0 as i64),
+                        // @NOTE: ignore this error, only return empty BTreeMap
+                        Vec::<Price>::new()
                     }
-                    .into_query(point.sym.clone())
-                })
-                .collect::<Vec<_>>();
+                };
+                debug!("collect {} datapoints", datapoints.len());
 
-            debug!("convert {} datapoints to {} queries", datapoints.len(), order_insert.len());
+                let order_insert = datapoints
+                    .iter()
+                    .map(|point| {
+                        let g1 = point.g1.split("|").collect::<Vec<&str>>();
+                        let g2 = point.g2.split("|").collect::<Vec<&str>>();
+                        let g3 = point.g3.split("|").collect::<Vec<&str>>();
+                        let g4 = point.g4.split("|").collect::<Vec<&str>>();
+                        let g5 = point.g5.split("|").collect::<Vec<&str>>();
+                        let g6 = point.g6.split("|").collect::<Vec<&str>>();
 
-            match tsdb.clone().query(order_insert).await {
-                Ok(query) => {
-                    info!("VPS: Done query {}", query);
-                },
-                Err(error) => {
-                    capture_error(&error); 
+                        Order {
+                            // @NOTE: clock
+                            time: chrono::offset::Utc::now().into(),
+
+                            // @NOTE: price
+                            PricePlus1: g4[0].parse::<f64>().unwrap_or(0.0 as f64),
+                            PricePlus2: g5[0].parse::<f64>().unwrap_or(0.0 as f64),
+                            PricePlus3: g5[0].parse::<f64>().unwrap_or(0.0 as f64),
+                            PriceMinus1: g1[0].parse::<f64>().unwrap_or(0.0 as f64),
+                            PriceMinus2: g2[0].parse::<f64>().unwrap_or(0.0 as f64),
+                            PriceMinus3: g3[0].parse::<f64>().unwrap_or(0.0 as f64),
+
+                            // @NOTE: volume
+                            VolumePlus1: g4[1].parse::<i64>().unwrap_or(0 as i64),
+                            VolumePlus2: g5[1].parse::<i64>().unwrap_or(0 as i64),
+                            VolumePlus3: g6[1].parse::<i64>().unwrap_or(0 as i64),
+                            VolumeMinus1: g1[1].parse::<i64>().unwrap_or(0 as i64),
+                            VolumeMinus2: g2[1].parse::<i64>().unwrap_or(0 as i64),
+                            VolumeMinus3: g3[1].parse::<i64>().unwrap_or(0 as i64),
+                        }
+                        .into_query(point.sym.clone())
+                    })
+                    .collect::<Vec<_>>();
+
+                debug!(
+                    "convert {} datapoints to {} queries",
+                    datapoints.len(),
+                    order_insert.len()
+                );
+
+                match tsdb.clone().query(order_insert).await {
+                    Ok(query) => {
+                        info!("VPS: Done query {}", query);
+                    }
+                    Err(error) => {
+                        capture_error(&error);
+                    }
                 }
             }
-        }
-    });
+        },
+    );
 
     return actor.clone();
 }

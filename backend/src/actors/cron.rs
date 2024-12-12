@@ -2,13 +2,11 @@ use std::boxed::Box;
 use std::clone::Clone;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::time::{Duration, Instant};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
-
-use log::{debug};
+use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
 
@@ -29,7 +27,8 @@ pub struct Task {
 unsafe impl Send for Task {}
 unsafe impl Sync for Task {}
 
-type AsyncCallback = Box<dyn Fn(BTreeMap<String, String>, i32, i32) -> Pin<Box<dyn Future<Output = ()>>>>;
+type AsyncCallback =
+    Box<dyn Fn(BTreeMap<String, String>, i32, i32) -> Pin<Box<dyn Future<Output = ()>>>>;
 
 pub struct CronResolver {
     resolvers: BTreeMap<String, AsyncCallback>,
@@ -47,30 +46,24 @@ impl CronResolver {
     }
 
     pub async fn perform(
-        &self, 
-        routes: Vec<String>, 
-        timeouts: Vec<i32>, 
+        &self,
+        routes: Vec<String>,
+        timeouts: Vec<i32>,
         arguments: BTreeMap<String, String>,
-        from: i32, 
+        from: i32,
         to: i32,
     ) -> usize {
         let mut cnt = routes.len();
 
         for (i, route) in routes.iter().enumerate() {
-            debug!("Perform route {}", route);
-
-            let start = Instant::now();
-
             match self.resolvers.get(route) {
                 Some(callback) => {
                     tokio::time::timeout(
-                        Duration::from_secs(timeouts[i] as u64), 
+                        Duration::from_secs(timeouts[i] as u64),
                         callback(arguments.clone(), from, to),
                     )
                     .await
                     .ok();
-
-                    debug!("Perform route {} took {:?}", route, start.elapsed());
                 }
                 None => {
                     cnt -= 1;
@@ -86,12 +79,10 @@ impl CronResolver {
         C: 'static,
         F: Future<Output = ()> + 'static,
     {
-        self.resolvers
-            .insert(
-                route.clone(), Box::new(move |arguments, from, to| 
-                    Box::pin(callback(arguments, from, to))
-                )
-            );
+        self.resolvers.insert(
+            route.clone(),
+            Box::new(move |arguments, from, to| Box::pin(callback(arguments, from, to))),
+        );
     }
 }
 
@@ -154,7 +145,7 @@ impl Handler<TickCommand> for CronActor {
         let mut targets = Vec::<String>::new();
         let mut timeouts = Vec::<i32>::new();
         let clock_now = Utc::now();
-
+        
         if clock_now.timestamp() == self.clock {
             return Box::pin(async move { Err(CronError { code: 0 }) });
         } else {
@@ -193,14 +184,10 @@ impl Handler<TickCommand> for CronActor {
 
         self.clock = clock_now.timestamp();
 
-        return Box::pin(async move { 
-            Ok(resolver.perform(
-                targets, 
-                timeouts, 
-                BTreeMap::<String, String>::new(), 
-                -1, 
-                -1).await
-            ) 
+        return Box::pin(async move {
+            Ok(resolver
+                .perform(targets, timeouts, BTreeMap::<String, String>::new(), -1, -1)
+                .await)
         });
     }
 }
@@ -223,8 +210,10 @@ impl Handler<PerformCommand> for CronActor {
         let timeout = vec![msg.timeout];
         let resolver = self.resolver.clone();
 
-        return Box::pin(async move { 
-            Ok(resolver.perform(target, timeout, msg.mapping, msg.from, msg.to).await) 
+        return Box::pin(async move {
+            Ok(resolver
+                .perform(target, timeout, msg.mapping, msg.from, msg.to)
+                .await)
         });
     }
 }
@@ -260,17 +249,13 @@ impl Handler<ScheduleCommand> for CronActor {
     }
 }
 
-#[derive(Message, Debug)]
-#[rtype(result = "i64")]
-pub struct HealthCommand;
+impl Handler<super::HealthCommand> for CronActor {
+    type Result = ResponseFuture<bool>;
 
-impl Handler<HealthCommand> for CronActor {
-    type Result = ResponseFuture<i64>;
-
-    fn handle(&mut self, _msg: HealthCommand, _: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, _msg: super::HealthCommand, _: &mut Self::Context) -> Self::Result {
         let tick = *self.tick.get_mut();
 
-        Box::pin(async move { tick })
+        Box::pin(async move { tick > 0 })
     }
 }
 

@@ -4,12 +4,13 @@ use actix_web::{http::Method, middleware, web, App, Error, HttpRequest, HttpResp
 use influxdb::Client as InfluxClient;
 use juniper::http::{graphiql::graphiql_source, GraphQLRequest};
 
-use serde::{Deserialize, Serialize};
-
-use std::sync::Arc;
-
 use chrono::Utc;
 use tokio_schedule::{every, Job};
+
+use pgwire::tokio::process_socket;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::net::TcpListener;
 
 use crate::actors::cron::{connect_to_cron, CronActor, CronResolver, TickCommand};
 use crate::actors::dnse::{connect_to_dnse, DnseActor};
@@ -18,10 +19,10 @@ use crate::actors::process::{connect_to_process_manager, HealthCommand, ProcessA
 use crate::actors::redis::{connect_to_redis, InfoCommand, RedisActor};
 use crate::actors::tcbs::{connect_to_tcbs, TcbsActor};
 use crate::actors::vps::{connect_to_vps, list_of_vn30, VpsActor};
-use crate::helpers::{
-    connect_to_postgres_pool, create_graphql_context, create_graphql_schema, PgPool, SchemaGraphQL,
-};
+use crate::helpers::{connect_to_postgres_pool, create_graphql_schema, PgPool, SchemaGraphQL};
 use crate::load::{load_and_map_schedulers_with_resolvers, load_sub_processes_from_pgpool};
+use crate::schemas::graphql::create_graphql_context;
+use crate::schemas::pgwire::create_sql_context;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphQlErrorLocation {
@@ -101,19 +102,16 @@ async fn health(
     fireant: web::Data<Addr<FireantActor>>,
 ) -> actix_web::Result<HttpResponse> {
     let cache_status = cache.send(InfoCommand).await.unwrap().unwrap().unwrap();
-    let cron_tick = cron.send(crate::actors::cron::HealthCommand).await.unwrap();
-    let vps_ok = vps.send(crate::actors::vps::HealthCommand).await.unwrap();
-    let dnse_ok = dnse.send(crate::actors::dnse::HealthCommand).await.unwrap();
-    let tcbs_ok = tcbs.send(crate::actors::tcbs::HealthCommand).await.unwrap();
-    let fireant_ok = fireant
-        .send(crate::actors::fireant::HealthCommand)
-        .await
-        .unwrap();
+    let cron_ok = cron.send(crate::actors::HealthCommand).await.unwrap();
+    let vps_ok = vps.send(crate::actors::HealthCommand).await.unwrap();
+    let dnse_ok = dnse.send(crate::actors::HealthCommand).await.unwrap();
+    let tcbs_ok = tcbs.send(crate::actors::HealthCommand).await.unwrap();
+    let fireant_ok = fireant.send(crate::actors::HealthCommand).await.unwrap();
 
     let process_stats = processer.send(HealthCommand).await.unwrap();
 
     if cache_status.len() > 0
-        && cron_tick > 0
+        && cron_ok
         && vps_ok
         && dnse_ok
         && tcbs_ok
@@ -131,7 +129,61 @@ async fn simulate() -> actix_web::Result<HttpResponse> {
 }
 
 #[actix_rt::main]
-pub async fn server() -> std::io::Result<()> {
+pub async fn sql_server() -> std::io::Result<()> {
+    env_logger::init();
+
+    let mut resolver = CronResolver::new();
+    let pool = connect_to_postgres_pool(std::env::var("POSTGRES_DSN").unwrap());
+    let tsdb = Arc::new(
+        InfluxClient::new(
+            std::env::var("INFLUXDB_URI").unwrap(),
+            std::env::var("INFLUXDB_BUCKET").unwrap(),
+        )
+        .with_token(std::env::var("INFLUXDB_TOKEN").unwrap()),
+    );
+    let cache = connect_to_redis(std::env::var("REDIS_DSN").unwrap()).await;
+    let dnse = connect_to_dnse();
+    let vps = connect_to_vps(&mut resolver, tsdb.clone(), list_of_vn30().await);
+    let tcbs = connect_to_tcbs(&mut resolver, pool.clone().into(), list_of_vn30().await);
+    let fireant = connect_to_fireant(
+        &mut resolver,
+        pool.clone().into(),
+        cache.clone().into(),
+        std::env::var("FIREANT_TOKEN").unwrap(),
+    );
+    let cron = connect_to_cron(resolver.into());
+    let background: Addr<CronActor> = cron.clone();
+
+    // @NOTE: mapping cronjobs
+    actix_rt::spawn(async move {
+        let every_second = every(1).seconds().in_timezone(&Utc).perform(|| async {
+            let _ = cron.clone().send(TickCommand).await;
+        });
+        every_second.await;
+    });
+
+    let factory = create_sql_context(
+        Arc::new(background),
+        Arc::new(vps),
+        Arc::new(dnse),
+        Arc::new(tcbs),
+        Arc::new(fireant),
+    );
+
+    let server_addr = "127.0.0.1:54320";
+    let listener = TcpListener::bind(server_addr).await.unwrap();
+
+    println!("Listening...");
+    // @NOTE: mapping cronjobs
+    loop {
+        let incoming_socket = listener.accept().await.unwrap();
+        let factory_ref = factory.clone();
+        actix_rt::spawn(async move { process_socket(incoming_socket.0, None, factory_ref).await });
+    }
+}
+
+#[actix_rt::main]
+pub async fn graphql_server() -> std::io::Result<()> {
     env_logger::init();
 
     let mut resolver = CronResolver::new();

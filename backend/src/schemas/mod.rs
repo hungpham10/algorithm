@@ -1,3 +1,4 @@
-pub mod tsdb;
-pub mod graphql;
 pub mod database;
+pub mod graphql;
+pub mod pgwire;
+pub mod tsdb;

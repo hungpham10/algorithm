@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
-use std::fmt;
 use std::error;
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use log::{info, error};
+use log::{error, info};
 use reqwest::header::AUTHORIZATION;
 use reqwest_middleware::ClientWithMiddleware as HttpClient;
 use sentry::capture_error;
@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use actix::prelude::*;
 use actix::Addr;
 use diesel::prelude::*;
+use gluesql::core::data::Schema;
 
 use crate::actors::cron::CronResolver;
 use crate::actors::redis::RedisActor;
@@ -95,14 +96,10 @@ impl fmt::Display for FireantError {
 
 impl error::Error for FireantError {}
 
-#[derive(Message, Debug)]
-#[rtype(result = "bool")]
-pub struct HealthCommand;
-
-impl Handler<HealthCommand> for FireantActor {
+impl Handler<super::HealthCommand> for FireantActor {
     type Result = ResponseFuture<bool>;
 
-    fn handle(&mut self, _msg: HealthCommand, _: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, _msg: super::HealthCommand, _: &mut Self::Context) -> Self::Result {
         Box::pin(async move { true })
     }
 }
@@ -229,6 +226,15 @@ async fn fetch_batch_of_posts_from_fireant(
     }
 }
 
+impl Handler<super::ListSchemaCommand> for FireantActor {
+    type Result = ResponseFuture<Vec<Schema>>;
+
+    fn handle(&mut self, msg: super::ListSchemaCommand, _: &mut Self::Context) -> Self::Result {
+        // @TODO: hien thi tat ca schema
+        Box::pin(async move { Vec::<Schema>::new() })
+    }
+}
+
 pub fn connect_to_fireant(
     resolver: &mut CronResolver,
     pool: Arc<PgPool>,
@@ -240,26 +246,39 @@ pub fn connect_to_fireant(
     let actor = FireantActor::new(format!("Bearer {}", token)).start();
     let fireant = actor.clone();
 
-    resolver.resolve("fireant.count_sentiment_per_stock".to_string(), move |arguments, mut from, mut to| {
-        let fireant = fireant.clone();
-        let pool = pool.clone();
+    resolver.resolve(
+        "fireant.count_sentiment_per_stock".to_string(),
+        move |arguments, mut from, mut to| {
+            let fireant = fireant.clone();
+            let pool = pool.clone();
 
-        if to < 0 {
-            to = Utc::now().timestamp() as i32;
-        }
+            if to < 0 {
+                to = Utc::now().timestamp() as i32;
+            }
 
-        if from < 0 || from >= to {
-            from = to - 24*60*60;
-        }
+            if from < 0 || from >= to {
+                from = to - 24 * 60 * 60;
+            }
 
-        async move {
-            let mut dbconn = pool.get().unwrap();
-            let sentiments = match fireant
-                .send(CountSentimentPerStockCommand { from: from as i64, to: to as i64 })
-                .await
-            {
-                Ok(resp) => match resp {
-                    Ok(sentiments) => sentiments,
+            async move {
+                let mut dbconn = pool.get().unwrap();
+                let sentiments = match fireant
+                    .send(CountSentimentPerStockCommand {
+                        from: from as i64,
+                        to: to as i64,
+                    })
+                    .await
+                {
+                    Ok(resp) => match resp {
+                        Ok(sentiments) => sentiments,
+                        Err(err) => {
+                            capture_error(&err);
+                            error!("{}", err);
+
+                            // @NOTE: ignore this error, only return empty BTreeMap
+                            BTreeMap::<String, Sentiment>::new()
+                        }
+                    },
                     Err(err) => {
                         capture_error(&err);
                         error!("{}", err);
@@ -267,41 +286,35 @@ pub fn connect_to_fireant(
                         // @NOTE: ignore this error, only return empty BTreeMap
                         BTreeMap::<String, Sentiment>::new()
                     }
-                },
-                Err(err) => {
-                    capture_error(&err);
-                    error!("{}", err);
+                };
 
-                    // @NOTE: ignore this error, only return empty BTreeMap
-                    BTreeMap::<String, Sentiment>::new()
+                let rows = sentiments
+                    .iter()
+                    .map(|(name, value)| {
+                        (
+                            symbol.eq(name),
+                            mention.eq(value.mention),
+                            positive.eq(value.votes.positive),
+                            negative.eq(value.votes.negative),
+                            promotion.eq(value.promotion),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+
+                match diesel::insert_into(tbl_fireant_mention)
+                    .values(&rows)
+                    .execute(&mut dbconn)
+                {
+                    Ok(cnt) => {
+                        info!("Fireant: Insert {} to tbl_fireant_mention", cnt);
+                    }
+                    Err(error) => {
+                        capture_error(&error);
+                    }
                 }
-            };
-
-            let rows = sentiments
-                .iter()
-                .map(|(name, value)| {
-                    (
-                        symbol.eq(name),
-                        mention.eq(value.mention),
-                        positive.eq(value.votes.positive),
-                        negative.eq(value.votes.negative),
-                        promotion.eq(value.promotion),
-                    )
-                })
-                .collect::<Vec<_>>();
-    
-            match diesel::insert_into(tbl_fireant_mention)
-                .values(&rows)
-                .execute(&mut dbconn) {
-                Ok(cnt) => {
-                    info!("Fireant: Insert {} to tbl_fireant_mention", cnt);
-                },
-                Err(error) => {
-                    capture_error(&error);
-                },
             }
-        }
-    });
+        },
+    );
 
     return actor;
 }

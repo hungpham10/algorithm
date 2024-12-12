@@ -1,22 +1,38 @@
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+use gluesql::core::ast::ColumnDef;
+use gluesql::core::data::Schema;
+use gluesql::core::store::DataRow;
+use gluesql::prelude::DataType;
+
+use gluesql::prelude::Key;
+use gluesql::prelude::Value;
 use juniper::GraphQLObject;
-use log::info;
+
 use reqwest::{Client as HttpClient, Error as HttpError};
 use serde::{Deserialize, Serialize};
 
 use actix::prelude::*;
 use actix::Addr;
 
+use crate::algorithm::lru::LruCache;
+use super::lru_cache_generate_key;
+
 pub struct DnseActor {
     timeout: u64,
+
+    data_row_cache: LruCache<String, DataRow>,
 }
 
 impl DnseActor {
     fn new() -> Self {
-        Self { timeout: 60 }
+        Self { 
+            timeout: 60,
+            data_row_cache: LruCache::new(100),
+        }
     }
 }
 
@@ -69,14 +85,10 @@ impl fmt::Display for DnseError {
     }
 }
 
-#[derive(Message, Debug)]
-#[rtype(result = "bool")]
-pub struct HealthCommand;
-
-impl Handler<HealthCommand> for DnseActor {
+impl Handler<super::HealthCommand> for DnseActor {
     type Result = ResponseFuture<bool>;
 
-    fn handle(&mut self, _msg: HealthCommand, _: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, _msg: super::HealthCommand, _: &mut Self::Context) -> Self::Result {
         Box::pin(async move { true })
     }
 }
@@ -120,8 +132,8 @@ async fn fetch_ohcl_by_stock(
 ) -> Result<Vec<CandleStick>, HttpError> {
     let resp = client.get(format!(
             "https://services.entrade.com.vn/chart-api/v2/ohlcs/stock?from={}&to={}&symbol={}&resolution={}",
-            from / 1000,
-            to / 1000,
+            from,
+            to,
             (*stock),
             (*resolution),
         ))
@@ -131,8 +143,6 @@ async fn fetch_ohcl_by_stock(
 
     match resp {
         Ok(resp) => {
-            info!("{:?}", resp);
-
             let mut candles = Vec::<CandleStick>::new();
             let ohcl = resp.json::<Ohcl>().await.unwrap();
 
@@ -167,6 +177,176 @@ async fn fetch_ohcl_by_stock(
             Ok(candles)
         }
         Err(error) => Err(error),
+    }
+}
+
+pub fn list_of_resolution() -> Vec<String> {
+    return vec!["1D".to_string(), "1M".to_string(), "1W".to_string()];
+}
+
+impl Handler<super::ListSchemaCommand> for DnseActor {
+    type Result = ResponseFuture<Vec<Schema>>;
+
+    fn handle(&mut self, _: super::ListSchemaCommand, _: &mut Self::Context) -> Self::Result {
+        Box::pin(async move { 
+            let mut result: Vec<Schema> = Vec::<Schema>::new();
+
+            for stock_name in super::vps::list_of_vn30().await {
+                for resolution in list_of_resolution() {
+                    // @TODO: cấu hình cột để hiển thị
+
+                    let colume_defs = vec![
+                        ColumnDef{
+                            name: "timestamp".to_string(),
+                            data_type: DataType::Int32,
+                            unique: None,
+                            default: None,
+                            nullable: false,
+                            comment: None,
+                        },
+                        ColumnDef {
+                            name: "open".to_string(),
+                            data_type: DataType::Float,
+                            unique: None,
+                            default: None,
+                            nullable: false,
+                            comment: None,
+                        },
+                        ColumnDef {
+                            name: "high".to_string(),
+                            data_type: DataType::Float,
+                            unique: None,
+                            default: None,
+                            nullable: false,
+                            comment: None,
+                        },
+                        ColumnDef {
+                            name: "close".to_string(),
+                            data_type: DataType::Float,
+                            unique: None,
+                            default: None,
+                            nullable: false,
+                            comment: None,
+                        },
+                        ColumnDef {
+                            name: "low".to_string(),
+                            data_type: DataType::Float,
+                            unique: None,
+                            default: None,
+                            nullable: false,
+                            comment: None,
+                        },
+                        ColumnDef {
+                            name: "volume".to_string(),
+                            data_type: DataType::Int32,
+                            unique: None,
+                            default: None,
+                            nullable: false,
+                            comment: None,
+                        },
+                    ];
+                            
+                    result.push(Schema{
+                        table_name: format!("ohcl_{}_{}", stock_name, resolution) ,
+                        column_defs: Some(colume_defs),
+                        indexes: Vec::new(),
+                        engine: None,
+                        foreign_keys: Vec::new(),
+                        comment: None,
+                    }); 
+                }
+            }
+
+            return result;
+        })
+    }
+}
+
+impl Handler<super::FetchDataCommand> for DnseActor {
+    type Result = ResponseFuture<Option<DataRow>>;
+
+    fn handle(&mut self, msg: super::FetchDataCommand, _: &mut Self::Context) -> Self::Result {
+        let table = msg.table.clone();
+        let target = msg.target.clone();
+        let cache = &mut self.data_row_cache;
+
+        match target {
+            Key::I32(timestamp) => {
+                // @TODO: calculate timestamp of first second of this month
+
+                if let Ok(key_name) = lru_cache_generate_key("dnse", table.as_str(), &Key::I32(timestamp)) {
+                    match cache.get(&key_name) {
+                        Some(result) => {
+                            let result = result.clone();
+
+                            Box::pin(async move { Some(result) })
+                        },
+                        None => Box::pin(async move { None }),
+                    }
+                } else {
+                    Box::pin(async move { None })
+                }
+            }
+            _ => {
+                Box::pin(async move { None })
+            }
+        } 
+    }
+}
+
+impl Handler<super::ScanDataCommand> for DnseActor {
+    type Result = ResponseFuture<BTreeMap<Key, DataRow>>;
+
+    fn handle(&mut self, msg: super::ScanDataCommand, _: &mut Self::Context) -> Self::Result {
+        let ret = BTreeMap::<Key, DataRow>::new();
+
+        if msg.table.starts_with("ohcl_") {
+            let client = Arc::new(HttpClient::default());
+            
+            if let Some(rest) = msg.table.strip_prefix("ohcl_") {
+                let parts = rest.split('_').collect::<Vec<&str>>();
+
+                if parts.len() == 2 {
+                    let to = chrono::Utc::now().timestamp();
+                    let timeout = self.timeout.clone();
+                    let from = 0;
+                    let stock = parts[0].to_string();
+                    let resolution = parts[1].to_string();
+
+                    return Box::pin(async move {
+                        fetch_ohcl_by_stock(
+                            client.clone(),
+                            &stock,
+                            &resolution,
+                            from,
+                            to,
+                            timeout,
+                        ).await
+                        .unwrap()
+                        .into_iter()
+                        .map(|candle| {
+                            let key = Key::I32(candle.t);
+                            let row = DataRow::Vec(
+                                vec![
+                                    Value::I32(candle.t),
+                                    Value::F64(candle.o), 
+                                    Value::F64(candle.h), 
+                                    Value::F64(candle.c), 
+                                    Value::F64(candle.l), 
+                                    Value::I32(candle.v)
+                                    ]
+                                );
+
+                            (key, row)
+                        })
+                        .collect::<BTreeMap<Key, DataRow>>()
+                    });
+                }
+            }
+            
+        }
+            
+        Box::pin(async move { ret })
     }
 }
 

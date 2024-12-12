@@ -1,6 +1,8 @@
 use actix::Addr;
-use chrono::{NaiveDateTime, Utc};
+use chrono::{NaiveDate, Utc};
 use juniper::{graphql_object, FieldResult, GraphQLInputObject};
+
+use sentry::capture_error;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -15,13 +17,13 @@ use crate::helpers::PgPool;
 
 #[derive(Clone)]
 pub struct Context {
-    pub cron: Arc<Addr<CronActor>>,
-    pub vps: Arc<Addr<VpsActor>>,
-    pub dnse: Arc<Addr<DnseActor>>,
-    pub tcbs: Arc<Addr<TcbsActor>>,
-    pub fireant: Arc<Addr<FireantActor>>,
-    pub pool: Arc<PgPool>,
-    pub cache: Arc<Addr<RedisActor>>,
+    cron: Arc<Addr<CronActor>>,
+    vps: Arc<Addr<VpsActor>>,
+    dnse: Arc<Addr<DnseActor>>,
+    tcbs: Arc<Addr<TcbsActor>>,
+    fireant: Arc<Addr<FireantActor>>,
+    pool: Arc<PgPool>,
+    cache: Arc<Addr<RedisActor>>,
 }
 
 impl juniper::Context for Context {}
@@ -74,24 +76,41 @@ impl Query {
         ctx: &Context,
         resolution: String,
         stock: String,
-        from: f64,
-        to: f64,
+        from: String,
+        to: String,
     ) -> FieldResult<Vec<CandleStick>> {
+        let from_in_int = NaiveDate::parse_from_str(from.as_str(), "%Y-%m-%d")
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp();
+        let to_in_int = NaiveDate::parse_from_str(to.as_str(), "%Y-%m-%d")
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp();
+
         // @NOTE: cache OHCL to redis and reuse it later if needs
         let res = ctx
             .dnse
             .send(GetOHCLCommand {
                 resolution,
                 stock,
-                from: from as i64,
-                to: to as i64,
+                from: from_in_int,
+                to: to_in_int,
             })
             .await
             .unwrap();
 
         match res {
             Ok(res) => Ok(res),
-            Err(_) => Ok(Vec::<CandleStick>::new()),
+            Err(error) => {
+                capture_error(&error);
+
+                Ok(Vec::<CandleStick>::new())
+            }
         }
     }
 }
@@ -114,5 +133,25 @@ impl Mutation {
         } else {
             Err("cannot update list stocks watching".into())
         }
+    }
+}
+
+pub fn create_graphql_context(
+    cron: Arc<Addr<CronActor>>,
+    vps: Arc<Addr<VpsActor>>,
+    dnse: Arc<Addr<DnseActor>>,
+    tcbs: Arc<Addr<TcbsActor>>,
+    fireant: Arc<Addr<FireantActor>>,
+    pool: Arc<PgPool>,
+    cache: Arc<Addr<RedisActor>>,
+) -> Context {
+    Context {
+        cron,
+        vps,
+        dnse,
+        tcbs,
+        fireant,
+        pool,
+        cache,
     }
 }

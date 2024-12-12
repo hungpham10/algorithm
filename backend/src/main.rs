@@ -1,4 +1,4 @@
-use ::lib::cmds::{chat::chat, ggcolab::ggcolab, server::server};
+use ::lib::cmds::{server::graphql_server, server::sql_server};
 
 fn main() {
     dotenvy::dotenv().ok();
@@ -12,9 +12,8 @@ fn main() {
     ));
 
     match std::env::args().nth(1).unwrap().as_str() {
-        "server" => server(),
-        "chat" => chat(),
-        "ggcolab" => ggcolab(),
+        "graphql-server" => graphql_server(),
+        "sql-server" => sql_server(),
         unknown => todo!("not yet implement {}", unknown),
     }.unwrap();
 }
