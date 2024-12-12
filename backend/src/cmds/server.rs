@@ -170,10 +170,11 @@ pub async fn sql_server() -> std::io::Result<()> {
         Arc::new(fireant),
     );
 
-    let server_addr = "127.0.0.1:54320";
+    let server_addr = "0.0.0.0:5432";
     let listener = TcpListener::bind(server_addr).await.unwrap();
 
-    println!("Listening...");
+    println!("Listening {}....", server_addr);
+
     // @NOTE: mapping cronjobs
     loop {
         let incoming_socket = listener.accept().await.unwrap();

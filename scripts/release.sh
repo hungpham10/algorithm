@@ -34,6 +34,18 @@ function prepare() {
   done
 }
 
+function localtonet() {
+  if [ ${#DOTNET_SYSTEM_GLOBALIZATION_INVARIANT} -eq 0 ]; then
+    export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+  fi
+
+  if [ ${#LOCALTONET} -gt 0 ]; then
+    set -x
+    screen -S "localtonet.pid" -dm localtonet authtoken $LOCALTONET
+    set +x
+  fi
+}
+
 function boot() {
   CMD=$1
 
@@ -43,10 +55,13 @@ function boot() {
 
 CMD=$1
 SQL=$2
+PORT=$3
 
+shift
 shift
 shift
 
 prepare $SQL
+localtonet $PORT
 boot $CMD $@
 exit $?
