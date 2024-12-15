@@ -20,9 +20,8 @@ use crate::actors::dnse::DnseActor;
 use crate::actors::fireant::FireantActor;
 use crate::actors::tcbs::TcbsActor;
 use crate::actors::vps::VpsActor;
-use crate::storages::actors::PgServerDatasource;
 
-use super::database::tbl_crons::table;
+use crate::interfaces::storages::actors::PgServerDatasource;
 
 const SHOW_TABLE_COLUMN_TABLE_NAME: &str = "table_name";
 
@@ -241,6 +240,7 @@ impl PgWireHandlerFactory for PgServerFactory {
 }
 
 pub fn create_sql_context(
+    capacity: usize,
     cron: Arc<Addr<CronActor>>,
     vps: Arc<Addr<VpsActor>>,
     dnse: Arc<Addr<DnseActor>>,
@@ -249,7 +249,13 @@ pub fn create_sql_context(
 ) -> Arc<PgServerFactory> {
     Arc::new(PgServerFactory {
         handler: Arc::new(PgServerHandler {
-            glue: Arc::new(Mutex::new(Glue::new(PgServerDatasource::new(vps, dnse, tcbs, fireant)))),
+            glue: Arc::new(
+                Mutex::new(
+                    Glue::new(
+                        PgServerDatasource::new(capacity, vps, dnse, tcbs, fireant),
+                    ),
+                ),
+            ),
         }),
     })
 }

@@ -19,19 +19,15 @@ use actix::prelude::*;
 use actix::Addr;
 
 use crate::algorithm::lru::LruCache;
-use super::lru_cache_generate_key;
 
 pub struct DnseActor {
     timeout: u64,
-
-    data_row_cache: LruCache<String, DataRow>,
 }
 
 impl DnseActor {
     fn new() -> Self {
         Self { 
             timeout: 60,
-            data_row_cache: LruCache::new(100),
         }
     }
 }
@@ -253,7 +249,7 @@ impl Handler<super::ListSchemaCommand> for DnseActor {
                         engine: None,
                         foreign_keys: Vec::new(),
                         comment: None,
-                    }); 
+                    });
                 }
             }
 
@@ -266,31 +262,7 @@ impl Handler<super::FetchDataCommand> for DnseActor {
     type Result = ResponseFuture<Option<DataRow>>;
 
     fn handle(&mut self, msg: super::FetchDataCommand, _: &mut Self::Context) -> Self::Result {
-        let table = msg.table.clone();
-        let target = msg.target.clone();
-        let cache = &mut self.data_row_cache;
-
-        match target {
-            Key::I32(timestamp) => {
-                // @TODO: calculate timestamp of first second of this month
-
-                if let Ok(key_name) = lru_cache_generate_key("dnse", table.as_str(), &Key::I32(timestamp)) {
-                    match cache.get(&key_name) {
-                        Some(result) => {
-                            let result = result.clone();
-
-                            Box::pin(async move { Some(result) })
-                        },
-                        None => Box::pin(async move { None }),
-                    }
-                } else {
-                    Box::pin(async move { None })
-                }
-            }
-            _ => {
-                Box::pin(async move { None })
-            }
-        } 
+        Box::pin(async move { None })
     }
 }
 
@@ -313,6 +285,7 @@ impl Handler<super::ScanDataCommand> for DnseActor {
                     let stock = parts[0].to_string();
                     let resolution = parts[1].to_string();
 
+                    // @TODO: save cache here
                     return Box::pin(async move {
                         fetch_ohcl_by_stock(
                             client.clone(),

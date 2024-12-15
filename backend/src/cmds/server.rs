@@ -22,7 +22,7 @@ use crate::actors::vps::{connect_to_vps, list_of_vn30, VpsActor};
 use crate::helpers::{connect_to_postgres_pool, create_graphql_schema, PgPool, SchemaGraphQL};
 use crate::load::{load_and_map_schedulers_with_resolvers, load_sub_processes_from_pgpool};
 use crate::schemas::graphql::create_graphql_context;
-use crate::schemas::pgwire::create_sql_context;
+use crate::interfaces::pgwire::create_sql_context;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphQlErrorLocation {
@@ -133,6 +133,10 @@ pub async fn sql_server() -> std::io::Result<()> {
     env_logger::init();
 
     let mut resolver = CronResolver::new();
+    let capacity = std::env::var("SQL_CAPACITY")
+            .unwrap_or_else(|_| "0".to_string())
+            .parse()
+            .unwrap_or(0);
     let pool = connect_to_postgres_pool(std::env::var("POSTGRES_DSN").unwrap());
     let tsdb = Arc::new(
         InfluxClient::new(
@@ -163,6 +167,7 @@ pub async fn sql_server() -> std::io::Result<()> {
     });
 
     let factory = create_sql_context(
+        capacity,
         Arc::new(background),
         Arc::new(vps),
         Arc::new(dnse),

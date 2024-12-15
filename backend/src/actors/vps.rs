@@ -185,6 +185,15 @@ async fn fetch_price_depth_per_block(
     }
 }
 
+pub async fn list_of_hose() -> Vec<String> {
+    reqwest::get("https://bgapidatafeed.vps.com.vn/getlistckindex/hose")
+        .await
+        .unwrap()
+        .json::<Vec<String>>()
+        .await
+        .unwrap()
+}
+
 pub async fn list_of_vn30() -> Vec<String> {
     reqwest::get("https://bgapidatafeed.vps.com.vn/getlistckindex/VN30")
         .await
@@ -286,7 +295,7 @@ pub fn connect_to_vps(
 
     resolver.resolve(
         "vps.get_price_command".to_string(),
-        move |arguments, from, to| {
+        move |_arguments, _from, _to| {
             let vps = vps.clone();
             let tsdb = tsdb.clone();
 

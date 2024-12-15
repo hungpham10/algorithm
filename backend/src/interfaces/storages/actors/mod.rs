@@ -17,13 +17,18 @@ use crate::actors::dnse::DnseActor;
 use crate::actors::fireant::FireantActor;
 use crate::actors::tcbs::TcbsActor;
 use crate::actors::vps::VpsActor;
+use crate::actors::lru::{LruActor, connect_to_lru};
 use crate::algorithm::binarysearch::binary_search;
 
 pub struct PgServerDatasource {
+    // @NOTE: datasource
     vps: Arc<Addr<VpsActor>>,
     dnse: Arc<Addr<DnseActor>>,
     tcbs: Arc<Addr<TcbsActor>>,
     fireant: Arc<Addr<FireantActor>>,
+
+    // @NOTE: caching
+    cache_data: Arc<Addr<LruActor>>,
 
     // @NOTE: function version
     version: StructCustomFunction,
@@ -31,6 +36,7 @@ pub struct PgServerDatasource {
 
 impl PgServerDatasource {
     pub fn new(
+        capacity: usize,
         vps: Arc<Addr<VpsActor>>,
         dnse: Arc<Addr<DnseActor>>,
         tcbs: Arc<Addr<TcbsActor>>,
@@ -41,6 +47,9 @@ impl PgServerDatasource {
             dnse,
             tcbs,
             fireant,
+
+            // @NOTE: caching
+            cache_data: Arc::new(connect_to_lru(capacity)),
 
             // @NOTE: function version
             version: StructCustomFunction{ 
@@ -91,20 +100,41 @@ impl Store for PgServerDatasource {
     }
 
     async fn fetch_data(&self, table_name: &str, target: &Key) -> Result<Option<DataRow>> {
-        match self
-                .dnse
-                .send(FetchDataCommand {
-                    table: table_name.to_string(),
-                    target: (*target).clone(),
-                })
-                .await .unwrap() {
-            Some(result) => {
-                return Ok(Some(result));
-            },
-            None => {},
-        };
+        let datasources = vec!["dnse"];
 
-        // @NOTE: 
+        for datasource in datasources {
+            match self.cache_data.send(FetchDataCommand {
+                        target:    (*target).clone(),
+                        table:     table_name.to_string(),
+                        namespace: datasource.to_string(),
+                    })
+                    .await 
+                    .unwrap() {
+                Some(result) => {
+                    return Ok(Some(result));
+                },
+
+                None => {},
+            };
+
+            match self.dnse.send(FetchDataCommand {
+                        target:    (*target).clone(),
+                        table:     table_name.to_string(),
+                        namespace: datasource.to_string(),
+                    })
+                    .await 
+                    .unwrap() {
+                Some(result) => {
+                    return Ok(Some(result));
+                },
+
+                None => {},
+            };
+
+            
+        }
+
+        // @NOTE: fails just in case we don't see any approviated table
         return Err(Error::StorageMsg(format!("not found table {}, target {:?}", table_name, target)));
     }
 

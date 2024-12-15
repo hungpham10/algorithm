@@ -1,7 +1,7 @@
 extern crate diesel;
 extern crate serde;
 
-pub mod storages;
+pub mod interfaces;
 pub mod actors;
 pub mod algorithm;
 pub mod analytic;

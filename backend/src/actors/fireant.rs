@@ -4,9 +4,10 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
-use log::{error, info};
 use reqwest::header::AUTHORIZATION;
+use chrono::{DateTime, Utc};
+use gluesql::prelude::Key;
+use log::{error, info};
 use reqwest_middleware::ClientWithMiddleware as HttpClient;
 use sentry::capture_error;
 use serde::{Deserialize, Serialize};
@@ -14,7 +15,9 @@ use serde::{Deserialize, Serialize};
 use actix::prelude::*;
 use actix::Addr;
 use diesel::prelude::*;
+
 use gluesql::core::data::Schema;
+use gluesql::core::store::DataRow;
 
 use crate::actors::cron::CronResolver;
 use crate::actors::redis::RedisActor;
@@ -232,6 +235,14 @@ impl Handler<super::ListSchemaCommand> for FireantActor {
     fn handle(&mut self, msg: super::ListSchemaCommand, _: &mut Self::Context) -> Self::Result {
         // @TODO: hien thi tat ca schema
         Box::pin(async move { Vec::<Schema>::new() })
+    }
+}
+
+impl Handler<super::ScanDataCommand> for FireantActor {
+    type Result = ResponseFuture<BTreeMap<Key, DataRow>>;
+
+    fn handle(&mut self, msg: super::ScanDataCommand, _: &mut Self::Context) -> Self::Result {
+        Box::pin(async move { BTreeMap::<Key, DataRow>::new() })
     }
 }
 
