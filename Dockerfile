@@ -31,5 +31,5 @@ RUN apt update                          && \
     apt install -y postgresql-client    && \
     apt install -y ca-certificates
 
-ENTRYPOINT ["/app/endpoint.sh", "./server", "/sql", "5432", "sql-server"]
-EXPOSE 5432
+ENTRYPOINT ["/app/endpoint.sh", "./server", "/sql", "3000", "sserver"]
+EXPOSE 3000

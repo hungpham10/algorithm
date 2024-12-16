@@ -14,3 +14,6 @@ jobs:
       - run: docker image tag bff-algorithm $DOCKERHUB_USERNAME/bff-algorithm:$CIRCLE_SHA1
       - run: docker image tag bff-algorithm $DOCKERHUB_USERNAME/bff-algorithm:latest
       - run: docker image push $DOCKERHUB_USERNAME/bff-algorithm
+      - run: docker image tag algorithm $DOCKERHUB_USERNAME/algorithm:$CIRCLE_SHA1
+      - run: docker image tag algorithm $DOCKERHUB_USERNAME/algorithm:latest
+      - run: docker image push $DOCKERHUB_USERNAME/algorithm

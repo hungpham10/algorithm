@@ -1,26 +1,28 @@
 use actix::Addr;
-use actix_files::Files;
 use actix_web::{http::Method, middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
+
 use influxdb::Client as InfluxClient;
 use juniper::http::{graphiql::graphiql_source, GraphQLRequest};
-
-use chrono::Utc;
-use tokio_schedule::{every, Job};
-
 use pgwire::tokio::process_socket;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+
+use tokio_schedule::{every, Job};
 use tokio::net::TcpListener;
+use tokio::sync::broadcast;
+
+use std::io;
+use std::sync::Arc;
 
 use crate::actors::cron::{connect_to_cron, CronActor, CronResolver, TickCommand};
 use crate::actors::dnse::{connect_to_dnse, DnseActor};
 use crate::actors::fireant::{connect_to_fireant, FireantActor};
-use crate::actors::process::{connect_to_process_manager, HealthCommand, ProcessActor};
+use crate::actors::process::{HealthCommand, ProcessActor};
 use crate::actors::redis::{connect_to_redis, InfoCommand, RedisActor};
 use crate::actors::tcbs::{connect_to_tcbs, TcbsActor};
 use crate::actors::vps::{connect_to_vps, list_of_vn30, VpsActor};
-use crate::helpers::{connect_to_postgres_pool, create_graphql_schema, PgPool, SchemaGraphQL};
-use crate::load::{load_and_map_schedulers_with_resolvers, load_sub_processes_from_pgpool};
+use crate::helpers::{connect_to_postgres_pool, create_graphql_schema, PgPool, SchemaGraphQL, Shutdown};
+use crate::load::load_and_map_schedulers_with_resolvers;
 use crate::schemas::graphql::create_graphql_context;
 use crate::interfaces::pgwire::create_sql_context;
 
@@ -124,135 +126,221 @@ async fn health(
     }
 }
 
-async fn simulate() -> actix_web::Result<HttpResponse> {
-    Ok(HttpResponse::Ok().body("OK").into())
+struct DataSource {
+    dnse: Arc<Addr<DnseActor>>,
+    vps: Arc<Addr<VpsActor>>,
+    tcbs: Arc<Addr<TcbsActor>>,
+    fireant: Arc<Addr<FireantActor>>,
 }
 
-#[actix_rt::main]
-pub async fn sql_server() -> std::io::Result<()> {
-    env_logger::init();
+impl DataSource {
+    async fn new(
+        resolver: &mut CronResolver, 
+        pool: Arc<PgPool>,
+        cache: Arc<Addr<RedisActor>>,
+        tsdb: Arc<InfluxClient>, 
+    ) -> DataSource {
+        let dnse = Arc::new(connect_to_dnse());
+        let vps = Arc::new(connect_to_vps(resolver, tsdb.clone(), list_of_vn30().await));
+        let tcbs = Arc::new(connect_to_tcbs(resolver, pool.clone().into(), list_of_vn30().await));
+        let fireant = Arc::new(connect_to_fireant(
+            resolver,
+            pool.clone(),
+            cache.clone(),
+            std::env::var("FIREANT_TOKEN").unwrap()),
+        );
 
-    let mut resolver = CronResolver::new();
-    let capacity = std::env::var("SQL_CAPACITY")
-            .unwrap_or_else(|_| "0".to_string())
-            .parse()
-            .unwrap_or(0);
-    let pool = connect_to_postgres_pool(std::env::var("POSTGRES_DSN").unwrap());
-    let tsdb = Arc::new(
-        InfluxClient::new(
-            std::env::var("INFLUXDB_URI").unwrap(),
-            std::env::var("INFLUXDB_BUCKET").unwrap(),
-        )
-        .with_token(std::env::var("INFLUXDB_TOKEN").unwrap()),
-    );
-    let cache = connect_to_redis(std::env::var("REDIS_DSN").unwrap()).await;
-    let dnse = connect_to_dnse();
-    let vps = connect_to_vps(&mut resolver, tsdb.clone(), list_of_vn30().await);
-    let tcbs = connect_to_tcbs(&mut resolver, pool.clone().into(), list_of_vn30().await);
-    let fireant = connect_to_fireant(
-        &mut resolver,
-        pool.clone().into(),
-        cache.clone().into(),
-        std::env::var("FIREANT_TOKEN").unwrap(),
-    );
-    let cron = connect_to_cron(resolver.into());
-    let background: Addr<CronActor> = cron.clone();
-
-    // @NOTE: mapping cronjobs
-    actix_rt::spawn(async move {
-        let every_second = every(1).seconds().in_timezone(&Utc).perform(|| async {
-            let _ = cron.clone().send(TickCommand).await;
-        });
-        every_second.await;
-    });
-
-    let factory = create_sql_context(
-        capacity,
-        Arc::new(background),
-        Arc::new(vps),
-        Arc::new(dnse),
-        Arc::new(tcbs),
-        Arc::new(fireant),
-    );
-
-    let server_addr = "0.0.0.0:5432";
-    let listener = TcpListener::bind(server_addr).await.unwrap();
-
-    println!("Listening {}....", server_addr);
-
-    // @NOTE: mapping cronjobs
-    loop {
-        let incoming_socket = listener.accept().await.unwrap();
-        let factory_ref = factory.clone();
-        actix_rt::spawn(async move { process_socket(incoming_socket.0, None, factory_ref).await });
+        DataSource {
+            dnse,
+            vps,
+            tcbs,
+            fireant,
+        }
     }
+}
+
+struct Application {
+    ds: DataSource,
+    schema: Arc<SchemaGraphQL>,
+    cache: Arc<Addr<RedisActor>>,
+    pool: Arc<PgPool>,
+    tsdb: Arc<InfluxClient>,
+    cron: Arc<Addr<CronActor>>,
+
+    // @NOTE: shutdown manager
+    shutdown: Shutdown,
+
+    // @NOTE: shutdown notifier
+    notify_shutdown: broadcast::Sender<()>,
+}
+
+impl Application {
+    pub async fn new() -> Application {
+        let mut resolver = CronResolver::new();
+        let (shutdown_tx, shutdown_rx) = broadcast::channel(1);
+    
+        let cache = Arc::new(
+            connect_to_redis(std::env::var("REDIS_DSN").unwrap()).await
+        );
+        let pool = Arc::new(
+            connect_to_postgres_pool(std::env::var("POSTGRES_DSN").unwrap())
+        );
+        let tsdb = Arc::new(
+            InfluxClient::new(
+                std::env::var("INFLUXDB_URI").unwrap(),
+                std::env::var("INFLUXDB_BUCKET").unwrap(),
+            )
+            .with_token(std::env::var("INFLUXDB_TOKEN").unwrap()),
+        );
+    
+        Application {
+            ds: DataSource::new(&mut resolver, pool.clone(), cache.clone(), tsdb.clone()).await,
+            cron: Arc::new(connect_to_cron(resolver.into())),
+            schema: Arc::new(create_graphql_schema()),
+            pool,
+            tsdb,
+            cache,
+
+            // @NOTE: shutdown manager
+            shutdown: Shutdown::new(shutdown_rx),
+
+            // @NOTE: shutdown notifier
+            notify_shutdown: shutdown_tx,
+        }
+    }
+
+    pub async fn start_cron(&self) {
+        // @NOTE: mapping cronjobs
+        let cron = self.cron.clone();
+        let pool = self.pool.clone();
+
+        actix_rt::spawn(async move {
+            load_and_map_schedulers_with_resolvers(pool, cron.clone()).await;
+
+            let every_second = every(1)
+                .seconds()
+                .in_timezone(&Utc)
+                .perform(|| async {
+                    let _ = cron.clone().send(TickCommand).await;
+                });
+            every_second.await;
+        });
+    }
+
+    pub async fn handon_sql_server(&self, port: usize, cache_capacity: usize) -> io::Result<()>{
+        // @NOTE: configure and start sql server
+        let factory = create_sql_context(
+            cache_capacity,
+            self.cron.clone(),
+            self.ds.vps.clone(),
+            self.ds.dnse.clone(),
+            self.ds.tcbs.clone(),
+            self.ds.fireant.clone(),
+        );
+
+        let server_addr = format!("0.0.0.0:{}", port);
+        let listener = TcpListener::bind(server_addr).await.unwrap();
+
+        while !self.shutdown.is_shutdown() {
+            let (socket, _) = listener.accept()
+                .await
+                .unwrap();
+            let factory_ref = factory.clone();
+
+            actix_rt::spawn(async move {
+                let _ = process_socket(
+                        socket, 
+                        None, 
+                        factory_ref
+                    )
+                    .await;
+            });
+        }
+
+        Ok(())
+    }
+
+    pub async fn handon_bff_server(&self, port: u16) -> std::io::Result<()> {
+        // @NOTE: mapping http routes
+        let cron = self.cron.clone();
+        let pool = self.pool.clone();
+        let cache = self.cache.clone();
+        let schema = self.schema.clone();
+        let vps = self.ds.vps.clone();
+        let dnse = self.ds.dnse.clone();
+        let tcbs = self.ds.tcbs.clone();
+        let fireant = self.ds.fireant.clone();
+
+        HttpServer::new(move || {
+            App::new()
+                .wrap(middleware::Logger::default())
+                .app_data(web::Data::new(cron.clone()))
+                .app_data(web::Data::new(cache.clone()))
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(schema.clone()))
+                .app_data(web::Data::new(vps.clone()))
+                .app_data(web::Data::new(dnse.clone()))
+                .app_data(web::Data::new(tcbs.clone()))
+                .app_data(web::Data::new(fireant.clone()))
+                .route("/health", web::get().to(health))
+                .route("/graphql", web::post().to(graphql))
+                .route("/playground", web::get().to(playground))
+        })
+        .bind(("0.0.0.0", port))
+        .unwrap()
+        .run()
+        .await
+    }
+
 }
 
 #[actix_rt::main]
 pub async fn graphql_server() -> std::io::Result<()> {
-    env_logger::init();
+    let app = Application::new().await;
 
-    let mut resolver = CronResolver::new();
-    let processer = connect_to_process_manager();
-    let pool = connect_to_postgres_pool(std::env::var("POSTGRES_DSN").unwrap());
-    let tsdb = Arc::new(
-        InfluxClient::new(
-            std::env::var("INFLUXDB_URI").unwrap(),
-            std::env::var("INFLUXDB_BUCKET").unwrap(),
-        )
-        .with_token(std::env::var("INFLUXDB_TOKEN").unwrap()),
-    );
+    app.start_cron()
+        .await;
+    app.handon_bff_server(3000)
+        .await
+}
 
-    let cache = connect_to_redis(std::env::var("REDIS_DSN").unwrap()).await;
-    let schema = std::sync::Arc::new(create_graphql_schema());
-    let dnse = connect_to_dnse();
-    let vps = connect_to_vps(&mut resolver, tsdb.clone(), list_of_vn30().await);
-    let tcbs = connect_to_tcbs(&mut resolver, pool.clone().into(), list_of_vn30().await);
-    let fireant = connect_to_fireant(
-        &mut resolver,
-        pool.clone().into(),
-        cache.clone().into(),
-        std::env::var("FIREANT_TOKEN").unwrap(),
-    );
-    let cron = connect_to_cron(resolver.into());
-    let background: Addr<CronActor> = cron.clone();
+#[actix_rt::main]
+pub async fn sql_server() -> std::io::Result<()> {
+    let app = Application::new().await;
+    let capacity = std::env::var("SQL_CAPACITY")
+            .unwrap_or_else(|_| "0".to_string())
+            .parse()
+            .unwrap_or(0);
 
-    load_and_map_schedulers_with_resolvers(pool.clone(), cron.clone()).await;
-    load_sub_processes_from_pgpool(
-        pool.clone(),
-        std::env::var("INSTANCE").unwrap(),
-        processer.clone(),
-    )
-    .await;
+    app.start_cron()
+        .await;
 
-    // @NOTE: mapping cronjobs
+    app.handon_sql_server(3001, capacity)
+        .await
+}
+
+#[actix_rt::main]
+pub async fn monolith_server() -> std::io::Result<()> {
+    // @NOTE: configure application
+    let app = Arc::new(Application::new().await);
+    let capacity = std::env::var("SQL_CAPACITY")
+            .unwrap_or_else(|_| "0".to_string())
+            .parse()
+            .unwrap_or(0);
+
+    // @NOTE: start cron first
+    app.start_cron().await;
+
+    let sql_server = app.clone();
+    let http_server = app.clone();
+
     actix_rt::spawn(async move {
-        let every_second = every(1).seconds().in_timezone(&Utc).perform(|| async {
-            let _ = cron.clone().send(TickCommand).await;
-        });
-        every_second.await;
+        sql_server
+            .handon_sql_server(5432, capacity)
+            .await
     });
 
-    // @NOTE: mapping routes
-    HttpServer::new(move || {
-        App::new()
-            .wrap(middleware::Logger::default())
-            .app_data(web::Data::new(background.clone()))
-            .app_data(web::Data::new(cache.clone()))
-            .app_data(web::Data::new(pool.clone()))
-            .app_data(web::Data::new(schema.clone()))
-            .app_data(web::Data::new(vps.clone()))
-            .app_data(web::Data::new(dnse.clone()))
-            .app_data(web::Data::new(tcbs.clone()))
-            .app_data(web::Data::new(fireant.clone()))
-            .app_data(web::Data::new(processer.clone()))
-            .route("/health", web::get().to(health))
-            .route("/graphql", web::post().to(graphql))
-            .route("/api/v1/simulate", web::post().to(simulate))
-            .route("/playground", web::get().to(playground))
-            .service(Files::new("/", "./static").index_file("index.html"))
-    })
-    .bind(("0.0.0.0", 3000))?
-    .run()
-    .await
+    http_server
+        .handon_bff_server(3000)
+        .await
 }

@@ -22,7 +22,7 @@ struct Process {
     arguments: String,
 }
 
-pub async fn load_and_map_schedulers_with_resolvers(pool: PgPool, scheduler: Addr<CronActor>) {
+pub async fn load_and_map_schedulers_with_resolvers(pool: Arc<PgPool>, scheduler: Arc<Addr<CronActor>>) {
     use crate::schemas::database::tbl_crons::dsl::*;
 
     let mut dbconn = pool.get().unwrap();
@@ -40,7 +40,7 @@ pub async fn load_and_map_schedulers_with_resolvers(pool: PgPool, scheduler: Add
     }
 }
 
-pub async fn load_sub_processes_from_pgpool(pool: PgPool, target: String, manager: Arc<Addr<ProcessActor>>) {
+pub async fn load_sub_processes_from_pgpool(pool: Arc<PgPool>, target: String, manager: Arc<Addr<ProcessActor>>) {
     use crate::schemas::database::tbl_processes::dsl::*;
 
     let mut dbconn = pool.get().unwrap();

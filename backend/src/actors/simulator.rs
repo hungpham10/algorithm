@@ -109,6 +109,7 @@ impl Investor {
 impl Player for Investor { 
     fn initialize(&mut self) {
         // @TODO: pull metadata of each investor from redis
+        
     }
    
     fn estimate(&self) -> f64 {
@@ -250,44 +251,6 @@ impl Actor for SimulatorActor {
 }
 
 #[derive(Message, Debug)]
-#[rtype(result = "Result<i64, SimulatorError>")]
-pub struct UpdateSettlementCycleCommand;
-
-impl Handler<UpdateSettlementCycleCommand> for SimulatorActor {
-    type Result = ResponseFuture<Result<i64, SimulatorError>>;
-
-    fn handle(&mut self, _msg: UpdateSettlementCycleCommand, _: &mut Self::Context) -> Self::Result {
-        Box::pin(async move {
-            Ok(0)
-        })
-    }
-}
-
-#[derive(Message, Debug)]
-#[rtype(result = "Result<f64, SimulatorError>")]
-pub struct OrderCommand {
-    id:     i64,
-    symbol: String,
-    is_buy: bool,
-}
-
-impl Handler<OrderCommand> for SimulatorActor {
-    type Result = ResponseFuture<Result<f64, SimulatorError>>;
-
-    fn handle(&mut self, msg: OrderCommand, _: &mut Self::Context) -> Self::Result {
-        Box::pin(async move {
-            if msg.is_buy {
-                // @TODO: kiem tra muc hieu suat mua voi co phieu cu the
-            } else {
-                // @TODO: kiem tra muc hieu suat ban voi co phieu cu the
-            }
-
-            Ok(0.0 as f64)
-        })
-    }
-}
-
-#[derive(Message, Debug)]
 #[rtype(result = "Result<Option<()>, SimulatorError>")]
 pub struct EvaluateFitnessCommand {
     number_of_couple: usize,
@@ -347,20 +310,6 @@ pub fn connect_to_simulator(
         n_children,
     );
 
-    review_settlement_cycle(
-        resolver,
-        pool.clone(),
-        cache.clone(),
-        simulator.clone(),
-    );
-
-    review_and_put_orders(
-        resolver,
-        pool.clone(),
-        cache.clone(),
-        simulator.clone(),
-        n_player,
-    );
     return actor;
 }
 
@@ -383,55 +332,6 @@ fn train_investors(
                     },
                 )
                 .await;
-            }
-        }
-    );
-}
-
-fn review_settlement_cycle(
-    resolver: &mut CronResolver,
-    pool:     Arc<PgPool>,
-    cache:    Arc<Addr<RedisActor>>,
-    simulator: Arc<Addr<SimulatorActor>>,
-) {
-    resolver.resolve("simulator.review_settlement_cycle".to_string(), 
-        move |arguments, _, _| {
-            let simulator = simulator.clone();
-            let pool      = pool.clone();
-            let cache     = cache.clone();
-
-            async move {
-                let _ = simulator.send(UpdateSettlementCycleCommand)
-                    .await;
-            }
-        }
-    );
-}
-
-fn review_and_put_orders(
-    resolver:  &mut CronResolver,
-    pool:      Arc<PgPool>,
-    cache:     Arc<Addr<RedisActor>>,
-    simulator: Arc<Addr<SimulatorActor>>,
-    n_player:  usize,
-) {
-    resolver.resolve("simulator.review_and_put_orders".to_string(), 
-        move |arguments, _, _| {
-            let simulator = simulator.clone();
-            let pool      = pool.clone();
-            let cache     = cache.clone();
-            let time      = Utc::now().timestamp();
-
-            async move {
-                let decisions = (1..n_player)
-                    .map(move |id| {
-                        simulator.send(OrderCommand{
-                            id:     id as i64,
-                            symbol: "".to_string(),
-                            is_buy: true,
-                        })
-                    })
-                    .collect::<Vec<_>>();
             }
         }
     );
