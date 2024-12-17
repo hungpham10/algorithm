@@ -27,6 +27,7 @@ pub struct ListSchemaCommand;
 #[derive(Message, Debug)]
 #[rtype(result = "BTreeMap<Key, DataRow>")]
 pub struct ScanDataCommand {
+    pub namespace: String,
     pub table: String,
 }
 

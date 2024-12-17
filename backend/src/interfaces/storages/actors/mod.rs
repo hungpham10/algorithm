@@ -2,6 +2,7 @@
 
 use actix::Addr;
 use async_trait::async_trait;
+use log::{info, error, debug};
 use std::sync::Arc;
 use futures::stream::iter;
 
@@ -12,7 +13,7 @@ use gluesql::core::data::{CustomFunction as StructCustomFunction, Key, Schema};
 use gluesql::core::error::{Error, Result};
 use gluesql::core::store::{DataRow, RowIter, Store};
 
-use crate::actors::{ListSchemaCommand, FetchDataCommand, ScanDataCommand};
+use crate::actors::{FetchDataCommand, ListSchemaCommand, SaveDataCommand, ScanDataCommand};
 use crate::actors::dnse::DnseActor;
 use crate::actors::fireant::FireantActor;
 use crate::actors::tcbs::TcbsActor;
@@ -130,8 +131,6 @@ impl Store for PgServerDatasource {
 
                 None => {},
             };
-
-            
         }
 
         // @NOTE: fails just in case we don't see any approviated table
@@ -139,6 +138,7 @@ impl Store for PgServerDatasource {
     }
 
     async fn scan_data(&self, table_name: &str) -> Result<RowIter> {
+        // @NOTE: fetch from Lru cache
         let list_dnse_schemas = self.dnse.send(ListSchemaCommand)
             .await
             .unwrap();
@@ -152,14 +152,45 @@ impl Store for PgServerDatasource {
             }
         ) {
             Some(index) => {
-                let ret = self.dnse.send(ScanDataCommand{
-                        table: list_dnse_schemas[index].table_name.clone(),
-                    })
-                    .await
-                    .unwrap()
-                    .into_iter()
-                    .map(Ok);
+                let table = list_dnse_schemas[index].table_name.clone();
+                let mut sorted_data = self.cache_data.send(ScanDataCommand{
+                    namespace: "dnse".to_string(),
+                    table: table.clone(),
+                })
+                .await
+                .unwrap();
 
+                if sorted_data.len() == 0 {
+                    sorted_data = self.dnse.send(ScanDataCommand{
+                            namespace: "dnse".to_string(),
+                            table: table.clone(),
+                        })
+                        .await
+                        .unwrap();
+
+                    match self.cache_data.send(SaveDataCommand{
+                                namespace: "dnse".to_string(),
+                                table,
+                                targets: sorted_data.clone()
+                            })
+                            .await
+                            .unwrap() {
+                        Some(cnt) => if cnt > 0 {
+                            debug!("number of updated records to LRU cache is {}", cnt);
+                        } else {
+                            error!("LRU cache is full and cannot update any more")
+                        },
+                        None => {
+                            error!("Seem to be cannot update records to LRU cache");
+                        },
+                    }
+                } else {
+                    debug!("number of records in LRU cache is {}", sorted_data.len());
+                }
+
+                let ret = sorted_data
+                    .into_iter()
+                    .map(Ok); 
                 return Ok(Box::pin(iter(ret)));
             },
             None => {}

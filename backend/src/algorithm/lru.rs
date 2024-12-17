@@ -16,9 +16,14 @@ pub struct LruCache<K, V> {
     capacity: usize,
     first: usize,
     last: usize,
+
+    // @NOTE: callbacks
+    on_removing: Option<Box<dyn Fn(K, V)>>,
+    on_updating: Option<Box<dyn Fn(K, V)>>,
+    on_inserting: Option<Box<dyn Fn(K, V)>>,
 }
 
-impl<K: Clone + Hash + Eq + Debug, V: Debug> LruCache<K, V> {
+impl<K: Clone + Hash + Eq + Debug, V: Debug + Clone> LruCache<K, V> {
     pub fn new(capacity: usize) -> Self {
         Self {
             mapping: HashMap::new(),
@@ -26,11 +31,22 @@ impl<K: Clone + Hash + Eq + Debug, V: Debug> LruCache<K, V> {
             capacity,
             first: 0,
             last: 0,
+
+            // @NOTE: callbacks
+            on_removing: None,
+            on_updating: None,
+            on_inserting: None,
         }
     }
 
     pub fn put(&mut self, key: K, value: V) -> bool {
         if let Some(&index) = self.mapping.get(&key) {
+            if let Some(callback) = &self.on_updating {
+                let key = key.clone();
+                let value = value.clone();
+
+                callback(key, value);
+            }
             self.caching[index].value = value;
 
             self.move_to_front(index);
@@ -41,6 +57,13 @@ impl<K: Clone + Hash + Eq + Debug, V: Debug> LruCache<K, V> {
 
             if self.caching.len() >= self.capacity {
                 let first = self.first;
+
+                if let Some(callback) = &self.on_removing {
+                    let key = self.caching[first].key.clone();
+                    let value = self.caching[first].value.clone();
+
+                    callback(key, value);
+                }
 
                 // @NOTE: remove first node will lead to update mapping and 
                 //         relink nodes
@@ -83,6 +106,13 @@ impl<K: Clone + Hash + Eq + Debug, V: Debug> LruCache<K, V> {
                 self.last = index;
             }
 
+            if let Some(callback) = &self.on_inserting {
+                let key = key.clone();
+                let value = value.clone();
+
+                callback(key, value);
+            }
+
             self.caching.push(Node{
                 key: key.clone(),
                 value,
@@ -102,6 +132,27 @@ impl<K: Clone + Hash + Eq + Debug, V: Debug> LruCache<K, V> {
         } else {
             None
         }
+    }
+
+    pub fn set_on_removing_callback<F>(&mut self, callback: F) 
+    where
+        F: Fn(K, V) + 'static
+    {
+        self.on_removing = Some(Box::new(callback));
+    }
+
+    pub fn set_on_inserting_callback<F>(&mut self, callback: F) 
+    where
+        F: Fn(K, V) + 'static
+    {
+        self.on_inserting = Some(Box::new(callback));
+    }
+
+    pub fn set_on_updating_callback<F>(&mut self, callback: F) 
+    where
+        F: Fn(K, V) + 'static
+    {
+        self.on_updating = Some(Box::new(callback));
     }
 
     fn move_to_front(&mut self, index: usize) {

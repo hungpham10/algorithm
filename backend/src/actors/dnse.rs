@@ -7,9 +7,9 @@ use gluesql::core::ast::ColumnDef;
 use gluesql::core::data::Schema;
 use gluesql::core::store::DataRow;
 use gluesql::prelude::DataType;
-
 use gluesql::prelude::Key;
 use gluesql::prelude::Value;
+
 use juniper::GraphQLObject;
 
 use reqwest::{Client as HttpClient, Error as HttpError};
@@ -17,8 +17,6 @@ use serde::{Deserialize, Serialize};
 
 use actix::prelude::*;
 use actix::Addr;
-
-use crate::algorithm::lru::LruCache;
 
 pub struct DnseActor {
     timeout: u64,
@@ -262,6 +260,58 @@ impl Handler<super::FetchDataCommand> for DnseActor {
     type Result = ResponseFuture<Option<DataRow>>;
 
     fn handle(&mut self, msg: super::FetchDataCommand, _: &mut Self::Context) -> Self::Result {
+        if msg.table.starts_with("ohcl_") {
+            let client = Arc::new(HttpClient::default());
+            
+            if let Some(rest) = msg.table.strip_prefix("ohcl_") {
+                let parts = rest.split('_').collect::<Vec<&str>>();
+
+                if parts.len() == 2 {
+                    let to = match msg.target {
+                        Key::I32(timestamp) => timestamp,
+                        _ => 0,
+                    };
+                    let from = match msg.target {
+                        Key::I32(timestamp) => timestamp,
+                        _ => 0,
+                    };
+
+                    let timeout = self.timeout.clone();
+                    let stock = parts[0].to_string();
+                    let resolution = parts[1].to_string();
+
+                    return Box::pin(async move {
+                        let candles = fetch_ohcl_by_stock(
+                            client.clone(),
+                            &stock,
+                            &resolution,
+                            from as i64,
+                            to as i64,
+                            timeout,
+                        )
+                        .await
+                        .unwrap();
+                    
+                        match candles.last() {
+                            Some(candle) => {
+                                Some(DataRow::Vec(
+                                    vec![
+                                        Value::I32(candle.t),
+                                        Value::F64(candle.o), 
+                                        Value::F64(candle.h), 
+                                        Value::F64(candle.c), 
+                                        Value::F64(candle.l), 
+                                        Value::I32(candle.v)
+                                    ]
+                                ))
+                            },
+                            None => None,
+                        }
+                    });
+                }
+            }
+        }
+
         Box::pin(async move { None })
     }
 }

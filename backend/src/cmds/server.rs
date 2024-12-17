@@ -270,8 +270,7 @@ impl Application {
         let dnse = self.ds.dnse.clone();
         let tcbs = self.ds.tcbs.clone();
         let fireant = self.ds.fireant.clone();
-
-        HttpServer::new(move || {
+        let ret = HttpServer::new(move || {
             App::new()
                 .wrap(middleware::Logger::default())
                 .app_data(web::Data::new(cron.clone()))
@@ -289,7 +288,10 @@ impl Application {
         .bind(("0.0.0.0", port))
         .unwrap()
         .run()
-        .await
+        .await;
+
+        let _ = self.notify_shutdown.send(());
+        return ret;
     }
 
 }
