@@ -138,11 +138,12 @@ impl Store for PgServerDatasource {
     }
 
     async fn scan_data(&self, table_name: &str) -> Result<RowIter> {
+        let table_name_in_string = table_name.to_string();
+
         // @NOTE: fetch from Lru cache
         let list_dnse_schemas = self.dnse.send(ListSchemaCommand)
             .await
             .unwrap();
-        let table_name_in_string = table_name.to_string();
 
         match binary_search(
             &list_dnse_schemas, 
@@ -175,7 +176,7 @@ impl Store for PgServerDatasource {
                             })
                             .await
                             .unwrap() {
-                        Some(cnt) => if cnt > 0 {
+                        Some(cnt) => if cnt as usize == sorted_data.len() {
                             debug!("number of updated records to LRU cache is {}", cnt);
                         } else {
                             error!("LRU cache is full and cannot update any more")
@@ -196,6 +197,61 @@ impl Store for PgServerDatasource {
             None => {}
         }
 
+        let list_fireant_schemas = self.fireant.send(ListSchemaCommand)
+            .await
+            .unwrap();
+
+        match binary_search(
+            &list_fireant_schemas, 
+            &table_name_in_string, 
+            |target: &String, object: &Schema| {
+                target.cmp(&object.table_name)
+            },
+        ) {
+            Some(index) => {
+                let table = list_fireant_schemas[index].table_name.clone();
+                let mut sorted_data = self.cache_data.send(ScanDataCommand{
+                    namespace: "fireant".to_string(),
+                    table: table.clone(),
+                })
+                .await
+                .unwrap();
+
+                if sorted_data.len() == 0 {
+                    sorted_data = self.fireant.send(ScanDataCommand{
+                            namespace: "fireant".to_string(),
+                            table: table.clone(),
+                        })
+                        .await
+                        .unwrap();
+
+                    match self.cache_data.send(SaveDataCommand{
+                                namespace: "fireant".to_string(),
+                                table,
+                                targets: sorted_data.clone()
+                            })
+                            .await
+                            .unwrap() {
+                        Some(cnt) => if cnt as usize == sorted_data.len() {
+                            debug!("number of updated records to LRU cache is {}", cnt);
+                        } else {
+                            error!("LRU cache is full and cannot update any more")
+                        },
+                        None => {
+                            error!("Seem to be cannot update records to LRU cache");
+                        },
+                    }
+                } else {
+                    debug!("number of records in LRU cache is {}", sorted_data.len());
+                }
+
+                let ret = sorted_data
+                    .into_iter()
+                    .map(Ok); 
+                return Ok(Box::pin(iter(ret)));
+            },
+            None => {}
+        }
         return Err(Error::StorageMsg(format!("not found table {}", table_name)));
     }
 }

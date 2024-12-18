@@ -185,6 +185,10 @@ async fn fetch_price_depth_per_block(
     }
 }
 
+pub async fn list_active_stocks() -> Vec<String> {
+    list_of_hose().await
+}
+
 pub async fn list_of_hose() -> Vec<String> {
     reqwest::get("https://bgapidatafeed.vps.com.vn/getlistckindex/hose")
         .await

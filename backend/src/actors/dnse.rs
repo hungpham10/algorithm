@@ -185,7 +185,7 @@ impl Handler<super::ListSchemaCommand> for DnseActor {
         Box::pin(async move { 
             let mut result: Vec<Schema> = Vec::<Schema>::new();
 
-            for stock_name in super::vps::list_of_vn30().await {
+            for stock_name in super::vps::list_active_stocks().await {
                 for resolution in list_of_resolution() {
                     // @TODO: cấu hình cột để hiển thị
 
@@ -357,8 +357,7 @@ impl Handler<super::ScanDataCommand> for DnseActor {
                                     Value::F64(candle.c), 
                                     Value::F64(candle.l), 
                                     Value::I32(candle.v)
-                                    ]
-                                );
+                                ]);
 
                             (key, row)
                         })
