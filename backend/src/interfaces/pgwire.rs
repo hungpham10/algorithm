@@ -1,8 +1,6 @@
 use actix::Addr;
-use pgwire::messages::data::DataRow;
-
 use std::sync::{Arc, Mutex};
-
+use log::debug;
 use async_trait::async_trait;
 use futures::stream;
 
@@ -41,10 +39,12 @@ impl SimpleQueryHandler for PgServerHandler {
     where
         C: ClientInfo + Unpin + Send + Sync,
     {
+        use std::time::Instant;
+
         let query = query.to_string().clone();
         let glue = self.glue.clone();
+        let start = Instant::now();
 
-        println!("{}", query);
         tokio::task::spawn_blocking(move || { 
                 let mut glue: std::sync::MutexGuard<'_, Glue<PgServerDatasource>> = glue.lock().unwrap();
 
@@ -53,6 +53,10 @@ impl SimpleQueryHandler for PgServerHandler {
             .await
             .map_err(|err| PgWireError::ApiError(Box::new(err)))
             .and_then(|response| {
+                let duration = start.elapsed();
+
+                debug!("Time elapsed: {:?}", duration);
+
                 response
                 .map_err(|err| PgWireError::ApiError(Box::new(err)))
                 .and_then(|payloads| {
@@ -203,7 +207,7 @@ impl SimpleQueryHandler for PgServerHandler {
                             )))
                         },
                         _ => {
-                             unimplemented!()
+                            unimplemented!()
                         }
                     })
                     .collect::<Result<Vec<Response>, PgWireError>>()
