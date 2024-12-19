@@ -362,7 +362,6 @@ impl Handler<super::ScanDataCommand> for FireantActor {
     fn handle(&mut self, msg: super::ScanDataCommand, _: &mut Self::Context) -> Self::Result {
         let table = msg.table.clone();
 
-        println!("{}", table);
         if table == "stocks_fudamential_analysis".to_string() {
             let token = self.token.clone();
             let timeout = self.timeout.clone();

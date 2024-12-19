@@ -2,7 +2,7 @@
 
 use actix::Addr;
 use async_trait::async_trait;
-use log::{info, error, debug};
+use log::{error, debug};
 use std::sync::Arc;
 use futures::stream::iter;
 

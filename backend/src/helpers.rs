@@ -1,12 +1,8 @@
-use juniper::{EmptySubscription, RootNode};
 use tokio::sync::broadcast;
 
 use diesel::pg::PgConnection;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 
-use crate::schemas::graphql::{Context, Mutation, Query};
-
-pub type SchemaGraphQL = RootNode<'static, Query, Mutation, EmptySubscription<Context>>;
 pub type PgConnMgr = ConnectionManager<PgConnection>;
 pub type PgConn = PooledConnection<ConnectionManager<PgConnection>>;
 pub type PgPool = Pool<PgConnMgr>;
@@ -17,10 +13,6 @@ pub fn connect_to_postgres_pool(pg_dsn: String) -> PgPool {
         .max_size(2)
         .build(PgConnMgr::new(pg_dsn))
         .unwrap()
-}
-
-pub fn create_graphql_schema() -> SchemaGraphQL {
-    SchemaGraphQL::new(Query {}, Mutation {}, EmptySubscription::new())
 }
 
 #[derive(Debug)]

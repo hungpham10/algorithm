@@ -21,9 +21,9 @@ use crate::actors::process::{HealthCommand, ProcessActor};
 use crate::actors::redis::{connect_to_redis, InfoCommand, RedisActor};
 use crate::actors::tcbs::{connect_to_tcbs, TcbsActor};
 use crate::actors::vps::{connect_to_vps, list_of_vn30, VpsActor};
-use crate::helpers::{connect_to_postgres_pool, create_graphql_schema, PgPool, SchemaGraphQL, Shutdown};
+use crate::helpers::{connect_to_postgres_pool, PgPool, Shutdown};
 use crate::load::load_and_map_schedulers_with_resolvers;
-use crate::schemas::graphql::create_graphql_context;
+use crate::interfaces::graphql::{create_graphql_context, create_graphql_schema, SchemaGraphQL};
 use crate::interfaces::pgwire::create_sql_context;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

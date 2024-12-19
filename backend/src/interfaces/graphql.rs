@@ -1,6 +1,6 @@
 use actix::Addr;
 use chrono::{NaiveDate, Utc};
-use juniper::{graphql_object, FieldResult, GraphQLInputObject};
+use juniper::{graphql_object, EmptySubscription, FieldResult, GraphQLInputObject, RootNode};
 
 use sentry::capture_error;
 
@@ -15,26 +15,13 @@ use crate::actors::tcbs::TcbsActor;
 use crate::actors::vps::{UpdateStocksCommand, VpsActor};
 use crate::helpers::PgPool;
 
-#[derive(Clone)]
-pub struct Context {
-    cron: Arc<Addr<CronActor>>,
-    vps: Arc<Addr<VpsActor>>,
-    dnse: Arc<Addr<DnseActor>>,
-    tcbs: Arc<Addr<TcbsActor>>,
-    fireant: Arc<Addr<FireantActor>>,
-    pool: Arc<PgPool>,
-    cache: Arc<Addr<RedisActor>>,
-}
-
-impl juniper::Context for Context {}
-
-pub struct Query;
-
 #[derive(GraphQLInputObject)]
-struct Pair {
+pub struct Pair {
     key: String,
     value: String,
 }
+
+pub struct Query;
 
 #[graphql_object(context = Context)]
 impl Query {
@@ -136,6 +123,19 @@ impl Mutation {
     }
 }
 
+#[derive(Clone)]
+pub struct Context {
+    cron: Arc<Addr<CronActor>>,
+    vps: Arc<Addr<VpsActor>>,
+    dnse: Arc<Addr<DnseActor>>,
+    tcbs: Arc<Addr<TcbsActor>>,
+    fireant: Arc<Addr<FireantActor>>,
+    pool: Arc<PgPool>,
+    cache: Arc<Addr<RedisActor>>,
+}
+
+impl juniper::Context for Context {}
+
 pub fn create_graphql_context(
     cron: Arc<Addr<CronActor>>,
     vps: Arc<Addr<VpsActor>>,
@@ -154,4 +154,10 @@ pub fn create_graphql_context(
         pool,
         cache,
     }
+}
+
+pub type SchemaGraphQL = RootNode<'static, Query, Mutation, EmptySubscription<Context>>;
+
+pub fn create_graphql_schema() -> SchemaGraphQL {
+    SchemaGraphQL::new(Query {}, Mutation {}, EmptySubscription::new())
 }
