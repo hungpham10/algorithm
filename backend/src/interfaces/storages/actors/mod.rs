@@ -252,6 +252,64 @@ impl Store for PgServerDatasource {
             },
             None => {}
         }
+
+
+        let list_tcbs_schemas = self.tcbs.send(ListSchemaCommand)
+            .await
+            .unwrap();
+
+        match binary_search(
+            &list_tcbs_schemas, 
+            &table_name_in_string, 
+            |target: &String, object: &Schema| {
+                target.cmp(&object.table_name)
+            },
+        ) {
+            Some(index) => {
+                let table = list_tcbs_schemas[index].table_name.clone();
+                let mut sorted_data = self.cache_data.send(ScanDataCommand{
+                    namespace: "tcbs".to_string(),
+                    table: table.clone(),
+                })
+                .await
+                .unwrap();
+
+                if sorted_data.len() == 0 {
+                    sorted_data = self.tcbs.send(ScanDataCommand{
+                            namespace: "tcbs".to_string(),
+                            table: table.clone(),
+                        })
+                        .await
+                        .unwrap();
+
+                    match self.cache_data.send(SaveDataCommand{
+                                namespace: "tcbs".to_string(),
+                                table,
+                                targets: sorted_data.clone()
+                            })
+                            .await
+                            .unwrap() {
+                        Some(cnt) => if cnt as usize == sorted_data.len() {
+                            debug!("number of updated records to LRU cache is {}", cnt);
+                        } else {
+                            error!("LRU cache is full and cannot update any more")
+                        },
+                        None => {
+                            error!("Seem to be cannot update records to LRU cache");
+                        },
+                    }
+                } else {
+                    debug!("number of records in LRU cache is {}", sorted_data.len());
+                }
+
+                let ret = sorted_data
+                    .into_iter()
+                    .map(Ok); 
+                return Ok(Box::pin(iter(ret)));
+            },
+            None => {}
+        }
+    
         return Err(Error::StorageMsg(format!("not found table {}", table_name)));
     }
 }
