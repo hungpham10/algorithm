@@ -20,8 +20,10 @@ influxdb = { version = "0.7.2", default-features = false, features = [
 diesel = { version = "2.2.0", features = ["postgres", "r2d2", "chrono"] }
 redis = { version = "0.26.1", features = ["aio", "tokio-comp"] }
 
-# @NOTE: genetic algorithm
+# @NOTE: algorithm
+rand_distr = "0.4.3"
 rand = "0.8.5"
+rayon = "1.10"
 
 # @NOTE: models
 juniper = "0.16"
@@ -61,6 +63,14 @@ reqwest-middleware = "0.3.3"
 
 # @NOTE: client
 ctrlc = "3.4"
+
+# @NOTE: google sheet report
+google-sheets4 = "6.0.0+20240621"
+yup-oauth2 = "11.0.0"
+
+[dev-dependencies]
+# @NOTE: render and debug using chart
+plotters = "0.3.7"
 
 # @NOTE: control to play some automate server from client
 playwright = "0.0.20"

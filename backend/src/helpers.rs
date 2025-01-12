@@ -1,7 +1,10 @@
+use std::collections::BTreeMap;
 use tokio::sync::broadcast;
 
 use diesel::pg::PgConnection;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
+
+use crate::schemas::Argument;
 
 pub type PgConnMgr = ConnectionManager<PgConnection>;
 pub type PgConn = PooledConnection<ConnectionManager<PgConnection>>;
@@ -13,6 +16,19 @@ pub fn connect_to_postgres_pool(pg_dsn: String) -> PgPool {
         .max_size(2)
         .build(PgConnMgr::new(pg_dsn))
         .unwrap()
+}
+
+pub fn convert_graphql_argument_to_map(
+    arguments: Option<Vec<Argument>>,
+) -> BTreeMap<String, String> {
+    let mut mapping = BTreeMap::<String, String>::new();
+
+    if let Some(arguments) = arguments {
+        for pair in arguments {
+            mapping.insert(pair.argument, pair.value);
+        }
+    }
+    return mapping;
 }
 
 #[derive(Debug)]

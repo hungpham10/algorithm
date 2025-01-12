@@ -9,7 +9,6 @@ pub mod cron;
 pub mod dnse;
 pub mod fireant;
 pub mod process;
-pub mod prometheus;
 pub mod redis;
 pub mod simulator;
 pub mod tcbs;

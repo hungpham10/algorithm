@@ -88,3 +88,6 @@ user_data_*.cfg
 # Added by cargo
 /target
 vendor
+
+# Ignore image
+*.png

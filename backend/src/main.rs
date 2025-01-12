@@ -1,4 +1,4 @@
-use lib::cmds::server::monolith_server;
+use lib::cmds::{client::monolith_client, server::monolith_server};
 use ::lib::cmds::{server::graphql_server, server::sql_server};
 
 fn main() {
@@ -17,6 +17,7 @@ fn main() {
         "graphql-server" => graphql_server(),
         "sql-server" => sql_server(),
         "server" => monolith_server(),
+        "client" => monolith_client(),
         unknown => todo!("not yet implement {}", unknown),
     }.unwrap();
 }

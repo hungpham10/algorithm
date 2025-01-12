@@ -1,27 +1,34 @@
+use rayon::prelude::*;
+
 use rand::Rng;
 
 #[derive(Debug)]
-pub struct Individual<T> {
+pub struct Individual<T: Sync + Send> {
     player:  T,
     session: i64,
     fitness: f64,
 }
 
 pub type CrossoverCallback<T> = fn(&Genetic<T>, &T, usize, &T, usize, i64) -> T;
+pub type MutateCallback<T> = fn(&mut T, usize);
+pub type ExtintionCallback<T> = fn(&T) -> bool;
 
 pub trait Player {
     fn initialize(&mut self);
     fn estimate(&self) -> f64;
+    fn gene(&self) -> Vec<f64>;
 }
 
 #[derive(Debug)]
-pub struct Genetic<T>{
+pub struct Genetic<T: Sync + Send> {
     population: Vec<Individual<T>>,
     limit:      usize,
     crossover:  CrossoverCallback<T>,
+    extinguish: ExtintionCallback<T>,
+    mutate:     MutateCallback<T>,
 }
 
-impl <T: Player + Clone + std::fmt::Debug> Individual<T> {
+impl <T: Player + Clone + Sync + Send + std::fmt::Debug> Individual<T> {
     pub fn new(player: T) -> Self {
         Self{
             player: player,
@@ -40,8 +47,7 @@ impl <T: Player + Clone + std::fmt::Debug> Individual<T> {
 
     pub fn estimate_mut(&mut self, session: i64) -> f64 {
         if self.session != session && self.session < session {
-            self.fitness = self.player.estimate();
-            self.session = session;
+            self.update_fitness(session, self.player.estimate());
         }
 
         return self.fitness
@@ -50,28 +56,40 @@ impl <T: Player + Clone + std::fmt::Debug> Individual<T> {
     pub fn initialize(&mut self) {
         self.player.initialize();
     }
+
+    fn update_fitness(&mut self, session: i64, fitness: f64) {
+        self.fitness = fitness;
+        self.session = session;
+    }
 }
 
-impl <T: Player + Clone + std::fmt::Debug> Genetic<T> {
+impl <T: Player + Clone + Sync + Send + std::fmt::Debug> Genetic<T> {
     pub fn new(
-        players: Vec<T>,
         limit: usize,
         crossover: CrossoverCallback<T>,
+        mutate: MutateCallback<T>,
+        extinguish: ExtintionCallback<T>,
     ) -> Self {
-        let mut population = Vec::<Individual<T>>::new();
-
-        for player in players {
-            population.push(Individual::<T>::new(player));
-        }
-
         Self {
-            population:   population,
-            limit:     limit,
-            crossover: crossover,
+            population: Vec::<Individual<T>>::new(),
+            limit,
+            crossover,
+            mutate,
+            extinguish,
         }
     }
 
-    pub fn initialize(&mut self) {
+    pub fn initialize(&mut self, players: Vec<T>) {
+        self.population.clear();
+
+        for player in players {
+            self.population.push(
+                Individual::<T>::new(
+                    player.clone()
+                )
+            );
+        }
+
         for player in &mut self.population {
             player.initialize();
         }
@@ -81,17 +99,51 @@ impl <T: Player + Clone + std::fmt::Debug> Genetic<T> {
         return &self.population[index];
     }
 
-    pub fn evolute(&mut self, number_of_couple: usize, session: i64) {
-        let mut rng = rand::thread_rng();
-        let mut roulette = vec![0.0 as f64; self.population.len()];
+    pub fn average_fitness(&self, session: i64) -> f64 {
         let mut sumup = 0.0 as f64;
 
         for i in 0..self.population.len() {
-            roulette[i] = self.population[i].estimate_mut(session);
-            sumup += roulette[i];
+            sumup += self.population[i].estimate(session);
         }
 
+        return sumup/self.population.len() as f64;
+    }
+
+    pub fn evolute(&mut self, number_of_couple: usize, session: i64) {
+        let mut rng = rand::thread_rng();
+        let mut extintion = Vec::<usize>::new();
+        let mut roulette = vec![0.0 as f64; self.population.len()];
+        let mut sumup = 0.0 as f64;
+
+        let individual_estimation = self.population
+            .par_iter()
+            .enumerate()
+            .map(|(i, iter)| (i, iter.player.estimate()))
+            .collect::<Vec<(usize, f64)>>();
+
+        for (i, fitness) in individual_estimation {
+            // @NOTE: update fitness of current session into each player
+            self.population[i].update_fitness(session, fitness);
+
+            // @NOTE: cache fitness for calculating later
+            roulette[i] = fitness;
+            sumup += fitness;
+
+            // @NOTE: to make some events like mass extinction, we need to perform estimation
+            //        who would be removed out of our population
+            if (self.extinguish)(&self.population[i].player) {
+                extintion.push(i);
+            }
+        }
+
+        // @NOTE: remove dead player
+        for i in extintion {
+            self.population.remove(i);
+        }
+
+        // @NOTE: force to remove players who have bad quality
         if self.population.len() > self.limit {
+
             // @NOTE: sort by estimation fitness
             self.population.sort_by(
                 |a, b| b.estimate(session).partial_cmp(&a.estimate(session)).unwrap()
@@ -127,6 +179,20 @@ impl <T: Player + Clone + std::fmt::Debug> Genetic<T> {
                     ),
                 ),
             );
+        }
+    }
+
+    pub fn fluctuate(&mut self, session: i64, mutation_rate: f64) {
+        let mut rng = rand::thread_rng();
+
+        for player in &mut self.population {
+            for i in 0..player.player.gene().len() {
+                if rng.gen::<f64>() < mutation_rate {
+                    (self.mutate)(&mut player.player, i);
+                }
+            }
+
+            player.estimate_mut(session);
         }
     }
 
@@ -171,6 +237,10 @@ mod tests {
                 1.0/(self.count - 10.0)
             }
         }
+
+        fn gene(&self) -> Vec<f64> {
+            vec![self.count]
+        }
     }
 
     fn generate_players() -> Vec<TestPlayer> {
@@ -203,15 +273,28 @@ mod tests {
         TestPlayer{ count: alpha*father_ctx.count + (1.0 - alpha)*mother_ctx.count }
     }
 
+    fn mutate(
+        player: &mut TestPlayer,
+        gene: usize,
+    ) {
+    }
+
+    fn policy(
+        player: &TestPlayer
+    ) -> bool {
+        return false;
+    }
+
     #[test]
     fn test_genetic_algorithm_workflow() {
         let mut genetic = Genetic::<TestPlayer>::new(
-            generate_players(), 
             10, 
             adaptive_crossover,
+            mutate,
+            policy,
         );
 
-        genetic.initialize();
+        genetic.initialize(generate_players());
 
         for j in 0..1 {
             for i in 0..100 {

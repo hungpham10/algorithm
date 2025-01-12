@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::collections::BTreeMap;
 
 use crate::actors::cron::{CronActor, ScheduleCommand};
 use crate::actors::process::{ProcessActor, RunCommand};
@@ -31,9 +32,10 @@ pub async fn load_and_map_schedulers_with_resolvers(pool: Arc<PgPool>, scheduler
     for cron in crons {
         let _ = scheduler
             .send(ScheduleCommand {
-                cron: cron.interval,
+                cron:    cron.interval,
                 timeout: cron.timeout,
-                route: cron.resolver,
+                route:   cron.resolver,
+                mapping: BTreeMap::new(),
             })
             .await
             .unwrap();

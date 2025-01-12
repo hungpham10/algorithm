@@ -17,11 +17,12 @@ use crate::algorithm::heap::Heap;
 
 #[derive(Debug, Clone)]
 pub struct Task {
-    id: i64,
-    timer: i64,
-    timeout: i32,
-    route: String,
+    id:       i64,
+    timer:    i64,
+    timeout:  i32,
+    route:    String,
     interval: String,
+    mapping:  BTreeMap<String, String>,
 }
 
 unsafe impl Send for Task {}
@@ -49,7 +50,7 @@ impl CronResolver {
         &self,
         routes: Vec<String>,
         timeouts: Vec<i32>,
-        arguments: BTreeMap<String, String>,
+        arguments: Vec<BTreeMap<String, String>>,
         from: i32,
         to: i32,
     ) -> usize {
@@ -60,7 +61,7 @@ impl CronResolver {
                 Some(callback) => {
                     tokio::time::timeout(
                         Duration::from_secs(timeouts[i] as u64),
-                        callback(arguments.clone(), from, to),
+                        callback(arguments[i].clone(), from, to),
                     )
                     .await
                     .ok();
@@ -144,6 +145,7 @@ impl Handler<TickCommand> for CronActor {
     fn handle(&mut self, _msg: TickCommand, _: &mut Self::Context) -> Self::Result {
         let mut targets = Vec::<String>::new();
         let mut timeouts = Vec::<i32>::new();
+        let mut mappings = Vec::<BTreeMap<String, String>>::new();
         let clock_now = Utc::now();
         
         if clock_now.timestamp() == self.clock {
@@ -179,6 +181,7 @@ impl Handler<TickCommand> for CronActor {
             if self.timekeeper.pop() {
                 targets.push(target.route.clone());
                 timeouts.push(target.timeout.clone());
+                mappings.push(target.mapping.clone());
             }
         }
 
@@ -186,7 +189,7 @@ impl Handler<TickCommand> for CronActor {
 
         return Box::pin(async move {
             Ok(resolver
-                .perform(targets, timeouts, BTreeMap::<String, String>::new(), -1, -1)
+                .perform(targets, timeouts, mappings, -1, -1)
                 .await)
         });
     }
@@ -212,7 +215,7 @@ impl Handler<PerformCommand> for CronActor {
 
         return Box::pin(async move {
             Ok(resolver
-                .perform(target, timeout, msg.mapping, msg.from, msg.to)
+                .perform(target, timeout, vec![msg.mapping], msg.from, msg.to)
                 .await)
         });
     }
@@ -221,9 +224,10 @@ impl Handler<PerformCommand> for CronActor {
 #[derive(Message, Debug)]
 #[rtype(result = "Result<i64, CronError>")]
 pub struct ScheduleCommand {
-    pub cron: String,
+    pub cron:    String,
     pub timeout: i32,
-    pub route: String,
+    pub route:   String,
+    pub mapping: BTreeMap<String, String>,
 }
 
 impl Handler<ScheduleCommand> for CronActor {
@@ -235,11 +239,12 @@ impl Handler<ScheduleCommand> for CronActor {
 
         if let Ok(next) = cron_parser::parse(msg.cron.as_str(), &now) {
             self.timekeeper.push(Task {
-                id: id as i64,
-                timeout: msg.timeout,
-                timer: next.timestamp() - now.timestamp(),
-                route: msg.route.clone(),
+                id:       id as i64,
+                timeout:  msg.timeout,
+                timer:    next.timestamp() - now.timestamp(),
+                route:    msg.route.clone(),
                 interval: msg.cron.clone(),
+                mapping:  msg.mapping.clone(),
             });
 
             return Box::pin(async move { Ok(id as i64) });

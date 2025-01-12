@@ -8,12 +8,13 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::actors::cron::{CronActor, PerformCommand};
-use crate::actors::dnse::{CandleStick, DnseActor, GetOHCLCommand};
+use crate::actors::dnse::{DnseActor, GetOHCLCommand};
 use crate::actors::fireant::FireantActor;
 use crate::actors::redis::RedisActor;
 use crate::actors::tcbs::TcbsActor;
 use crate::actors::vps::{UpdateStocksCommand, VpsActor};
 use crate::helpers::PgPool;
+use crate::schemas::CandleStick;
 
 #[derive(GraphQLInputObject)]
 pub struct Pair {
