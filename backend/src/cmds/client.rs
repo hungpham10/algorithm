@@ -35,6 +35,10 @@ pub async fn background_job_client() -> std::io::Result<()> {
                     value:    "10".to_string(),
                 },
                 Argument{
+                    argument: "number_of_simulator".to_string(),
+                    value:    "30".to_string(),
+                },
+                Argument{
                     argument: "mutation_rate".to_string(),
                     value:    "0.01".to_string(),
                 },
@@ -49,10 +53,6 @@ pub async fn background_job_client() -> std::io::Result<()> {
             Argument{
                 argument: "resolution".to_string(),
                 value:    "1D".to_string(),
-            },
-            Argument{
-                argument: "stock".to_string(),
-                value:    "MWG".to_string(),
             },
             Argument{
                 argument: "batch_money_for_fund".to_string(),

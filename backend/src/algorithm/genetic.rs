@@ -13,6 +13,12 @@ pub type CrossoverCallback<T> = fn(&Genetic<T>, &T, usize, &T, usize, i64) -> T;
 pub type MutateCallback<T> = fn(&mut T, usize);
 pub type ExtintionCallback<T> = fn(&T) -> bool;
 
+impl <T: Sync + Send> Individual<T> {
+    pub fn into(&self) -> &T {
+        &self.player
+    }
+}
+
 pub trait Player {
     fn initialize(&mut self);
     fn estimate(&self) -> f64;
@@ -97,6 +103,10 @@ impl <T: Player + Clone + Sync + Send + std::fmt::Debug> Genetic<T> {
 
     pub fn get(&self, index: usize) -> &Individual<T> {
         return &self.population[index];
+    }
+
+    pub fn size(&self) -> usize {
+        self.population.len()
     }
 
     pub fn average_fitness(&self, session: i64) -> f64 {

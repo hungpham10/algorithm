@@ -31,33 +31,51 @@ impl Handler<InfoCommand> for RedisActor {
     type Result = ResponseFuture<Result<Option<String>, redis::RedisError>>;
 
     fn handle(&mut self, _msg: InfoCommand, _: &mut Self::Context) -> Self::Result {
-        let mut con = self.conn.clone();
+        let mut conn = self.conn.clone();
         let cmd = redis::cmd("INFO");
 
         Box::pin(async move {
-            cmd.query_async(&mut con)
+            cmd.query_async(&mut conn)
                 .await
         })
     }
 }
+
+// ---------------------------------------------------------------------------- //
+// @NOTE: action for simulator
+//
+// ---------------------------------------------------------------------------- //
 
 #[derive(Message, Debug)]
 #[rtype(result = "Result<Option<String>, redis::RedisError>")]
-pub struct GetCommand;
+pub struct StoreSimulatorCommand{
+    pub stock:      String,
+    pub session_id: i64,
+    pub properties: Vec<super::simulator::Arguments>,
+}
 
-impl Handler<GetCommand> for RedisActor {
+impl Handler<StoreSimulatorCommand> for RedisActor {
     type Result = ResponseFuture<Result<Option<String>, redis::RedisError>>;
 
-    fn handle(&mut self, _msg: GetCommand, _: &mut Self::Context) -> Self::Result {
-        let mut con = self.conn.clone();
-        let cmd = redis::cmd("INFO");
+    fn handle(&mut self, msg: StoreSimulatorCommand, _: &mut Self::Context) -> Self::Result {
+        let mut conn = self.conn.clone();
+        let mut cmd = redis::cmd("HSET");
+        let stock = msg.stock.clone();
+        let session_id = msg.session_id.clone();
+        let properties = msg.properties.clone();
 
         Box::pin(async move {
-            cmd.query_async(&mut con)
+            cmd.arg(format!("simulator:{}:{}", stock, session_id))
+                .arg(serde_json::to_string(&properties).unwrap())
+                .query_async(&mut conn)
                 .await
         })
     }
 }
+
+// ---------------------------------------------------------------------------- //
+// @NOTE: end
+// ---------------------------------------------------------------------------- //
 
 pub async fn connect_to_redis(redis_dsn: String) -> Addr<RedisActor> {
     RedisActor::new(redis_dsn)
