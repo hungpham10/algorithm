@@ -13,7 +13,7 @@ pub mod redis;
 pub mod simulator;
 pub mod tcbs;
 pub mod vps;
-pub mod vietcap;
+//pub mod vietcap;
 
 #[derive(Message, Debug)]
 #[rtype(result = "bool")]

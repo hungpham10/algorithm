@@ -10,8 +10,6 @@ use gluesql::prelude::DataType;
 use gluesql::prelude::Key;
 use gluesql::prelude::Value;
 
-use juniper::GraphQLObject;
-
 use reqwest::{Client as HttpClient, Error as HttpError};
 use serde::{Deserialize, Serialize};
 

@@ -109,6 +109,30 @@ impl <T: Player + Clone + Sync + Send + std::fmt::Debug> Genetic<T> {
         return sumup/self.population.len() as f64;
     }
 
+    pub fn best_fitness(&self, session: i64) -> f64 {
+        let mut best = 0.0 as f64;
+
+        for i in 0..self.population.len() {
+            best = best.max(self.population[i].estimate(session));
+        }
+        return best;
+    }
+
+    pub fn best_player(&self, session: i64) -> T {
+        let mut best = 0.0 as f64;
+        let mut id_best = 0;
+
+        for i in 0..self.population.len() {
+            let tmp = best.max(self.population[i].estimate(session));
+            if tmp != best {
+                best = tmp;
+                id_best = i;
+            }
+        }
+
+        return self.population[id_best].player.clone();
+    }
+
     pub fn evolute(&mut self, number_of_couple: usize, session: i64) {
         let mut rng = rand::thread_rng();
         let mut extintion = Vec::<usize>::new();

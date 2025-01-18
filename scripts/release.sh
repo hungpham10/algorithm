@@ -10,6 +10,10 @@
 
 
 function prepare() {
+  if [[ ${DISABLE_AUTO_INIT_DATABASE} = "true" ]]; then
+    return
+  fi
+
   for I in {0..30}; do
     if ! pg_isready -d $POSTGRES_DSN; then
       sleep 1
@@ -21,10 +25,6 @@ function prepare() {
   if ! pg_isready -d $POSTGRES_DSN &> /dev/null; then
     pg_isready -d $POSTGRES_DSN
     exit $?
-  fi
-
-  if [[ ${DISABLE_AUTO_INIT_DATABASE} = "true" ]]; then
-    return
   fi
 
   for SCRIPT in $(ls -1 $1); do

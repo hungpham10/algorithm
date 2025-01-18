@@ -13,7 +13,6 @@ use pgwire::api::results::{DataRowEncoder, FieldFormat, FieldInfo, QueryResponse
 use pgwire::api::{ClientInfo, PgWireHandlerFactory, Type};
 use pgwire::error::{PgWireError, PgWireResult};
 
-use crate::actors::cron::CronActor;
 use crate::actors::dnse::DnseActor;
 use crate::actors::fireant::FireantActor;
 use crate::actors::tcbs::TcbsActor;
@@ -245,7 +244,6 @@ impl PgWireHandlerFactory for PgServerFactory {
 
 pub fn create_sql_context(
     capacity: usize,
-    cron: Arc<Addr<CronActor>>,
     vps: Arc<Addr<VpsActor>>,
     dnse: Arc<Addr<DnseActor>>,
     tcbs: Arc<Addr<TcbsActor>>,

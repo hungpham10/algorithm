@@ -1,5 +1,5 @@
 use actix::Addr;
-use chrono::{NaiveDate, Utc};
+use chrono::NaiveDate;
 use juniper::{graphql_object, EmptySubscription, FieldResult, GraphQLInputObject, RootNode};
 
 use sentry::capture_error;
@@ -54,10 +54,6 @@ impl Query {
             .await
             .unwrap()
             .unwrap() as i32)
-    }
-
-    async fn status(ctx: &Context) -> FieldResult<String> {
-        Ok(Utc::now().to_string())
     }
 
     async fn ohcl(

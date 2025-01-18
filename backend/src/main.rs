@@ -1,5 +1,11 @@
-use lib::cmds::{client::monolith_client, server::monolith_server};
-use ::lib::cmds::{server::graphql_server, server::sql_server};
+#![feature(portable_simd)]
+
+use ::lib::cmds::{
+    client::background_job_client, 
+    server::monolith_server,
+    server::graphql_server, 
+    server::sql_server
+};
 
 fn main() {
     dotenvy::dotenv().ok();
@@ -17,7 +23,7 @@ fn main() {
         "graphql-server" => graphql_server(),
         "sql-server" => sql_server(),
         "server" => monolith_server(),
-        "client" => monolith_client(),
-        unknown => todo!("not yet implement {}", unknown),
+        "job" => background_job_client(),
+        unknown => panic!("Unknown command: {}", unknown),
     }.unwrap();
 }

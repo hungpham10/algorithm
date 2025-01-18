@@ -1,6 +1,8 @@
-
 use std::sync::Arc;
 use std::fmt;
+use std::simd::f64x8;
+use std::simd::prelude::SimdFloat;
+
 use actix::prelude::*;
 use actix::Addr;
 use rand::Rng;
@@ -34,7 +36,8 @@ use crate::schemas::CandleStick;
 
 #[derive(Clone, Debug)]
 struct Setting {
-    candles: Arc<Vec<CandleStick>>,
+    candles: Arc<Vec<f64>>,
+    number_of_candle: usize,
     lookback_order_history: usize,
     lookback_candle_history: usize, 
     batch_money_for_fund: usize,
@@ -62,16 +65,25 @@ impl Investor {
         let mut rng = rand::thread_rng();
         let lookback_order_history = &context.lookback_order_history;
         let lookback_candle_history = &context.lookback_candle_history;
+        let max_market_arguments = 5 * (*lookback_candle_history); 
         let batch_money_for_fund = &context.batch_money_for_fund;
         let arg_gen_min = &context.arg_gen_min;
         let arg_gen_max = &context.arg_gen_max;
         let money = &context.money;
 
+        let mut market_arguments: Vec<f64> = (0..max_market_arguments).map(|_| rng.gen_range(*arg_gen_min..*arg_gen_max)).collect();
+        let risk_market_arguments = (0..(*lookback_candle_history)).map(|_| rng.gen::<f64>()).collect();
+        let risk_order_arguments = (0..(*lookback_order_history)).map(|_| rng.gen::<f64>()).collect();
+
+        if max_market_arguments % 8 != 0 {
+            market_arguments.resize(max_market_arguments + 8 - max_market_arguments % 8, 0.0);
+        }
+
         Self {
             context: context.clone(),
-            market_arguments: (0..(5 * (*lookback_candle_history))).map(|_| rng.gen_range(*arg_gen_min..*arg_gen_max)).collect(),
-            risk_market_arguments: (0..(*lookback_candle_history)).map(|_| rng.gen::<f64>()).collect(),
-            risk_order_arguments: (0..(*lookback_order_history)).map(|_| rng.gen::<f64>()).collect(),
+            market_arguments,
+            risk_order_arguments,
+            risk_market_arguments,
             fund: (*money) / ((*batch_money_for_fund) as f64),
             cache: cache.clone(),
         }
@@ -130,42 +142,43 @@ impl Investor {
             cache: father_obj.cache.clone(),
         }
     }
-}
 
-impl Player for Investor { 
-    fn initialize(&mut self) {
-        // @TODO: pull metadata of each investor from redis        
-    }
-   
-    fn estimate(&self) -> f64 {
+    fn perform_stock_order_strategy(
+        &self, 
+        print_orders: bool,
+        print_overview: bool,
+    ) -> (f64, f64, Vec<f64>) {
         let mut money = self.context.money;
         let mut stock = 0.0;
         let mut orders = (*self.context.orders).clone();
         let mut sentiments = vec![0.0; self.risk_market_arguments.len()];
 
-        let mut volume_calibrate = self.context.candles[0].v as f64;
-        
-        for i in 0..self.context.candles.len() {
-            if volume_calibrate > self.context.candles[i].v as f64 {
-                volume_calibrate = self.context.candles[i].v as f64;
-            }
-        }
-        volume_calibrate /= 3.0;
-        
-        for i in 0..(self.context.candles.len() - self.market_arguments.len()/5) {
+        for i in 0..(self.context.candles.len()/5 - self.context.lookback_candle_history) {
             let mut count_selling_order = 0;
             let mut count_buying_order = 0;
             let mut indicator = 0.0;
+            let mut k_limit = self.market_arguments.len()/8;
             let mut risk = 0.0;
             let mut j = 0 as usize;
 
+
             // @NOTE: estimate market flow using market arguments to adapt and follow candles
-            for k in 0..self.market_arguments.len()/5 {
-                indicator += self.market_arguments[5*k + 0] * self.context.candles[k + i].o +
-                     self.market_arguments[5*k + 1] * self.context.candles[k + i].h +
-                     self.market_arguments[5*k + 2] * self.context.candles[k + i].c +
-                     self.market_arguments[5*k + 3] * self.context.candles[k + i].l +
-                     self.market_arguments[5*k + 4] * self.context.candles[k + i].v as f64 / volume_calibrate;
+            for k in 0..k_limit {
+                let market_arguments = f64x8::from_slice(
+                    &self.market_arguments[8*k..8*k+8],
+                );
+                let candle = f64x8::from_slice(
+                    &self.context.candles[8*k + 5*i..8*k + 5*i + 8],
+                );
+                let mult = market_arguments * candle;
+
+                indicator += mult.reduce_sum();
+
+                //indicator += self.market_arguments[5*k + 0] * self.context.candles[k + i].o +
+                //     self.market_arguments[5*k + 1] * self.context.candles[k + i].h +
+                //     self.market_arguments[5*k + 2] * self.context.candles[k + i].c +
+                //     self.market_arguments[5*k + 3] * self.context.candles[k + i].l +
+                //     self.market_arguments[5*k + 4] * self.context.candles[k + i].v as f64 / volume_calibrate;
             }
 
             // @NOTE: count number kind of orders
@@ -178,14 +191,16 @@ impl Player for Investor {
             }
 
             // @NOTE: how manage risk and indicator using risk arguments to adjust during orders
-            for order in orders.iter().rev() {
-                if j >= count_buying_order - count_selling_order {
-                    break;
-                }
+            if count_selling_order < count_buying_order {
+                for order in orders.iter().rev() {
+                    if j >= count_buying_order - count_selling_order {
+                        break;
+                    }
 
-                if *order > 0.0 {
-                    risk += self.risk_order_arguments[j] * (*order);
-                    j += 1;
+                    if *order > 0.0 && j < self.risk_order_arguments.len() {
+                        risk += self.risk_order_arguments[j] * (*order);
+                        j += 1;
+                    }
                 }
             }
 
@@ -196,36 +211,82 @@ impl Player for Investor {
 
             match sentiments.last_mut() {
                 Some(sentiment) => {
-                    for k in 0..self.risk_market_arguments.len() {
-                        *sentiment += self.risk_market_arguments[k] * indicator;
-                    }
+                    *sentiment = indicator;
                 }
                 None => {
+                    panic!("last sentiment not found");
                 }
             }
 
+            // @NOTE: calculate sentiment
+            for i in 0..self.risk_market_arguments.len() {
+                risk += sentiments[i] * self.risk_market_arguments[i];
+            }
+
             // @NOTE: formular to calculate money and stock
-            let decison = Investor::tanh(indicator) * Investor::sigmoid(risk);
-            let fund_stock = self.fund / self.context.candles[i].c;
+            let decison = (Investor::tanh(indicator) + Investor::sigmoid(risk))/2.0;
+            let fund_stock = self.fund / self.context.candles[5*i + 2];
             let fund_money = self.fund;
 
             // @TODO: implement T+3
             if decison > 0.9 && money > fund_money {
-                orders.push(self.context.candles[i].c);
-                stock += fund_stock;
+                orders.push(self.context.candles[5*i+2]);
+                stock += fund_money / self.context.candles[5*i + 2];
                 money -= fund_money;
-            } else if decison < 0.9 && stock > self.fund / self.context.candles[i].c {
-                orders.push(-self.context.candles[i].c);
+            } else if decison < 0.9 && stock > self.fund / self.context.candles[5*i + 2] {
+                orders.push(-self.context.candles[5*i + 2]);
                 stock -= fund_stock;
-                money += fund_money;
+                money += fund_stock * self.context.candles[5*i + 2];
             }
         }
 
         // @TODO: push investors metadata to redis if needs
+        if print_orders {
+            for order in &orders {
+                if *order > 0.0 {
+                    println!("Buy at {}", order);
+                } else {
+                    println!("Sell at {}", order);
+                }
 
-        return money + stock*self.context.candles[self.context.candles.len() - 1].c;
+            }
+        }
+
+        if print_overview {
+            println!("Money: {}", money);
+            println!("Stock: {}", stock);
+        }
+
+        return (money, stock, orders.clone());
+    }
+}
+
+impl Player for Investor { 
+    fn initialize(&mut self) {
+        let mut rng = rand::thread_rng(); 
+   
+        for i in 0..self.market_arguments.len() {
+            self.market_arguments[i] = rng.gen_range(self.context.arg_gen_min..self.context.arg_gen_max);
+        }
+        for i in 0..self.risk_order_arguments.len() {
+            self.risk_order_arguments[i] = rng.gen_range(self.context.arg_gen_min..self.context.arg_gen_max);
+        }
+        for i in 0..self.risk_market_arguments.len() {
+            self.risk_market_arguments[i] = rng.gen_range(self.context.arg_gen_min..self.context.arg_gen_max);
+        }
+
+        // @TODO: pull metadata of each investor from redis        
     }
 
+    fn estimate(&self) -> f64 {
+        let (money, _, _) = self.perform_stock_order_strategy(
+            false, 
+            false, 
+        );
+
+        return money;
+    }
+ 
     fn gene(&self) -> Vec<f64> {
         let mut ret = Vec::new();
         
@@ -248,11 +309,15 @@ impl fmt::Display for SimulatorError {
     }
 }
 
-pub struct SimulatorActor {
-    // @NOTE: controller
+struct Simulator {
     controller: Genetic<Investor>,
-    cache:     Arc<Addr<RedisActor>>,
     session:   i64,
+}
+
+pub struct SimulatorActor {
+    // @NOTE: simulators
+    simulators: Vec<Simulator>,
+    cache:      Arc<Addr<RedisActor>>,
 
     // @NOTE: shared parameters
     lookback_order_history:  usize,
@@ -271,19 +336,11 @@ impl SimulatorActor {
         cache: Arc<Addr<RedisActor>>,
     ) -> Self {
         Self {
-            // @NOTE: controller server
-            controller: Genetic::<Investor>::new(
-                n_player,
-                Self::crossover,
-                Self::mutate,
-                Self::policy,
-            ),
+            // @NOTE: simulators
+            simulators: Vec::new(),
 
             // @NOTE: cache server
             cache: cache,
-
-            // @NOTE: cache session
-            session: 0,
 
             // @NOTE; template
             lookback_order_history:  lookback_order,
@@ -294,9 +351,10 @@ impl SimulatorActor {
         }
     }
 
-    fn prepare_sessions(&mut self, number_of_session: usize) -> i64 {
-        let first_session = self.session;
-        self.session += number_of_session as i64;
+    fn prepare_sessions(&mut self, simulator_id: usize, number_of_session: usize) -> i64 {
+        let first_session = self.simulators[simulator_id].session;
+
+        self.simulators[simulator_id].session += number_of_session as i64;
         return first_session;
     }
 
@@ -317,9 +375,10 @@ impl SimulatorActor {
         )
     }
 
-    fn policy(investor: &Investor) -> bool {
+    fn policy(_investor: &Investor) -> bool {
         // @TODO: implement policy to remove investor who unable to buy or sell
         //        any more
+
         return false;
     }
 
@@ -329,7 +388,7 @@ impl SimulatorActor {
     ) {
         let mut rng = rand::thread_rng();
         let std_dev = 0.5;
-        let sampling = Normal::new(0.0, std_dev).unwrap().sample(&mut rng);
+        let sampling = 0.005 * Normal::new(0.0, std_dev).unwrap().sample(&mut rng);
 
         if gene < investor.market_arguments.len() {
             investor.market_arguments[gene] = sampling;
@@ -348,7 +407,7 @@ impl Actor for SimulatorActor {
 }
 
 #[derive(Message, Debug)]
-#[rtype(result = "Result<Option<()>, SimulatorError>")]
+#[rtype(result = "Result<Option<usize>, SimulatorError>")]
 pub struct SetupSettingCommand {
     batch_money_for_fund: usize,
     candles: Arc<Vec<CandleStick>>,
@@ -356,12 +415,38 @@ pub struct SetupSettingCommand {
 }
 
 impl Handler<SetupSettingCommand> for SimulatorActor {
-    type Result = ResponseFuture<Result<Option<()>, SimulatorError>>;
+    type Result = ResponseFuture<Result<Option<usize>, SimulatorError>>;
 
     fn handle(&mut self, msg: SetupSettingCommand, _: &mut Self::Context) -> Self::Result {
+        let mut candles = Vec::new();
+        let id = self.simulators.len();
+
+
+        let mut volume_calibrate = msg.candles[0].v as f64;
+        
+        for i in 0..msg.candles.len() {
+            if volume_calibrate > msg.candles[i].v as f64 {
+                volume_calibrate = msg.candles[i].v as f64;
+            }
+        }
+        volume_calibrate /= 3.0;
+
+        msg.candles.iter().for_each(|candle| { 
+            candles.push(candle.o);
+            candles.push(candle.h);
+            candles.push(candle.c);
+            candles.push(candle.l);
+            candles.push(candle.v as f64 / volume_calibrate);
+        });
+
+        if candles.len() % 8 != 0 {
+            candles.resize(candles.len() + 8 - candles.len() % 8, 0.0);
+        }
+
         let context = Arc::new(Setting{
-            candles:                 msg.candles.clone(),
+            candles:                 Arc::new(candles),
             money:                   msg.money,
+            number_of_candle:        msg.candles.len(),
             batch_money_for_fund:    msg.batch_money_for_fund, 
             orders:                  Arc::new(Vec::<f64>::new()),
             lookback_candle_history: self.lookback_candle_history,
@@ -372,14 +457,26 @@ impl Handler<SetupSettingCommand> for SimulatorActor {
         let cache = self.cache.clone();
         let n_player = self.number_of_player;
 
-        self.controller.initialize(
+        let mut controller = Genetic::<Investor>::new(
+            n_player,
+            Self::crossover,
+            Self::mutate,
+            Self::policy,
+        );
+
+        controller.initialize(
             (0..n_player)
                 .map(|_| Investor::new(context.clone(), cache.clone()))
                 .collect(), 
         );
 
+        self.simulators.push(Simulator{
+            controller: controller,
+            session: 0,
+        });
+
         Box::pin(async move {
-            Ok(None)
+            Ok(Some(id))
         })
     }
 }
@@ -389,6 +486,7 @@ impl Handler<SetupSettingCommand> for SimulatorActor {
 pub struct EvaluateFitnessCommand {
     number_of_couple: usize,
     number_of_loop:   usize,
+    simulator_id:     usize,
     mutation_rate:    f64,
 }
 
@@ -396,14 +494,24 @@ impl Handler<EvaluateFitnessCommand> for SimulatorActor {
     type Result = ResponseFuture<Result<Option<()>, SimulatorError>>;
 
     fn handle(&mut self, msg: EvaluateFitnessCommand, _: &mut Self::Context) -> Self::Result {
-        let first_session = self.prepare_sessions(msg.number_of_loop);
+        let first_session = self.prepare_sessions(msg.simulator_id, msg.number_of_loop);
 
         for i in 0..msg.number_of_loop {
-            println!("Loop {}: {}", i, first_session + i as i64);
-            self.controller.evolute(msg.number_of_couple, first_session + i as i64);
-            self.controller.fluctuate(first_session + i as i64, msg.mutation_rate);
+            self.simulators[msg.simulator_id].controller.evolute(
+                msg.number_of_couple, 
+                first_session + i as i64,
+            );
+            self.simulators[msg.simulator_id].controller.fluctuate(
+                first_session + i as i64, 
+                msg.mutation_rate,
+            );
 
-            println!("Avg fitness {}: {}", i, self.controller.average_fitness(first_session + i as i64));
+            println!("{}: {}", i, self.simulators[msg.simulator_id].controller.best_fitness(first_session + i as i64));
+
+            self.simulators[msg.simulator_id]
+                .controller
+                .best_player(first_session + i as i64)
+                .perform_stock_order_strategy(true, true);
         }
 
         Box::pin(async move {
@@ -421,10 +529,10 @@ pub fn connect_to_simulator(
 ) -> Addr<SimulatorActor> {
     let actor   = SimulatorActor::new(
             n_player,
-            200,
-            10,
-            -100.0,
-            100.0,
+            50,
+            30,
+            -0.2,
+            0.2,
             cache.clone(),
         ).start();
     let simulator: Arc<Addr<SimulatorActor>> = actor.clone().into();
@@ -452,7 +560,7 @@ fn setup_environment_for_median_strategy(
         move |arguments, _, _| {
             let simulator = simulator.clone();
             let money = arguments.get("money")
-                .map_or(1000000000.0, |money| (*money).parse::<f64>().unwrap());
+                .map_or(1000000.0, |money| (*money).parse::<f64>().unwrap());
             let dnse = dnse.clone();
 
             async move {
@@ -489,6 +597,8 @@ fn train_investors(
     resolver.resolve("simulator.perform_training_investors".to_string(), 
         move |arguments, _, _| {
             let simulator = simulator.clone();
+            let simulator_id = arguments.get("simulator_id")
+                .map_or(0, |simulator_id| (*simulator_id).parse::<usize>().unwrap());
             let number_of_loop = arguments.get("number_of_loop")
                 .map_or(100, |number_of_loop| (*number_of_loop).parse::<usize>().unwrap());
             let mutation_rate = arguments.get("mutation_rate")
@@ -500,6 +610,7 @@ fn train_investors(
                         number_of_couple,
                         number_of_loop,
                         mutation_rate,
+                        simulator_id,
                     },
                 )
                 .await;

@@ -254,7 +254,6 @@ mod tests {
     use std::sync::Arc;
 
     use rand::Rng;
-    use rand::thread_rng;
 
     #[derive(Debug, Clone)]
     struct TestPoint {

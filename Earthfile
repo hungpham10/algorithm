@@ -1,12 +1,12 @@
 VERSION 0.7
-FROM rust:latest
+FROM rustlang/rust:nightly
 WORKDIR /app
 
 build-backend:
-	FROM rust:latest
+	FROM rustlang/rust:nightly
 
 	COPY . .
-	RUN cd ./backend && cargo build --release
+	RUN cd ./backend && cargo +nightly build --release
 
 	SAVE ARTIFACT ./target/release/algorithm AS LOCAL algorithm
 
@@ -74,6 +74,22 @@ graphql-server-release:
 	EXPOSE 3000
 	SAVE IMAGE bff-algorithm:latest
 
+background-job-release:
+	FROM ubuntu:latest
+
+	COPY +build-backend/algorithm ./server
+	COPY assets assets
+	COPY sql/system ./sql
+	COPY scripts/release.sh /app/endpoint.sh
+
+	RUN apt update                          								&& \
+	    apt install -y postgresql-client    								&& \
+	    apt install -y ca-certificates curl unzip screen
+
+	ENTRYPOINT ["/app/endpoint.sh", "./server", "/sql", "3000", "job"]
+	EXPOSE 3000
+	SAVE IMAGE job-algorithm:latest
+
 monilith-server-release:
 	FROM ubuntu:latest
 
@@ -106,4 +122,5 @@ release:
 	BUILD +build-frontend
 	BUILD +sql-server-release
 	BUILD +graphql-server-release
+	BUILD +background-job-release
 	BUILD +monilith-server-release

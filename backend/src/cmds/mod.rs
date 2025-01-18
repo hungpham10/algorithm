@@ -142,7 +142,6 @@ impl DataSource {
     async fn new(
         resolver: &mut CronResolver, 
         pool: Arc<PgPool>,
-        cache: Arc<Addr<RedisActor>>,
         tsdb: Arc<InfluxClient>, 
     ) -> DataSource {
         let dnse = Arc::new(connect_to_dnse());
@@ -151,7 +150,6 @@ impl DataSource {
         let fireant = Arc::new(connect_to_fireant(
             resolver,
             pool.clone(),
-            cache.clone(),
             std::env::var("FIREANT_TOKEN").unwrap()),
         );
 
@@ -170,7 +168,6 @@ struct Application {
     schema: Arc<SchemaGraphQL>,
     cache: Arc<Addr<RedisActor>>,
     pool: Arc<PgPool>,
-    tsdb: Arc<InfluxClient>,
     cron: Arc<Addr<CronActor>>,
 
     // @NOTE: shutdown manager
@@ -198,13 +195,13 @@ impl Application {
             )
             .with_token(std::env::var("INFLUXDB_TOKEN").unwrap()),
         ); 
-        let ds = DataSource::new(&mut resolver, pool.clone(), cache.clone(), tsdb.clone()).await;
+        let ds = DataSource::new(&mut resolver, pool.clone(), tsdb.clone()).await;
         let simulator = Arc::new(connect_to_simulator(
             &mut resolver,
             cache.clone(),
             ds.dnse.clone(),
             1000,
-            100,
+            10,
         ));
         let cron = Arc::new(connect_to_cron(resolver.into()));
         let schema = Arc::new(create_graphql_schema());
@@ -215,7 +212,6 @@ impl Application {
             schema,
             simulator,
             pool,
-            tsdb,
             cache,
 
             // @NOTE: shutdown manager
@@ -273,7 +269,6 @@ impl Application {
         // @NOTE: configure and start sql server
         let factory = create_sql_context(
             cache_capacity,
-            self.cron.clone(),
             self.ds.vps.clone(),
             self.ds.dnse.clone(),
             self.ds.tcbs.clone(),

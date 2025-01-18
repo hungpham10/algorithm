@@ -23,7 +23,6 @@ use gluesql::prelude::Key;
 use gluesql::prelude::Value;
 
 use crate::actors::cron::CronResolver;
-use crate::actors::redis::RedisActor;
 use crate::analytic::mention::Mention;
 use crate::analytic::Sentiment;
 use crate::helpers::PgPool;
@@ -180,6 +179,10 @@ async fn statistic_posts_by_stock_in_timerange(
 
                 let time_happen =
                     DateTime::parse_from_rfc3339(posts.last().unwrap().date.as_str()).unwrap();
+
+                if time_happen.timestamp() > to {
+                    continue;
+                }
 
                 model.count_mention_by_symbol(&mut statistic, &posts);
                 model.count_sentiment_vote_by_symbol(&mut statistic, &posts);
@@ -413,7 +416,6 @@ impl Handler<super::ScanDataCommand> for FireantActor {
 pub fn connect_to_fireant(
     resolver: &mut CronResolver,
     pool: Arc<PgPool>,
-    cache: Arc<Addr<RedisActor>>,
     token: String,
 ) -> Addr<FireantActor> {
     use crate::schemas::database::tbl_fireant_mention::dsl::*;
@@ -427,25 +429,38 @@ pub fn connect_to_fireant(
             let fireant = fireant.clone();
             let pool = pool.clone();
 
-            if to < 0 {
+            if to <= 0 {
                 to = Utc::now().timestamp() as i32;
             }
 
-            if from < 0 || from >= to {
+            if from <= 0 || from >= to {
                 from = to - 24 * 60 * 60;
             }
 
+            let enable_sentiment_analysis = arguments.get("enable_sentiment_analysis")
+                .map_or(false, |enable_sentiment_analysis| enable_sentiment_analysis == "true");
+
             async move {
                 let mut dbconn = pool.get().unwrap();
-                let sentiments = match fireant
-                    .send(CountSentimentPerStockCommand {
-                        from: from as i64,
-                        to: to as i64,
-                    })
-                    .await
-                {
-                    Ok(resp) => match resp {
-                        Ok(sentiments) => sentiments,
+
+                if enable_sentiment_analysis {
+                    let sentiments = match fireant
+                        .send(CountSentimentPerStockCommand {
+                            from: from as i64,
+                            to: to as i64,
+                        })
+                        .await
+                    {
+                        Ok(resp) => match resp {
+                            Ok(sentiments) => sentiments,
+                            Err(err) => {
+                                capture_error(&err);
+                                error!("{}", err);
+
+                                // @NOTE: ignore this error, only return empty BTreeMap
+                                BTreeMap::<String, Sentiment>::new()
+                            }
+                        },
                         Err(err) => {
                             capture_error(&err);
                             error!("{}", err);
@@ -453,38 +468,31 @@ pub fn connect_to_fireant(
                             // @NOTE: ignore this error, only return empty BTreeMap
                             BTreeMap::<String, Sentiment>::new()
                         }
-                    },
-                    Err(err) => {
-                        capture_error(&err);
-                        error!("{}", err);
+                    };
 
-                        // @NOTE: ignore this error, only return empty BTreeMap
-                        BTreeMap::<String, Sentiment>::new()
-                    }
-                };
+                    let rows = sentiments
+                        .iter()
+                        .map(|(name, value)| {
+                            (
+                                symbol.eq(name),
+                                mention.eq(value.mention),
+                                positive.eq(value.votes.positive),
+                                negative.eq(value.votes.negative),
+                                promotion.eq(value.promotion),
+                            )
+                        })
+                        .collect::<Vec<_>>();
 
-                let rows = sentiments
-                    .iter()
-                    .map(|(name, value)| {
-                        (
-                            symbol.eq(name),
-                            mention.eq(value.mention),
-                            positive.eq(value.votes.positive),
-                            negative.eq(value.votes.negative),
-                            promotion.eq(value.promotion),
-                        )
-                    })
-                    .collect::<Vec<_>>();
-
-                match diesel::insert_into(tbl_fireant_mention)
-                    .values(&rows)
-                    .execute(&mut dbconn)
-                {
-                    Ok(cnt) => {
-                        info!("Fireant: Insert {} to tbl_fireant_mention", cnt);
-                    }
-                    Err(error) => {
-                        capture_error(&error);
+                    match diesel::insert_into(tbl_fireant_mention)
+                        .values(&rows)
+                        .execute(&mut dbconn)
+                    {
+                        Ok(cnt) => {
+                            info!("Fireant: Insert {} to tbl_fireant_mention", cnt);
+                        }
+                        Err(error) => {
+                            capture_error(&error);
+                        }
                     }
                 }
             }

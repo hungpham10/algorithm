@@ -1,8 +1,8 @@
-FROM rust:latest AS build-backend
+FROM rust:nightly AS build-backend
 WORKDIR /app
 
 COPY . .
-RUN cd ./backend && cargo build --release
+RUN cd ./backend && cargo +nightly build --release
 ################################################################################
 
 FROM node:23.0.0-bullseye AS build-frontend

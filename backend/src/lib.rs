@@ -1,3 +1,6 @@
+//#![deny(warnings)]
+#![feature(portable_simd)]
+
 extern crate diesel;
 extern crate serde;
 

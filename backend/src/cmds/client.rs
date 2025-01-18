@@ -1,10 +1,10 @@
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use tokio::time::{self, Duration};
+use tokio::time::{self, sleep, Duration};
 
 use crate::schemas::{CronJob, SingleJob, Argument};
 
 #[actix_rt::main]
-pub async fn monolith_client() -> std::io::Result<()> {
+pub async fn background_job_client() -> std::io::Result<()> {
     let app = super::Application::new().await;
     let check  = Arc::new(AtomicBool::new(true));
     let timeout = check.clone();
@@ -17,14 +17,30 @@ pub async fn monolith_client() -> std::io::Result<()> {
     let timeout_future = time::sleep(
         Duration::from_secs(
             std::env::var("EXPIRED_TIMEOUT")
-            .unwrap_or_else(|_| "60".to_string())
+            .unwrap_or_else(|_| "300".to_string())
             .parse()
             .unwrap_or(5 * 60),
         ),
     );
 
     // @NOTE: setup cron
-    app.start_cron(Vec::new()).await;
+    app.start_cron(vec![
+        CronJob {
+            interval:  "* * * * *".to_string(),
+            timeout:   5 * 60,
+            resolver:  "simulator.perform_training_investors".to_string(),
+            arguments: Some(vec![
+                Argument{
+                    argument: "number_of_loop".to_string(),
+                    value:    "10".to_string(),
+                },
+                Argument{
+                    argument: "mutation_rate".to_string(),
+                    value:    "0.01".to_string(),
+                },
+            ]),
+        },
+    ]).await;
 
     app.perform_job(SingleJob{
         timeout:   5 * 60,
@@ -36,15 +52,19 @@ pub async fn monolith_client() -> std::io::Result<()> {
             },
             Argument{
                 argument: "stock".to_string(),
-                value:    "HPG".to_string(),
+                value:    "MWG".to_string(),
+            },
+            Argument{
+                argument: "batch_money_for_fund".to_string(),
+                value:    "30".to_string(),
             },
             Argument{
                 argument: "from".to_string(),
-                value:    "0".to_string(),
+                value:    "1700495220".to_string(),
             },
             Argument{
                 argument: "to".to_string(),
-                value:    "1736637278".to_string(),
+                value:    "1736693826".to_string(),
             },
         ]),
         from: None,
@@ -58,23 +78,7 @@ pub async fn monolith_client() -> std::io::Result<()> {
         }
         _ = async {
             while check.load(Ordering::SeqCst) {
-                app.perform_job(SingleJob {
-                    timeout:   5 * 60,
-                    resolver:  "simulator.perform_training_investors".to_string(),
-                    arguments: Some(vec![
-                        Argument{
-                            argument: "number_of_loop".to_string(),
-                            value:    "100".to_string(),
-                        },
-                        Argument{
-                            argument: "mutation_rate".to_string(),
-                            value:    "0.1".to_string(),
-                        },
-                    ]),
-                    from: None,
-                    to:   None,
-                })
-                .await;
+                sleep(Duration::from_secs(1)).await;
             }
         } => {
         }
