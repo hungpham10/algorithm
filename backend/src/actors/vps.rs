@@ -186,7 +186,7 @@ async fn fetch_price_depth_per_block(
 }
 
 pub async fn list_active_stocks() -> Vec<String> {
-    list_of_hose().await
+    list_of_vn30().await
 }
 
 pub async fn list_of_hose() -> Vec<String> {

@@ -46,6 +46,7 @@ pub async fn background_job_client() -> std::io::Result<()> {
         },
     ]).await;
 
+    // @NOTE: setup environment
     app.perform_job(SingleJob{
         timeout:   5 * 60,
         resolver:  "simulator.setup_new_environment_for_median_strategy".to_string(),
@@ -67,6 +68,16 @@ pub async fn background_job_client() -> std::io::Result<()> {
                 value:    "1736693826".to_string(),
             },
         ]),
+        from: None,
+        to:   None,
+    })
+    .await;
+
+    // @NOTE: enable training
+    app.perform_job(SingleJob{
+        timeout:   5 * 60,
+        resolver:  "simulator.enable_training".to_string(),
+        arguments: None,
         from: None,
         to:   None,
     })

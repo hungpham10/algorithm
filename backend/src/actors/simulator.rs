@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use actix::prelude::*;
 use actix::Addr;
+use log::{info, error};
 use rand::Rng;
 use rand_distr::{Normal, Distribution};
 use serde::{Deserialize, Serialize};
@@ -328,6 +329,9 @@ pub struct SimulatorActor {
     arg_gen_min:             f64, 
     arg_gen_max:             f64,
     number_of_player:        usize,
+
+    // @NOTE: flags
+    enable_training: bool,
 }
 
 impl SimulatorActor {
@@ -354,6 +358,9 @@ impl SimulatorActor {
             arg_gen_min:             min, 
             arg_gen_max:             max,
             number_of_player:        n_player,
+
+            // @NOTE: flags
+            enable_training: false,
         }
     }
 
@@ -493,6 +500,48 @@ impl Handler<SetupSettingCommand> for SimulatorActor {
 
 #[derive(Message, Debug)]
 #[rtype(result = "Result<Option<()>, SimulatorError>")]
+pub struct EnableTrainingCommand;
+
+impl Handler<EnableTrainingCommand> for SimulatorActor {
+    type Result = ResponseFuture<Result<Option<()>, SimulatorError>>;
+
+    fn handle(&mut self, _: EnableTrainingCommand, _: &mut Self::Context) -> Self::Result {
+        if self.enable_training {
+            return Box::pin(async move {
+                Err(SimulatorError{
+                    message: "Training already enabled".to_string(),
+                })
+            });
+        }
+
+        self.enable_training = true;
+        return Box::pin(async move { Ok(None) });
+    }
+}
+
+#[derive(Message, Debug)]
+#[rtype(result = "Result<Option<()>, SimulatorError>")]
+pub struct DisableTrainingCommand;
+
+impl Handler<DisableTrainingCommand> for SimulatorActor {
+    type Result = ResponseFuture<Result<Option<()>, SimulatorError>>;
+
+    fn handle(&mut self, _: DisableTrainingCommand, _: &mut Self::Context) -> Self::Result {
+        if self.enable_training {
+            self.enable_training = false;
+            return Box::pin(async move { Ok(None) });
+        }
+
+        return Box::pin(async move {
+            Err(SimulatorError{
+                message: "Training already disabled".to_string(),
+            })
+        });
+    }
+}
+
+#[derive(Message, Debug)]
+#[rtype(result = "Result<Option<()>, SimulatorError>")]
 pub struct EvaluateFitnessCommand {
     number_of_couple:    usize,
     number_of_loop:      usize,
@@ -504,7 +553,7 @@ impl Handler<EvaluateFitnessCommand> for SimulatorActor {
     type Result = ResponseFuture<Result<Option<()>, SimulatorError>>;
 
     fn handle(&mut self, msg: EvaluateFitnessCommand, _: &mut Self::Context) -> Self::Result {
-        if self.simulators.len() == 0 {
+        if !self.enable_training || self.simulators.len() == 0 {
             return Box::pin(async move {
                 Err(SimulatorError{
                     message: "No simulator found".to_string(),
@@ -514,7 +563,12 @@ impl Handler<EvaluateFitnessCommand> for SimulatorActor {
 
         let cache = self.cache.clone();
         let simulator_ids = (0..msg.number_of_simulator).map(|_| {
-                let simulator_id  = self.loop_id.fetch_add(1, Ordering::SeqCst) % self.simulators.len();
+                self.loop_id.fetch_add(1, Ordering::SeqCst) % self.simulators.len()
+            })
+            .collect::<Vec<usize>>();
+
+        simulator_ids.iter()
+            .for_each(|&simulator_id| {
                 let first_session = self.prepare_sessions(simulator_id, msg.number_of_loop);
 
                 for i in 0..msg.number_of_loop {
@@ -528,9 +582,8 @@ impl Handler<EvaluateFitnessCommand> for SimulatorActor {
                     );
                 }
 
-                simulator_id
-            })
-            .collect::<Vec<usize>>();
+                info!("Simulator stock {} has been trained", self.simulators[simulator_id].stock);
+            });
 
         let sessions = simulator_ids.iter()
             .map(|&simulator_id| self.simulators[simulator_id].session)
@@ -564,14 +617,15 @@ impl Handler<EvaluateFitnessCommand> for SimulatorActor {
                         properties: properties[i].clone(),
                     })
                     .await
-                    .unwrap()
-                    .unwrap_or(None)
-                    .is_some();
+                    .unwrap();
 
-                if ret {
-                    return Err(SimulatorError{
-                        message: "Failed to store simulator".to_string(),
-                    });
+                match ret {
+                    Ok(_) => {
+                        info!("Simulator stock {} has been stored", stocks[i]);
+                    },
+                    Err(error) => {
+                        error!("{}", error);
+                    }
                 }
             }
             Ok(None)
@@ -601,6 +655,8 @@ pub fn connect_to_simulator(
         dnse.clone(),
         simulator.clone(),
     );
+    do_enable_training(resolver, simulator.clone());
+    do_disable_training(resolver, simulator.clone());
     train_investors(
         resolver,
         simulator.clone(),
@@ -634,7 +690,7 @@ fn setup_environment_for_median_strategy(
                     .unwrap()
                     .unwrap());
 
-                    let _ = simulator.send(SetupSettingCommand{
+                    let ret = simulator.send(SetupSettingCommand{
                         // @NOTE: median strategy's properties
                         batch_money_for_fund: arguments.get("batch_money_for_fund")
                             .map_or(100, |batch_money_for_fund| (*batch_money_for_fund).parse::<usize>().unwrap()),
@@ -645,6 +701,63 @@ fn setup_environment_for_median_strategy(
                         stock: stock.clone(),
                     })
                     .await;
+
+                    match ret {
+                        Ok(_) => {
+                            info!("Setup new environment for stock {}", stock);
+                        },
+                        Err(error) => {
+                            error!("{}", error);
+                        }
+                    }
+                }
+            }
+        }
+    );
+}
+
+fn do_enable_training(
+    resolver: &mut CronResolver,
+    simulator: Arc<Addr<SimulatorActor>>, 
+) {
+    resolver.resolve("simulator.enable_training".to_string(),
+        move |_, _, _| {
+            let simulator = simulator.clone();
+            async move {
+                let ret = simulator.send(EnableTrainingCommand)
+                    .await;
+
+                match ret {
+                    Ok(_) => {
+                        info!("Enable training");
+                    },
+                    Err(error) => {
+                        error!("{}", error);
+                    }
+                }
+            }
+        }
+    );
+}
+
+fn do_disable_training(
+    resolver: &mut CronResolver,
+    simulator: Arc<Addr<SimulatorActor>>, 
+) {
+    resolver.resolve("simulator.disable_training".to_string(),
+        move |_, _, _| {
+            let simulator = simulator.clone();
+            async move {
+                let ret = simulator.send(EnableTrainingCommand)
+                    .await;
+
+                match ret {
+                    Ok(_) => {
+                        info!("Disable training");
+                    },
+                    Err(error) => {
+                        error!("{}", error);
+                    }
                 }
             }
         }
@@ -667,7 +780,7 @@ fn train_investors(
                 .map_or(0.1, |mutation_rate| (*mutation_rate).parse::<f64>().unwrap());
 
             async move {
-                let _ = simulator.send(
+                let ret = simulator.send(
                     EvaluateFitnessCommand{
                         number_of_couple,
                         number_of_loop,
@@ -676,6 +789,13 @@ fn train_investors(
                     },
                 )
                 .await;
+
+                match ret {
+                    Ok(_) => {},
+                    Err(error) => {
+                        error!("{}", error);
+                    }
+                }
             }
         }
     );
