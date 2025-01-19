@@ -66,6 +66,7 @@ impl Handler<StoreSimulatorCommand> for RedisActor {
 
         Box::pin(async move {
             cmd.arg(format!("simulator:{}:{}", stock, session_id))
+                .arg("properties")
                 .arg(serde_json::to_string(&properties).unwrap())
                 .query_async(&mut conn)
                 .await

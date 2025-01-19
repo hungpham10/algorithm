@@ -168,8 +168,11 @@ impl Investor {
             let mut count_buying_order = 0;
             let mut indicator = 0.0;
             let mut risk = 0.0;
-            let k_limit = self.arguments.market_arguments.len()/8;
-
+            let mut k_limit = self.context.lookback_candle_history * 5 / 8;
+            
+            if self.context.lookback_candle_history % 8 != 0 {
+                k_limit += 1;
+            }
 
             // @NOTE: estimate market flow using market arguments to adapt and follow candles
             for k in 0..k_limit {
@@ -447,6 +450,8 @@ impl Handler<SetupSettingCommand> for SimulatorActor {
             candles.resize(candles.len() + 8 - candles.len() % 8, 0.0);
         }
 
+        candles.resize(candles.len() + self.lookback_candle_history * 5, 0.0);
+
         let context = Arc::new(Setting{
             candles:                 Arc::new(candles),
             money:                   msg.money,
@@ -553,7 +558,7 @@ impl Handler<EvaluateFitnessCommand> for SimulatorActor {
 
         Box::pin(async move {
             for i in 0..simulator_ids.len() {
-                cache.send(super::redis::StoreSimulatorCommand {
+                let ret = cache.send(super::redis::StoreSimulatorCommand {
                         session_id: sessions[i],
                         stock:      stocks[i].clone(),
                         properties: properties[i].clone(),
@@ -562,6 +567,12 @@ impl Handler<EvaluateFitnessCommand> for SimulatorActor {
                     .unwrap()
                     .unwrap_or(None)
                     .is_some();
+
+                if ret {
+                    return Err(SimulatorError{
+                        message: "Failed to store simulator".to_string(),
+                    });
+                }
             }
             Ok(None)
         })
