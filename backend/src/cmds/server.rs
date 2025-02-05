@@ -1,51 +1,47 @@
-use std::sync::Arc;
-
 #[actix_rt::main]
-pub async fn graphql_server() -> std::io::Result<()> {
-    let app = super::Application::new().await;
-
-    app.start_cron(Vec::new())
-        .await;
-    app.handon_bff_server(3000)
+pub async fn bff() -> std::io::Result<()> {
+    super::Application::new()
+        .await
+        .handon_bff_server(false, 3000)
         .await
 }
 
 #[actix_rt::main]
-pub async fn sql_server() -> std::io::Result<()> {
-    let app = super::Application::new().await;
-    let capacity = std::env::var("SQL_CAPACITY")
-            .unwrap_or_else(|_| "0".to_string())
-            .parse()
-            .unwrap_or(0);
-
-    app.start_cron(Vec::new()).await;
-
-    app.handon_sql_server(3001, capacity)
+pub async fn auth() -> std::io::Result<()> {
+    super::Application::new()
+        .await
+        .handon_auth_server(3000)
         .await
 }
 
 #[actix_rt::main]
-pub async fn monolith_server() -> std::io::Result<()> {
-    // @NOTE: configure application
-    let app = Arc::new(super::Application::new().await);
-    let capacity = std::env::var("SQL_CAPACITY")
-            .unwrap_or_else(|_| "0".to_string())
-            .parse()
-            .unwrap_or(0);
+pub async fn render() -> std::io::Result<()> {
+    super::Application::new()
+        .await
+        .handon_render_server(3000)
+        .await
+}
 
-    // @NOTE: start cron first
-    app.start_cron(Vec::new()).await;
+#[actix_rt::main]
+pub async fn event() -> std::io::Result<()> {
+    super::Application::new()
+        .await
+        .handon_event_server(3000)
+        .await
+}
 
-    let sql_server = app.clone();
-    let http_server = app.clone();
+#[actix_rt::main]
+pub async fn datasource() -> std::io::Result<()> {
+    super::Application::new()
+        .await
+        .handon_datasource_server(3000)
+        .await
+}
 
-    actix_rt::spawn(async move {
-        sql_server
-            .handon_sql_server(5432, capacity)
-            .await
-    });
-
-    http_server
-        .handon_bff_server(3000)
+#[actix_rt::main]
+pub async fn server() -> std::io::Result<()> {
+    super::Application::new()
+        .await
+        .handon_bff_server(true, 3000)
         .await
 }

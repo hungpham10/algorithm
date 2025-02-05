@@ -4,6 +4,7 @@
 extern crate diesel;
 extern crate serde;
 
+pub mod components;
 pub mod interfaces;
 pub mod actors;
 pub mod algorithm;

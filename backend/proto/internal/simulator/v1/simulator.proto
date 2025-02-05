@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package simulator.v1;
+
+message InvidualArguments {
+	repeated float market = 1;
+	repeated float riskOrder = 2;
+	repeated float riskMarket = 3;
+}
+
+message StoreSimulateSessionRequest {
+	int64 id = 1;
+        int64 size = 2;
+	string stock = 3;
+	repeated InvidualArguments arguments = 4;
+}
+
+message StoreSimulateSessionResponse {
+	int64 error = 1;
+}
+
+message FetchSimulateSessionRequest {
+	int64 id = 1;
+	string stock = 2;
+}
+
+message FetchSimulateSessionResponse {
+	int64 error = 1;
+	repeated InvidualArguments arguments = 2;
+}
+
+service Simulator {
+	rpc StoreSimulateSession(StoreSimulateSessionRequest) returns (StoreSimulateSessionResponse);
+	rpc FetchSimulateSession(FetchSimulateSessionRequest) returns (FetchSimulateSessionResponse);
+}

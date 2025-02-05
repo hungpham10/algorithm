@@ -6,7 +6,10 @@ build-backend:
 	FROM rustlang/rust:nightly
 
 	COPY . .
-	RUN cd ./backend && cargo +nightly build --release
+	RUN apt update                       && \
+	    apt install -y protobuf-compiler && \
+	    cd ./backend                     && \
+	    cargo +nightly build --release
 
 	SAVE ARTIFACT ./target/release/algorithm AS LOCAL algorithm
 
@@ -34,13 +37,13 @@ sql-server-release:
 	RUN cp -av ./assets/honeygain/$(uname -m)/libmsquic.so.* /usr/lib/ || true
 	RUN rm -fr ./assets
 
-	RUN apt update                          								&& \
-	    apt install -y postgresql-client    								&& \
+	RUN apt update                                                          && \
+	    apt install -y postgresql-client                                    && \
 	    apt install -y ca-certificates curl unzip screen
 	
 	RUN curl -kO https://localtonet.com/download/localtonet-linux-x64.zip 	&& \
-		unzip localtonet-linux-x64.zip										&& \
-		chmod 777 ./localtonet												&& \
+		unzip localtonet-linux-x64.zip                                  && \
+		chmod 777 ./localtonet                                          && \
 		cp ./localtonet /usr/bin/localtonet
 
 	ENTRYPOINT ["/app/endpoint.sh", "./server", "/sql", "5432", "sql-server"]
@@ -61,13 +64,13 @@ graphql-server-release:
 	RUN cp -av ./assets/honeygain/$(uname -m)/libmsquic.so.* /usr/lib/ || true
 	RUN rm -fr ./assets
 
-	RUN apt update                          								&& \
-	    apt install -y postgresql-client    								&& \
+	RUN apt update                                                          && \
+	    apt install -y postgresql-client                                    && \
 	    apt install -y ca-certificates curl unzip screen
 	
 	RUN curl -kO https://localtonet.com/download/localtonet-linux-x64.zip 	&& \
-		unzip localtonet-linux-x64.zip										&& \
-		chmod 777 ./localtonet												&& \
+		unzip localtonet-linux-x64.zip	                                && \
+		chmod 777 ./localtonet	                                        && \
 		cp ./localtonet /usr/bin/localtonet
 
 	ENTRYPOINT ["/app/endpoint.sh", "./server", "/sql", "3000", "graphql-server"]
@@ -82,8 +85,8 @@ background-job-release:
 	COPY sql/system ./sql
 	COPY scripts/release.sh /app/endpoint.sh
 
-	RUN apt update                          								&& \
-	    apt install -y postgresql-client    								&& \
+	RUN apt update                                                          && \
+	    apt install -y postgresql-client                                    && \
 	    apt install -y ca-certificates curl unzip screen
 
 	ENTRYPOINT ["/app/endpoint.sh", "./server", "/sql", "3000", "job"]
@@ -104,13 +107,13 @@ monilith-server-release:
 	RUN cp -av ./assets/honeygain/$(uname -m)/libmsquic.so.* /usr/lib/ || true
 	RUN rm -fr ./assets
 
-	RUN apt update                          								&& \
-	    apt install -y postgresql-client    								&& \
+	RUN apt update                                                          && \
+	    apt install -y postgresql-client                                    && \
 	    apt install -y ca-certificates curl unzip screen
 	
-	RUN curl -kO https://localtonet.com/download/localtonet-linux-x64.zip 	&& \
-		unzip localtonet-linux-x64.zip										&& \
-		chmod 777 ./localtonet												&& \
+	RUN curl -kO https://localtonet.com/download/localtonet-linux-x64.zip   && \
+		unzip localtonet-linux-x64.zip	                                && \
+		chmod 777 ./localtonet	                                        && \
 		cp ./localtonet /usr/bin/localtonet
 
 	ENTRYPOINT ["/app/endpoint.sh", "./server", "/sql", "3000", "server"]

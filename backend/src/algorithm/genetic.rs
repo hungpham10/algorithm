@@ -2,18 +2,18 @@ use rayon::prelude::*;
 
 use rand::Rng;
 
-#[derive(Debug)]
-pub struct Individual<T: Sync + Send> {
+#[derive(Clone, Debug)]
+pub struct Individual<T: Clone + Sync + Send> {
     player:  T,
     session: i64,
     fitness: f64,
 }
 
 pub type CrossoverCallback<T> = fn(&Genetic<T>, &T, usize, &T, usize, i64) -> T;
-pub type MutateCallback<T> = fn(&mut T, usize);
-pub type ExtintionCallback<T> = fn(&T) -> bool;
+pub type MutateCallback<T> = fn(&mut T, &Vec<f64>, usize);
+pub type ExtintionCallback<T> = fn(&Individual<T>) -> bool;
 
-impl <T: Sync + Send> Individual<T> {
+impl <T: Clone + Sync + Send> Individual<T> {
     pub fn into(&self) -> &T {
         &self.player
     }
@@ -25,8 +25,8 @@ pub trait Player {
     fn gene(&self) -> Vec<f64>;
 }
 
-#[derive(Debug)]
-pub struct Genetic<T: Sync + Send> {
+#[derive(Clone, Debug)]
+pub struct Genetic<T: Clone + Sync + Send> {
     population: Vec<Individual<T>>,
     limit:      usize,
     crossover:  CrossoverCallback<T>,
@@ -41,6 +41,10 @@ impl <T: Player + Clone + Sync + Send + std::fmt::Debug> Individual<T> {
             fitness: 0.0,
             session: -1,
         }
+    }
+
+    pub fn player(&self) -> &T {
+        &self.player
     }
 
     pub fn estimate(&self, session: i64) -> f64 {
@@ -165,7 +169,7 @@ impl <T: Player + Clone + Sync + Send + std::fmt::Debug> Genetic<T> {
 
             // @NOTE: to make some events like mass extinction, we need to perform estimation
             //        who would be removed out of our population
-            if (self.extinguish)(&self.population[i].player) {
+            if (self.extinguish)(&self.population[i]) {
                 extintion.push(i);
             }
         }
@@ -216,13 +220,17 @@ impl <T: Player + Clone + Sync + Send + std::fmt::Debug> Genetic<T> {
         }
     }
 
-    pub fn fluctuate(&mut self, session: i64, mutation_rate: f64) {
+    pub fn fluctuate(&mut self, session: i64, arguments: Vec<Vec<f64>>, mutation_rate: f64) {
         let mut rng = rand::thread_rng();
 
         for player in &mut self.population {
             for i in 0..player.player.gene().len() {
                 if rng.gen::<f64>() < mutation_rate {
-                    (self.mutate)(&mut player.player, i);
+                    (self.mutate)(
+                        &mut player.player, 
+                        arguments.get(i).unwrap_or(&Vec::<f64>::new()), 
+                        i,
+                    );
                 }
             }
 
@@ -309,12 +317,13 @@ mod tests {
 
     fn mutate(
         player: &mut TestPlayer,
+        arguments: &Vec<f64>,
         gene: usize,
     ) {
     }
 
     fn policy(
-        player: &TestPlayer
+        player: &Individual<TestPlayer>,
     ) -> bool {
         return false;
     }

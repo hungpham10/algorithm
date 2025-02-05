@@ -3,6 +3,8 @@ use redis::{Client, aio::MultiplexedConnection};
 use actix::prelude::*;
 use actix::Addr;
 
+use crate::components::simulator;
+
 pub struct RedisActor {
     conn: MultiplexedConnection,
 }
@@ -51,7 +53,7 @@ impl Handler<InfoCommand> for RedisActor {
 pub struct StoreSimulatorCommand{
     pub stock:      String,
     pub session_id: i64,
-    pub properties: Vec<super::simulator::Arguments>,
+    pub properties: Vec<simulator::Arguments>,
 }
 
 impl Handler<StoreSimulatorCommand> for RedisActor {

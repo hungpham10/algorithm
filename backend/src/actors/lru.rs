@@ -7,6 +7,7 @@ use actix::prelude::*;
 use actix::Addr;
 
 use crate::algorithm::lru::LruCache;
+use crate::components::simulator::Arguments as SimulatorArguments;
 
 struct Namespace {
     tables: HashMap<String, HashSet<Key>>
@@ -21,7 +22,8 @@ impl Namespace {
 }
 
 pub struct LruActor {
-    data_row_cache: LruCache<String, DataRow>,
+    datarows: LruCache<String, DataRow>,
+    simulators: LruCache<String, SimulatorArguments>,
     namespaces: HashMap<String, Namespace>,
 }
 
@@ -40,7 +42,8 @@ fn lru_cache_generate_key(namespace: &str, table_name: &str, key: &Key) -> Resul
 impl LruActor {
     fn new(capacity: usize) -> Self {
         Self { 
-            data_row_cache: LruCache::new(capacity),
+            datarows: LruCache::new(capacity),
+            simulators: LruCache::new(capacity),
             namespaces: HashMap::new(),
         }
     }
@@ -57,7 +60,7 @@ impl Handler<super::FetchDataCommand> for LruActor {
         let namespace = msg.namespace.clone();
         let table = msg.table.clone();
         let target = msg.target.clone();
-        let cache = &mut self.data_row_cache;
+        let cache = &mut self.datarows;
 
         if let Ok(key_name) = lru_cache_generate_key(namespace.as_str(), table.as_str(), &target) {
             match cache.get(&key_name) {
@@ -89,7 +92,7 @@ impl Handler<super::ScanDataCommand> for LruActor {
 
                 for key in table_for_scan.into_iter() {
                     if let Ok(keyname) = lru_cache_generate_key(namespace_in_str.as_str(), table_in_str.as_str(), &key) {
-                        match self.data_row_cache.get(&keyname) {
+                        match self.datarows.get(&keyname) {
                             Some(row) => { ret.insert(key.clone(), row.clone()); },
                             None => { list_key_to_remove.push(key.clone()); },
                         }
@@ -113,7 +116,7 @@ impl Handler<super::SaveDataCommand> for LruActor {
 
     fn handle(&mut self, msg: super::SaveDataCommand, _: &mut Self::Context) -> Self::Result {
         let mut cnt = 0;
-        let cache = &mut self.data_row_cache;
+        let cache = &mut self.datarows;
 
         let namespace_str = msg.namespace
             .as_str();

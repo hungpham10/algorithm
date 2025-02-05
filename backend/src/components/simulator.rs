@@ -1,9 +1,13 @@
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::fmt;
 use std::simd::f64x8;
 use std::simd::prelude::SimdFloat;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::pin::Pin;
 
+use bytes::Bytes;
+use bytestring::ByteString;
 use actix::prelude::*;
 use actix::Addr;
 use log::{info, error};
@@ -11,10 +15,12 @@ use rand::Rng;
 use rand_distr::{Normal, Distribution};
 use serde::{Deserialize, Serialize};
 
-use crate::algorithm::genetic::{Genetic, Player};
-use crate::actors::redis::RedisActor;
+use crate::algorithm::genetic::{Genetic, Player, Individual};
+use crate::actors::redis::{RedisActor, StoreSimulatorCommand};
 use crate::actors::dnse::{DnseActor, GetOHCLCommand};
 use crate::actors::cron::CronResolver;
+use crate::actors::websocket::Rpc;
+use crate::actors::vps::list_active_stocks;
 use crate::schemas::CandleStick;
 
 /** @NOTE: ideal of setup simulator and use
@@ -42,12 +48,12 @@ struct Setting {
     candles: Arc<Vec<f64>>,
     number_of_candle: usize,
     lookback_order_history: usize,
-    lookback_candle_history: usize, 
+    lookback_candle_history: usize,
     batch_money_for_fund: usize,
     arg_gen_min: f64, 
     arg_gen_max: f64,
-    money: f64,
-    orders: Arc<Vec<f64>>,
+    money: Arc<Mutex<f64>>,
+    orders: Arc<Mutex<Vec<f64>>>,
 }
 
 #[allow(non_snake_case)]
@@ -61,24 +67,19 @@ pub struct Arguments {
 #[derive(Clone, Debug)]
 pub struct Investor {
     context: Arc<Setting>,
-    fund: f64,
-    cache: Arc<Addr<RedisActor>>,
     arguments: Arguments,
 }
 
 impl Investor { 
     fn new(
         context: Arc<Setting>,
-        cache: Arc<Addr<RedisActor>>,
     ) -> Self {
         let mut rng = rand::thread_rng();
         let lookback_order_history = &context.lookback_order_history;
         let lookback_candle_history = &context.lookback_candle_history;
         let max_market_arguments = 5 * (*lookback_candle_history); 
-        let batch_money_for_fund = &context.batch_money_for_fund;
         let arg_gen_min = &context.arg_gen_min;
         let arg_gen_max = &context.arg_gen_max;
-        let money = &context.money;
 
         let mut market_arguments: Vec<f64> = (0..max_market_arguments).map(|_| rng.gen_range(*arg_gen_min..*arg_gen_max)).collect();
         let risk_market_arguments = (0..(*lookback_candle_history)).map(|_| rng.gen::<f64>()).collect();
@@ -95,8 +96,6 @@ impl Investor {
                 risk_order_arguments,
                 risk_market_arguments,
             },
-            fund: (*money) / ((*batch_money_for_fund) as f64),
-            cache: cache.clone(),
         }
     }
 
@@ -151,25 +150,35 @@ impl Investor {
                 risk_order_arguments: risk_order_arguments,
                 risk_market_arguments: risk_market_arguments,
             },
-            fund: (father_obj.fund + mother_obj.fund)/2.0,
-            cache: father_obj.cache.clone(),
         }
     }
 
     fn perform_stock_order_strategy(
         &self, 
     ) -> (f64, f64, Vec<f64>) {
-        let mut money = self.context.money;
+        let mut money = self.context.money
+            .lock()
+            .unwrap()
+            .clone();
         let mut stock = 0.0;
-        let mut orders = (*self.context.orders).clone();
+        let mut orders = self.context.orders
+            .lock()
+            .unwrap()
+            .clone();
         let mut sentiments = vec![0.0; self.arguments.risk_market_arguments.len()];
 
-        for i in 0..(self.context.number_of_candle - self.context.lookback_candle_history) {
+        let lookback_candle_history = self.context.lookback_candle_history;
+        let batch_money_for_fund = self.context.batch_money_for_fund;
+        let number_of_candle = self.context.number_of_candle;
+        let candles = self.context.candles.clone();
+        let fund = (money) / (batch_money_for_fund as f64);
+
+        for i in 0..(number_of_candle - lookback_candle_history) {
             let mut count_selling_order = 0;
             let mut count_buying_order = 0;
             let mut indicator = 0.0;
             let mut risk = 0.0;
-            let mut k_limit = self.context.lookback_candle_history * 5 / 8;
+            let mut k_limit = lookback_candle_history * 5 / 8;
             
             if self.context.lookback_candle_history % 8 != 0 {
                 k_limit += 1;
@@ -181,17 +190,11 @@ impl Investor {
                     &self.arguments.market_arguments[8*k..8*k+8],
                 );
                 let candle = f64x8::from_slice(
-                    &self.context.candles[8*k + 5*i..8*k + 5*i + 8],
+                    &candles[8*k + 5*i..8*k + 5*i + 8],
                 );
                 let mult = market_arguments * candle;
 
                 indicator += mult.reduce_sum();
-
-                //indicator += self.market_arguments[5*k + 0] * self.context.candles[k + i].o +
-                //     self.market_arguments[5*k + 1] * self.context.candles[k + i].h +
-                //     self.market_arguments[5*k + 2] * self.context.candles[k + i].c +
-                //     self.market_arguments[5*k + 3] * self.context.candles[k + i].l +
-                //     self.market_arguments[5*k + 4] * self.context.candles[k + i].v as f64 / volume_calibrate;
             }
 
             // @NOTE: count number kind of orders
@@ -240,18 +243,18 @@ impl Investor {
 
             // @NOTE: formular to calculate money and stock
             let decison = (Investor::tanh(indicator) + Investor::sigmoid(risk))/2.0;
-            let fund_stock = self.fund / self.context.candles[5*i + 2];
-            let fund_money = self.fund;
+            let fund_stock = fund / candles[5*i + 2];
+            let fund_money = fund;
 
             // @TODO: implement T+3
             if decison > 0.9 && money > fund_money {
-                orders.push(self.context.candles[5*i+2]);
-                stock += fund_money / self.context.candles[5*i + 2];
+                orders.push(candles[5*i+2]);
+                stock += fund_money / candles[5*i + 2];
                 money -= fund_money;
-            } else if decison < 0.9 && stock > self.fund / self.context.candles[5*i + 2] {
-                orders.push(-self.context.candles[5*i + 2]);
+            } else if decison < 0.9 && stock > fund_stock {
+                orders.push(-candles[5*i + 2]);
                 stock -= fund_stock;
-                money += fund_stock * self.context.candles[5*i + 2];
+                money += fund_stock * candles[5*i + 2];
             }
         }
 
@@ -314,13 +317,13 @@ impl fmt::Display for SimulatorError {
 struct Simulator {
     controller: Genetic<Investor>,
     stock:      String,
+    setting:    Arc<Setting>,
     session:    i64,
 }
 
 pub struct SimulatorActor {
     // @NOTE: simulators
     simulators: Vec<Simulator>,
-    cache:      Arc<Addr<RedisActor>>,
     loop_id:    AtomicUsize,
 
     // @NOTE: shared parameters
@@ -340,14 +343,10 @@ impl SimulatorActor {
         lookback_history: usize, 
         lookback_order: usize,
         min: f64, max: f64,
-        cache: Arc<Addr<RedisActor>>,
     ) -> Self {
         Self {
             // @NOTE: simulators
             simulators: Vec::new(),
-
-            // @NOTE: cache server
-            cache: cache,
 
             // @NOTE: simulator id
             loop_id: AtomicUsize::new(0),
@@ -388,7 +387,7 @@ impl SimulatorActor {
         )
     }
 
-    fn policy(_investor: &Investor) -> bool {
+    fn policy(investor: &Individual<Investor>) -> bool {
         // @TODO: implement policy to remove investor who unable to buy or sell
         //        any more
 
@@ -397,11 +396,15 @@ impl SimulatorActor {
 
     fn mutate(
         investor: &mut Investor,
+        arguments: &Vec<f64>,
         gene: usize,
     ) {
         let mut rng = rand::thread_rng();
-        let std_dev = 0.5;
-        let sampling = 0.005 * Normal::new(0.0, std_dev).unwrap().sample(&mut rng);
+        let std_dev = *arguments.get(0).unwrap_or(&0.5);
+        let scale = *arguments.get(1).unwrap_or(&0.005);
+        let sampling = scale * Normal::new(-std_dev, std_dev)
+            .unwrap()
+            .sample(&mut rng);
 
         if gene < investor.arguments.market_arguments.len() {
             investor.arguments.market_arguments[gene] = sampling;
@@ -422,10 +425,15 @@ impl Actor for SimulatorActor {
 #[derive(Message, Debug)]
 #[rtype(result = "Result<Option<usize>, SimulatorError>")]
 pub struct SetupSettingCommand {
-    batch_money_for_fund: usize,
-    candles: Arc<Vec<CandleStick>>,
-    stock: String,
-    money: f64,
+    pub batch_money_for_fund: usize,
+    pub candles: Arc<Vec<CandleStick>>,
+    pub orders: Option<Vec<f64>>,
+    pub stock: String,
+    pub money: f64,
+    pub arg_gen_min: Option<f64>,
+    pub arg_gen_max: Option<f64>,
+    pub lookback_order_history: Option<usize>,
+    pub lookback_candle_history: Option<usize>,
 }
 
 impl Handler<SetupSettingCommand> for SimulatorActor {
@@ -461,16 +469,15 @@ impl Handler<SetupSettingCommand> for SimulatorActor {
 
         let context = Arc::new(Setting{
             candles:                 Arc::new(candles),
-            money:                   msg.money,
+            orders:                  Arc::new(Mutex::new(msg.orders.unwrap_or(Vec::new()))),
+            money:                   Arc::new(Mutex::new(msg.money)),
             number_of_candle:        msg.candles.len(),
             batch_money_for_fund:    msg.batch_money_for_fund, 
-            orders:                  Arc::new(Vec::<f64>::new()),
-            lookback_candle_history: self.lookback_candle_history,
-            lookback_order_history:  self.lookback_order_history, 
-            arg_gen_min:             self.arg_gen_min, 
-            arg_gen_max:             self.arg_gen_max,
+            lookback_candle_history: msg.lookback_candle_history.unwrap_or(self.lookback_candle_history),
+            lookback_order_history:  msg.lookback_order_history.unwrap_or(self.lookback_order_history), 
+            arg_gen_min:             msg.arg_gen_min.unwrap_or(self.arg_gen_min), 
+            arg_gen_max:             msg.arg_gen_max.unwrap_or(self.arg_gen_max),
         });
-        let cache = self.cache.clone();
         let n_player = self.number_of_player;
 
         let mut controller = Genetic::<Investor>::new(
@@ -482,13 +489,14 @@ impl Handler<SetupSettingCommand> for SimulatorActor {
 
         controller.initialize(
             (0..n_player)
-                .map(|_| Investor::new(context.clone(), cache.clone()))
+                .map(|_| Investor::new(context.clone()))
                 .collect(), 
         );
 
         self.simulators.push(Simulator{
             controller: controller,
             stock:      msg.stock.clone(),
+            setting:    context,
             session:    0,
         });
 
@@ -543,10 +551,11 @@ impl Handler<DisableTrainingCommand> for SimulatorActor {
 #[derive(Message, Debug)]
 #[rtype(result = "Result<Option<()>, SimulatorError>")]
 pub struct EvaluateFitnessCommand {
-    number_of_couple:    usize,
-    number_of_loop:      usize,
-    mutation_rate:       f64,
-    number_of_simulator: usize,
+    pub number_of_couple:    usize,
+    pub number_of_loop:      usize,
+    pub mutation_rate:       f64,
+    pub mutation_args:       Vec<Vec<f64>>,
+    pub number_of_simulator: usize,
 }
 
 impl Handler<EvaluateFitnessCommand> for SimulatorActor {
@@ -561,24 +570,30 @@ impl Handler<EvaluateFitnessCommand> for SimulatorActor {
             });
         }
 
-        let cache = self.cache.clone();
         let simulator_ids = (0..msg.number_of_simulator).map(|_| {
                 self.loop_id.fetch_add(1, Ordering::SeqCst) % self.simulators.len()
             })
             .collect::<Vec<usize>>();
+        
+        let mutation_args = msg.mutation_args.clone();
+        let mutation_rate = msg.mutation_rate;
 
+        // @TODO: recalculate rate to perform mutation better
         simulator_ids.iter()
             .for_each(|&simulator_id| {
                 let first_session = self.prepare_sessions(simulator_id, msg.number_of_loop);
 
                 for i in 0..msg.number_of_loop {
+                    let mutation_args = mutation_args.clone();
+
                     self.simulators[simulator_id].controller.evolute(
                         msg.number_of_couple, 
                         first_session + i as i64,
                     );
                     self.simulators[simulator_id].controller.fluctuate(
                         first_session + i as i64, 
-                        msg.mutation_rate,
+                        mutation_args,
+                        mutation_rate,
                     );
                 }
 
@@ -611,60 +626,114 @@ impl Handler<EvaluateFitnessCommand> for SimulatorActor {
 
         Box::pin(async move {
             for i in 0..simulator_ids.len() {
-                let ret = cache.send(super::redis::StoreSimulatorCommand {
-                        session_id: sessions[i],
-                        stock:      stocks[i].clone(),
-                        properties: properties[i].clone(),
-                    })
-                    .await
-                    .unwrap();
+                //let ret = cache.send(StoreSimulatorCommand {
+                //        session_id: sessions[i],
+                //        stock:      stocks[i].clone(),
+                //        properties: properties[i].clone(),
+                //    })
+                //    .await
+                //    .unwrap();
 
-                match ret {
-                    Ok(_) => {
-                        info!("Simulator stock {} has been stored", stocks[i]);
-                    },
-                    Err(error) => {
-                        error!("{}", error);
-                    }
-                }
+                //match ret {
+                //    Ok(_) => {
+                //        info!("Simulator stock {} has been stored", stocks[i]);
+                //    },
+                //    Err(error) => {
+                //        error!("{}", error);
+                //    }
+                //}
             }
             Ok(None)
         })
     }
 }
 
+#[derive(Clone)]
+pub struct SimulatorRpc {
+    actor: Arc<Addr<SimulatorActor>>,
+}
+
+impl SimulatorRpc {
+    fn new(actor: Arc<Addr<SimulatorActor>>) -> Self {
+        SimulatorRpc {
+            actor,
+        }
+    }
+
+    #[inline]
+    pub fn send<M>(&self, msg: M) -> Request<SimulatorActor, M> 
+    where
+        M: Message + Send + 'static,
+        M::Result: Send,
+        SimulatorActor: Handler<M>,
+    {
+        self.actor.send(msg)
+    }
+}
+
+impl Rpc for SimulatorRpc {
+    fn boxing(&self) -> Pin<Box<dyn Rpc + Send + 'static>> {
+        return Box::pin(SimulatorRpc{
+            actor: self.actor.clone(),
+        });
+    }
+
+    fn binary(&self, request: Bytes) -> Bytes {
+        return request;
+    }
+
+    fn text(&self, request: ByteString) -> ByteString {
+        return request;
+    }
+}
+
 pub fn connect_to_simulator(
     resolver:   &mut CronResolver,
-    cache:      Arc<Addr<RedisActor>>,
     dnse:       Arc<Addr<DnseActor>>,
     n_player:   usize,
     n_children: usize,
-) -> Addr<SimulatorActor> {
-    let actor   = SimulatorActor::new(
+    is_remoted: bool,
+) -> SimulatorRpc {
+    let actor  = Arc::new(
+        SimulatorActor::new(
             n_player,
             50,
             30,
             -0.2,
             0.2,
-            cache.clone(),
-        ).start();
-    let simulator: Arc<Addr<SimulatorActor>> = actor.clone().into();
-
-    setup_environment_for_median_strategy(
-        resolver,
-        dnse.clone(),
-        simulator.clone(),
+        )
+        .start(),
     );
-    do_enable_training(resolver, simulator.clone());
-    do_disable_training(resolver, simulator.clone());
-    train_investors(
-        resolver,
-        simulator.clone(),
-        n_children,
-    );
+    let simulator: Arc<Addr<SimulatorActor>> = actor.clone();
 
-    return actor;
+    if is_remoted {
+
+    } else {
+        setup_environment_for_median_strategy(
+            resolver,
+            dnse.clone(),
+            simulator.clone(),
+        );
+        do_enable_training(resolver, simulator.clone());
+        do_disable_training(resolver, simulator.clone());
+        train_investors(
+            resolver,
+            simulator.clone(),
+            n_children,
+        );
+    }
+
+    return SimulatorRpc::new(actor);
 }
+
+fn setup_enviroment_for_future_strategy(
+    resolver: &mut CronResolver,
+    dnse: Arc<Addr<DnseActor>>,
+    simulator: Arc<Addr<SimulatorActor>>, 
+) {
+    // @TODO: new strategy to deal will future vn30
+}
+
 
 fn setup_environment_for_median_strategy(
     resolver: &mut CronResolver,
@@ -674,12 +743,30 @@ fn setup_environment_for_median_strategy(
     resolver.resolve("simulator.setup_new_environment_for_median_strategy".to_string(),
         move |arguments, _, _| {
             let simulator = simulator.clone();
+            let dnse = dnse.clone();
             let money = arguments.get("money")
                 .map_or(1000000.0, |money| (*money).parse::<f64>().unwrap());
-            let dnse = dnse.clone();
+            let orders = arguments.get("orders")
+                .map_or(None, |orders| Some(
+                    (*orders).split(',')
+                        .map(|s| {
+                            s.trim()
+                                .parse::<f64>()
+                                .unwrap()
+                        })
+                        .collect::<Vec<f64>>()
+                ));
+            let arg_gen_min = arguments.get("arg_gen_min")
+                .map_or(None, |arg_gen_min| Some((*arg_gen_min).parse::<f64>().unwrap()));
+            let arg_gen_max = arguments.get("arg_gen_max")
+                .map_or(None, |arg_gen_max| Some((*arg_gen_max).parse::<f64>().unwrap()));
+            let lookback_order_history = arguments.get("lookback_order_history")
+                .map_or(None, |lookback_order_history| Some((*lookback_order_history).parse::<usize>().unwrap()));
+            let lookback_candle_history = arguments.get("lookback_candle_history")
+                .map_or(None, |lookback_candle_history| Some((*lookback_candle_history).parse::<usize>().unwrap()));
 
             async move {
-                for stock in super::vps::list_active_stocks().await {
+                for stock in list_active_stocks().await {
                     let candles = Arc::new(dnse.send(GetOHCLCommand{
                         resolution: arguments.get("resolution").unwrap().to_string(),
                         stock:      stock.clone(),
@@ -698,7 +785,14 @@ fn setup_environment_for_median_strategy(
                         // @NOTE: commnon properties
                         candles,
                         money,
+                        orders: orders.clone(),
                         stock: stock.clone(),
+
+                        // @NOTE: simulator's properties
+                        arg_gen_min,
+                        arg_gen_max,
+                        lookback_order_history,
+                        lookback_candle_history,
                     })
                     .await;
 
@@ -778,14 +872,31 @@ fn train_investors(
                 .map_or(100, |number_of_loop| (*number_of_loop).parse::<usize>().unwrap());
             let mutation_rate = arguments.get("mutation_rate")
                 .map_or(0.1, |mutation_rate| (*mutation_rate).parse::<f64>().unwrap());
+            let mutation_args = arguments.get("mutation_args")
+                .map_or(Vec::new(), |mutation_args| 
+                    mutation_args
+                        .split(';')
+                        .map(|line| {
+                            line.split(',')
+                                .map(|s| 
+                                    s.trim()
+                                        .parse::<f64>()
+                                        .unwrap()
+                                )
+                                .collect::<Vec<f64>>()
+                        })
+                        .collect::<Vec<Vec<f64>>>()
+                );
 
+            // @TODO: monitor progress of training 
             async move {
                 let ret = simulator.send(
                     EvaluateFitnessCommand{
                         number_of_couple,
                         number_of_loop,
                         mutation_rate,
-                        number_of_simulator,
+                        mutation_args,
+                        number_of_simulator,                        
                     },
                 )
                 .await;

@@ -1,10 +1,12 @@
 #![feature(portable_simd)]
 
-use ::lib::cmds::{
-    client::background_job_client, 
-    server::monolith_server,
-    server::graphql_server, 
-    server::sql_server
+use ::lib::cmds::server::{
+    server,
+    bff,
+    auth,
+    render,
+    event,
+    datasource,
 };
 
 fn main() {
@@ -20,10 +22,15 @@ fn main() {
     ));
 
     match std::env::args().nth(1).unwrap().as_str() {
-        "graphql-server" => graphql_server(),
-        "sql-server" => sql_server(),
-        "server" => monolith_server(),
-        "job" => background_job_client(),
+        // @NOTE: this kind of sub-commands represent specific deployments
+        "server" => server(),
+        "bff" => bff(),
+        "auth" => auth(),
+        "render" => render(),
+        "event" => event(),
+
+        // @NOTE: this kind of sub-commands represent specific deployments
+        "datasource" => datasource(),
         unknown => panic!("Unknown command: {}", unknown),
     }.unwrap();
 }

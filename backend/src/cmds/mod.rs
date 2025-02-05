@@ -2,34 +2,44 @@ pub mod server;
 pub mod client;
 
 use actix::Addr;
-use actix_web::{http::Method, middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
+use actix_web::{
+    http::Method, 
+    guard, 
+    middleware, 
+    web, 
+    App, 
+    Error, 
+    HttpRequest, 
+    HttpResponse, 
+    HttpServer,
+};
+use actix_files::Files;
 
 use influxdb::Client as InfluxClient;
 use juniper::http::{graphiql::graphiql_source, GraphQLRequest};
-use pgwire::tokio::process_socket;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use tokio_schedule::{every, Job};
-use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 
-use std::io;
 use std::sync::Arc;
 
-use crate::actors::cron::{connect_to_cron, CronActor, CronResolver, TickCommand, ScheduleCommand, PerformCommand};
+use crate::actors::cron::{connect_to_cron, CronActor, CronResolver, TickCommand};
 use crate::actors::dnse::{connect_to_dnse, DnseActor};
 use crate::actors::fireant::{connect_to_fireant, FireantActor};
 use crate::actors::process::{HealthCommand, ProcessActor};
 use crate::actors::redis::{connect_to_redis, InfoCommand, RedisActor};
 use crate::actors::tcbs::{connect_to_tcbs, TcbsActor};
 use crate::actors::vps::{connect_to_vps, list_of_vn30, VpsActor};
-use crate::actors::simulator::{connect_to_simulator, SimulatorActor};
-use crate::helpers::{connect_to_postgres_pool, convert_graphql_argument_to_map, PgPool, Shutdown};
+use crate::components::simulator::connect_to_simulator;
+use crate::components::auth::connect_to_auth;
+use crate::components::renderer::connect_to_renderer;
+use crate::components::event::connect_to_event;
+use crate::actors::websocket::Websocket;
+use crate::helpers::{connect_to_postgres_pool, PgPool, Shutdown};
 use crate::load::load_and_map_schedulers_with_resolvers;
-use crate::schemas::{CronJob, SingleJob};
 use crate::interfaces::graphql::{create_graphql_context, create_graphql_schema, SchemaGraphQL};
-use crate::interfaces::pgwire::create_sql_context;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphQlErrorLocation {
@@ -131,44 +141,10 @@ async fn health(
     }
 }
 
-struct DataSource {
-    dnse: Arc<Addr<DnseActor>>,
-    vps: Arc<Addr<VpsActor>>,
-    tcbs: Arc<Addr<TcbsActor>>,
-    fireant: Arc<Addr<FireantActor>>,
-}
-
-impl DataSource {
-    async fn new(
-        resolver: &mut CronResolver, 
-        pool: Arc<PgPool>,
-        tsdb: Arc<InfluxClient>, 
-    ) -> DataSource {
-        let dnse = Arc::new(connect_to_dnse());
-        let vps = Arc::new(connect_to_vps(resolver, tsdb.clone(), list_of_vn30().await));
-        let tcbs = Arc::new(connect_to_tcbs(resolver, pool.clone().into(), list_of_vn30().await));
-        let fireant = Arc::new(connect_to_fireant(
-            resolver,
-            pool.clone(),
-            std::env::var("FIREANT_TOKEN").unwrap()),
-        );
-
-        DataSource {
-            dnse,
-            vps,
-            tcbs,
-            fireant,
-        }
-    }
-}
-
 struct Application {
-    ds: DataSource,
-    simulator: Arc<Addr<SimulatorActor>>,
-    schema: Arc<SchemaGraphQL>,
     cache: Arc<Addr<RedisActor>>,
     pool: Arc<PgPool>,
-    cron: Arc<Addr<CronActor>>,
+    tsdb: Arc<InfluxClient>, 
 
     // @NOTE: shutdown manager
     shutdown: Shutdown,
@@ -179,9 +155,9 @@ struct Application {
 
 impl Application {
     pub async fn new() -> Application {
-        let mut resolver = CronResolver::new();
         let (shutdown_tx, shutdown_rx) = broadcast::channel(1);
     
+        // @NOTE: configure external actors
         let cache = Arc::new(
             connect_to_redis(std::env::var("REDIS_DSN").unwrap()).await
         );
@@ -195,22 +171,9 @@ impl Application {
             )
             .with_token(std::env::var("INFLUXDB_TOKEN").unwrap()),
         ); 
-        let ds = DataSource::new(&mut resolver, pool.clone(), tsdb.clone()).await;
-        let simulator = Arc::new(connect_to_simulator(
-            &mut resolver,
-            cache.clone(),
-            ds.dnse.clone(),
-            1000,
-            10,
-        ));
-        let cron = Arc::new(connect_to_cron(resolver.into()));
-        let schema = Arc::new(create_graphql_schema());
 
         Application {
-            ds,
-            cron,
-            schema,
-            simulator,
+            tsdb,
             pool,
             cache,
 
@@ -222,14 +185,333 @@ impl Application {
         }
     }
 
-    pub async fn start_cron(&self, crons: Vec<CronJob>) {
-        // @NOTE: mapping cronjobs
-        let cron = self.cron.clone();
+    pub async fn handon_auth_server(&self, port: u16) -> std::io::Result<()> {
+        HttpServer::new(move || {
+            let mut ws = Websocket::new();
+            let (auth, _) = connect_to_auth(
+            
+            );
+
+            App::new()
+                .route("/health", web::get().to(health))
+                .service(
+                    ws.configure(
+                        "/auth.v1/Auth.Login", 
+                        Box::pin(auth.clone()),
+                    )
+                )
+                .service(
+                    ws.configure(
+                        "/auth.v1/Auth.Registry", 
+                        Box::pin(auth.clone()),
+                    )
+                )
+                .app_data(web::Data::new(Arc::new(ws)))
+        })
+        .bind(("0.0.0.0", port))
+        .unwrap()
+        .run()
+        .await
+    }
+
+    pub async fn handon_render_server(&self, port: u16) -> std::io::Result<()> {
+        HttpServer::new(move || {
+            let mut ws = Websocket::new();
+            let (renderer, _) = connect_to_renderer(
+            
+            );
+
+            App::new()
+                .route("/health", web::get().to(health))
+                .service(
+                    ws.configure(
+                        "/render.v1/Render.FetchPageInfomation", 
+                        Box::pin(renderer.clone()),
+                    )
+                )
+                .service(
+                    ws.configure(
+                        "/render.v1/Render.FetchComponentInfomation", 
+                        Box::pin(renderer.clone()),
+                    )
+                )
+                .app_data(web::Data::new(Arc::new(ws)))
+        })
+        .bind(("0.0.0.0", port))
+        .unwrap()
+        .run()
+        .await
+    }
+
+    pub async fn handon_event_server(&self, port: u16) -> std::io::Result<()> {
+        HttpServer::new(move || {
+            let mut ws = Websocket::new();
+            let (event, _) = connect_to_event(
+                
+            );
+
+            App::new()
+                .route("/health", web::get().to(health))
+                .service(
+                    ws.configure(
+                        "/event.v1/Event.FetchPageInfomation", 
+                        Box::pin(event.clone()),
+                    )
+                )
+                .service(
+                    ws.configure(
+                        "/event.v1/Event.FetchComponentInfomation", 
+                        Box::pin(event.clone()),
+                    )
+                )
+                .app_data(web::Data::new(Arc::new(ws)))
+        })
+        .bind(("0.0.0.0", port))
+        .unwrap()
+        .run()
+        .await
+    }
+
+    pub async fn handon_bff_server(
+        &self, 
+        is_monolith: bool, 
+        port: u16,
+    ) -> std::io::Result<()> {
+        if is_monolith {
+            let mut resolver = CronResolver::new();
+            let cache = self.cache.clone();
+            let pool = self.pool.clone();
+            let tsdb = self.tsdb.clone();
+
+            // @NOTE: configure datasources
+            let dnse = Arc::new(connect_to_dnse());
+            let vps = Arc::new(connect_to_vps(&mut resolver, tsdb.clone(), list_of_vn30().await));
+            let tcbs = Arc::new(connect_to_tcbs(&mut resolver, pool.clone().into(), list_of_vn30().await));
+            let fireant = Arc::new(connect_to_fireant(
+                &mut resolver,
+                self.pool.clone(),
+                std::env::var("FIREANT_TOKEN").unwrap()),
+            );
+            
+            // @NOTE: configure internal actors
+            let simulator = connect_to_simulator(
+                &mut resolver,
+                dnse.clone(),
+                1000,
+                10,
+                true,
+            );
+
+            // @NOTE: configure cron actor and apply resolver
+            let cron = Arc::new(connect_to_cron(resolver.into()));
+
+            load_and_map_schedulers_with_resolvers(pool.clone(), cron.clone())
+                .await;
+
+            actix_rt::spawn(async move {
+                let every_second = every(1)
+                    .seconds()
+                    .in_timezone(&Utc)
+                    .perform(|| async {
+                        let _ = cron.clone().send(TickCommand).await;
+                    });
+                every_second.await;
+            });
+
+            HttpServer::new(move || {
+                let mut ws = Websocket::new();
+
+                let cache = cache.clone();
+                let pool = pool.clone();
+                let vps = vps.clone();
+                let dnse = dnse.clone();
+                let tcbs = tcbs.clone();
+                let fireant = fireant.clone();
+                let simulator = simulator.clone();
+
+                App::new()
+                    .wrap(middleware::Logger::default())
+                    .route("/health", web::get().to(health))
+                    .service(
+                        ws.configure(
+                            "/simulate.v1/Simulator.StoreSimulateSession",
+                            Box::pin(simulator.clone()),
+                        )
+                    )
+                    .service(
+                        ws.configure(
+                            "/simulate.v1/Simulator.FetchSimulateSession", 
+                            Box::pin(simulator.clone()),
+                        )
+                    )
+                    .service(
+                        ws.configure(
+                            "/simulate.v1/Simulator.ConsumeSimulateStrategySession", 
+                            Box::pin(simulator.clone()),
+                        )
+                    )
+                
+                    // @TODO: implement handler for each resource bellow
+                    .service(
+                        web::resource("/auth/v1/login")
+                            .name("auth_login")
+                            .guard(guard::Header("content-type", "application/json"))
+                            .route(web::get().to(HttpResponse::Ok)),
+                    )
+                    .service(
+                        web::resource("/auth/v1/callback")
+                            .name("auth")
+                            .guard(guard::Header("content-type", "application/json"))
+                            .route(web::get().to(HttpResponse::Ok)),
+                    )
+                    .service(
+                        web::resource("/auth/v1/logout")
+                            .name("auth_logout")
+                            .guard(guard::Header("content-type", "application/json"))
+                            .route(web::get().to(HttpResponse::Ok)),
+                    )
+                    .service(
+                        web::resource("/event/v1/{page}")
+                            .name("event_page")
+                            .guard(guard::Header("content-type", "application/json"))
+                            .route(web::get().to(HttpResponse::Ok)),
+                    )
+                    .service(
+                        web::resource("/event/v1/{page}/{component}")
+                            .name("event_component")
+                            .guard(guard::Header("content-type", "application/json"))
+                            .route(web::get().to(HttpResponse::Ok)),
+                    )
+                    .service(
+                        web::resource("/ui/v1/{page}")
+                            .name("render_page")
+                            .guard(guard::Header("content-type", "application/json"))
+                            .route(web::get().to(HttpResponse::Ok)),
+                    )
+                    .service(
+                        web::resource("/ui/v1/{page}/{component}")
+                            .name("render_component")
+                            .guard(guard::Header("content-type", "application/json"))
+                            .route(web::get().to(HttpResponse::Ok)),
+                    )
+                    .service(
+                        web::resource("/auth/v1/{user}")
+                            .name("user")
+                            .guard(guard::Header("content-type", "application/json"))
+                            .route(web::get().to(HttpResponse::Ok))
+                            .route(web::put().to(HttpResponse::Ok)),
+                    )
+                    .service(Files::new("/", "./static").index_file("index.html"))
+                    .app_data(web::Data::new(Arc::new(ws)))
+                    .app_data(web::Data::new(vps))
+                    .app_data(web::Data::new(dnse))
+                    .app_data(web::Data::new(tcbs))
+                    .app_data(web::Data::new(fireant))
+                    .app_data(web::Data::new(cache))
+                    .app_data(web::Data::new(pool))
+            })
+            .bind(("0.0.0.0", port))
+            .unwrap()
+            .run()
+            .await
+        } else {
+            HttpServer::new(move || {
+                App::new()
+                    .wrap(middleware::Logger::default())
+
+                    // @TODO: implement handler for each resource bellow
+                    .service(
+                        web::resource("/auth/v1/login")
+                            .name("auth_login")
+                            .guard(guard::Header("content-type", "application/json"))
+                            .route(web::get().to(HttpResponse::Ok)),
+                    )
+                    .service(
+                        web::resource("/auth/v1/callback")
+                            .name("auth")
+                            .guard(guard::Header("content-type", "application/json"))
+                            .route(web::get().to(HttpResponse::Ok)),
+                    )
+                    .service(
+                        web::resource("/auth/v1/logout")
+                            .name("auth_logout")
+                            .guard(guard::Header("content-type", "application/json"))
+                            .route(web::get().to(HttpResponse::Ok)),
+                    )
+                    .service(
+                        web::resource("/event/v1/{page}")
+                            .name("event_page")
+                            .guard(guard::Header("content-type", "application/json"))
+                            .route(web::get().to(HttpResponse::Ok)),
+                    )
+                    .service(
+                        web::resource("/event/v1/{page}/{component}")
+                            .name("event_component")
+                            .guard(guard::Header("content-type", "application/json"))
+                            .route(web::get().to(HttpResponse::Ok)),
+                    )
+                    .service(
+                        web::resource("/ui/v1/{page}")
+                            .name("render_page")
+                            .guard(guard::Header("content-type", "application/json"))
+                            .route(web::get().to(HttpResponse::Ok)),
+                    )
+                    .service(
+                        web::resource("/ui/v1/{page}/{component}")
+                            .name("render_component")
+                            .guard(guard::Header("content-type", "application/json"))
+                            .route(web::get().to(HttpResponse::Ok)),
+                    )
+                    .service(
+                        web::resource("/auth/v1/{user}")
+                            .name("user")
+                            .guard(guard::Header("content-type", "application/json"))
+                            .route(web::get().to(HttpResponse::Ok))
+                            .route(web::put().to(HttpResponse::Ok)),
+                    )
+                    .service(Files::new("/", "./static").index_file("index.html"))
+                    .route("/health", web::get().to(health))
+            })
+            .bind(("0.0.0.0", port))
+            .unwrap()
+            .run()
+            .await
+        }
+    }
+
+    pub async fn handon_datasource_server(&self, port: u16) -> std::io::Result<()> {
+        let mut resolver = CronResolver::new();
+        let cache = self.cache.clone();
         let pool = self.pool.clone();
+        let tsdb = self.tsdb.clone();
+
+        // @NOTE: configure datasources
+        let dnse = Arc::new(connect_to_dnse());
+        let vps = Arc::new(connect_to_vps(&mut resolver, tsdb.clone(), list_of_vn30().await));
+        let tcbs = Arc::new(connect_to_tcbs(&mut resolver, pool.clone().into(), list_of_vn30().await));
+        let fireant = Arc::new(connect_to_fireant(
+            &mut resolver,
+            self.pool.clone(),
+            std::env::var("FIREANT_TOKEN").unwrap()),
+        );
+        
+        // @NOTE: configure internal actors
+        let graphql = Arc::new(create_graphql_schema());
+        let simulator = connect_to_simulator(
+            &mut resolver,
+            dnse.clone(),
+            1000,
+            10,
+            true,
+        );
+
+        // @NOTE: configure cron actor and apply resolver
+        let cron = Arc::new(connect_to_cron(resolver.into()));
+
+        load_and_map_schedulers_with_resolvers(pool.clone(), cron.clone())
+            .await;
 
         actix_rt::spawn(async move {
-            load_and_map_schedulers_with_resolvers(pool, cron.clone()).await;
-
             let every_second = every(1)
                 .seconds()
                 .in_timezone(&Utc)
@@ -239,96 +521,52 @@ impl Application {
             every_second.await;
         });
 
-        for cron in crons {
-            let _ = self.cron
-                .send(ScheduleCommand {
-                    cron:    cron.interval,
-                    timeout: cron.timeout,
-                    route:   cron.resolver,
-                    mapping: convert_graphql_argument_to_map(cron.arguments),
-                })
-                .await
-                .unwrap();
-        }
-    }
-
-    pub async fn perform_job(&self, job: SingleJob) {
-        let _ = self.cron
-            .send(PerformCommand {
-                target:  job.resolver,
-                timeout: job.timeout,
-                mapping: convert_graphql_argument_to_map(job.arguments),
-                from:    job.from.unwrap_or(0),
-                to:      job.to.unwrap_or(0),
-            })
-            .await
-            .unwrap();
-    }
-
-    pub async fn handon_sql_server(&self, port: usize, cache_capacity: usize) -> io::Result<()>{
-        // @NOTE: configure and start sql server
-        let factory = create_sql_context(
-            cache_capacity,
-            self.ds.vps.clone(),
-            self.ds.dnse.clone(),
-            self.ds.tcbs.clone(),
-            self.ds.fireant.clone(),
-        );
-
-        let server_addr = format!("0.0.0.0:{}", port);
-        let listener = TcpListener::bind(server_addr).await.unwrap();
-
-        while !self.shutdown.is_shutdown() {
-            let (socket, _) = listener.accept()
-                .await
-                .unwrap();
-            let factory_ref = factory.clone();
-
-            actix_rt::spawn(async move {
-                let _ = process_socket(
-                        socket, 
-                        None, 
-                        factory_ref
-                    )
-                    .await;
-            });
-        }
-
-        Ok(())
-    }
-
-    pub async fn handon_bff_server(&self, port: u16) -> std::io::Result<()> {
         // @NOTE: mapping http routes
-        let cron = self.cron.clone();
-        let pool = self.pool.clone();
-        let cache = self.cache.clone();
-        let schema = self.schema.clone();
-        let vps = self.ds.vps.clone();
-        let dnse = self.ds.dnse.clone();
-        let tcbs = self.ds.tcbs.clone();
-        let fireant = self.ds.fireant.clone();
-        let ret = HttpServer::new(move || {
+        HttpServer::new(move || {
+            let mut ws = Websocket::new();
+
+            let graphql = graphql.clone();
+            let cache = cache.clone();
+            let pool = pool.clone();
+            let vps = vps.clone();
+            let dnse = dnse.clone();
+            let tcbs = tcbs.clone();
+            let fireant = fireant.clone();
+            let simulator = simulator.clone();
+
             App::new()
                 .wrap(middleware::Logger::default())
-                .app_data(web::Data::new(cron.clone()))
-                .app_data(web::Data::new(cache.clone()))
-                .app_data(web::Data::new(pool.clone()))
-                .app_data(web::Data::new(schema.clone()))
-                .app_data(web::Data::new(vps.clone()))
-                .app_data(web::Data::new(dnse.clone()))
-                .app_data(web::Data::new(tcbs.clone()))
-                .app_data(web::Data::new(fireant.clone()))
                 .route("/health", web::get().to(health))
-                .route("/graphql", web::post().to(graphql))
-                .route("/playground", web::get().to(playground))
+                .service(
+                    ws.configure(
+                        "/simulate.v1/Simulator.StoreSimulateSession",
+                        Box::pin(simulator.clone()),
+                    )
+                )
+                .service(
+                    ws.configure(
+                        "/simulate.v1/Simulator.FetchSimulateSession", 
+                        Box::pin(simulator.clone()),
+                    )
+                )
+                .service(
+                    ws.configure(
+                        "/simulate.v1/Simulator.ConsumeSimulateStrategySession", 
+                        Box::pin(simulator.clone()),
+                    )
+                )
+                .app_data(web::Data::new(Arc::new(ws)))
+                .app_data(web::Data::new(graphql))
+                .app_data(web::Data::new(vps))
+                .app_data(web::Data::new(dnse))
+                .app_data(web::Data::new(tcbs))
+                .app_data(web::Data::new(fireant))
+                .app_data(web::Data::new(cache))
+                .app_data(web::Data::new(pool))
         })
         .bind(("0.0.0.0", port))
         .unwrap()
         .run()
-        .await;
-
-        let _ = self.notify_shutdown.send(());
-        return ret;
+        .await
     }
-
 }

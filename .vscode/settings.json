@@ -1,0 +1,6 @@
+{
+    "circleci.filters.branchFilter": "allBranches",
+    "circleci.persistedProjectSelection": [
+        "bb/hung0913208/algorithm"
+    ]
+}

@@ -66,6 +66,79 @@ impl Handler<super::HealthCommand> for DnseActor {
 }
 
 #[derive(Message, Debug)]
+#[rtype(result = "Result<Vec<f64>, HttpError>")]
+pub struct GetVolumeProfileCommand {
+    pub resolution: String,
+    pub stock: String,
+    pub from: i64,
+    pub to: i64,
+    pub number_of_levels: i64,
+}
+
+impl Handler<GetVolumeProfileCommand> for DnseActor {
+    type Result = ResponseFuture<Result<Vec<f64>, HttpError>>;
+
+    fn handle(&mut self, msg: GetVolumeProfileCommand, _: &mut Self::Context) -> Self::Result {
+        let number_of_levels = msg.number_of_levels;
+        let resolution = msg.resolution.clone();
+        let stock = msg.stock.clone();
+        let from = msg.from;
+        let to = msg.to;
+        let timeout = self.timeout;
+
+        Box::pin(async move {
+            let mut volumes = vec![0.0; number_of_levels as usize];
+
+            let client = Arc::new(HttpClient::default());
+            let candles = fetch_ohcl_by_stock(
+                client.clone(), 
+                &stock, 
+                &resolution, 
+                from, 
+                to, 
+                timeout,
+            )
+            .await;
+
+            match candles {
+                Ok(candles) => {
+                    let max_price = candles.iter()
+                        .map(|candle| candle.h)
+                        .fold(f64::MIN, f64::max);
+                    let min_price = candles.iter()
+                        .map(|candle| candle.l)
+                        .fold(f64::MAX, f64::min);
+                    let price_step = (max_price - min_price) / number_of_levels as f64;
+                    
+                    candles.iter().for_each(|candle| {
+                        let price_range = candle.h - candle.l;
+                        let volume_per_price = candle.v as f64 / price_range;
+
+                        for level in 0..number_of_levels {
+                            let price_level_low = min_price + (level as f64) * price_step;
+                            let price_level_high = min_price + ((level + 1)  as f64) * price_step;
+
+                            let overlap_start = candle.l.max(price_level_low);
+                            let overlap_end = candle.h.min(price_level_high);
+
+                            if overlap_start < overlap_end {
+                                volumes[level as usize] += volume_per_price * (overlap_end - overlap_start);
+                            }
+                        }
+                    });
+
+                    Ok(volumes)
+                },
+                Err(error) => {
+                    Err(error)
+                }
+            }
+        })
+    }
+}
+
+
+#[derive(Message, Debug)]
 #[rtype(result = "Result<Vec<CandleStick>, HttpError>")]
 pub struct GetOHCLCommand {
     pub resolution: String,

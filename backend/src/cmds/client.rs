@@ -1,8 +1,6 @@
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use tokio::time::{self, sleep, Duration};
 
-use crate::schemas::{CronJob, SingleJob, Argument};
-
 #[actix_rt::main]
 pub async fn background_job_client() -> std::io::Result<()> {
     let app = super::Application::new().await;
@@ -22,66 +20,6 @@ pub async fn background_job_client() -> std::io::Result<()> {
             .unwrap_or(5 * 60),
         ),
     );
-
-    // @NOTE: setup cron
-    app.start_cron(vec![
-        CronJob {
-            interval:  "* * * * *".to_string(),
-            timeout:   5 * 60,
-            resolver:  "simulator.perform_training_investors".to_string(),
-            arguments: Some(vec![
-                Argument{
-                    argument: "number_of_loop".to_string(),
-                    value:    "10".to_string(),
-                },
-                Argument{
-                    argument: "number_of_simulator".to_string(),
-                    value:    "30".to_string(),
-                },
-                Argument{
-                    argument: "mutation_rate".to_string(),
-                    value:    "0.01".to_string(),
-                },
-            ]),
-        },
-    ]).await;
-
-    // @NOTE: setup environment
-    app.perform_job(SingleJob{
-        timeout:   5 * 60,
-        resolver:  "simulator.setup_new_environment_for_median_strategy".to_string(),
-        arguments: Some(vec![
-            Argument{
-                argument: "resolution".to_string(),
-                value:    "1D".to_string(),
-            },
-            Argument{
-                argument: "batch_money_for_fund".to_string(),
-                value:    "30".to_string(),
-            },
-            Argument{
-                argument: "from".to_string(),
-                value:    "1700495220".to_string(),
-            },
-            Argument{
-                argument: "to".to_string(),
-                value:    "1736693826".to_string(),
-            },
-        ]),
-        from: None,
-        to:   None,
-    })
-    .await;
-
-    // @NOTE: enable training
-    app.perform_job(SingleJob{
-        timeout:   5 * 60,
-        resolver:  "simulator.enable_training".to_string(),
-        arguments: None,
-        from: None,
-        to:   None,
-    })
-    .await;
 
     tokio::select! {
         _ = timeout_future => {

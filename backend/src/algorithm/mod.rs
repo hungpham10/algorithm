@@ -5,3 +5,4 @@ pub mod lru;
 pub mod binarysearch;
 pub mod math;
 pub mod kmean;
+pub mod bayesian;

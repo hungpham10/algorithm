@@ -10,10 +10,10 @@ pub mod dnse;
 pub mod fireant;
 pub mod process;
 pub mod redis;
-pub mod simulator;
 pub mod tcbs;
 pub mod vps;
-//pub mod vietcap;
+pub mod websocket;
+pub mod vietcap;
 
 #[derive(Message, Debug)]
 #[rtype(result = "bool")]
