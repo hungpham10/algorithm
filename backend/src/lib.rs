@@ -13,3 +13,4 @@ pub mod cmds;
 pub mod helpers;
 pub mod load;
 pub mod schemas;
+pub mod api;

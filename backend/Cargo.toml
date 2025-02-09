@@ -7,6 +7,10 @@ edition = "2021"
 name = "lib"
 path = "src/lib.rs"
 
+[[bin]]
+name = "bff"
+path = "src/cmds/bff.rs"
+
 [profile.release]
 debug = true
 
@@ -23,6 +27,7 @@ redis = { version = "0.26.1", features = ["aio", "tokio-comp"] }
 # @NOTE: algorithm
 rand_distr = "0.4.3"
 rand = "0.8.5"
+statrs = "0.18.0"
 rayon = "1.10"
 
 # @NOTE: models

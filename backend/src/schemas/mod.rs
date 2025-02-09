@@ -1,4 +1,5 @@
 use juniper::GraphQLObject;
+use serde::{Deserialize, Serialize};
 
 pub mod database;
 pub mod tsdb;
@@ -23,6 +24,40 @@ pub struct CandleStick {
 
     #[graphql(description = "volume")]
     pub v: i32,
+}
+
+#[derive(GraphQLObject, Deserialize, Serialize, Debug)]
+#[graphql(description = "Information about order")]
+pub struct Order {
+    #[graphql(description = "order id")]
+    pub id: String,
+
+    #[graphql(description = "stock name")]
+    pub stock: String,
+
+    #[graphql(description = "order state")]
+    pub state: i32,
+
+    #[graphql(description = "order open date")]
+    pub order_open_date: Option<i32>,
+
+    #[graphql(description = "order close date")]
+    pub order_close_date: Option<i32>,
+
+    #[graphql(description = "earning income")]
+    pub earn: Option<f64>,
+
+    #[graphql(description = "price of order")]
+    pub price_order: f64,
+
+    #[graphql(description = "stop loss")]
+    pub stop_loss: f64,
+
+    #[graphql(description = "take profit")]
+    pub take_profit: f64,
+
+    #[graphql(description = "number of stocks")]
+    pub number_of_stocks: i32,
 }
 
 #[derive(GraphQLObject, Debug)]

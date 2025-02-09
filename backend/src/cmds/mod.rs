@@ -28,7 +28,6 @@ use std::sync::Arc;
 use crate::actors::cron::{connect_to_cron, CronActor, CronResolver, TickCommand};
 use crate::actors::dnse::{connect_to_dnse, DnseActor};
 use crate::actors::fireant::{connect_to_fireant, FireantActor};
-use crate::actors::process::{HealthCommand, ProcessActor};
 use crate::actors::redis::{connect_to_redis, InfoCommand, RedisActor};
 use crate::actors::tcbs::{connect_to_tcbs, TcbsActor};
 use crate::actors::vps::{connect_to_vps, list_of_vn30, VpsActor};
@@ -112,7 +111,6 @@ async fn graphql(
 async fn health(
     cache: web::Data<Addr<RedisActor>>,
     cron: web::Data<Addr<CronActor>>,
-    processer: web::Data<Arc<Addr<ProcessActor>>>,
     vps: web::Data<Addr<VpsActor>>,
     dnse: web::Data<Addr<DnseActor>>,
     tcbs: web::Data<Addr<TcbsActor>>,
@@ -125,15 +123,12 @@ async fn health(
     let tcbs_ok = tcbs.send(crate::actors::HealthCommand).await.unwrap();
     let fireant_ok = fireant.send(crate::actors::HealthCommand).await.unwrap();
 
-    let process_stats = processer.send(HealthCommand).await.unwrap();
-
     if cache_status.len() > 0
         && cron_ok
         && vps_ok
         && dnse_ok
         && tcbs_ok
         && fireant_ok
-        && process_stats
     {
         Ok(HttpResponse::Ok().body("OK").into())
     } else {
