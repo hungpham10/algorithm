@@ -1,13 +1,173 @@
-# You can override the included template(s) by including variable overrides
-# SAST customization: https://docs.gitlab.com/ee/user/application_security/sast/#customizing-the-sast-settings
-# Secret Detection customization: https://docs.gitlab.com/user/application_security/secret_detection/pipeline/configure
-# Dependency Scanning customization: https://docs.gitlab.com/ee/user/application_security/dependency_scanning/#customizing-the-dependency-scanning-settings
-# Container Scanning customization: https://docs.gitlab.com/ee/user/application_security/container_scanning/#customizing-the-container-scanning-settings
-# Note that environment variables can be set in several places
-# See https://docs.gitlab.com/ee/ci/variables/#cicd-variable-precedence
-stages:
-- test
-sast:
-  stage: test
+# Include security scanning templates include:
 include:
-- template: Security/SAST.gitlab-ci.yml
+  - template: Security/SAST.gitlab-ci.yml
+
+default:
+  image: python:3.11  # Use Python 3.11 image
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - .pip-cache/
+      - .cargo/  # Cache Rust dependencies
+      - target/  # Cache Rust build artifacts
+
+stages:
+  - lint
+  - build
+  - test
+  - publish
+
+# Lint Rust code
+rust-lint:
+  stage: lint
+  before_script:
+    - apt-get update && apt-get install -y curl build-essential  # Install curl and build tools for Rust
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y  # Install Rust
+    - export PATH="$HOME/.cargo/bin:$PATH"  # Add Rust to PATH
+    - python3 --version
+    - rustc --version
+    - python3 -m pip install --upgrade pip
+    - python3 -m pip install maturin twine pytest pyarrow patchelf --cache-dir .pip-cache
+  script:
+    - cd backend
+    - rustup component add clippy rustfmt
+    - cargo clippy -- -D warnings
+    - cargo fmt --all -- --check
+  allow_failure: true  # Don't fail the pipeline if linting fails
+
+# Build release version (for tags)
+build-release:
+  stage: build
+  before_script:
+    - apt-get update && apt-get install -y curl build-essential  # Install curl and build tools for Rust
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y  # Install Rust
+    - export PATH="$HOME/.cargo/bin:$PATH"  # Add Rust to PATH
+    - python3 --version
+    - rustc --version
+    - python3 -m pip install --upgrade pip
+    - python3 -m pip install maturin twine pytest pyarrow patchelf --cache-dir .pip-cache
+  script:
+    - cd backend
+    # Update version in pyproject.toml       
+    - |
+      if ! grep -q "^version" Cargo.toml; then
+        echo "Missing configuration version in Cargo.toml"
+      elif [ $(grep -oP '^version = "\K[^"]+' Cargo.toml) == $CI_COMMIT_TAG ]; then
+        python3 -m maturin build --release --out dist
+        mkdir -p ../dist
+        cp dist/*.whl ../dist/
+      else
+        echo "Tag in Cargo.toml doesn't match version in gitlab's tag"
+      fi
+
+  artifacts:
+    paths:
+      - dist/*.whl
+    expire_in: 1 week
+  rules:
+    - if: '$CI_COMMIT_TAG'  # Only run on tags
+
+# Build development version (for branches)
+build-dev:
+  stage: build
+  before_script:
+    - apt-get update && apt-get install -y curl build-essential
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y 
+    - export PATH="$HOME/.cargo/bin:$PATH"
+    - python3 --version
+    - rustc --version
+    - python3 -m pip install --upgrade pip
+    - python3 -m pip install maturin twine pytest pyarrow patchelf --cache-dir .pip-cache
+  script:
+    - cd backend
+
+    # Create a development version with date and commit hash
+    - export COMMIT_HASH=$(echo $CI_COMMIT_SHA | cut -c1-8)
+    - export DATE=$(date +%Y%m%d)
+    - export DEV_VERSION="-dev${DATE}+${COMMIT_HASH}"
+    - echo "Building development version with suffix $DEV_VERSION"
+
+    # Update version in pyproject.toml       
+    - |
+      if grep -q "^version" Cargo.toml; then
+        sed -i "s/^version = \".*\"/version = \"$(grep -oP '^version = "\K[^"]+' Cargo.toml)$DEV_VERSION\"/" Cargo.toml
+      else
+        sed -i "/name = \"scope\"/a version = \"0.1.0$DEV_VERSION\"" Cargo.toml
+      fi
+
+    # Use setuptools_scm or manually set version in Cargo.toml
+    - python3 -m maturin build --release --out dist
+    - mkdir -p ../dev-dist
+    - cp dist/*.whl ../dev-dist/
+  artifacts:
+    paths:
+      - dev-dist/*.whl
+    expire_in: 1 day
+  rules:
+    - if: '$CI_COMMIT_TAG == null'  # Run on non-tag commits
+
+# Test release version
+test-release:
+  stage: test
+  before_script:
+    - python3 --version
+    - python3 -m pip install --upgrade pip
+    - python3 -m pip install maturin twine pytest
+  script:
+    - pip install dist/*.whl
+    - pytest -xvs tests/
+  dependencies:
+    - build-release
+  rules:
+    - if: '$CI_COMMIT_TAG'  # Only run on tags
+
+# Test development version
+test-dev:
+  stage: test
+  before_script:
+    - python3 --version
+    - python3 -m pip install --upgrade pip
+    - python3 -m pip install maturin twine pytest
+  script:
+    - pip install pyarrow  # Explicitly install pyarrow
+    - pip install dev-dist/*.whl
+    - pytest -xvs tests/
+  dependencies:
+    - build-dev
+  rules:
+    - if: '$CI_COMMIT_TAG == null'  # Run on non-tag commits
+
+# Publish release version to PyPI (for tags)
+publish-release:
+  stage: publish
+  variables:
+    TWINE_USERNAME: gitlab-ci-token
+    TWINE_PASSWORD: $CI_JOB_TOKEN
+  before_script:
+    - python3 --version
+    - python3 -m pip install --upgrade pip
+    - python3 -m pip install maturin twine
+  script:
+    - python -m twine upload --repository-url ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi  dist/*.whl
+  rules:
+    - if: '$CI_COMMIT_TAG'  # Only run on tags
+  dependencies:
+    - build-release
+
+# Publish development version to PyPI (for main branch)
+publish-dev:
+  stage: publish
+  variables:
+    TWINE_USERNAME: gitlab-ci-token
+    TWINE_PASSWORD: $CI_JOB_TOKEN
+  before_script:
+    - python3 --version
+    - python3 -m pip install --upgrade pip
+    - python3 -m pip install maturin twine
+  script:
+    - python -m twine upload --repository-url ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi --verbose dev-dist/*.whl
+  rules:
+    - if: '$CI_COMMIT_TAG == null && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'  # Run on main branch but not tags
+  dependencies:
+    - build-dev
+  allow_failure: true  # Don't fail the pipeline if dev publishing fails

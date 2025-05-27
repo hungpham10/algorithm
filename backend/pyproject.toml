@@ -1,0 +1,22 @@
+[build-system]
+requires = ["maturin>=1.5.0,<2.0.0"]
+build-backend = "maturin"
+
+[project]
+name = "scope"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "pyarrow>=7.0.0",
+    "polars>=0.36.2"
+]
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
