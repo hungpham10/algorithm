@@ -13,7 +13,7 @@ env:
 on:
   push:
     branches:
-      - main
+      - feat/**
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+' # Matches tags like v0.1.0
       - '[0-9]+.[0-9]+.[0-9]+'  # Matches tags like 0.1.0
@@ -64,6 +64,9 @@ jobs:
     name: Test (via Makefile) # Updated name
     runs-on: ubuntu-latest
     needs: [] # Assuming it runs in parallel with lint
+    if: >
+      github.ref == 'refs/heads/main' || 
+      (github.event_name == 'pull_request' && github.base_ref == 'main')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
