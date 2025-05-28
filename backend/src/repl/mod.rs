@@ -1,9 +1,9 @@
 use pyo3::prelude::*;
 
 mod datastore;
-mod order;
-mod monitor;
 mod market;
+mod monitor;
+mod order;
 
 #[pymodule]
 fn scope(_: Python, m: &PyModule) -> PyResult<()> {

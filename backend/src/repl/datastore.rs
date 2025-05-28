@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
 use pyo3::prelude::*;
+use std::sync::{Arc, Mutex};
 
 use crate::algorithm::Variables;
 
@@ -12,7 +12,7 @@ pub struct Datastore {
 impl Datastore {
     #[new]
     fn new(memory_size: usize) -> Self {
-        Datastore {  
+        Datastore {
             variables: Arc::new(Mutex::new(Variables::new(memory_size))),
         }
     }

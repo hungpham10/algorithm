@@ -1,10 +1,9 @@
 mod difference;
 mod histogram;
-mod volume;
 mod price;
+mod volume;
 
 pub use difference::*;
 pub use histogram::*;
-pub use volume::*;
 pub use price::*;
-
+pub use volume::*;

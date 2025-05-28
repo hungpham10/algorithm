@@ -36,14 +36,18 @@ mod tests {
         // Descending order comparator
         let descending_comparator = |a: &i32, b: &i32| b.cmp(a);
         let descending_arr = vec![12, 11, 8, 7, 5, 2];
-        assert_eq!(binary_search(&descending_arr, &7, descending_comparator), Some(3));
-        assert_eq!(binary_search(&descending_arr, &1, descending_comparator), None);
-
+        assert_eq!(
+            binary_search(&descending_arr, &7, descending_comparator),
+            Some(3)
+        );
+        assert_eq!(
+            binary_search(&descending_arr, &1, descending_comparator),
+            None
+        );
 
         let empty_arr: Vec<i32> = vec![];
         assert_eq!(binary_search(&empty_arr, &5, ascending_comparator), None);
     }
-
 
     #[test]
     fn test_binary_search_with_struct_comparator() {
@@ -53,21 +57,32 @@ mod tests {
         }
 
         let people = vec![
-            Person { name: "Alice".to_string(), age: 30 },
-            Person { name: "Bob".to_string(), age: 25 },
-            Person { name: "Charlie".to_string(), age: 35 },
+            Person {
+                name: "Alice".to_string(),
+                age: 30,
+            },
+            Person {
+                name: "Bob".to_string(),
+                age: 25,
+            },
+            Person {
+                name: "Charlie".to_string(),
+                age: 35,
+            },
         ];
 
         let age_comparator = |a: &Person, b: &Person| a.age.cmp(&b.age);
-        let target = Person { name: "".to_string(), age: 25 }; // Name doesn't matter for this search
+        let target = Person {
+            name: "".to_string(),
+            age: 25,
+        }; // Name doesn't matter for this search
 
         assert_eq!(binary_search(&people, &target, age_comparator), Some(1));
 
-        let target = Person { name: "".to_string(), age: 40 };
+        let target = Person {
+            name: "".to_string(),
+            age: 40,
+        };
         assert_eq!(binary_search(&people, &target, age_comparator), None);
-
     }
-
-
-
 }

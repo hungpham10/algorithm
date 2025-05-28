@@ -1,8 +1,8 @@
+use std::collections::HashMap;
 use std::error;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use std::collections::HashMap;
 
 use futures::future;
 use pyo3::prelude::*;
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use actix::prelude::*;
 use actix::Addr;
 
-use crate::actors::HealthCommand;
+use crate::actors::{HealthCommand, UpdateStocksCommand};
 use crate::algorithm::Variables;
 
 #[allow(non_snake_case)]
@@ -72,21 +72,19 @@ impl Price {
             self.lastVolume.into_py(py),
             self.lot.into_py(py),
             self.changePc.parse::<f64>().unwrap_or(0.0).into_py(py),
-
             // Order book data
-            g4[0].parse::<f64>().unwrap_or(0.0).into_py(py), 
-            g4[1].parse::<f64>().unwrap_or(0.0).into_py(py), 
-            g5[0].parse::<f64>().unwrap_or(0.0).into_py(py), 
-            g5[1].parse::<f64>().unwrap_or(0.0).into_py(py), 
-            g6[0].parse::<f64>().unwrap_or(0.0).into_py(py), 
-            g6[1].parse::<f64>().unwrap_or(0.0).into_py(py), 
+            g4[0].parse::<f64>().unwrap_or(0.0).into_py(py),
+            g4[1].parse::<f64>().unwrap_or(0.0).into_py(py),
+            g5[0].parse::<f64>().unwrap_or(0.0).into_py(py),
+            g5[1].parse::<f64>().unwrap_or(0.0).into_py(py),
+            g6[0].parse::<f64>().unwrap_or(0.0).into_py(py),
+            g6[1].parse::<f64>().unwrap_or(0.0).into_py(py),
             g1[0].parse::<f64>().unwrap_or(0.0).into_py(py),
             g1[1].parse::<f64>().unwrap_or(0.0).into_py(py),
             g2[0].parse::<f64>().unwrap_or(0.0).into_py(py),
             g2[1].parse::<f64>().unwrap_or(0.0).into_py(py),
             g3[0].parse::<f64>().unwrap_or(0.0).into_py(py),
             g3[1].parse::<f64>().unwrap_or(0.0).into_py(py),
-
             // Foreign flow
             self.fBVol.parse::<f64>().unwrap_or(0.0).into_py(py),
             self.fSVolume.parse::<f64>().unwrap_or(0.0).into_py(py),
@@ -113,9 +111,9 @@ pub struct VpsActor {
 }
 
 impl VpsActor {
-    pub fn new(stocks: &Vec<String>, variables: Arc<Mutex<Variables>>) -> Self {
+    pub fn new(stocks: &[String], variables: Arc<Mutex<Variables>>) -> Self {
         Self {
-            stocks: stocks.clone(),
+            stocks: stocks.to_owned(),
             timeout: 300,
             variables,
         }
@@ -132,12 +130,6 @@ impl Handler<HealthCommand> for VpsActor {
     fn handle(&mut self, _msg: HealthCommand, _: &mut Self::Context) -> Self::Result {
         Box::pin(async move { true })
     }
-}
-
-#[derive(Message, Debug)]
-#[rtype(result = "bool")]
-pub struct UpdateStocksCommand {
-    pub stocks: Vec<String>,
 }
 
 impl Handler<UpdateStocksCommand> for VpsActor {
@@ -161,11 +153,7 @@ impl Handler<GetPriceCommand> for VpsActor {
         let stocks = self.stocks.clone();
         let timeout = self.timeout;
 
-        Box::pin(async move {
-            let datapoints = fetch_price_depth(&stocks, timeout).await;
-
-            return datapoints;
-        })
+        Box::pin(async move { fetch_price_depth(&stocks, timeout).await })
     }
 }
 
@@ -257,19 +245,22 @@ struct Industry {
 }
 
 pub async fn list_of_industry(industry_code: &str) -> Vec<String> {
-    let industry = reqwest::get(format!("https://histdatafeed.vps.com.vn/industry/symbols/{}", industry_code))
-            .await
-            .unwrap()
-            .json::<Industry>()
-            .await
-            .unwrap();
-    return industry.data;
+    let industry = reqwest::get(format!(
+        "https://histdatafeed.vps.com.vn/industry/symbols/{}",
+        industry_code
+    ))
+    .await
+    .unwrap()
+    .json::<Industry>()
+    .await
+    .unwrap();
+    industry.data
 }
 
 #[derive(Message)]
 #[rtype(result = "Result<HashMap<String, usize>, VpsError>")]
 pub struct UpdateVariablesCommand {
-    pub prices: Vec<Price>
+    pub prices: Vec<Price>,
 }
 
 impl Handler<UpdateVariablesCommand> for VpsActor {
@@ -323,7 +314,11 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                 }
 
                 // Update current price and volume
-                let current_price = if price.lastPrice == 0.0 { price.r } else { price.lastPrice };
+                let current_price = if price.lastPrice == 0.0 {
+                    price.r
+                } else {
+                    price.lastPrice
+                };
                 if let Ok(len) = vars.update(format!("{}_price", price.sym), current_price) {
                     updates.insert(format!("{}_price", price.sym), len);
                 }
@@ -378,13 +373,13 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                 // Update foreign flow
                 if let Ok(len) = vars.update(
                     format!("{}_fb_buy_volume", price.sym),
-                    price.fBVol.parse::<f64>().unwrap_or(0.0)
+                    price.fBVol.parse::<f64>().unwrap_or(0.0),
                 ) {
                     updates.insert(format!("{}_fb_buy_volume", price.sym), len);
                 }
                 if let Ok(len) = vars.update(
                     format!("{}_fb_sell_volume", price.sym),
-                    price.fSVolume.parse::<f64>().unwrap_or(0.0)
+                    price.fSVolume.parse::<f64>().unwrap_or(0.0),
                 ) {
                     updates.insert(format!("{}_fb_sell_volume", price.sym), len);
                 }
@@ -411,17 +406,18 @@ impl Handler<GetVariableCommand> for VpsActor {
 
         Box::pin(async move {
             let vars = variables.lock().map_err(|e| VpsError {
-                message: format!("Failed to acquire lock: {}", e)
+                message: format!("Failed to acquire lock: {}", e),
             })?;
             let var_name = format!("{}.{}", msg.symbol, msg.variable);
 
-            vars.get_by_index(&var_name, msg.index).map_err(|e| VpsError {
-                message: format!("Failed to get variable {}[{}]: {}", var_name, msg.index, e)
-            })
+            vars.get_by_index(&var_name, msg.index)
+                .map_err(|e| VpsError {
+                    message: format!("Failed to get variable {}[{}]: {}", var_name, msg.index, e),
+                })
         })
     }
 }
 
-pub fn connect_to_vps(stocks: &Vec<String>) -> Addr<VpsActor> {
+pub fn connect_to_vps(stocks: &[String]) -> Addr<VpsActor> {
     VpsActor::new(stocks, Arc::new(Mutex::new(Variables::new(0)))).start()
 }
