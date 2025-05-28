@@ -46,3 +46,9 @@ chrono-tz = "0.9.0"
 chrono = "= 0.4.39"
 futures = "0.3"
 log = "0.4.22"
+
+# Web application
+dotenvy = "0.15.7"
+actix-web = "4.3.1"
+shuttle-actix-web = "0.55.0"
+shuttle-runtime = "0.55.0"

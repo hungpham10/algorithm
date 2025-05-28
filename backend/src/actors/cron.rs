@@ -4,14 +4,15 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
 
-use pyo3::types::PyDict;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
 use actix::prelude::*;
 use actix::Addr;
@@ -20,13 +21,13 @@ use crate::algorithm::heap::Heap;
 
 #[derive(Debug, Clone)]
 pub struct Task {
-    id:       i64,
-    timer:    i64,
-    timeout:  i32,
-    route:    String,
+    id: i64,
+    timer: i64,
+    timeout: i32,
+    route: String,
     interval: String,
 
-    pyfuzzy:    Arc<Py<PyDict>>,
+    pyfuzzy: Arc<Py<PyDict>>,
     pycallback: Arc<Py<PyAny>>,
 }
 
@@ -43,11 +44,16 @@ impl Task {
 unsafe impl Send for Task {}
 unsafe impl Sync for Task {}
 
-type AsyncCallback =
-    Box<dyn Fn(Task, i32, i32) -> Pin<Box<dyn Future<Output = ()>>>>;
+type AsyncCallback = Box<dyn Fn(Task, i32, i32) -> Pin<Box<dyn Future<Output = ()>>>>;
 
 pub struct CronResolver {
     resolvers: BTreeMap<String, AsyncCallback>,
+}
+
+impl Default for CronResolver {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CronResolver {
@@ -61,12 +67,7 @@ impl CronResolver {
         self.resolvers.keys().map(|k| k.to_string()).collect()
     }
 
-    pub async fn perform(
-        &self,
-        tasks: Vec<Task>,
-        from: i32,
-        to: i32,
-    ) -> usize {
+    pub async fn perform(&self, tasks: Vec<Task>, from: i32, to: i32) -> usize {
         let mut cnt = tasks.len();
 
         for task in tasks {
@@ -84,7 +85,8 @@ impl CronResolver {
                 }
             }
         }
-        return cnt;
+
+        cnt
     }
 
     pub fn resolve<C, F>(&mut self, route: String, callback: C)
@@ -107,18 +109,18 @@ pub struct CronActor {
     clock: i64,
 
     // @NOTE: dependencies
-    resolver: Arc<CronResolver>,
+    resolver: Rc<CronResolver>,
 }
 
 impl CronActor {
-    fn new(resolver: Arc<CronResolver>) -> Self {
+    fn new(resolver: Rc<CronResolver>) -> Self {
         CronActor {
             timekeeper: Heap::<Task>::new(|l: &Task, r: &Task| -> i64 {
                 if r.timer == l.timer {
-                    return r.id - l.id;
+                    r.id - l.id
+                } else {
+                    r.timer - l.timer
                 }
-
-                return r.timer - l.timer;
             }),
             clock: Utc::now().timestamp(),
             tick: AtomicI64::new(1),
@@ -143,6 +145,7 @@ pub struct CronError {
 impl fmt::Display for CronError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.code {
+            0 => write!(f, "timeout"),
             _ => write!(f, "unknown error"),
         }
     }
@@ -158,7 +161,7 @@ impl Handler<TickCommand> for CronActor {
     fn handle(&mut self, _msg: TickCommand, _: &mut Self::Context) -> Self::Result {
         let mut tasks = Vec::<Task>::new();
         let clock_now = Utc::now();
-        
+
         if clock_now.timestamp() == self.clock {
             return Box::pin(async move { Err(CronError { code: 0 }) });
         }
@@ -189,27 +192,23 @@ impl Handler<TickCommand> for CronActor {
             }
 
             if self.timekeeper.pop() {
-                tasks.push(target); 
+                tasks.push(target);
             }
         }
 
         self.clock = clock_now.timestamp();
 
-        return Box::pin(async move {
-            Ok(resolver
-                .perform(tasks, -1, -1)
-                .await)
-        });
+        Box::pin(async move { Ok(resolver.perform(tasks, -1, -1).await) })
     }
 }
 
 #[derive(Message, Debug, Clone)]
 #[rtype(result = "Result<i64, CronError>")]
 pub struct ScheduleCommand {
-    pub cron:       String,
-    pub timeout:    i32,
-    pub route:      String,
-    pub pyfuzzy:    Arc<Py<PyDict>>,
+    pub cron: String,
+    pub timeout: i32,
+    pub route: String,
+    pub pyfuzzy: Arc<Py<PyDict>>,
     pub pycallback: Arc<Py<PyAny>>,
 }
 
@@ -222,19 +221,19 @@ impl Handler<ScheduleCommand> for CronActor {
 
         if let Ok(next) = cron_parser::parse(msg.cron.as_str(), &now) {
             self.timekeeper.push(Task {
-                id:         id as i64,
-                timeout:    msg.timeout,
-                timer:      next.timestamp() - now.timestamp(),
-                route:      msg.route.clone(),
-                interval:   msg.cron.clone(),
-                pyfuzzy:    msg.pyfuzzy.clone(),
+                id: id as i64,
+                timeout: msg.timeout,
+                timer: next.timestamp() - now.timestamp(),
+                route: msg.route.clone(),
+                interval: msg.cron.clone(),
+                pyfuzzy: msg.pyfuzzy.clone(),
                 pycallback: msg.pycallback.clone(),
             });
 
-            return Box::pin(async move { Ok(id as i64) });
+            Box::pin(async move { Ok(id as i64) })
+        } else {
+            Box::pin(async move { Ok(0) })
         }
-
-        return Box::pin(async move { Ok(0) });
     }
 }
 
@@ -248,6 +247,6 @@ impl Handler<super::HealthCommand> for CronActor {
     }
 }
 
-pub fn connect_to_cron(resolver: Arc<CronResolver>) -> Addr<CronActor> {
+pub fn connect_to_cron(resolver: Rc<CronResolver>) -> Addr<CronActor> {
     CronActor::new(resolver).start()
 }

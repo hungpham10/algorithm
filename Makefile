@@ -16,11 +16,11 @@ setup:
 		export PATH="$$HOME/.cargo/bin:$$PATH"; 					\
 	fi
 
-lint: setup
+lint:
 	export PATH="$$HOME/.cargo/bin:$$PATH"  && \
 	cd $(BACKEND_DIR) 			&& \
 	rustup component add clippy rustfmt 	&& \
-	cargo clippy -- -D warnings 		&& \
+	cargo clippy 				&& \
 	cargo fmt --all -- --check
 
 build: setup

@@ -18,9 +18,7 @@ pub struct DnseActor {
 
 impl DnseActor {
     fn new() -> Self {
-        Self { 
-            timeout: 60,
-        }
+        Self { timeout: 60 }
     }
 }
 
@@ -85,40 +83,36 @@ impl Handler<GetVolumeProfileCommand> for DnseActor {
             let mut prices = vec![0.0; number_of_levels as usize];
 
             let client = Arc::new(HttpClient::default());
-            let candles = fetch_ohcl_by_stock(
-                client.clone(), 
-                &stock, 
-                &resolution, 
-                from, 
-                to, 
-                timeout,
-            )
-            .await;
+            let candles =
+                fetch_ohcl_by_stock(client.clone(), &stock, &resolution, from, to, timeout).await;
 
             match candles {
                 Ok(candles) => {
                     let mut ret = Vec::new();
-                    let max_price = candles.iter()
+                    let max_price = candles
+                        .iter()
                         .map(|candle| candle.h)
                         .fold(f64::MIN, f64::max);
-                    let min_price = candles.iter()
+                    let min_price = candles
+                        .iter()
                         .map(|candle| candle.l)
                         .fold(f64::MAX, f64::min);
                     let price_step = (max_price - min_price) / number_of_levels as f64;
 
                     candles.iter().for_each(|candle| {
                         let price_range = candle.h - candle.l;
-                        let volume_per_price = candle.v as f64 / price_range;
+                        let volume_per_price = candle.v / price_range;
 
                         for level in 0..number_of_levels {
                             let price_level_low = min_price + (level as f64) * price_step;
-                            let price_level_high = min_price + ((level + 1)  as f64) * price_step;
+                            let price_level_high = min_price + ((level + 1) as f64) * price_step;
 
                             let overlap_start = candle.l.max(price_level_low);
                             let overlap_end = candle.h.min(price_level_high);
 
                             if overlap_start < overlap_end {
-                                volumes[level as usize] += volume_per_price * (overlap_end - overlap_start);
+                                volumes[level as usize] +=
+                                    volume_per_price * (overlap_end - overlap_start);
 
                                 // @TODO: better calculation to estimate the price level center
                                 //        according to the volume, rather than using the average
@@ -131,15 +125,12 @@ impl Handler<GetVolumeProfileCommand> for DnseActor {
                         ret.push((prices[level as usize], volumes[level as usize]));
                     }
                     Ok(ret)
-                },
-                Err(error) => {
-                    Err(error)
                 }
+                Err(error) => Err(error),
             }
         })
     }
 }
-
 
 #[derive(Message, Debug)]
 #[rtype(result = "Result<Vec<CandleStick>, HttpError>")]
@@ -162,10 +153,8 @@ impl Handler<GetOHCLCommand> for DnseActor {
 
         Box::pin(async move {
             let client = Arc::new(HttpClient::default());
-            let datapoints =
-                fetch_ohcl_by_stock(client.clone(), &stock, &resolution, from, to, timeout).await;
 
-            return datapoints;
+            fetch_ohcl_by_stock(client.clone(), &stock, &resolution, from, to, timeout).await
         })
     }
 }
@@ -236,7 +225,7 @@ pub async fn fetch_ohcl_by_stock(
 }
 
 pub fn list_of_resolution() -> Vec<String> {
-    return vec!["1D".to_string(), "1M".to_string(), "1W".to_string()];
+    vec!["1D".to_string(), "1M".to_string(), "1W".to_string()]
 }
 
 pub fn connect_to_dnse() -> Addr<DnseActor> {

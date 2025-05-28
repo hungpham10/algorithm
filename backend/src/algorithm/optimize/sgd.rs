@@ -1,4 +1,1 @@
-
-pub fn sgd() {
-    
-}
+pub fn sgd() {}

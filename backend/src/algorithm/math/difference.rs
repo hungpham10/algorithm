@@ -1,4 +1,3 @@
-
 pub trait Formular {
     fn formular(&self, index: usize) -> f64;
 }
@@ -9,9 +8,7 @@ pub struct Difference {
 
 impl Difference {
     pub fn new(formular: Box<dyn Formular>) -> Self {
-        Difference {
-            target: formular,
-        }
+        Difference { target: formular }
     }
 
     pub fn first_difference(&self, index: usize, m: i32) -> Option<f64> {
@@ -23,8 +20,10 @@ impl Difference {
         for k in -m..(m + 1) {
             if k != 0 {
                 let numerator = (-1.0_f64).powi(k + 1); // (-1)^(k+1)
-                let additional_denom = Self::factorial(m - k.abs()) * Self::factorial(m + k.abs()) * (k as f64);
-                coefficients[(k + m) as usize] = (numerator / additional_denom) * Self::factorial(m).powi(2) / denominator;
+                let additional_denom =
+                    Self::factorial(m - k.abs()) * Self::factorial(m + k.abs()) * (k as f64);
+                coefficients[(k + m) as usize] =
+                    (numerator / additional_denom) * Self::factorial(m).powi(2) / denominator;
             }
         }
 
@@ -40,7 +39,7 @@ impl Difference {
     pub fn second_difference(&self, index: usize, m: i32) -> Option<f64> {
         let index = index as i32;
         let n_points = 2 * m + 1;
-        let m_factorial = Self::factorial(m) as f64; // Lưu giai thừa của m
+        let m_factorial = Self::factorial(m); // Lưu giai thừa của m
         let denominator = 2.0 * Self::factorial(m).powi(2); // Mẫu số: 2 * (m!)^2
         let mut coefficients = vec![0.0; n_points as usize];
 
@@ -52,7 +51,8 @@ impl Difference {
             } else {
                 // Hệ số tại k != 0
                 let numerator = (-1.0_f64).powi(k_abs) * 2.0 * m_factorial.powi(2);
-                let additional_denom = Self::factorial(m - k_abs) as f64 * Self::factorial(m + k_abs) as f64 * (k as f64).powi(2);
+                let additional_denom =
+                    Self::factorial(m - k_abs) * Self::factorial(m + k_abs) * (k as f64).powi(2);
                 coefficients[(k + m) as usize] = numerator / (additional_denom * denominator);
             }
         }

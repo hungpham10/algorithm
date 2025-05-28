@@ -46,5 +46,5 @@ pub struct Order {
     pub take_profit: Option<f64>,
 
     #[graphql(description = "how many money i have earn")]
-    pub earn: Option<f64>
+    pub earn: Option<f64>,
 }

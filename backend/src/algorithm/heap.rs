@@ -7,7 +7,9 @@ pub struct Heap<T: Clone> {
 }
 
 impl<T: Clone> Heap<T> {
-    pub fn size(&self) -> usize { self.all }
+    pub fn size(&self) -> usize {
+        self.all
+    }
 
     pub fn new(comparator: fn(&T, &T) -> i64) -> Self {
         Self {
@@ -20,22 +22,22 @@ impl<T: Clone> Heap<T> {
 
     pub fn get(&self) -> Option<&T> {
         if self.all == 0 {
-            return None;
+            None
+        } else {
+            self.items.first()
         }
-
-        return self.items.get(0);
     }
 
     pub fn get_mut(&mut self) -> Option<&T> {
         if self.all == 0 {
-            return None;
+            None
+        } else {
+            self.items.first()
         }
-
-        return self.items.get(0);
     }
 
     pub fn pop(&mut self) -> bool {
-        return self.refresh(true);
+        self.refresh(true)
     }
 
     pub fn push(&mut self, value: T) -> bool {
@@ -45,10 +47,10 @@ impl<T: Clone> Heap<T> {
             self.items[self.all] = value;
         }
 
-        self.all = self.all + 1;
+        self.all += 1;
         self.branch = self.all / 2;
 
-        return self.refresh(false);
+        self.refresh(false)
     }
 
     fn refresh(&mut self, sorting: bool) -> bool {
@@ -58,9 +60,9 @@ impl<T: Clone> Heap<T> {
 
         loop {
             if self.branch > 0 {
-                self.branch = self.branch - 1;
+                self.branch -= 1;
             } else if sorting {
-                self.all = self.all - 1;
+                self.all -= 1;
 
                 if self.all > 0 {
                     self.swap(0, self.all);
@@ -121,7 +123,7 @@ impl<T: Clone> Heap<T> {
             }
         }
 
-        return true;
+        true
     }
 
     fn swap(&mut self, left_index: usize, right_index: usize) {

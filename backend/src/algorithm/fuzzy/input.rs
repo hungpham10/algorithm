@@ -1,12 +1,18 @@
-use pyo3::types::PyDict;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
 use super::rule::Expression;
 
 pub trait Input {
-    fn as_json(&self) -> Option<&String> { None }
-    fn as_expression(&self) -> Option<&Expression> { None }
-    fn as_python(&self) -> Option<&Py<PyDict>> { None }
+    fn as_json(&self) -> Option<&String> {
+        None
+    }
+    fn as_expression(&self) -> Option<&Expression> {
+        None
+    }
+    fn as_python(&self) -> Option<&Py<PyDict>> {
+        None
+    }
 }
 
 impl Input for String {

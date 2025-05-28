@@ -1,6 +1,6 @@
 use std::error;
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures::future;
@@ -11,8 +11,7 @@ use serde::{Deserialize, Serialize};
 use actix::prelude::*;
 use actix::Addr;
 
-use crate::actors::HealthCommand;
-use crate::algorithm::Variables;
+use crate::actors::{HealthCommand, UpdateStocksCommand};
 
 #[derive(Debug, Clone)]
 pub struct TcbsError {
@@ -32,17 +31,15 @@ pub struct TcbsActor {
     token: String,
     timeout: u64,
     page_size: usize,
-    variables: Arc<Mutex<Variables>>,
 }
 
 impl TcbsActor {
-    pub fn new(stocks: &Vec<String>, token: String, variables: Arc<Mutex<Variables>>) -> Self {
+    pub fn new(stocks: &[String], token: String) -> Self {
         Self {
-            stocks:    stocks.clone(),
-            timeout:   60,
+            stocks: stocks.to_owned(),
+            timeout: 60,
             page_size: 100,
             token,
-            variables,
         }
     }
 }
@@ -59,19 +56,31 @@ impl Handler<HealthCommand> for TcbsActor {
     }
 }
 
+impl Handler<UpdateStocksCommand> for TcbsActor {
+    type Result = ResponseFuture<bool>;
+
+    fn handle(&mut self, msg: UpdateStocksCommand, _: &mut Self::Context) -> Self::Result {
+        self.stocks = msg.stocks.clone();
+
+        Box::pin(async move { true })
+    }
+}
+
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Order {
-    pub p: f64,
-    pub v: u64,
-    pub cp: f64,
+    pub p: f64,  // price
+    pub v: u64,  // volume
+    pub cp: f64, // nghi ngờ là khối lượng dư khớp
     pub rcp: f64,
     pub a: String,
-    pub ba: f64,
-    pub sa: f64,
-    pub hl: bool,
-    pub pcp: f64,
-    pub t: String,
+    pub ba: f64,  // nghi ngờ là mã định danh id của bên mua chủ động
+    pub sa: f64,  // nghi ngờ là mã định danh id của bên bán chủ động
+    pub hl: bool, // cờ này khá quái lạ, có khả năng liên quan đến việc mua bán chủ động
+    pub pcp: f64, // diff pricing between current and previous order, cái này có thể dùng để
+    // theo dõi điểm di chuyển của giá, cái này ta chỉ nên dùng để tham khảo cung
+    // cầu khi mua bán
+    pub t: String, // time
 }
 
 #[allow(non_snake_case)]
@@ -101,16 +110,12 @@ impl Handler<GetOrderCommand> for TcbsActor {
         let timeout = self.timeout;
         let page_size = self.page_size;
 
-        Box::pin(async move {
-            let datapoints = fetch_orders(&stocks, timeout, msg.page, page_size).await;
-
-            return datapoints;
-        })
+        Box::pin(async move { fetch_orders(&stocks, timeout, msg.page, page_size).await })
     }
 }
 
 async fn fetch_orders(
-    stocks: &Vec<String>,
+    stocks: &[String],
     timeout: u64,
     page: usize,
     page_size: usize,
@@ -279,7 +284,6 @@ impl Handler<GetIncomeStatementCommand> for TcbsActor {
                     .build(),
             );
 
-
             fetch_income_statement_per_stock(client, &stock, timeout)
                 .await
                 .unwrap()
@@ -374,7 +378,7 @@ pub struct CashFlow {
     quarter: u8,
     year: u16,
     investCost: Option<i32>,
-    fromInvest: Option<i32> ,
+    fromInvest: Option<i32>,
     fromFinancial: Option<i32>,
     fromSale: Option<i32>,
     freeCashFlow: Option<i32>,
@@ -385,7 +389,8 @@ async fn fetch_cash_flow_per_stock(
     stock: &String,
     timeout: u64,
 ) -> Result<Vec<CashFlow>, TcbsError> {
-    let resp = client.get(format!(
+    let resp = client
+        .get(format!(
             "https://apipubaws.tcbs.com.vn/tcanalysis/v1/finance/{}/cashflow?yearly=0&isAll=true",
             stock,
         ))
@@ -435,7 +440,6 @@ impl Handler<SetAlertCommand> for TcbsActor {
     }
 }
 
-
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct SetAlertCondition {
@@ -478,25 +482,24 @@ struct SetAlertResponse {
 
 async fn set_alert(
     client: Arc<HttpClient>,
-    stock: &String, 
+    stock: &str,
     token: &String,
     price: f64,
     timeout: u64,
 ) -> Result<bool, TcbsError> {
-    let resp = client.post(
-            "https://apiextaws.tcbs.com.vn/ligo/v1/warning"
-        )
+    let resp = client
+        .post("https://apiextaws.tcbs.com.vn/ligo/v1/warning")
         .timeout(Duration::from_secs(timeout))
         .bearer_auth(token)
         .json(&SetAlertRequest {
-            name: stock.clone(),
+            name: stock.to_owned(),
             conditions: vec![SetAlertCondition {
                 key: "price".to_string(),
                 operator: "<=".to_string(),
                 value: price,
             }],
             objectType: "ticker".to_string(),
-            objectData: stock.clone(),
+            objectData: stock.to_owned(),
             additionalInfo: vec![
                 "rsi14".to_string(),
                 "dividendYield".to_string(),
@@ -529,7 +532,6 @@ async fn set_alert(
     }
 }
 
-
 #[derive(Message)]
 #[rtype(result = "Result<bool, TcbsError>")]
 pub struct UpdateVariablesCommand {
@@ -537,19 +539,14 @@ pub struct UpdateVariablesCommand {
     pub symbol: String,
 }
 
-
 impl Handler<UpdateVariablesCommand> for TcbsActor {
     type Result = ResponseFuture<Result<bool, TcbsError>>;
 
     fn handle(&mut self, _msg: UpdateVariablesCommand, _: &mut Self::Context) -> Self::Result {
-        Box::pin(async move {
-            Ok(false)
-        })
+        Box::pin(async move { Ok(false) })
     }
 }
 
-pub fn connect_to_tcbs(stocks: &Vec<String>, token: String) -> Addr<TcbsActor> {
-    TcbsActor::new(stocks, token, Arc::new(Mutex::new(Variables::new(0))))
-        .start()
+pub fn connect_to_tcbs(stocks: &[String], token: String) -> Addr<TcbsActor> {
+    TcbsActor::new(stocks, token).start()
 }
-
