@@ -61,8 +61,8 @@ pub struct FireantActor {
 impl FireantActor {
     fn new(token: String, limit: usize) -> Self {
         Self {
+            limit,
             timeout: 60,
-            limit: 100,
             token: token.clone(),
         }
     }
@@ -112,7 +112,7 @@ impl Handler<ScrapePostsCommand> for FireantActor {
         let from = msg.from;
         let to = msg.to;
 
-        Box::pin(async move { 
+        Box::pin(async move {
             let client = Arc::new(HttpClient::default());
             let mut result = Vec::new();
             let mut offset: usize = 0;
@@ -130,19 +130,20 @@ impl Handler<ScrapePostsCommand> for FireantActor {
 
                 match resp {
                     Ok(mut posts) => {
-                        if posts.len() == 0 {
+                        if posts.is_empty() {
                             break;
                         }
 
                         let len = posts.len();
                         let time_happen =
-                            DateTime::parse_from_rfc3339(posts.last().unwrap().date.as_str()).unwrap();
+                            DateTime::parse_from_rfc3339(posts.last().unwrap().date.as_str())
+                                .unwrap();
 
                         if time_happen.timestamp() > to {
                             continue;
                         }
 
-                        result.extend(posts.drain(..));
+                        result.append(&mut posts);
 
                         if time_happen.timestamp() < from || len < limit {
                             break;
@@ -158,7 +159,7 @@ impl Handler<ScrapePostsCommand> for FireantActor {
                 }
             }
 
-            return Ok(result);
+            Ok(result)
         })
     }
 }
@@ -171,7 +172,7 @@ async fn fetch_batch_of_posts_from_fireant(
     token: String,
     symbol: String,
 ) -> Result<Vec<Post>, FireantError> {
-    let url = if symbol.len() == 0 { 
+    let url = if symbol.is_empty() {
         format!(
             "https://restv2.fireant.vn/posts?type=0&offset={}&limit={}",
             offset, limit,
@@ -224,7 +225,7 @@ struct StockInformation {
     netProfit_TTM: f64,
     insiderOwnership: f64,
     institutionOwnership: f64,
-    foreignOwnership: f64
+    foreignOwnership: f64,
 }
 
 async fn fetch_detail_stock_information_from_fireant(
@@ -235,7 +236,8 @@ async fn fetch_detail_stock_information_from_fireant(
 ) -> Result<StockInformation, FireantError> {
     let resp = client
         .get(format!(
-            "https://restv2.fireant.vn/symbols/{}/fundamental", symbol,
+            "https://restv2.fireant.vn/symbols/{}/fundamental",
+            symbol,
         ))
         .header(AUTHORIZATION, token)
         .timeout(Duration::from_secs(timeout))
@@ -255,10 +257,6 @@ async fn fetch_detail_stock_information_from_fireant(
     }
 }
 
-
-pub async fn connect_to_fireant(
-    token: String,
-    limit: usize,
-) -> Addr<FireantActor> {
+pub async fn connect_to_fireant(token: String, limit: usize) -> Addr<FireantActor> {
     FireantActor::new(format!("Bearer {}", token), limit).start()
 }

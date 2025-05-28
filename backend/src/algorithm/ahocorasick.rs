@@ -1,11 +1,21 @@
 use std::collections::{BTreeMap, VecDeque};
 
+type MappingFn = &'static dyn Fn(&String, &BTreeMap<String, usize>) -> Option<usize>;
+type CompareFn = &'static dyn Fn(&String, &String) -> bool;
+type CollectFn = &'static dyn Fn(&String);
+type SplitFn = &'static dyn Fn(&String) -> Vec<String>;
+
+type MappingBox = Box<dyn Fn(&String, &BTreeMap<String, usize>) -> Option<usize>>;
+type CompareBox = Box<dyn Fn(&String, &String) -> bool>;
+type CollectBox = Box<dyn Fn(&String)>;
+type SplitBox = Box<dyn Fn(&String) -> Vec<String>>;
+
 pub struct AhoCorasick {
     // @NOTE: callbacks
-    mapping_fn: Box<dyn Fn(&String, &BTreeMap<String, usize>) -> Option<usize>>,
-    compare_fn: Box<dyn Fn(&String, &String) -> bool>,
-    collect_fn: Box<dyn Fn(&String)>,
-    split_fn: Box<dyn Fn(&String) -> Vec<String>>,
+    mapping_fn: MappingBox,
+    compare_fn: CompareBox,
+    collect_fn: CollectBox,
+    split_fn: SplitBox,
 
     // @NOTE: state machine
     pattern_mapping: BTreeMap<String, usize>,
@@ -31,10 +41,10 @@ struct Node {
 
 impl AhoCorasick {
     pub fn new(
-        mapping_fn: &'static dyn Fn(&String, &BTreeMap<String, usize>) -> Option<usize>,
-        compare_fn: &'static dyn Fn(&String, &String) -> bool,
-        collect_fn: &'static dyn Fn(&String),
-        split_fn: &'static dyn Fn(&String) -> Vec<String>,
+        mapping_fn: MappingFn,
+        compare_fn: CompareFn,
+        collect_fn: CollectFn,
+        split_fn: SplitFn,
     ) -> Self {
         Self {
             // @NOTE: callbacks
@@ -45,8 +55,8 @@ impl AhoCorasick {
 
             // @NOTE: state machine
             pattern_mapping: BTreeMap::new(),
-            failure_mapping: vec!{0},
-            goto_mapping: vec!{BTreeMap::new()},
+            failure_mapping: vec![0],
+            goto_mapping: vec![BTreeMap::new()],
             outputs: BTreeMap::new(),
             inputs: Vec::new(),
 
@@ -60,12 +70,10 @@ impl AhoCorasick {
     }
 
     pub fn add(&mut self, pattern: String) {
-        if pattern.len() > 0 && !self.pattern_mapping.contains_key(&pattern) {
+        if !pattern.is_empty() && !self.pattern_mapping.contains_key(&pattern) {
             // @NOTE: configure new state machine
-            self.pattern_mapping.insert(
-                pattern.clone(), 
-                self.pattern_mapping.len(),
-            );
+            self.pattern_mapping
+                .insert(pattern.clone(), self.pattern_mapping.len());
 
             // @NOTE: add context
             self.patterns.push(pattern.clone());
@@ -75,7 +83,7 @@ impl AhoCorasick {
         }
     }
 
-    pub fn optimize(&mut self) { 
+    pub fn optimize(&mut self) {
         let mut nodes = Vec::<Node>::new();
         let mut queue = VecDeque::<usize>::new();
         let mut state: usize = 1;
@@ -90,22 +98,20 @@ impl AhoCorasick {
 
         for i in 0..self.patterns.len() {
             let pattern = &self.patterns[i];
-            let mut current_state = 0 as usize;
+            let mut current_state = 0_usize;
             let mut next_state = current_state;
 
             for block in (self.split_fn)(pattern) {
-                let possible_next_state = nodes[current_state]
-                    .next
-                    .get(&block);
+                let possible_next_state = nodes[current_state].next.get(&block);
 
-                if  possible_next_state.is_none() {
+                if possible_next_state.is_none() {
                     // @NOTE: if next state not found, build it
 
-                    let index = self.goto_mapping.len(); 
+                    let index = self.goto_mapping.len();
                     let next_block = block.clone();
 
                     if current_state > 0 {
-                        // @NOTE: we are in flow, just build this flow only 
+                        // @NOTE: we are in flow, just build this flow only
 
                         self.goto_mapping[nodes[current_state].index]
                             .insert(next_block.clone(), index);
@@ -129,7 +135,7 @@ impl AhoCorasick {
                     });
 
                     // @NOTE: save reference between this node and next node
-                    nodes[current_state].next.insert(next_block.clone(),index);
+                    nodes[current_state].next.insert(next_block.clone(), index);
                     next_state = state;
                     state += 1;
                 } else {
@@ -139,7 +145,7 @@ impl AhoCorasick {
                 current_state = next_state;
             }
 
-            // @NOTE: we go to then end of the pattern, mark this as output so 
+            // @NOTE: we go to then end of the pattern, mark this as output so
             //        we can use function similar to recognize these patterns
 
             self.outputs.insert(next_state, i);
@@ -148,7 +154,7 @@ impl AhoCorasick {
         // @NOTE: build failure mapping base on the goto mapping
 
         if self.failure_mapping.len() < self.goto_mapping.len() {
-            self.failure_mapping = vec!{0; self.goto_mapping.len()};
+            self.failure_mapping = vec![0; self.goto_mapping.len()];
         }
 
         queue.push_back(0);
@@ -162,12 +168,11 @@ impl AhoCorasick {
                 let mut break_at_last = false;
 
                 loop {
-                    match nodes[failure_of_previous].next
-                            .get(label) {
+                    match nodes[failure_of_previous].next.get(label) {
                         Some(failure_state) => {
                             self.failure_mapping[i] = *failure_state;
                             break;
-                        },
+                        }
                         None => {
                             if break_at_last {
                                 break;
@@ -195,8 +200,8 @@ impl AhoCorasick {
 
     pub fn similar(&self, sample: String) -> bool {
         let blocks = (self.split_fn)(&sample);
-        let mut state = 0 as usize;
-        let mut i = 0 as usize;
+        let mut state = 0_usize;
+        let mut i = 0_usize;
 
         if !self.is_optimized {
             return false;
@@ -204,11 +209,11 @@ impl AhoCorasick {
 
         while i < blocks.len() {
             let mut is_first_state = false;
-            let mut next_state = 0 as usize;
+            let mut next_state = 0_usize;
             let block = &blocks[i];
 
             if state == 0 {
-                // @NOTE: first state, find matching initial string and follow 
+                // @NOTE: first state, find matching initial string and follow
                 //        this flow
                 for first_id in &self.inputs {
                     if (self.compare_fn)(block, &self.blocks[first_id - 1]) {
@@ -217,21 +222,21 @@ impl AhoCorasick {
                     }
                 }
 
-                // @NOTE: if state still be on the first state, this indicates 
+                // @NOTE: if state still be on the first state, this indicates
                 //        that we not find any possible flow
                 is_first_state = true;
             }
 
             if !is_first_state {
-                // @NOTE: move to next state from first state using whether 
+                // @NOTE: move to next state from first state using whether
                 //        mapping callback
 
                 match (self.mapping_fn)(block, &self.goto_mapping[state]) {
                     Some(possible_next_state) => {
                         next_state = possible_next_state;
-                    },
+                    }
                     None => {
-                        // @NOTE: cannot use the mapping callback now, we must 
+                        // @NOTE: cannot use the mapping callback now, we must
                         //        step by step test each possible
 
                         let states = &self.goto_mapping[state];
@@ -242,14 +247,14 @@ impl AhoCorasick {
                                 break;
                             }
                         }
-                    },
+                    }
                 }
 
-                if self.goto_mapping.len() > 0 && next_state != 0 {
+                if !self.goto_mapping.is_empty() && next_state != 0 {
                     // @NOTE: collect variables for this possible flow
                     (self.collect_fn)(block)
                 }
-    
+
                 if next_state == 0 {
                     // @NOTE: not found the next state use failure mapping to
                     //        find the possible next state
@@ -270,7 +275,7 @@ impl AhoCorasick {
             i += 1;
         }
 
-        return false; 
+        false
     }
 }
 
@@ -285,19 +290,21 @@ mod tests {
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
             },
-            &|left: &String, right: &String| -> bool {
-                left == right
-            },
+            &|left: &String, right: &String| -> bool { left == right },
             &|_block: &String| {},
             &|pattern: &String| -> Vec<String> {
-                pattern.split("").filter(|block| block.len() > 0).map(|block| block.to_string()).collect()
+                pattern
+                    .split("")
+                    .filter(|block| block.len() > 0)
+                    .map(|block| block.to_string())
+                    .collect()
             },
         );
 
         ahocorasick.add(String::from("abc"));
         ahocorasick.add(String::from("aab"));
         ahocorasick.add(String::from("bcd"));
-        
+
         ahocorasick.optimize();
 
         assert_eq!(ahocorasick.similar(String::from("abc")), true);
@@ -309,16 +316,18 @@ mod tests {
 
     #[test]
     fn test_ahocorasick_with_complex_pattern() {
-            let mut ahocorasick = AhoCorasick::new(
+        let mut ahocorasick = AhoCorasick::new(
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
             },
-            &|left: &String, right: &String| -> bool {
-                left == right
-            },
+            &|left: &String, right: &String| -> bool { left == right },
             &|_block: &String| {},
             &|pattern: &String| -> Vec<String> {
-                pattern.split("").filter(|block| block.len() > 0).map(|block| block.to_string()).collect()
+                pattern
+                    .split("")
+                    .filter(|block| block.len() > 0)
+                    .map(|block| block.to_string())
+                    .collect()
             },
         );
 
@@ -340,9 +349,7 @@ mod tests {
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
             },
-            &|left: &String, right: &String| -> bool {
-                left == right
-            },
+            &|left: &String, right: &String| -> bool { left == right },
             &|_block: &String| {},
             &|pattern: &String| -> Vec<String> {
                 pattern
@@ -373,65 +380,71 @@ mod tests {
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
             },
-            &|left: &String, right: &String| -> bool {
-                left == right
-            },
+            &|left: &String, right: &String| -> bool { left == right },
             &|_block: &String| {},
             &|pattern: &String| -> Vec<String> {
-                pattern.split("").filter(|block| block.len() > 0).map(|block| block.to_string()).collect()
+                pattern
+                    .split("")
+                    .filter(|block| block.len() > 0)
+                    .map(|block| block.to_string())
+                    .collect()
             },
         );
-    
+
         ahocorasick.add(String::from(""));
-    
+
         ahocorasick.optimize();
-    
+
         assert_eq!(ahocorasick.similar(String::from("")), false);
         assert_eq!(ahocorasick.similar(String::from("abc")), false);
     }
-    
+
     #[test]
     fn test_ahocorasick_with_duplicate_pattern() {
         let mut ahocorasick = AhoCorasick::new(
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
             },
-            &|left: &String, right: &String| -> bool {
-                left == right
-            },
+            &|left: &String, right: &String| -> bool { left == right },
             &|_block: &String| {},
             &|pattern: &String| -> Vec<String> {
-                pattern.split("").filter(|block| block.len() > 0).map(|block| block.to_string()).collect()
+                pattern
+                    .split("")
+                    .filter(|block| block.len() > 0)
+                    .map(|block| block.to_string())
+                    .collect()
             },
         );
-    
+
         ahocorasick.add(String::from("abc"));
         ahocorasick.add(String::from("abc"));
-    
+
         ahocorasick.optimize();
-    
+
         assert_eq!(ahocorasick.similar(String::from("abc")), true);
     }
-    
+
     #[test]
     fn test_ahocorasick_with_special_characters() {
         let mut ahocorasick = AhoCorasick::new(
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
             },
-            &|left: &String, right: &String| -> bool {
-                left == right
-            },
+            &|left: &String, right: &String| -> bool { left == right },
             &|_block: &String| {},
             &|pattern: &String| -> Vec<String> {
-                pattern.split("").filter(|block| block.len() > 0).map(|block| block.to_string()).collect()
+                pattern
+                    .split("")
+                    .filter(|block| block.len() > 0)
+                    .map(|block| block.to_string())
+                    .collect()
             },
         );
-    
+
         ahocorasick.add(String::from("a.b+c"));
-    
+
         ahocorasick.optimize();
-    
+
         assert_eq!(ahocorasick.similar(String::from("a.b+c")), true);
         assert_eq!(ahocorasick.similar(String::from("da.b+ce")), true);
     }
@@ -442,64 +455,70 @@ mod tests {
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
             },
-            &|left: &String, right: &String| -> bool {
-                left == right
-            },
+            &|left: &String, right: &String| -> bool { left == right },
             &|_block: &String| {},
             &|pattern: &String| -> Vec<String> {
-                pattern.split("").filter(|block| block.len() > 0).map(|block| block.to_string()).collect()
+                pattern
+                    .split("")
+                    .filter(|block| block.len() > 0)
+                    .map(|block| block.to_string())
+                    .collect()
             },
         );
-    
+
         ahocorasick.optimize();
-    
+
         assert_eq!(ahocorasick.similar(String::from("abc")), false);
     }
-    
+
     #[test]
     fn test_ahocorasick_with_partial_match() {
         let mut ahocorasick = AhoCorasick::new(
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
             },
-            &|left: &String, right: &String| -> bool {
-                left == right
-            },
+            &|left: &String, right: &String| -> bool { left == right },
             &|_block: &String| {},
             &|pattern: &String| -> Vec<String> {
-                pattern.split("").filter(|block| block.len() > 0).map(|block| block.to_string()).collect()
+                pattern
+                    .split("")
+                    .filter(|block| block.len() > 0)
+                    .map(|block| block.to_string())
+                    .collect()
             },
         );
-    
+
         ahocorasick.add(String::from("abc"));
         ahocorasick.add(String::from("def"));
-    
+
         ahocorasick.optimize();
-    
+
         assert_eq!(ahocorasick.similar(String::from("ab")), false);
         assert_eq!(ahocorasick.similar(String::from("de")), false);
     }
-    
+
     #[test]
     fn test_ahocorasick_performance() {
         let mut ahocorasick = AhoCorasick::new(
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
             },
-            &|left: &String, right: &String| -> bool {
-                left == right
-            },
+            &|left: &String, right: &String| -> bool { left == right },
             &|_block: &String| {},
             &|pattern: &String| -> Vec<String> {
-                pattern.split("").filter(|block| block.len() > 0).map(|block| block.to_string()).collect()
+                pattern
+                    .split("")
+                    .filter(|block| block.len() > 0)
+                    .map(|block| block.to_string())
+                    .collect()
             },
         );
-    
+
         let mut patterns = Vec::new();
         for i in 0..10000 {
             patterns.push(format!("pattern_{}", i));
         }
-    
+
         let start = Instant::now();
         for pattern in &patterns {
             ahocorasick.add(pattern.clone());
@@ -507,14 +526,14 @@ mod tests {
         ahocorasick.optimize();
         let duration = start.elapsed();
         println!("Time elapsed in building ahocorasick is: {:?}", duration);
-    
+
         let sample = String::from("This is a sample text containing pattern_9999.");
-    
+
         let start = Instant::now();
         let result = ahocorasick.similar(sample);
         let duration = start.elapsed();
         println!("Time elapsed in searching ahocorasick is: {:?}", duration);
-    
+
         assert_eq!(result, true);
-    }    
+    }
 }

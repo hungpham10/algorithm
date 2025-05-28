@@ -1,6 +1,6 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
-use std::collections::HashMap;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -37,15 +37,15 @@ impl fmt::Display for RuleError {
 
 #[derive(Serialize, Deserialize, Debug, Clone, FromPyObject)]
 pub struct Pin {
-    name:   String,
-    value:  Option<f64>,
+    name: String,
+    value: Option<f64>,
     nested: Option<Expression>,
 }
 
 pub struct ExprTree {
-    op:     Arc<dyn Function>,
-    slots:  Vec<bool>,
-    nodes:  Vec<ExprTree>,
+    op: Arc<dyn Function>,
+    slots: Vec<bool>,
+    nodes: Vec<ExprTree>,
     labels: HashMap<String, usize>,
     values: Vec<f64>,
 }
@@ -53,20 +53,17 @@ pub struct ExprTree {
 #[derive(Serialize, Deserialize, Debug, Clone, FromPyObject)]
 pub struct Expression {
     operator: String,
-    pins:     Vec<Pin>,
+    pins: Vec<Pin>,
 }
 
 impl ExprTree {
     fn evaluate(&self) -> Result<f64, RuleError> {
         let mut arguments = Vec::new();
-        let mut iarg = 0;
         let mut inode = 0;
         let mut ivalue = 0;
 
-        for slot in self.slots.iter() {
-            let label = self.labels.keys()
-                .nth(iarg)
-                .unwrap();
+        for (iarg, slot) in self.slots.iter().enumerate() {
+            let label = self.labels.keys().nth(iarg).unwrap();
             let value = if *slot {
                 self.nodes[inode].evaluate()?
             } else {
@@ -80,7 +77,6 @@ impl ExprTree {
             } else {
                 ivalue += 1;
             }
-            iarg += 1;
         }
 
         self.op.evaluate(arguments)
@@ -98,10 +94,9 @@ impl ExprTree {
 
     fn update(&mut self, name: &String, value: f64) -> bool {
         if let Some(index) = self.labels.get(name) {
-            let mut iarg = 0;
             let mut inode = 0;
 
-            for slot in &self.slots {
+            for (iarg, slot) in self.slots.iter().enumerate() {
                 if inode == *index && self.labels.keys().nth(iarg).unwrap() == name {
                     self.values[*index] = value;
                     return true;
@@ -110,7 +105,6 @@ impl ExprTree {
                 if *slot {
                     inode += 1;
                 }
-                iarg += 1;
             }
         }
 
@@ -129,24 +123,31 @@ impl Rule {
                 if let Some(expression) = input.as_json() {
                     Self::from_json(functions, expression)
                 } else {
-                    Err(RuleError { message: "".to_string() })
+                    Err(RuleError {
+                        message: "".to_string(),
+                    })
                 }
-            },
+            }
             Format::Expression => {
                 if let Some(expression) = input.as_expression() {
                     Self::from_expression(functions, expression)
                 } else {
-                    Err(RuleError { message: "".to_string() })
+                    Err(RuleError {
+                        message: "".to_string(),
+                    })
                 }
-            },
+            }
             Format::Python => {
                 if let Some(expression) = input.as_python() {
                     Self::from_pydict(functions, expression)
                 } else {
-                    Err(RuleError { message: "".to_string() })
+                    Err(RuleError {
+                        message: "".to_string(),
+                    })
                 }
             }
-        }.map(|optree| Self { optree })
+        }
+        .map(|optree| Self { optree })
     }
 
     pub fn reload(&mut self, inputs: &HashMap<String, f64>) -> usize {
@@ -156,7 +157,7 @@ impl Rule {
             if self.optree.update(label, *value) {
                 cnt += 1;
             }
-        } 
+        }
 
         cnt
     }
@@ -174,34 +175,35 @@ impl Rule {
         expression: &Expression,
     ) -> Result<ExprTree, RuleError> {
         if functions.contains_key(&expression.operator) {
-            let mut output = ExprTree { 
-                op:     functions.get(&expression.operator).unwrap().clone(), 
-                slots:  Vec::new(),
-                nodes:  Vec::new(),
+            let mut output = ExprTree {
+                op: functions.get(&expression.operator).unwrap().clone(),
+                slots: Vec::new(),
+                nodes: Vec::new(),
                 values: Vec::new(),
                 labels: HashMap::new(),
             };
 
             for pin in &expression.pins {
-
                 match &pin.nested {
                     Some(nested) => {
                         output.slots.push(true);
                         output.labels.insert(pin.name.clone(), output.nodes.len());
 
-                        match Self::build_expression_nested_tree(functions, &nested) {
+                        match Self::build_expression_nested_tree(functions, nested) {
                             Ok(tree) => output.nodes.push(tree),
                             Err(error) => return Err(error),
                         }
-                    },
+                    }
                     None => {
                         output.slots.push(false);
                         output.labels.insert(pin.name.clone(), output.values.len());
 
                         if let Some(value) = pin.value {
-                            output.values.push(value); 
+                            output.values.push(value);
                         } else {
-                            return Err(RuleError { message: "Pin value is missing".to_string() });
+                            return Err(RuleError {
+                                message: "Pin value is missing".to_string(),
+                            });
                         }
                     }
                 }
@@ -209,23 +211,29 @@ impl Rule {
 
             Ok(output)
         } else {
-            Err(RuleError { message: "Not implemented".to_string() })
+            Err(RuleError {
+                message: "Not implemented".to_string(),
+            })
         }
     }
 
     fn from_json(
-        functions: &HashMap<String, Arc<dyn Function>>, 
-        expression: &str
+        functions: &HashMap<String, Arc<dyn Function>>,
+        expression: &str,
     ) -> Result<ExprTree, RuleError> {
         match serde_json::from_str::<Expression>(expression) {
             Ok(expression) => {
                 if functions.contains_key(&expression.operator) {
                     Self::build_expression_nested_tree(functions, &expression)
                 } else {
-                    Err(RuleError { message: "Not implemented".to_string() })
+                    Err(RuleError {
+                        message: "Not implemented".to_string(),
+                    })
                 }
-            },
-            Err(error) => Err(RuleError { message: error.to_string() }),
+            }
+            Err(error) => Err(RuleError {
+                message: error.to_string(),
+            }),
         }
     }
 
@@ -242,10 +250,9 @@ impl Rule {
     ) -> Result<ExprTree, RuleError> {
         Python::with_gil(|py| {
             let pydict = expression.as_ref(py);
-            let expression = pydict.extract::<Expression>()
-                .map_err(|error| RuleError{
-                    message: format!("Failed to extract expresstion: {:?}", error)
-                })?;
+            let expression = pydict.extract::<Expression>().map_err(|error| RuleError {
+                message: format!("Failed to extract expresstion: {:?}", error),
+            })?;
 
             Self::build_expression_nested_tree(functions, &expression)
         })

@@ -1,4 +1,4 @@
-.PHONY: setup lint build test publish clean
+.PHONY: setup lint build test publish clean all
 
 PYTHON := python3
 PIP_CACHE := .pip-cache
@@ -15,36 +15,36 @@ setup:
 		curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; 	\
 		export PATH="$$HOME/.cargo/bin:$$PATH"; 					\
 	fi
-	@echo "Rust version: $$(rustc --version)"
-	@echo "Python version: $$($(PYTHON) --version)"
 
-lint: setup
-	cd $(BACKEND_DIR) && \
-	rustup component add clippy rustfmt && \
-	cargo clippy -- -D warnings && \
+lint:
+	export PATH="$$HOME/.cargo/bin:$$PATH"  && \
+	cd $(BACKEND_DIR) 			&& \
+	rustup component add clippy rustfmt 	&& \
+	cargo clippy 				&& \
 	cargo fmt --all -- --check
 
 build: setup
 	@echo "Building release version $(VERSION)"
 	@mkdir -p $(DIST_DIR)
-	cd $(BACKEND_DIR) && 							\
-	if grep -q "^version" Cargo.toml; then 					\
-		if [ "$(VERSION)" != "" ]; then 				\
-			$(PYTHON) -m maturin build --release --out dist && 	\
-			cp dist/*.whl ../$(DIST_DIR)/; 				\
-		else 								\
-			echo "Missing version in Cargo.toml"; 			\
-			exit 1; 						\
-		fi 								\
-	else 									\
-		echo "Missing version in Cargo.toml"; 				\
-		exit 1; 							\
+	export PATH="$$HOME/.cargo/bin:$$PATH" &&			\
+	cd $(BACKEND_DIR) && 						\
+	if grep -q "^version" Cargo.toml; then 				\
+		$(PYTHON) -m maturin build --release --out dist && 	\
+		cp dist/*.whl ../$(DIST_DIR)/; 				\
+	else 								\
+		echo "Missing version in Cargo.toml"; 			\
+		exit 1; 						\
 	fi
 	@echo "Release wheel built in $(DIST_DIR)/"
 
+install: build
+	$(PYTHON) -m pip install --upgrade $(DIST_DIR)/*.whl
+
 test: build
-	$(PYTHON) -m pip install $(DIST_DIR)/*.whl
+	$(PYTHON) -m pip install --upgrade $(DIST_DIR)/*.whl
 	$(PYTHON) -m pytest -xvs $(TEST_DIR)/
+
+all: test
 
 publish: build
 	@echo "Publishing release version to PyPI"

@@ -1,93 +1,106 @@
 # Vietnamese Stock Data Mining
 
+This project is for mining and analyzing Vietnamese stock data.
 
+## Development
 
-## Getting started
+This project uses a Makefile to manage common development tasks such as setting up the environment, building components, and running tests.
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+### Prerequisites
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+- **Python 3**: Ensure you have Python 3 installed. You can download it from [python.org](https://www.python.org/).
+- **Rust**: The backend components are written in Rust. If Rust is not installed, `make setup` or `make all` will attempt to install it for you using `rustup`. You can also install it manually from [rust-lang.org](https://www.rust-lang.org/).
 
-## Add your files
+### Common Makefile Targets
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+The following are some of the most common Makefile targets:
 
-```
-cd existing_repo
-git remote add origin https://gitlab.com/hung0913208/vietnamese-stock-data-mining.git
-git branch -M main
-git push -uf origin main
-```
+-   `make setup`: Installs all necessary Python and Rust dependencies. This includes installing Rust itself if not found.
+-   `make build`: Compiles the Rust backend and builds the Python wheel.
+-   `make test`: Runs the Python unit tests. This target depends on `build`, so it will build the project if necessary.
+-   `make all`: A convenience target that runs `setup`, `build`, and `test` in sequence. This is the recommended target for a fresh start or to ensure everything is up-to-date and working.
+-   `make lint`: Lints the Rust code using `cargo fmt` and `cargo clippy`.
+-   `make clean`: Removes build artifacts, cached files, and virtual environments.
 
-## Integrate with your tools
+To use a target, navigate to the project's root directory in your terminal and run the desired `make` command (e.g., `make all`).
 
-- [ ] [Set up project integrations](https://gitlab.com/hung0913208/vietnamese-stock-data-mining/-/settings/integrations)
+### Usage in Cloud Notebooks
 
-## Collaborate with your team
+You can run the Makefile targets in cloud-based notebook environments like Google Colab or Deepnote. To do this, prefix the Makefile command with an exclamation mark (`!`).
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+For example:
+-   To set up, build, and test everything:
+    ```bash
+    !make all
+    ```
+-   To just run tests (assuming dependencies are already installed and the project is built):
+    ```bash
+    !make test
+    ```
+-   To install dependencies:
+    ```bash
+    !make setup
+    ```
 
-## Test and Deploy
+It is generally recommended to run `!make all` when starting a new session in a cloud notebook to ensure the environment is correctly prepared and all components are built and tested.
 
-Use the built-in continuous integration in GitLab.
+## CI/CD Pipeline
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+This project uses GitHub Actions to automate linting, testing, building, and publishing of the Python package. The workflow is defined in `.github/workflows/ci.yml` and primarily orchestrates Makefile targets.
 
-***
+### Triggers
 
-# Editing this README
+The CI/CD pipeline is triggered on:
+- Pushes to the `main` branch.
+- Pull requests targeting the `main` branch (runs linters and tests via Makefile).
+- Creation of new tags matching version patterns (e.g., `vX.Y.Z` or `X.Y.Z`).
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+### Workflow Overview
 
-## Suggestions for a good README
+The GitHub Actions workflow uses Makefile targets to ensure consistency between local development and the CI environment.
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+1.  **Linting**:
+    - The `lint` job in the workflow first runs `make setup` to install all necessary dependencies (including Rust and Python tools).
+    - It then executes `make lint`, which internally runs `cargo fmt --check` and `cargo clippy` to check Rust code style and for common errors. This is automatically performed on pushes to `main` and pull requests.
+2.  **Testing**:
+    - The `test` job also starts by running `make setup` (though caching helps speed this up if dependencies haven't changed).
+    - It then executes `make test`. This Makefile target handles building the Rust backend wheel (via `make build`) and then running Python unit tests (`pytest`). This is run on pushes to `main` and pull requests.
+3.  **Development Builds (TestPyPI)**:
+    - When changes are pushed to the `main` branch (and after the `test` job passes), the `build_publish_dev` job prepares a development version of the package.
+    - The job first runs `make setup` to ensure build tools are available.
+    - It then modifies `backend/Cargo.toml` to set a development version string: `X.Y.Z.dev0+<commit_sha>` (e.g., `0.1.0.dev0+a1b2c3d`), where `X.Y.Z` is the current version from `backend/Cargo.toml`.
+    - After updating `Cargo.toml`, it runs `make build` to compile the package with this development version. The resulting wheel is placed in the `dist/` directory.
+    - These development builds are automatically published from the `dist/` directory to [TestPyPI](https://test.pypi.org/).
+4.  **Release Builds (PyPI)**:
+    - When a new version tag (e.g., `v0.1.0` or `0.1.0`) is pushed to the repository, the `build_publish_release` job is triggered.
+    - It begins by running `make setup`.
+    - The pipeline then verifies that the pushed tag matches the version specified in `backend/Cargo.toml` (after removing any 'v' prefix from the tag).
+    - If the versions match, `make build` is executed to compile the release version of the package (using the version in `backend/Cargo.toml` directly). The wheel is created in `dist/`.
+    - This release version is automatically published from the `dist/` directory to the official [PyPI](https://pypi.org/).
 
-## Name
-Choose a self-explaining name for your project.
+### Making a Release
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+To make a new official release and publish it to PyPI:
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+1.  **Update Version in `Cargo.toml`**:
+    Ensure the `version` field in `backend/Cargo.toml` is updated to the new desired release version (e.g., `version = "0.2.0"`).
+2.  **Commit and Push**:
+    Commit this change to `backend/Cargo.toml` and push it to the `main` branch. Ensure all tests are passing on `main` (verified by the CI pipeline).
+3.  **Create and Push a Git Tag**:
+    Create a Git tag that exactly matches the version in `backend/Cargo.toml`. The tag can optionally be prefixed with `v`.
+    ```bash
+    # Example for version 0.2.0
+    git tag v0.2.0 # or git tag 0.2.0
+    git push origin v0.2.0
+    ```
+4.  **Monitor Pipeline**:
+    The GitHub Actions pipeline will automatically trigger. The `build_publish_release` job will verify the version, use `make build` to create the package, and then publish it to PyPI.
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+### Required GitHub Secrets
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+For the pipeline to publish packages, the following secrets must be configured in your GitHub repository settings (Settings -> Secrets and variables -> Actions -> New repository secret):
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+-   `PYPI_API_TOKEN`: An API token for PyPI, with permissions to upload packages to your project.
+-   `TEST_PYPI_API_TOKEN`: An API token for TestPyPI, with permissions to upload packages.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+(Note: `TWINE_USERNAME` is set to `__token__` directly in the workflow when using API tokens).

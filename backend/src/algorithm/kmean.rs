@@ -11,11 +11,9 @@ struct Point<T> {
     point: Arc<T>,
 }
 
-impl <T: Clone + Debug + Send + Sync> Point<T> {
+impl<T: Clone + Debug + Send + Sync> Point<T> {
     fn new(point: Arc<T>) -> Self {
-        Point {
-            point,
-        }
+        Point { point }
     }
 }
 
@@ -23,8 +21,8 @@ type DistantCallback<T> = fn(point: Arc<T>, cluster: &Vec<f64>) -> f64;
 
 pub trait Strategy<T> {
     // @NOTE: configure clusters
-    fn initialize(&mut self, points: &Vec<Arc<T>>) -> Vec<Vec<usize>>;
-    fn optimize(&mut self, cluster: usize, points: &Vec<usize>) -> Vec<f64>;
+    fn initialize(&mut self, points: &[Arc<T>]) -> Vec<Vec<usize>>;
+    fn optimize(&mut self, cluster: usize, points: &[usize]) -> Vec<f64>;
     fn parameters(&self, cluster: usize) -> Vec<f64>;
 
     // @NOTE: collect callbacks
@@ -33,19 +31,15 @@ pub trait Strategy<T> {
 
 #[derive(Debug)]
 pub struct KMean<T, S: Strategy<T>> {
-    points:        Vec<Point<T>>,
-    clusters:      Vec<Vec<usize>>,
-    distants:      Vec<f64>,
-    strategy:      S,
+    points: Vec<Point<T>>,
+    clusters: Vec<Vec<usize>>,
+    distants: Vec<f64>,
+    strategy: S,
     max_iteration: usize,
 }
 
-impl <T: Clone + Debug + Send + Sync, S: Strategy<T>> KMean<T, S> {
-    pub fn new(
-        number_of_cluster: usize,
-        max_iteration: usize,
-        strategy: S,
-    ) -> Self {
+impl<T: Clone + Debug + Send + Sync, S: Strategy<T>> KMean<T, S> {
+    pub fn new(number_of_cluster: usize, max_iteration: usize, strategy: S) -> Self {
         let points = Vec::<Point<T>>::new();
         let distants = Vec::<f64>::new();
         let clusters = vec![Vec::<usize>::new(); number_of_cluster];
@@ -70,7 +64,7 @@ impl <T: Clone + Debug + Send + Sync, S: Strategy<T>> KMean<T, S> {
             .collect::<Vec<Arc<T>>>()
     }
 
-    pub fn insert(&mut self, points: &Vec<T>) {
+    pub fn insert(&mut self, points: &[T]) {
         points.iter().for_each(|point| {
             self.points.push(Point::new(Arc::new(point.clone())));
             self.distants.push(f64::MAX);
@@ -78,7 +72,9 @@ impl <T: Clone + Debug + Send + Sync, S: Strategy<T>> KMean<T, S> {
     }
 
     pub fn commit(&mut self) {
-        let points = self.points.iter()
+        let points = self
+            .points
+            .iter()
             .map(|point| point.point.clone())
             .collect::<Vec<Arc<T>>>();
 
@@ -90,7 +86,9 @@ impl <T: Clone + Debug + Send + Sync, S: Strategy<T>> KMean<T, S> {
     }
 
     pub fn fit(&mut self) -> f64 {
-        let mut parameters = self.clusters.iter()
+        let mut parameters = self
+            .clusters
+            .iter()
             .enumerate()
             .map(|(i, _)| self.strategy.parameters(i))
             .collect::<Vec<Vec<f64>>>();
@@ -102,40 +100,36 @@ impl <T: Clone + Debug + Send + Sync, S: Strategy<T>> KMean<T, S> {
             });
 
             // @NOTE: calculate distance between points and clusters in parallel
-            let distributed = self.points.par_iter()
-                    .enumerate()
-                    .map(|(ipoint, point)| {
+            let distributed = self
+                .points
+                .par_iter()
+                .enumerate()
+                .map(|(ipoint, point)| {
                     let (cluster, distance) = parameters
                         .par_iter()
                         .enumerate()
                         .map(|(icluster, cluster)| {
-                            (icluster, (distant_fn)(point.point.clone(), cluster)) 
+                            (icluster, (distant_fn)(point.point.clone(), cluster))
                         })
-                        .reduce(
-                            || (0, f64::MAX),
-                            |a, b| if a.1 < b.1 { a } else { b }
-                        );
+                        .reduce(|| (0, f64::MAX), |a, b| if a.1 < b.1 { a } else { b });
 
                     (cluster, ipoint, distance)
                 })
                 .collect::<Vec<(usize, usize, f64)>>();
 
             // @NOTE: assign points to clusters in parallel
-            for (cluster, ipoint, distance) in distributed {    
+            for (cluster, ipoint, distance) in distributed {
                 self.clusters[cluster].push(ipoint);
                 self.distants[ipoint] = distance;
             }
 
             // @NOTE: update centroids of each cluster
             parameters = (0..parameters.len())
-                .map(|i| {
-                    self.strategy.optimize(i, &self.clusters[i])
-                })
+                .map(|i| self.strategy.optimize(i, &self.clusters[i]))
                 .collect::<Vec<Vec<f64>>>();
-
         }
 
-        return self.distants.iter().sum::<f64>() / self.distants.len() as f64;
+        self.distants.iter().sum::<f64>() / self.distants.len() as f64
     }
 }
 
@@ -158,21 +152,23 @@ impl LineStrategy {
 }
 
 impl Strategy<(f64, f64)> for LineStrategy {
-    fn initialize(&mut self, points: &Vec<Arc<(f64, f64)>>) -> Vec<Vec<usize>> {
+    fn initialize(&mut self, points: &[Arc<(f64, f64)>]) -> Vec<Vec<usize>> {
         let k = self.lines.len();
         let mut rng = rand::thread_rng();
         let mut parts = vec![0; k];
         let mut clusters = vec![Vec::new(); k];
 
-        for i in 0..(k-1) {
+        for i in 0..(k - 1) {
             if i == 0 {
-                parts[i] = rng.gen_range(points.len()/(2*k)..points.len()/k);
+                parts[i] = rng.gen_range(points.len() / (2 * k)..points.len() / k);
             } else {
-                parts[i] = rng.gen_range((parts[i-1] + points.len()/(2*k))..(parts[i-1] + points.len()/k));
+                parts[i] = rng.gen_range(
+                    (parts[i - 1] + points.len() / (2 * k))..(parts[i - 1] + points.len() / k),
+                );
             }
         }
 
-        parts[k-1] = points.len();
+        parts[k - 1] = points.len();
 
         for i in 0..points.len() {
             for (j, p) in parts.iter().enumerate() {
@@ -185,22 +181,21 @@ impl Strategy<(f64, f64)> for LineStrategy {
 
         for i in 0..k {
             self.lines[i] = (
-                rng.gen_range(self.slope_range.0..self.slope_range.1), 
-                rng.gen_range(self.intecept_range.0..self.intecept_range.1)
+                rng.gen_range(self.slope_range.0..self.slope_range.1),
+                rng.gen_range(self.intecept_range.0..self.intecept_range.1),
             );
         }
 
         self.points.clear();
 
-        points.iter()
-            .for_each(|point| {
-                self.points.push((point.0, point.1 ))
-            });
+        points
+            .iter()
+            .for_each(|point| self.points.push((point.0, point.1)));
 
-        return clusters;
+        clusters
     }
 
-    fn optimize(&mut self, cluster: usize, points: &Vec<usize>) -> Vec<f64> {
+    fn optimize(&mut self, cluster: usize, points: &[usize]) -> Vec<f64> {
         if points.len() < 2 {
             return vec![self.lines[cluster].0, self.lines[cluster].1];
         }
@@ -224,11 +219,11 @@ impl Strategy<(f64, f64)> for LineStrategy {
         if variance_x.abs() >= f64::EPSILON {
             let slope = covariance / variance_x;
             let intercept = mean_y - slope * mean_x;
-        
+
             self.lines[cluster] = (slope, intercept);
         }
 
-        return vec![self.lines[cluster].0, self.lines[cluster].1];
+        vec![self.lines[cluster].0, self.lines[cluster].1]
     }
 
     fn parameters(&self, cluster: usize) -> Vec<f64> {
@@ -243,7 +238,7 @@ impl Strategy<(f64, f64)> for LineStrategy {
             let slope = cluster[0];
             let intercept = cluster[1];
 
-            return (slope * x + intercept - y).abs() / (slope.powi(2) + 1.0).sqrt();
+            (slope * x + intercept - y).abs() / (slope.powi(2) + 1.0).sqrt()
         }
     }
 }
@@ -268,8 +263,8 @@ mod tests {
     }
 
     impl Strategy<TestPoint> for TestStrategy {
-        fn initialize(&mut self, points: &Vec<Arc<TestPoint>>) -> Vec<Vec<usize>> {
-             // Assign points to initial clusters randomly
+        fn initialize(&mut self, points: &[Arc<TestPoint>]) -> Vec<Vec<usize>> {
+            // Assign points to initial clusters randomly
             let mut rng = rand::thread_rng();
             let k = 3; // Number of clusters
             let mut clusters = vec![Vec::new(); k];
@@ -280,16 +275,23 @@ mod tests {
             }
 
             for i in 0..k {
-                self.centroids.push(TestPoint { x: rng.gen_range(0.0..10.0), y: rng.gen_range(0.0..10.0) });
+                self.centroids.push(TestPoint {
+                    x: rng.gen_range(0.0..10.0),
+                    y: rng.gen_range(0.0..10.0),
+                });
             }
 
             self.points.clear();
-            points.iter()
-                .for_each(|point| self.points.push(TestPoint { x: point.x, y: point.y }));
+            points.iter().for_each(|point| {
+                self.points.push(TestPoint {
+                    x: point.x,
+                    y: point.y,
+                })
+            });
             clusters
         }
-    
-        fn optimize(&mut self, cluster: usize, points: &Vec<usize>) -> Vec<f64> {
+
+        fn optimize(&mut self, cluster: usize, points: &[usize]) -> Vec<f64> {
             if points.is_empty() {
                 return vec![0.0, 0.0]; // Handle empty cluster case
             }
@@ -297,10 +299,8 @@ mod tests {
             let mut sum_x = 0.0;
             let mut sum_y = 0.0;
             for &point_index in points {
-
                 sum_x += self.points[point_index].x;
                 sum_y += self.points[point_index].y;
-
             }
 
             self.centroids[cluster].x = sum_x / points.len() as f64;
@@ -308,11 +308,11 @@ mod tests {
 
             vec![self.centroids[cluster].x, self.centroids[cluster].y]
         }
-    
+
         fn parameters(&self, cluster: usize) -> Vec<f64> {
             vec![self.centroids[cluster].x, self.centroids[cluster].y]
         }
-    
+
         fn get_distant_fn(&self) -> DistantCallback<TestPoint> {
             |point: Arc<TestPoint>, cluster: &Vec<f64>| -> f64 {
                 let dx = point.x - cluster[0];
@@ -327,7 +327,10 @@ mod tests {
         let mut kmean = KMean::new(
             3,  // Number of clusters
             10, // Max iterations
-            TestStrategy{points: Vec::new(), centroids: Vec::new()},
+            TestStrategy {
+                points: Vec::new(),
+                centroids: Vec::new(),
+            },
         );
 
         let points = vec![
@@ -346,13 +349,12 @@ mod tests {
         // Fit the KMeans model
         kmean.fit();
 
-        // Assertions could be added here based on the expected clustering behavior 
-        // given the test data and strategy.  Since the initialization is random, 
-        // it's difficult to assert on specific cluster assignments.  Instead, 
+        // Assertions could be added here based on the expected clustering behavior
+        // given the test data and strategy.  Since the initialization is random,
+        // it's difficult to assert on specific cluster assignments.  Instead,
         // you might assert on properties like the WCSS decreasing with iterations
         // (if you modify fit to return WCSS per iteration), or that all points
         // are assigned to a cluster.
-
 
         // Simple check to ensure all points are in a cluster:
         let total_points_in_clusters: usize = kmean.clusters.iter().map(|c| c.len()).sum();

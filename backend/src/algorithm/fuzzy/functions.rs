@@ -1,6 +1,6 @@
-use super::rule::{RuleError, Function};
+use super::rule::{Function, RuleError};
 
-pub struct If { }
+pub struct If {}
 
 impl Function for If {
     fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
@@ -12,23 +12,31 @@ impl Function for If {
     }
 }
 
-pub struct And { }
+pub struct And {}
 
 impl Function for And {
     fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
-        Ok(if pins[0].1 < pins[1].1 { pins[0].1 } else { pins[1].1 })
+        Ok(if pins[0].1 < pins[1].1 {
+            pins[0].1
+        } else {
+            pins[1].1
+        })
     }
 }
 
-pub struct Or { }
+pub struct Or {}
 
 impl Function for Or {
     fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
-        Ok(if pins[0].1 > pins[1].1 { pins[0].1 } else { pins[1].1 })
+        Ok(if pins[0].1 > pins[1].1 {
+            pins[0].1
+        } else {
+            pins[1].1
+        })
     }
 }
 
-pub struct Not { }
+pub struct Not {}
 
 impl Function for Not {
     fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
@@ -36,7 +44,7 @@ impl Function for Not {
     }
 }
 
-pub struct Singleton { }
+pub struct Singleton {}
 
 impl Function for Singleton {
     fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
@@ -44,7 +52,7 @@ impl Function for Singleton {
     }
 }
 
-pub struct Trapezoid { }
+pub struct Trapezoid {}
 
 impl Function for Trapezoid {
     fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
@@ -52,18 +60,18 @@ impl Function for Trapezoid {
     }
 }
 
-pub struct Triangle { }
+pub struct Triangle {}
 
 impl Function for Triangle {
     fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
         if pins[0].1 < pins[1].1 || pins[0].1 > pins[3].1 {
             return Ok(0.0);
         }
-            
+
         if pins[0].1 <= pins[2].1 {
-            Ok((pins[0].1 - pins[1].1)/(pins[2].1 - pins[1].1) + pins[1].1)
+            Ok((pins[0].1 - pins[1].1) / (pins[2].1 - pins[1].1) + pins[1].1)
         } else {
-            Ok((pins[0].1 - pins[2].1)/(pins[3].1 - pins[2].1) + pins[2].1)
+            Ok((pins[0].1 - pins[2].1) / (pins[3].1 - pins[2].1) + pins[2].1)
         }
     }
 }
