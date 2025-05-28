@@ -1,4 +1,4 @@
-.PHONY: setup lint build test publish clean
+.PHONY: setup lint build test publish clean all
 
 PYTHON := python3
 PIP_CACHE := .pip-cache
@@ -43,6 +43,8 @@ install: build
 test: build
 	$(PYTHON) -m pip install $(DIST_DIR)/*.whl
 	$(PYTHON) -m pytest -xvs $(TEST_DIR)/
+
+all: test
 
 publish: build
 	@echo "Publishing release version to PyPI"
