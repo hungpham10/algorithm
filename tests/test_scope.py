@@ -9,7 +9,7 @@ sys.path.append(str(parent_dir))
 
 # Try to import the package - handle potential import errors gracefully
 try:
-    from vnstock import market, Monitor, Datastore
+    from vnscope import market, Monitor, Datastore
     IMPORTS_SUCCEEDED = True
 except ImportError as e:
     print(f"Import error: {e}")
