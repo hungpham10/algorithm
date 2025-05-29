@@ -243,4 +243,4 @@ jobs:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          python -m twine upload --verbose dist/*.whl # Updated path
+          python -m twine upload --non-interactive --verbose dist/*.whl # Updated path

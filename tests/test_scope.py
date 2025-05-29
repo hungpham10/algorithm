@@ -9,18 +9,18 @@ sys.path.append(str(parent_dir))
 
 # Try to import the package - handle potential import errors gracefully
 try:
-    from scope import market, Monitor, Datastore
+    from vnscope import market, Monitor, Datastore
     IMPORTS_SUCCEEDED = True
 except ImportError as e:
     print(f"Import error: {e}")
     IMPORTS_SUCCEEDED = False
 
 # Skip all tests if imports failed
-pytestmark = pytest.mark.skipif(not IMPORTS_SUCCEEDED, reason="Failed to import scope package")
+pytestmark = pytest.mark.skipif(not IMPORTS_SUCCEEDED, reason="Failed to import vnscope package")
 
 def test_package_imports():
     """Test that the package can be imported."""
-    assert IMPORTS_SUCCEEDED, "Failed to import scope package"
+    assert IMPORTS_SUCCEEDED, "Failed to import vnscope package"
 
 @pytest.mark.skipif(not IMPORTS_SUCCEEDED, reason="Scope package not available")
 def test_market_function_exists():
@@ -111,5 +111,5 @@ def test_datastore_save_and_load():
         pytest.skip(f"Datastore save/load test failed: {str(e)}")
 
 if __name__ == "__main__":
-    # This allows running the tests directly with python tests/test_scope.py
+    # This allows running the tests directly with python tests/test_vnscope.py
     pytest.main(["-xvs", __file__])
