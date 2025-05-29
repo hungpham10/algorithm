@@ -10,7 +10,7 @@ use crate::actors::tcbs::{connect_to_tcbs, GetOrderCommand};
 pub fn order(symbol: String) -> PyResult<PyDataFrame> {
     let datapoints = actix_rt::Runtime::new().unwrap().block_on(async {
         let mut datapoints = Vec::new();
-        let actor = connect_to_tcbs(&vec![symbol.clone()], "".to_string());
+        let actor = connect_to_tcbs(&[symbol.clone()], "".to_string());
 
         for i in 0..10000 {
             let block = actor.send(GetOrderCommand { page: i }).await.unwrap();

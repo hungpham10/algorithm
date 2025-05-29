@@ -38,6 +38,7 @@ reqwest-middleware = { version = "0.3.3", features = ["json"] }
 actix-rt = "2.10.0"
 actix = "0.13.5"
 awc = "3.5.1"
+libc = "0.2"
 tokio = { version = "1.26.0", features = ["full"] }
 
 # Common
@@ -49,6 +50,7 @@ log = "0.4.22"
 
 # Web application
 dotenvy = "0.15.7"
+env_logger = "0.8.2"
 actix-web = "4.3.1"
 shuttle-actix-web = "0.55.0"
 shuttle-runtime = "0.55.0"
