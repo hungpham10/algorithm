@@ -152,7 +152,7 @@ jobs:
           BASE_VERSION=$(grep -oP '^version = "\K[^"]+' Cargo.toml)
           echo "Base version from Cargo.toml: ${BASE_VERSION}"
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7) # Use the first 7 chars of the commit SHA
-          DEV_VERSION="${BASE_VERSION}.dev0+${SHORT_SHA}" # Construct PEP 440 dev version
+          DEV_VERSION="${BASE_VERSION}-dev0+${SHORT_SHA}" # Construct PEP 440 dev version
           echo "Updating backend/Cargo.toml version to: ${DEV_VERSION}"
           
           # Escape dots in BASE_VERSION for sed pattern to ensure sed works correctly.
