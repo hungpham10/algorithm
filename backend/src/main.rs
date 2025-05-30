@@ -1,5 +1,5 @@
+use std::io::{Error, ErrorKind};
 use std::rc::Rc;
-use std::sync::Arc;
 
 use actix_web::middleware::Logger;
 use actix_web::web::{get, Data};
@@ -26,7 +26,7 @@ async fn main() -> std::io::Result<()> {
     let port = std::env::var("SERVER_PORT")
         .unwrap_or_else(|_| "8000".to_string())
         .parse::<u16>()
-        .expect("Invalid SERVER_PORT");
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid SERVER_PORT"))?;
 
     // @NOTE: setup cron and its resolvers
     let mut resolver = CronResolver::new();

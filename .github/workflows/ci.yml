@@ -256,9 +256,15 @@ build_docker_image:
 
       - name: Install Earthly
         run: |
-          sudo curl -L https://github.com/earthly/earthly/releases/latest/download/earthly-linux-amd64 -o /usr/local/bin/earthly
+          EARTHLY_VERSION="v0.8.15"
+          sudo curl -L "https://github.com/earthly/earthly/releases/download/${EARTHLY_VERSION}/earthly-linux-amd64" \
+            -o /usr/local/bin/earthly
           sudo chmod +x /usr/local/bin/earthly
-          earthly --version
+          # Fail early if earth­ly didn’t install correctly
+          if ! earthly --version; then
+            echo "Earthly installation failed" >&2
+            exit 1
+          fi
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -268,7 +274,7 @@ build_docker_image:
 
       - name: Build and push Docker image using Earthly
         run: |
-          TAG_NAME="${{ github.ref_name }}"
+          TAG_NAME=${{ github.ref_name }}
           CLEANED_TAG_VERSION=${TAG_NAME#v} # Remove 'v' prefix if present (e.g., v0.1.0 -> 0.1.0)
           earthly +pack
           earthly +release --TAG=$CLEANED_TAG_VERSION

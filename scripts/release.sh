@@ -15,15 +15,15 @@ function prepare() {
   fi
 
   for I in {0..30}; do
-    if ! pg_isready -d $POSTGRES_DSN; then
+    if ! pg_isready -d "$POSTGRES_DSN"; then
       sleep 1
     else
       break
     fi
   done
 
-  if ! pg_isready -d $POSTGRES_DSN &> /dev/null; then
-    pg_isready -d $POSTGRES_DSN
+  if ! pg_isready -d "$POSTGRES_DSN" &> /dev/null; then
+    pg_isready -d "$POSTGRES_DSN"
     exit $?
   fi
 
@@ -35,11 +35,11 @@ function prepare() {
 }
 
 function localtonet() {
-  if [ ${#DOTNET_SYSTEM_GLOBALIZATION_INVARIANT} -eq 0 ]; then
+  if [ -z "${DOTNET_SYSTEM_GLOBALIZATION_INVARIANT:-}" ]; then
     export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
   fi
 
-  if [ ${#LOCALTONET} -gt 0 ]; then
+  if [ -n "${LOCALTONET:-}" ]; then
     set -x
     screen -S "localtonet.pid" -dm localtonet authtoken $LOCALTONET
     set +x
@@ -61,7 +61,7 @@ shift
 shift
 shift
 
-prepare $SQL
-localtonet $PORT
-boot $CMD $@
+prepare "$SQL"
+localtonet "$PORT"
+boot "$CMD" "$@"
 exit $?

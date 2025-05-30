@@ -1,5 +1,6 @@
 target
 .env
+venv
 
 ###vim###
 
@@ -10,8 +11,5 @@ Session.vim
 .netrwhist
 *~
 
-
-
 # Added by cargo
-
 /target

@@ -32,8 +32,10 @@ pack:
 		cp ./localtonet /usr/bin/localtonet				&& \
 		rm localtonet-linux-x64.zip
 
-	ENTRYPOINT ["/app/endpoint.sh", "./server", "/sql"]
-	EXPOSE 8000
+	ENTRYPOINT ["/app/endpoint.sh", "/app/server", "/sql"]
+ 	EXPOSE 8000
+	LABEL org.opencontainers.image.source="https://github.com/YOUR_ORG/YOUR_REPO"
+	LABEL org.opencontainers.image.description="Algorithm HTTP Server"
 	SAVE IMAGE algorithm:latest
 
 release:
