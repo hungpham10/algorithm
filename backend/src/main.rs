@@ -1,20 +1,17 @@
-use std::sync::Arc;
 use std::rc::Rc;
+use std::sync::Arc;
 
-use actix_web::web::get;
 use actix_web::middleware::Logger;
-use actix_web::{App, Result, HttpServer, HttpResponse};
+use actix_web::web::{get, Data};
+use actix_web::{App, HttpResponse, HttpServer, Result};
 
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::oneshot;
 
 use log::info;
 
-use vnscope::actors::cron::{
-    connect_to_cron,
-    CronResolver, TickCommand,
-};
-
+use vnscope::actors::cron::{connect_to_cron, CronResolver, TickCommand};
+use vnscope::actors::tcbs::resolve_tcbs_routes;
 
 async fn health() -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().body("ok"))
@@ -25,7 +22,9 @@ async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
     env_logger::init();
 
-    let resolver = CronResolver::new();
+    // @NOTE: setup cron and its resolvers
+    let mut resolver = CronResolver::new();
+    let tcbs = resolve_tcbs_routes(&mut resolver, &Vec::new());
     let cron = Arc::new(connect_to_cron(Rc::new(resolver)));
 
     // @NOTE: control cron
@@ -73,6 +72,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(Logger::default())
             .route("/health", get().to(health))
+            .app_data(Data::new(tcbs.clone()))
     })
     .bind(("0.0.0.0", 8000))
     .unwrap()
@@ -82,9 +82,9 @@ async fn main() -> std::io::Result<()> {
     let handler = server.handle();
 
     // @NOTE: graceful shutdown
-    actix_rt::spawn(async move { 
+    actix_rt::spawn(async move {
         let mut sigint = signal(SignalKind::interrupt()).unwrap();
-        let mut sigterm = signal(SignalKind::terminate()).unwrap(); 
+        let mut sigterm = signal(SignalKind::terminate()).unwrap();
 
         tokio::select! {
             _ = sigint.recv() => {}
