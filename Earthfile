@@ -26,10 +26,11 @@ pack:
 	    apt install -y postgresql-client                                    && \
 	    apt install -y ca-certificates curl unzip screen
 
-	RUN curl -kO https://localtonet.com/download/localtonet-linux-x64.zip   && \
+	RUN curl -O https://localtonet.com/download/localtonet-linux-x64.zip   	&& \
 		unzip localtonet-linux-x64.zip	                                && \
 		chmod 755 ./localtonet	                                        && \
-		cp ./localtonet /usr/bin/localtonet
+		cp ./localtonet /usr/bin/localtonet				&& \
+		rm localtonet-linux-x64.zip
 
 	ENTRYPOINT ["/app/endpoint.sh", "./server", "/sql"]
 	EXPOSE 8000

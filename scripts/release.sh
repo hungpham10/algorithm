@@ -27,8 +27,8 @@ function prepare() {
     exit $?
   fi
 
-  for SCRIPT in $(ls -1 $1); do
-    if ! psql -Atx $POSTGRES_DSN -f $1/$SCRIPT; then
+  for script_path in "$1"/*; do
+    if ! psql -Atx "$POSTGRES_DSN" -f "$script_path"; then
       exit $?
     fi
   done
@@ -47,10 +47,10 @@ function localtonet() {
 }
 
 function boot() {
-  CMD=$1
+  local cmd=$1
 
   shift
-  $CMD $@
+  exec "$cmd" "$@"
 }
 
 CMD=$1

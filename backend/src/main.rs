@@ -22,10 +22,16 @@ async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
     env_logger::init();
 
+    let host = std::env::var("SERVER_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let port = std::env::var("SERVER_PORT")
+        .unwrap_or_else(|_| "8000".to_string())
+        .parse::<u16>()
+        .expect("Invalid SERVER_PORT");
+
     // @NOTE: setup cron and its resolvers
     let mut resolver = CronResolver::new();
     let tcbs = resolve_tcbs_routes(&mut resolver, &Vec::new());
-    let cron = Arc::new(connect_to_cron(Rc::new(resolver)));
+    let cron = connect_to_cron(Rc::new(resolver));
 
     // @NOTE: control cron
     let (txstop, mut rxstop) = oneshot::channel::<()>();
@@ -34,31 +40,19 @@ async fn main() -> std::io::Result<()> {
 
     // @NOTE: start cron
     actix_rt::spawn(async move {
-        let mut sigtime = signal(SignalKind::alarm()).unwrap();
-
-        unsafe {
-            libc::alarm(1);
-        }
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
 
         loop {
             tokio::select! {
-                _ = sigtime.recv() => {
-                    unsafe {
-                        libc::alarm(1);
-                    }
-
+                _ = interval.tick() => {
                     match cron.send(TickCommand).await {
                         Ok(Ok(_)) => {}
                         Ok(Err(_)) => {}
                         Err(error) => panic!("Panic: Fail to send command: {:?}", error),
                     }
-
                 }
                 _ = &mut rxstop => {
                     info!("Cron is down...");
-                    unsafe {
-                        libc::alarm(0);
-                    }
 
                     txcron.send(()).unwrap();
                     break;
@@ -74,7 +68,7 @@ async fn main() -> std::io::Result<()> {
             .route("/health", get().to(health))
             .app_data(Data::new(tcbs.clone()))
     })
-    .bind(("0.0.0.0", 8000))
+    .bind((host.as_str(), port))
     .unwrap()
     .shutdown_timeout(30)
     .run();

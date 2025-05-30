@@ -35,14 +35,14 @@ rayon = "1.10.0"
 airtable = "0.1.0"
 
 # Crawling data in background
-cron-parser = "0.8.1"
+cron-parser = "0.11.6"
 reqwest = { version = "0.12.7", features = ["json", "blocking"] }
 reqwest-retry = "0.6.1"
 reqwest-middleware = { version = "0.3.3", features = ["json"] }
 actix-rt = "2.10.0"
 actix = "0.13.5"
 awc = "3.5.1"
-libc = "0.2"
+libc = "0.2.171"
 tokio = { version = "1.26.0", features = ["full"] }
 
 # Common
