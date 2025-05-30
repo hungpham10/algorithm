@@ -28,7 +28,7 @@ release:
 
 	RUN curl -kO https://localtonet.com/download/localtonet-linux-x64.zip   && \
 		unzip localtonet-linux-x64.zip	                                && \
-		chmod 777 ./localtonet	                                        && \
+		chmod 755 ./localtonet	                                        && \
 		cp ./localtonet /usr/bin/localtonet
 
 	ENTRYPOINT ["/app/endpoint.sh", "./server", "/sql"]
