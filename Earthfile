@@ -35,6 +35,6 @@ release:
 	EXPOSE 8000
 	SAVE IMAGE algorithm:latest
 
-release:
+all:
 	BUILD +build
 	BUILD +release
