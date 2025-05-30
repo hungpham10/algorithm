@@ -13,7 +13,7 @@ build:
 
 	SAVE ARTIFACT ./target/release/algorithm AS LOCAL algorithm
 
-release:
+pack:
 	FROM ubuntu:latest
 
 	COPY +build/algorithm ./server
@@ -35,6 +35,7 @@ release:
 	EXPOSE 8000
 	SAVE IMAGE algorithm:latest
 
-all:
-	BUILD +build
-	BUILD +release
+release:
+    FROM docker
+    RUN docker build -t $DOCKERHUB_USERNAME/algorithm:$TAG .
+    RUN docker push $DOCKERHUB_USERNAME/algorithm:$TAG
