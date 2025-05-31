@@ -27,6 +27,29 @@ async fn synchronize() -> Result<HttpResponse> {
 }
 
 #[actix_rt::main]
+/// Starts the Actix-web server, initializes the cron job system, and manages graceful shutdown.
+///
+/// Loads configuration from environment variables, sets up logging, initializes the Airtable-backed portal,
+/// fetches cronjob schedules and watchlist symbols, and registers cronjobs. Spawns asynchronous tasks to run
+/// the cron loop and handle HTTP requests. Listens for system signals to coordinate an orderly shutdown of
+/// both the cron system and the HTTP server.
+///
+/// # Returns
+/// 
+/// Returns `Ok(())` if the server and cron system shut down gracefully, or an error if initialization or binding fails.
+///
+/// # Errors
+///
+/// Returns an error if required environment variables are missing or invalid, if the server fails to bind to the specified address, or if there are issues communicating with the Airtable API.
+///
+/// # Examples
+///
+/// ```no_run
+/// #[tokio::main]
+/// async fn main() -> std::io::Result<()> {
+///     my_crate::main().await
+/// }
+/// ```
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
     env_logger::init();
