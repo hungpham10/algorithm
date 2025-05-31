@@ -3,6 +3,10 @@ name = "backend"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "algorithm"
+path = "src/main.rs"
+
 [lib]
 name = "vnscope"
 path = "src/lib.rs"
@@ -28,7 +32,7 @@ rand = "0.8.5"
 rayon = "1.10.0"
 
 # feature order management
-airtable = "0.1.0"
+airtable-api = "0.1"
 
 # Crawling data in background
 cron-parser = "0.8.1"
@@ -38,6 +42,7 @@ reqwest-middleware = { version = "0.3.3", features = ["json"] }
 actix-rt = "2.10.0"
 actix = "0.13.5"
 awc = "3.5.1"
+libc = "0.2.171"
 tokio = { version = "1.26.0", features = ["full"] }
 
 # Common
@@ -49,6 +54,7 @@ log = "0.4.22"
 
 # Web application
 dotenvy = "0.15.7"
+env_logger = "0.8.2"
 actix-web = "4.3.1"
 shuttle-actix-web = "0.55.0"
 shuttle-runtime = "0.55.0"

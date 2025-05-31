@@ -3,9 +3,11 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::future;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
+
+use futures::future;
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use actix::prelude::*;
@@ -67,7 +69,7 @@ impl Handler<UpdateStocksCommand> for TcbsActor {
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, FromPyObject)]
 pub struct Order {
     pub p: f64,  // price
     pub v: u64,  // volume
@@ -81,6 +83,23 @@ pub struct Order {
     // theo dõi điểm di chuyển của giá, cái này ta chỉ nên dùng để tham khảo cung
     // cầu khi mua bán
     pub t: String, // time
+}
+
+impl Order {
+    pub fn to_pytuple(&self, py: Python) -> Vec<Py<PyAny>> {
+        vec![
+            self.p.into_py(py),
+            self.v.into_py(py),
+            self.cp.into_py(py),
+            self.rcp.into_py(py),
+            self.a.clone().into_py(py),
+            self.ba.into_py(py),
+            self.sa.into_py(py),
+            self.hl.into_py(py),
+            self.pcp.into_py(py),
+            self.t.clone().into_py(py),
+        ]
+    }
 }
 
 #[allow(non_snake_case)]

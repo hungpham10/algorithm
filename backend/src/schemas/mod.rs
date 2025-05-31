@@ -1,6 +1,10 @@
 use juniper::GraphQLObject;
 use serde::{Deserialize, Serialize};
 
+mod airtable;
+
+pub use airtable::*;
+
 #[repr(C)]
 #[derive(GraphQLObject, Deserialize, Serialize, Debug, Clone)]
 #[graphql(description = "Information about japaness candle stick")]

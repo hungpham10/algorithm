@@ -43,4 +43,8 @@ impl Delegate {
     pub fn build(&self, expression: &impl Input, format: Format) -> Result<Rule, RuleError> {
         Rule::new(&self.functions, expression, format)
     }
+
+    pub fn default(&self) -> Rule {
+        Rule::default()
+    }
 }

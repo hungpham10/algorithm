@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use pyo3::types::{PyAny, PyDict};
 
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -27,6 +28,25 @@ impl Monitor {
             enabled: Arc::new(Mutex::new(false)),
             datastore,
         }
+    }
+
+    fn schedules(
+        &mut self,
+        cron: String,
+        route: String,
+        timeout: i32,
+        fuzzy: Py<PyDict>,
+        callback: Py<PyAny>,
+    ) -> PyResult<()> {
+        self.schedules.push(ScheduleCommand {
+            cron,
+            route,
+            timeout,
+            jsfuzzy: None,
+            pyfuzzy: Some(Arc::new(fuzzy)),
+            pycallback: Some(Arc::new(callback)),
+        });
+        Ok(())
     }
 
     fn start(&self, py: Python, stocks: Vec<String>) -> PyResult<()> {

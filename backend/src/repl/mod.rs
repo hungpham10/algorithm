@@ -6,7 +6,7 @@ mod monitor;
 mod order;
 
 #[pymodule]
-fn scope(_: Python, m: &PyModule) -> PyResult<()> {
+fn vnscope(_: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<monitor::Monitor>()?;
     m.add_class::<datastore::Datastore>()?;
 

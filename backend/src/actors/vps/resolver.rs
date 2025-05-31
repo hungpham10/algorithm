@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
 use crate::actors::cron::CronResolver;
+use crate::actors::FUZZY_TRIGGER_THRESHOLD;
 use crate::algorithm::{Delegate, Format, Variables};
 
 use super::VpsActor;
@@ -32,15 +33,25 @@ fn resolve_watching_vps_board(actor: Arc<Addr<VpsActor>>, resolver: &mut CronRes
         async move {
             // Get price data
             let datapoints = actor.send(GetPriceCommand).await.unwrap();
-            let fuzzy = task.pyfuzzy();
 
             // Build rule
-            let mut rule = Delegate::new()
-                .build(&*fuzzy, Format::Python)
-                .map_err(|e| VpsError {
-                    message: e.to_string(),
-                })
-                .unwrap();
+            let mut rule = if let Some(fuzzy) = task.pyfuzzy() {
+                Delegate::new()
+                    .build(&*fuzzy, Format::Python)
+                    .map_err(|e| VpsError {
+                        message: e.to_string(),
+                    })
+                    .unwrap()
+            } else if let Some(fuzzy) = task.jsfuzzy() {
+                Delegate::new()
+                    .build(&fuzzy, Format::Json)
+                    .map_err(|e| VpsError {
+                        message: e.to_string(),
+                    })
+                    .unwrap()
+            } else {
+                Delegate::new().default()
+            };
 
             // Get labels
             let labels: Vec<String> = rule.labels().iter().map(|l| l.to_string()).collect();
@@ -86,14 +97,15 @@ fn resolve_watching_vps_board(actor: Arc<Addr<VpsActor>>, resolver: &mut CronRes
                 // Handle result and callback
                 match result {
                     Ok(result) => {
-                        if result == 1.0 {
+                        if result == FUZZY_TRIGGER_THRESHOLD {
                             Python::with_gil(|py| {
-                                let callback = task.pycallback();
-                                let args = PyTuple::new(py, point.to_pytuple(py));
+                                if let Some(callback) = task.pycallback() {
+                                    let args = PyTuple::new(py, point.to_pytuple(py));
 
-                                // Call Python callback
-                                if let Err(e) = callback.call1(py, (args,)) {
-                                    e.print_and_set_sys_last_vars(py);
+                                    // Call Python callback
+                                    if let Err(e) = callback.call1(py, (args,)) {
+                                        e.print_and_set_sys_last_vars(py);
+                                    }
                                 }
                             });
                         }
