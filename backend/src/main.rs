@@ -65,8 +65,6 @@ async fn main() -> std::io::Result<()> {
                 cron: record.fields.cron.as_ref()?.clone(),
                 route: record.fields.route.as_ref()?.clone(),
                 jsfuzzy: Some(record.fields.fuzzy.as_ref()?.clone()),
-                pyfuzzy: None,
-                pycallback: None,
             })
         })
         .collect::<Vec<ScheduleCommand>>();

@@ -7,8 +7,10 @@ use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 
 use futures::future;
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 
 use actix::prelude::*;
 use actix::Addr;
@@ -69,7 +71,8 @@ impl Handler<UpdateStocksCommand> for TcbsActor {
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Clone, Debug, FromPyObject)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject))]
 pub struct Order {
     pub p: f64,  // price
     pub v: u64,  // volume
@@ -86,6 +89,7 @@ pub struct Order {
 }
 
 impl Order {
+    #[cfg(feature = "python")]
     pub fn to_pytuple(&self, py: Python) -> Vec<Py<PyAny>> {
         vec![
             self.p.into_py(py),

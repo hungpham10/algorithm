@@ -1,42 +1,20 @@
 
 # Build stage
-FROM deepnote/python:3.11 AS build
+FROM rustlang/rust:nightly AS build
 
 WORKDIR /app
 
-# Install Rust and dependencies
-RUN apt update && \
-    apt install -y protobuf-compiler curl && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly && \
-    apt autoremove -y && apt clean
-
-# Set Rust environment
-ENV PATH="/root/.cargo/bin:$PATH"
-
-# Verify Python library
-RUN ldconfig -p | grep libpython3.11
-
-# Cache dependencies
-COPY ./backend/Cargo.toml ./backend/Cargo.lock ./backend/
-RUN cd ./backend && cargo +nightly fetch
-
 # Copy source code and build
 COPY . .
-RUN cd ./backend && \
-    PYO3_PYTHON=/usr/local/bin/python3.11 \
-    LD_LIBRARY_PATH=/usr/local/lib \
-    cargo +nightly build --release --verbose
+RUN make server
 
 # Release stage
-FROM deepnote/python:3.11
+FROM rustlang/rust:nightly
 
 WORKDIR /app
 COPY --from=build /app/target/release/algorithm ./server
 COPY sql ./sql
 COPY scripts/release.sh /app/endpoint.sh
-
-# Remove unnecessary assets
-RUN rm -rf ./assets
 
 # Install runtime dependencies
 RUN apt update && \

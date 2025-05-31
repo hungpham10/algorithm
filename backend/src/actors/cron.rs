@@ -6,12 +6,17 @@ use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
 
+#[cfg(feature = "python")]
+use std::sync::Arc;
+
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
+
+#[cfg(feature = "python")]
 use pyo3::types::PyDict;
 
 use actix::prelude::*;
@@ -30,15 +35,21 @@ pub struct Task {
 
     // @NOTE:
     jsfuzzy: Option<String>,
+
+    #[cfg(feature = "python")]
     pyfuzzy: Option<Arc<Py<PyDict>>>,
+
+    #[cfg(feature = "python")]
     pycallback: Option<Arc<Py<PyAny>>>,
 }
 
 impl Task {
+    #[cfg(feature = "python")]
     pub fn pycallback(&self) -> Option<Arc<Py<PyAny>>> {
         self.pycallback.clone()
     }
 
+    #[cfg(feature = "python")]
     pub fn pyfuzzy(&self) -> Option<Arc<Py<PyDict>>> {
         self.pyfuzzy.clone()
     }
@@ -216,7 +227,11 @@ pub struct ScheduleCommand {
     pub timeout: i32,
     pub route: String,
     pub jsfuzzy: Option<String>,
+
+    #[cfg(feature = "python")]
     pub pyfuzzy: Option<Arc<Py<PyDict>>>,
+
+    #[cfg(feature = "python")]
     pub pycallback: Option<Arc<Py<PyAny>>>,
 }
 
@@ -235,7 +250,11 @@ impl Handler<ScheduleCommand> for CronActor {
                 route: msg.route.clone(),
                 interval: msg.cron.clone(),
                 jsfuzzy: msg.jsfuzzy.clone(),
+
+                #[cfg(feature = "python")]
                 pyfuzzy: msg.pyfuzzy.clone(),
+
+                #[cfg(feature = "python")]
                 pycallback: msg.pycallback.clone(),
             });
 
