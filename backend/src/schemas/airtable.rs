@@ -40,6 +40,25 @@ impl Portal {
             .map_err(|e| anyhow::anyhow!("Failed to fetch WatchList from Airtable: {}", e))
     }
 
+    /// Retrieves all cronjob records from the Airtable "Cronjob" table.
+    ///
+    /// Returns a vector of `Record<Cronjob>` containing the fields "Crontime", "Route", "Timeout", and "Fuzzy".
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching records from Airtable fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # async fn example(portal: &Portal) -> anyhow::Result<()> {
+    /// let cronjobs = portal.cronjob().await?;
+    /// for record in cronjobs {
+    ///     println!("{:?}", record.fields);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn cronjob(&self) -> Result<Vec<Record<Cronjob>>> {
         self.airtable
             .list_records(
