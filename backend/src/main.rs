@@ -9,6 +9,7 @@ use actix_web::{App, HttpResponse, HttpServer, Result};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::oneshot;
 
+use chrono::Utc;
 use log::{error, info};
 
 use vnscope::actors::cron::{connect_to_cron, CronResolver, ScheduleCommand, TickCommand};
@@ -79,9 +80,13 @@ async fn main() -> std::io::Result<()> {
 
     for command in cronjob {
         let route = command.route.clone();
+        let cronjob = command.cron.clone();
 
         match cron.send(command).await {
-            Ok(Ok(_)) => {}
+            Ok(Ok(_)) => info!(
+                "Registry {} running with cronjob {} success",
+                route, cronjob
+            ),
             Ok(Err(err)) => error!("Registry schedule {} failed: {:?}", route, err),
             Err(err) => {
                 error!("Fail in mailbox when schedule {}: {:?}", route, err);
@@ -98,6 +103,11 @@ async fn main() -> std::io::Result<()> {
     // @NOTE: start cron
     actix_rt::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
+
+        info!(
+            "Cron started at {}",
+            Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
+        );
 
         loop {
             tokio::select! {
@@ -138,6 +148,11 @@ async fn main() -> std::io::Result<()> {
     .run();
 
     let handler = server.handle();
+
+    info!(
+        "Server started at {}",
+        Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
+    );
 
     // @NOTE: graceful shutdown
     actix_rt::spawn(async move {

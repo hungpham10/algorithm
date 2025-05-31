@@ -42,7 +42,11 @@ impl Portal {
 
     pub async fn cronjob(&self) -> Result<Vec<Record<Cronjob>>> {
         self.airtable
-            .list_records("Cronjob", "Cron", vec!["Crontime", "Route", "Timeout"])
+            .list_records(
+                "Cronjob",
+                "Cron",
+                vec!["Crontime", "Route", "Timeout", "Fuzzy"],
+            )
             .await
             .map_err(|e| anyhow::anyhow!("Failed to fetch Cronjobs from Airtable: {}", e))
     }
