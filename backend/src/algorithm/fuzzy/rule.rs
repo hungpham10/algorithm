@@ -2,7 +2,10 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
+
+#[cfg(feature = "python")]
 use pyo3::types::PyDict;
 
 use serde::{Deserialize, Serialize};
@@ -14,6 +17,8 @@ use super::input::Input;
 pub enum Format {
     Json,
     Expression,
+
+    #[cfg(feature = "python")]
     Python,
 }
 
@@ -36,13 +41,6 @@ impl fmt::Display for RuleError {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, FromPyObject)]
-pub struct Pin {
-    name: String,
-    value: Option<f64>,
-    nested: Option<Expression>,
-}
-
 pub struct ExprTree {
     op: Arc<dyn Function>,
     slots: Vec<bool>,
@@ -51,7 +49,16 @@ pub struct ExprTree {
     values: Vec<f64>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, FromPyObject)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "python", derive(FromPyObject))]
+pub struct Pin {
+    name: String,
+    value: Option<f64>,
+    nested: Option<Expression>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "python", derive(FromPyObject))]
 pub struct Expression {
     operator: String,
     pins: Vec<Pin>,
@@ -150,6 +157,8 @@ impl Rule {
                     })
                 }
             }
+
+            #[cfg(feature = "python")]
             Format::Python => {
                 if let Some(expression) = input.as_python() {
                     Self::from_pydict(functions, expression)
@@ -257,6 +266,7 @@ impl Rule {
         Self::build_expression_nested_tree(functions, expression)
     }
 
+    #[cfg(feature = "python")]
     pub fn from_pydict(
         functions: &HashMap<String, Arc<dyn Function>>,
         expression: &Py<PyDict>,

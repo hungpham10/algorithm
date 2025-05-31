@@ -8,26 +8,13 @@ build:
     # Use the same base image as specified
     FROM rustlang/rust:nightly
 
-    # Install dependencies, including Python 3.11 and development libraries
-    RUN apt update && \
-        apt install -y protobuf-compiler python3.11 python3.11-dev build-essential && \
-        update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
-        apt autoremove -y && apt clean
-
-    # Verify Python library path
-    RUN ldconfig -p | grep libpython3.11
-
     # Cache dependencies
     COPY ./backend/Cargo.toml ./backend/Cargo.lock ./backend/
     RUN cd ./backend && cargo +nightly fetch
 
     # Copy source code and build
     COPY . .
-    RUN cd ./backend && \
-        PYO3_PYTHON=/usr/bin/python3.11 \
-        PYTHON_SYS_EXECUTABLE=/usr/bin/python3.11 \
-        LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/usr/local/lib \
-        cargo +nightly build --release --verbose -j 4
+    RUN make server
 
     # Save the compiled binary as an artifact
     SAVE ARTIFACT ./target/release/algorithm AS LOCAL ./algorithm

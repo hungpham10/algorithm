@@ -5,8 +5,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::future;
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
@@ -18,7 +20,8 @@ use crate::actors::{HealthCommand, UpdateStocksCommand};
 use crate::algorithm::Variables;
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Clone, Debug, FromPyObject)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject))]
 pub struct Price {
     pub id: i64,
     pub sym: String,
@@ -57,6 +60,7 @@ pub struct Price {
 }
 
 impl Price {
+    #[cfg(feature = "python")]
     pub fn to_pytuple(&self, py: Python) -> Vec<Py<PyAny>> {
         let g1 = self.g1.split("|").collect::<Vec<&str>>();
         let g2 = self.g2.split("|").collect::<Vec<&str>>();

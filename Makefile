@@ -17,36 +17,42 @@ setup:
 	fi
 
 lint:
-	export PATH="$$HOME/.cargo/bin:$$PATH"  && \
-	cd $(BACKEND_DIR) 			&& \
-	rustup component add clippy rustfmt 	&& \
-	cargo clippy 				&& \
+	export PATH="$$HOME/.cargo/bin:$$PATH"  && 					\
+	cd $(BACKEND_DIR) 			&& 					\
+	rustup component add clippy rustfmt 	&& 					\
+	cargo clippy 				&& 					\
 	cargo fmt --all -- --check
 
-build: setup
+library:
 	@echo "Building release version $(VERSION)"
 	@mkdir -p $(DIST_DIR)
-	export PATH="$$HOME/.cargo/bin:$$PATH" &&			\
-	cd $(BACKEND_DIR) && 						\
-	if grep -q "^version" Cargo.toml; then 				\
-		$(PYTHON) -m maturin build --release --out dist && 	\
-		cp dist/*.whl ../$(DIST_DIR)/; 				\
-	else 								\
-		echo "Missing version in Cargo.toml"; 			\
-		exit 1; 						\
+	export PATH="$$HOME/.cargo/bin:$$PATH" &&					\
+	cd $(BACKEND_DIR) && 								\
+	if grep -q "^version" Cargo.toml; then 						\
+		$(PYTHON) -m maturin build --release --features python --out dist && 	\
+		cp dist/*.whl ../$(DIST_DIR)/; 						\
+	else 										\
+		echo "Missing version in Cargo.toml"; 					\
+		exit 1; 								\
 	fi
 	@echo "Release wheel built in $(DIST_DIR)/"
 
-install: build
+server:
+	@echo "Building release version $(VERSION)"
+	@mkdir -p $(DIST_DIR)
+	export PATH="$$HOME/.cargo/bin:$$PATH" &&					\
+	cargo build --release
+
+install: library
 	$(PYTHON) -m pip install --upgrade $(DIST_DIR)/*.whl
 
-test: build
+test: library
 	$(PYTHON) -m pip install --upgrade $(DIST_DIR)/*.whl
 	$(PYTHON) -m pytest -xvs $(TEST_DIR)/
 
 all: test
 
-publish: build
+publish: library
 	@echo "Publishing release version to PyPI"
 	$(PYTHON) -m twine upload $(DIST_DIR)/*.whl
 

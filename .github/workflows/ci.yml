@@ -102,7 +102,9 @@ jobs:
             ${{ runner.os }}-cargo-release-build-
 
       - name: Run tests via Makefile
-        run: make test # This target should handle setup, build, install, and pytest
+        run: |
+          make setup
+          make test # This target should handle setup, build, install, and pytest
 
   build_publish_dev:
     name: Build and Publish Dev Version (via Makefile) # Updated name
@@ -166,7 +168,7 @@ jobs:
         shell: bash
 
       - name: Build wheel via Makefile
-        run: make build # This will use the modified Cargo.toml and output to dist/
+        run: make library # This will use the modified Cargo.toml and output to dist/
 
       - name: Publish development version to TestPyPI
         env:
@@ -236,7 +238,7 @@ jobs:
         shell: bash
 
       - name: Build wheel via Makefile
-        run: make build # This will use the existing Cargo.toml and output to dist/
+        run: make library # This will use the existing Cargo.toml and output to dist/
 
       - name: Publish release version to PyPI
         env:
@@ -245,7 +247,7 @@ jobs:
         run: |
           python -m twine upload --non-interactive --verbose dist/*.whl # Updated path
 
-build_docker_image:
+  build_docker_image:
     name: Build and Push Docker Image (via Earthly)
     runs-on: ubuntu-latest
     needs: test
