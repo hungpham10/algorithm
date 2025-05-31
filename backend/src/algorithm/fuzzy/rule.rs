@@ -7,6 +7,7 @@ use pyo3::types::PyDict;
 
 use serde::{Deserialize, Serialize};
 
+use super::functions::Noop;
 use super::input::Input;
 
 #[derive(Debug, Clone, Copy)]
@@ -113,6 +114,18 @@ impl ExprTree {
 }
 
 impl Rule {
+    pub fn default() -> Self {
+        Self {
+            optree: ExprTree {
+                op: Arc::new(Noop {}),
+                slots: Vec::new(),
+                nodes: Vec::new(),
+                labels: HashMap::new(),
+                values: Vec::new(),
+            },
+        }
+    }
+
     pub fn new<T: Input>(
         functions: &HashMap<String, Arc<dyn Function>>,
         input: &T,

@@ -21,23 +21,30 @@ use crate::algorithm::heap::Heap;
 
 #[derive(Debug, Clone)]
 pub struct Task {
+    // @NOTE:
     id: i64,
     timer: i64,
     timeout: i32,
     route: String,
     interval: String,
 
-    pyfuzzy: Arc<Py<PyDict>>,
-    pycallback: Arc<Py<PyAny>>,
+    // @NOTE:
+    jsfuzzy: Option<String>,
+    pyfuzzy: Option<Arc<Py<PyDict>>>,
+    pycallback: Option<Arc<Py<PyAny>>>,
 }
 
 impl Task {
-    pub fn pycallback(&self) -> Arc<Py<PyAny>> {
+    pub fn pycallback(&self) -> Option<Arc<Py<PyAny>>> {
         self.pycallback.clone()
     }
 
-    pub fn pyfuzzy(&self) -> Arc<Py<PyDict>> {
+    pub fn pyfuzzy(&self) -> Option<Arc<Py<PyDict>>> {
         self.pyfuzzy.clone()
+    }
+
+    pub fn jsfuzzy(&self) -> Option<String> {
+        self.jsfuzzy.clone()
     }
 }
 
@@ -208,8 +215,9 @@ pub struct ScheduleCommand {
     pub cron: String,
     pub timeout: i32,
     pub route: String,
-    pub pyfuzzy: Arc<Py<PyDict>>,
-    pub pycallback: Arc<Py<PyAny>>,
+    pub jsfuzzy: Option<String>,
+    pub pyfuzzy: Option<Arc<Py<PyDict>>>,
+    pub pycallback: Option<Arc<Py<PyAny>>>,
 }
 
 impl Handler<ScheduleCommand> for CronActor {
@@ -226,6 +234,7 @@ impl Handler<ScheduleCommand> for CronActor {
                 timer: next.timestamp() - now.timestamp(),
                 route: msg.route.clone(),
                 interval: msg.cron.clone(),
+                jsfuzzy: msg.jsfuzzy.clone(),
                 pyfuzzy: msg.pyfuzzy.clone(),
                 pycallback: msg.pycallback.clone(),
             });

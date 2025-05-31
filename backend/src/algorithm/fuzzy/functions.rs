@@ -1,5 +1,13 @@
 use super::rule::{Function, RuleError};
 
+pub struct Noop {}
+
+impl Function for Noop {
+    fn evaluate(&self, _: Vec<(String, f64)>) -> Result<f64, RuleError> {
+        Ok(0.0)
+    }
+}
+
 pub struct If {}
 
 impl Function for If {

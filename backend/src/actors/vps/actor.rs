@@ -6,10 +6,10 @@ use std::time::Duration;
 
 use futures::future;
 use pyo3::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
-use serde::{Deserialize, Serialize};
 
 use actix::prelude::*;
 use actix::Addr;

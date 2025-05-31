@@ -2,8 +2,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use actix::prelude::*;
+use log::error;
+
+use pyo3::prelude::*;
+use pyo3::types::PyTuple;
 
 use crate::actors::cron::CronResolver;
+use crate::actors::FUZZY_TRIGGER_THRESHOLD;
 use crate::algorithm::{Delegate, Format};
 
 use super::{GetOrderCommand, TcbsActor, TcbsError};
@@ -22,15 +27,35 @@ fn resolve_watching_tcbs_bid_ask_flow(actor: Arc<Addr<TcbsActor>>, resolver: &mu
 
         async move {
             let datapoints = actor.send(GetOrderCommand { page: 0 }).await.unwrap();
-            let fuzzy = task.pyfuzzy();
 
             // Build rule
-            let rule = Delegate::new()
-                .build(&*fuzzy, Format::Python)
-                .map_err(|e| TcbsError {
-                    message: e.to_string(),
-                })
-                .unwrap();
+            let mut rule = if let Some(fuzzy) = task.pyfuzzy() {
+                match Delegate::new()
+                    .build(&*fuzzy, Format::Python)
+                    .map_err(|e| TcbsError {
+                        message: e.to_string(),
+                    }) {
+                    Ok(rule) => rule,
+                    Err(err) => {
+                        error!("Failed to build fuzzy rule: {}", err);
+                        return;
+                    }
+                }
+            } else if let Some(fuzzy) = task.jsfuzzy() {
+                match Delegate::new()
+                    .build(&fuzzy, Format::Json)
+                    .map_err(|e| TcbsError {
+                        message: e.to_string(),
+                    }) {
+                    Ok(rule) => rule,
+                    Err(err) => {
+                        error!("Failed to build fuzzy rule: {}", err);
+                        return;
+                    }
+                }
+            } else {
+                Delegate::new().default()
+            };
 
             // Get labels
             let labels: Vec<String> = rule.labels().iter().map(|l| l.to_string()).collect();
@@ -39,6 +64,7 @@ fn resolve_watching_tcbs_bid_ask_flow(actor: Arc<Addr<TcbsActor>>, resolver: &mu
                 for order in response.data {
                     let mut inputs = HashMap::<String, f64>::new();
 
+                    // Load inputs
                     for label in &labels {
                         match label.as_str() {
                             "p" => {
@@ -67,6 +93,33 @@ fn resolve_watching_tcbs_bid_ask_flow(actor: Arc<Addr<TcbsActor>>, resolver: &mu
                             }
                             _ => {}
                         };
+                    }
+
+                    rule.reload(&inputs);
+
+                    // Evaluate rule
+                    let result = rule.evaluate().map_err(|e| TcbsError {
+                        message: e.to_string(),
+                    });
+
+                    match result {
+                        Ok(result) => {
+                            if result == FUZZY_TRIGGER_THRESHOLD {
+                                Python::with_gil(|py| {
+                                    if let Some(callback) = task.pycallback() {
+                                        let args = PyTuple::new(py, order.to_pytuple(py));
+
+                                        // Call Python callback
+                                        if let Err(e) = callback.call1(py, (args,)) {
+                                            e.print_and_set_sys_last_vars(py);
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to evaluate rule: {}", e);
+                        }
                     }
                 }
             }

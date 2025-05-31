@@ -32,7 +32,7 @@ rand = "0.8.5"
 rayon = "1.10.0"
 
 # feature order management
-airtable = "0.1.0"
+airtable-api = "0.1"
 
 # Crawling data in background
 cron-parser = "0.8.1"
