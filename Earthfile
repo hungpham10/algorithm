@@ -5,22 +5,35 @@ FROM rustlang/rust:nightly
 WORKDIR /app
 
 build:
+    # Use the same base image as specified
     FROM rustlang/rust:nightly
 
-    # Install dependencies, including python3-dev for pyo3
+    # Install dependencies, including Python 3.11 and development libraries
     RUN apt update && \
-        apt install -y protobuf-compiler python3-dev && \
+        apt install -y protobuf-compiler python3.11 python3.11-dev build-essential && \
+        update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
         apt autoremove -y && apt clean
 
+    # Verify Python library path
+    RUN ldconfig -p | grep libpython3.11
+
+    # Cache dependencies
+    COPY ./backend/Cargo.toml ./backend/Cargo.lock ./backend/
+    RUN cd ./backend && cargo +nightly fetch
+
+    # Copy source code and build
     COPY . .
     RUN cd ./backend && \
-        PYO3_PYTHON=/usr/bin/python3 cargo +nightly build --release
+        PYO3_PYTHON=/usr/bin/python3.11 \
+        PYTHON_SYS_EXECUTABLE=/usr/bin/python3.11 \
+        LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/usr/local/lib \
+        cargo +nightly build --release --verbose -j 4
 
     # Save the compiled binary as an artifact
     SAVE ARTIFACT ./target/release/algorithm AS LOCAL ./algorithm
 
 pack:
-    FROM ubuntu:latest
+    FROM ubuntu:22.04  # Use ubuntu:22.04 instead of latest for stability
     WORKDIR /app
 
     # Copy the compiled binary from the build stage
@@ -33,7 +46,8 @@ pack:
 
     # Install runtime dependencies and clean up
     RUN apt update && \
-        apt install -y postgresql-client ca-certificates curl unzip screen python3 && \
+        apt install -y postgresql-client ca-certificates curl unzip screen python3.11 libpython3.11 && \
+        update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
         apt autoremove -y && apt clean
 
     # Install localtonet
@@ -48,6 +62,7 @@ pack:
     EXPOSE 8000
 
     # Add image labels
+    LABEL org.opencontainers.image.source="https://github.com/YOUR_ORG/YOUR_REPO"
     LABEL org.opencontainers.image.description="Algorithm HTTP Server"
 
     # Save the final image
