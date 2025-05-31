@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use actix_web::middleware::Logger;
-use actix_web::web::{get, Data};
+use actix_web::web::{get, put, Data};
 use actix_web::{App, HttpResponse, HttpServer, Result};
 
 use tokio::signal::unix::{signal, SignalKind};
@@ -18,6 +18,10 @@ use vnscope::algorithm::Variables;
 use vnscope::schemas::Portal;
 
 async fn health() -> Result<HttpResponse> {
+    Ok(HttpResponse::Ok().body("ok"))
+}
+
+async fn synchronize() -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().body("ok"))
 }
 
@@ -121,6 +125,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(Logger::default())
             .route("/health", get().to(health))
+            .route("/api/v1/config/synchronize", put().to(synchronize))
             .app_data(Data::new(tcbs.clone()))
             .app_data(Data::new(vps.clone()))
     })
