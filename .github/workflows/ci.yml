@@ -157,7 +157,7 @@ jobs:
           echo "Base version from Cargo.toml: ${BASE_VERSION}"
 
           if ! which jq &> /dev/null; then
-            apt install -y jq
+            sudo apt install -y jq
           fi
 
           COMMIT_COUNT=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN"         \
