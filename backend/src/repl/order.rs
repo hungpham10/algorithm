@@ -15,7 +15,7 @@ pub fn order(symbol: String) -> PyResult<PyDataFrame> {
         let actor = connect_to_tcbs(
             &[symbol.clone()],
             "".to_string(),
-            Arc::new(Mutex::new(Variables::new(0))),
+            Arc::new(Mutex::new(Variables::default())),
         );
 
         for i in 0..10000 {

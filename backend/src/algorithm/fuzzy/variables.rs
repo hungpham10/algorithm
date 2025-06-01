@@ -1,6 +1,7 @@
 use super::RuleError;
 use std::collections::{HashMap, VecDeque};
 
+#[derive(Default)]
 pub struct Variables {
     buffer_size: usize,
     variables: HashMap<String, VecDeque<f64>>,

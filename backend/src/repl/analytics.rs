@@ -11,18 +11,13 @@ use crate::algorithm::{Delegate, Format, Variables};
 const FUZZY_TRIGGER_THRESHOLD: f64 = 1.0;
 
 #[pyfunction]
-pub fn filter(
-    py: Python,
-    df: PyDataFrame,
-    rule: Py<PyDict>,
-    memory_size: usize,
-) -> PyResult<Vec<u32>> {
-    let mut df: DataFrame = df.into();
+pub fn filter(df: PyDataFrame, rule: Py<PyDict>, memory_size: usize) -> PyResult<Vec<u32>> {
+    let mut selected_indices = Vec::new();
     let mut vars = Variables::new(memory_size);
-    let mut rule = Delegate::new()
+    let rule = Delegate::new()
         .build(&rule, Format::Python)
         .map_err(|e| PyRuntimeError::new_err(format!("Invalid rule: {}", e)))?;
-    let mut selected_indices = Vec::new();
+    let df: DataFrame = df.into();
     let data: HashMap<String, Vec<f64>> = df
         .get_column_names()
         .into_iter()
