@@ -152,12 +152,13 @@ async fn main() -> std::io::Result<()> {
         })
         .collect::<Vec<ScheduleCommand>>();
 
-    let variables = Arc::new(Mutex::new(Variables::new(6 * 60)));
+    let tcbs_vars = Arc::new(Mutex::new(Variables::new(6 * 60)));
+    let vps_vars = Arc::new(Mutex::new(Variables::new(1000)));
 
     // @NOTE: setup cron and its resolvers
     let mut resolver = CronResolver::new();
-    let tcbs = resolve_tcbs_routes(&mut resolver, &symbols);
-    let vps = resolve_vps_routes(&mut resolver, &symbols, variables.clone());
+    let tcbs = resolve_tcbs_routes(&mut resolver, &symbols, tcbs_vars.clone());
+    let vps = resolve_vps_routes(&mut resolver, &symbols, vps_vars.clone());
     let cron = connect_to_cron(Rc::new(resolver));
 
     for command in cronjob {
@@ -219,6 +220,8 @@ async fn main() -> std::io::Result<()> {
             .app_data(Data::new(portal.clone()))
             .app_data(Data::new(tcbs.clone()))
             .app_data(Data::new(vps.clone()))
+            .app_data(Data::new(tcbs_vars.clone()))
+            .app_data(Data::new(vps_vars.clone()))
     })
     .bind((host.as_str(), port))
     .map_err(|e| {

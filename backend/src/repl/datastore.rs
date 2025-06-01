@@ -5,21 +5,27 @@ use crate::algorithm::Variables;
 
 #[pyclass]
 pub struct Datastore {
-    variables: Arc<Mutex<Variables>>,
+    vps_vars: Arc<Mutex<Variables>>,
+    tcbs_vars: Arc<Mutex<Variables>>,
 }
 
 #[pymethods]
 impl Datastore {
     #[new]
-    fn new(memory_size: usize) -> Self {
+    fn new(vps_memory_size: usize, tcbs_memory_size: usize) -> Self {
         Datastore {
-            variables: Arc::new(Mutex::new(Variables::new(memory_size))),
+            vps_vars: Arc::new(Mutex::new(Variables::new(vps_memory_size))),
+            tcbs_vars: Arc::new(Mutex::new(Variables::new(tcbs_memory_size))),
         }
     }
 }
 
 impl Datastore {
-    pub fn variables(&self) -> Arc<Mutex<Variables>> {
-        self.variables.clone()
+    pub fn tcbs(&self) -> Arc<Mutex<Variables>> {
+        self.tcbs_vars.clone()
+    }
+
+    pub fn vps(&self) -> Arc<Mutex<Variables>> {
+        self.vps_vars.clone()
     }
 }

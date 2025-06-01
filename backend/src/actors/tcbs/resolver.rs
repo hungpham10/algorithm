@@ -8,7 +8,7 @@ use log::error;
 use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
-use pyo3::types::PyTuple;
+use pyo3::types::{PyList, PyTuple};
 
 use crate::actors::cron::CronResolver;
 use crate::actors::{GetVariableCommand, FUZZY_TRIGGER_THRESHOLD};
@@ -118,7 +118,7 @@ fn resolve_watching_tcbs_bid_ask_flow(actor: Arc<Addr<TcbsActor>>, resolver: &mu
                 let _ = actor
                     .send(UpdateVariablesCommand {
                         symbol: response.ticker.clone(),
-                        orders: response.data,
+                        orders: response.data.clone(),
                     })
                     .await;
 
@@ -153,9 +153,18 @@ fn resolve_watching_tcbs_bid_ask_flow(actor: Arc<Addr<TcbsActor>>, resolver: &mu
                         if result == FUZZY_TRIGGER_THRESHOLD {
                             #[cfg(feature = "python")]
                             {
+                                let orders = &response.data;
+
                                 Python::with_gil(|py| {
                                     if let Some(callback) = task.pycallback() {
-                                        let args = PyTuple::new(py, order.to_pytuple(py));
+                                        let args: Py<PyList> = PyList::new(
+                                            py,
+                                            orders
+                                                .iter()
+                                                .map(|order| PyTuple::new(py, order.to_pytuple(py)))
+                                                .collect::<Vec<_>>(),
+                                        )
+                                        .into();
 
                                         // Call Python callback
                                         if let Err(e) = callback.call1(py, (args,)) {

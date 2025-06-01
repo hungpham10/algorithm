@@ -55,16 +55,18 @@ impl Monitor {
         })?;
         let schedules = self.schedules.clone();
         let datastore = self.datastore.borrow(py);
-        let variables = datastore.variables();
+        let vps_vars = datastore.vps();
+        let tcbs_vars = datastore.tcbs();
 
         *enabled = true;
+
         let enabled = self.enabled.clone();
 
         Python::allow_threads(py, move || {
             actix_rt::spawn(async move {
                 let mut resolver = CronResolver::new();
-                let _ = resolve_vps_routes(&mut resolver, &stocks, variables.clone());
-                let _ = resolve_tcbs_routes(&mut resolver, &stocks);
+                let _ = resolve_vps_routes(&mut resolver, &stocks, vps_vars.clone());
+                let _ = resolve_tcbs_routes(&mut resolver, &stocks, tcbs_vars.clone());
                 let cron = Arc::new(connect_to_cron(Rc::new(resolver)));
 
                 for command in schedules {
