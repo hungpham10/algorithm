@@ -20,10 +20,30 @@ use vnscope::actors::UpdateStocksCommand;
 use vnscope::algorithm::Variables;
 use vnscope::schemas::Portal;
 
+/// Health check endpoint that returns a 200 OK response.
+///
+/// # Examples
+///
+/// ```
+/// let resp = health().await.unwrap();
+/// assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+/// ```
 async fn health() -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().body("ok"))
 }
 
+/// Synchronizes the stock symbol list between the portal and both the TcbsActor and VpsActor.
+///
+/// Fetches the current watchlist of stock symbols from the portal, then sends an update command with these symbols to both the TcbsActor and VpsActor. Returns an HTTP 200 OK response if synchronization succeeds; otherwise, returns an error if fetching the watchlist or communicating with the actors fails.
+///
+/// # Examples
+///
+/// ```
+/// // This handler is registered as a PUT endpoint at `/api/v1/config/synchronize`.
+/// // It is typically called via an HTTP client:
+/// let response = client.put("/api/v1/config/synchronize").send().await?;
+/// assert_eq!(response.status(), 200);
+/// ```
 async fn synchronize(
     portal: Data<Arc<Portal>>,
     tcbs: Data<Arc<Addr<TcbsActor>>>,
@@ -72,6 +92,21 @@ async fn synchronize(
 /// #[tokio::main]
 /// async fn main() -> std::io::Result<()> {
 ///     my_crate::main().await
+/// }
+/// Initializes and runs the Actix-web server with integrated cron job scheduling and graceful shutdown.
+///
+/// Loads environment variables, configures logging, initializes shared resources, and sets up HTTP routes and cron jobs. Handles asynchronous task coordination and ensures orderly shutdown on receiving system signals.
+///
+/// # Returns
+/// 
+/// An `Ok(())` result if the server shuts down gracefully, or an error if initialization or binding fails.
+///
+/// # Examples
+///
+/// ```no_run
+/// #[actix_rt::main]
+/// async fn main() -> std::io::Result<()> {
+///     main().await
 /// }
 /// ```
 async fn main() -> std::io::Result<()> {

@@ -17,6 +17,14 @@ pub struct ActorError {
 }
 
 impl fmt::Display for ActorError {
+    /// Formats the `ActorError` by displaying its message.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let err = ActorError { message: "An error occurred".to_string() };
+    /// assert_eq!(format!("{}", err), "An error occurred");
+    /// ```
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.message)
     }

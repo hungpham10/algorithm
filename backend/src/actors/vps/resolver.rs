@@ -18,6 +18,17 @@ use crate::algorithm::{Delegate, Format, Variables};
 
 use super::{GetPriceCommand, UpdateVariablesCommand, VpsActor, VpsError};
 
+/// Initializes a `VpsActor` for the given stock symbols and shared variables, starts it as an Actix actor, and registers a periodic VPS board watching task with the provided `CronResolver`.
+///
+/// # Examples
+///
+/// ```
+/// let mut resolver = CronResolver::default();
+/// let stocks = vec!["AAPL".to_string(), "GOOG".to_string()];
+/// let variables = Arc::new(Mutex::new(Variables::default()));
+/// let vps_addr = resolve_vps_routes(&mut resolver, &stocks, variables.clone());
+/// assert!(Arc::strong_count(&vps_addr) > 0);
+/// ```
 pub fn resolve_vps_routes(
     resolver: &mut CronResolver,
     stocks: &[String],
@@ -30,6 +41,18 @@ pub fn resolve_vps_routes(
     actor
 }
 
+/// Registers a cron task that periodically retrieves price data from a VPS actor, applies a fuzzy logic rule to each data point, and optionally triggers a Python callback when a threshold is met.
+///
+/// The task fetches current price data, builds a fuzzy rule from the task configuration (JSON or Python), updates the actor's variables, and evaluates the rule for each data point. If the evaluation result matches the trigger threshold and a Python callback is configured (with the `python` feature enabled), the callback is invoked with the data point.
+///
+/// # Examples
+///
+/// ```
+/// let actor = Arc::new(vps_actor.start());
+/// let mut resolver = CronResolver::new();
+/// resolve_watching_vps_board(actor, &mut resolver);
+/// // The resolver will now periodically process VPS board data.
+/// ```
 fn resolve_watching_vps_board(actor: Arc<Addr<VpsActor>>, resolver: &mut CronResolver) {
     resolver.resolve("vps.watch_boards".to_string(), move |task, _, _| {
         let actor = actor.clone();
