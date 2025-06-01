@@ -35,7 +35,7 @@ async fn synchronize() -> Result<HttpResponse> {
 /// both the cron system and the HTTP server.
 ///
 /// # Returns
-/// 
+///
 /// Returns `Ok(())` if the server and cron system shut down gracefully, or an error if initialization or binding fails.
 ///
 /// # Errors

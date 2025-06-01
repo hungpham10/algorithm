@@ -181,7 +181,8 @@ impl Handler<TickCommand> for CronActor {
         let clock_now = Utc::now();
 
         if clock_now.timestamp() == self.clock {
-            return Box::pin(async move { Err(CronError { code: 0 }) });
+            // @NOTE: happen when timer run too fast and reach this point
+            return Box::pin(async move { Ok(0) });
         }
 
         let tick_now = self

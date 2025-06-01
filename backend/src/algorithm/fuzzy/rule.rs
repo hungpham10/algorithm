@@ -120,8 +120,8 @@ impl ExprTree {
     }
 }
 
-impl Rule {
-    pub fn default() -> Self {
+impl Default for Rule {
+    fn default() -> Self {
         Self {
             optree: ExprTree {
                 op: Arc::new(Noop {}),
@@ -132,7 +132,9 @@ impl Rule {
             },
         }
     }
+}
 
+impl Rule {
     pub fn new<T: Input>(
         functions: &HashMap<String, Arc<dyn Function>>,
         input: &T,
