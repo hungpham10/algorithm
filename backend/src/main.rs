@@ -2,6 +2,7 @@ use std::io::{Error, ErrorKind};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use actix::Addr;
 use actix_web::middleware::Logger;
 use actix_web::web::{get, put, Data};
 use actix_web::{App, HttpResponse, HttpServer, Result};
@@ -13,8 +14,9 @@ use chrono::Utc;
 use log::{error, info};
 
 use vnscope::actors::cron::{connect_to_cron, CronResolver, ScheduleCommand, TickCommand};
-use vnscope::actors::tcbs::resolve_tcbs_routes;
-use vnscope::actors::vps::resolve_vps_routes;
+use vnscope::actors::tcbs::{resolve_tcbs_routes, TcbsActor};
+use vnscope::actors::vps::{resolve_vps_routes, VpsActor};
+use vnscope::actors::UpdateStocksCommand;
 use vnscope::algorithm::Variables;
 use vnscope::schemas::Portal;
 
@@ -22,7 +24,29 @@ async fn health() -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().body("ok"))
 }
 
-async fn synchronize() -> Result<HttpResponse> {
+async fn synchronize(
+    portal: Data<Arc<Portal>>,
+    tcbs: Data<Arc<Addr<TcbsActor>>>,
+    vps: Data<Arc<Addr<VpsActor>>>,
+) -> Result<HttpResponse> {
+    let symbols: Vec<String> = portal
+        .watchlist()
+        .await
+        .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?
+        .iter()
+        .filter_map(|record| Some(record.fields.symbol.as_ref()?.clone()))
+        .collect::<Vec<String>>();
+
+    tcbs.send(UpdateStocksCommand {
+        stocks: symbols.clone(),
+    })
+    .await
+    .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?;
+    vps.send(UpdateStocksCommand {
+        stocks: symbols.clone(),
+    })
+    .await
+    .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?;
     Ok(HttpResponse::Ok().body("ok"))
 }
 
@@ -61,14 +85,14 @@ async fn main() -> std::io::Result<()> {
         .parse::<u16>()
         .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid SERVER_PORT"))?;
 
-    let portal = Portal::new(
+    let portal = Arc::new(Portal::new(
         std::env::var("AIRTABLE_API_KEY")
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid AIRTABLE_API_KEY"))?
             .as_str(),
         std::env::var("AIRTABLE_BASE_ID")
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid AIRTABLE_BASE_ID"))?
             .as_str(),
-    );
+    ));
 
     // @NOTE: cronjob configuration
     let symbols: Vec<String> = portal
@@ -157,6 +181,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .route("/health", get().to(health))
             .route("/api/v1/config/synchronize", put().to(synchronize))
+            .app_data(Data::new(portal.clone()))
             .app_data(Data::new(tcbs.clone()))
             .app_data(Data::new(vps.clone()))
     })

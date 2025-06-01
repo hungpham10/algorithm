@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::error;
+use std::error::Error;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -16,7 +16,7 @@ use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use actix::prelude::*;
 use actix::Addr;
 
-use crate::actors::{HealthCommand, UpdateStocksCommand};
+use crate::actors::{ActorError, GetVariableCommand, HealthCommand, UpdateStocksCommand};
 use crate::algorithm::Variables;
 
 #[allow(non_snake_case)]
@@ -106,7 +106,7 @@ impl fmt::Display for VpsError {
     }
 }
 
-impl error::Error for VpsError {}
+impl Error for VpsError {}
 
 pub struct VpsActor {
     variables: Arc<Mutex<Variables>>,
@@ -313,7 +313,7 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                 // Create variables
                 for var in &vars_to_create {
                     if let Err(e) = vars.create(var.to_string()) {
-                        eprintln!("Failed to create variable {}: {}", var, e);
+                        log::error!("Failed to create variable {}: {}", var, e);
                     }
                 }
 
@@ -376,13 +376,13 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
 
                 // Update foreign flow
                 if let Ok(len) = vars.update(
-                    format!("{}_fb_buy_volume", price.sym),
+                    format!("{}.fb_buy_volume", price.sym),
                     price.fBVol.parse::<f64>().unwrap_or(0.0),
                 ) {
-                    updates.insert(format!("{}_fb_buy_volume", price.sym), len);
+                    updates.insert(format!("{}.fb_buy_volume", price.sym), len);
                 }
                 if let Ok(len) = vars.update(
-                    format!("{}_fb_sell_volume", price.sym),
+                    format!("{}.fb_sell_volume", price.sym),
                     price.fSVolume.parse::<f64>().unwrap_or(0.0),
                 ) {
                     updates.insert(format!("{}_fb_sell_volume", price.sym), len);
@@ -394,30 +394,21 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
     }
 }
 
-#[derive(Message)]
-#[rtype(result = "Result<f64, VpsError>")]
-pub struct GetVariableCommand {
-    pub symbol: String,
-    pub variable: String,
-    pub index: usize,
-}
-
 impl Handler<GetVariableCommand> for VpsActor {
-    type Result = ResponseFuture<Result<f64, VpsError>>;
+    type Result = ResponseFuture<Result<f64, ActorError>>;
 
     fn handle(&mut self, msg: GetVariableCommand, _: &mut Self::Context) -> Self::Result {
         let variables = self.variables.clone();
 
         Box::pin(async move {
-            let vars = variables.lock().map_err(|e| VpsError {
+            let vars = variables.lock().map_err(|e| ActorError {
                 message: format!("Failed to acquire lock: {}", e),
             })?;
             let var_name = format!("{}.{}", msg.symbol, msg.variable);
 
-            vars.get_by_index(&var_name, msg.index)
-                .map_err(|e| VpsError {
-                    message: format!("Failed to get variable {}[{}]: {}", var_name, msg.index, e),
-                })
+            vars.get_by_expr(&var_name).map_err(|e| ActorError {
+                message: format!("Failed to get variable {}: {}", var_name, e),
+            })
         })
     }
 }

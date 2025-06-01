@@ -1,7 +1,9 @@
-use std::error;
+use std::error::Error;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use log::error;
 
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
@@ -15,7 +17,8 @@ use pyo3::prelude::*;
 use actix::prelude::*;
 use actix::Addr;
 
-use crate::actors::{HealthCommand, UpdateStocksCommand};
+use crate::actors::{ActorError, GetVariableCommand, HealthCommand, UpdateStocksCommand};
+use crate::algorithm::Variables;
 
 #[derive(Debug, Clone)]
 pub struct TcbsError {
@@ -28,22 +31,24 @@ impl fmt::Display for TcbsError {
     }
 }
 
-impl error::Error for TcbsError {}
+impl Error for TcbsError {}
 
 pub struct TcbsActor {
     stocks: Vec<String>,
     token: String,
     timeout: u64,
     page_size: usize,
+    variables: Arc<Mutex<Variables>>,
 }
 
 impl TcbsActor {
-    pub fn new(stocks: &[String], token: String) -> Self {
+    pub fn new(stocks: &[String], token: String, variables: Arc<Mutex<Variables>>) -> Self {
         Self {
             stocks: stocks.to_owned(),
             timeout: 60,
             page_size: 100,
             token,
+            variables,
         }
     }
 }
@@ -181,12 +186,12 @@ async fn fetch_order_per_stock(
     match resp {
         Ok(resp) => match resp.json::<OrderResponse>().await {
             Ok(resp) => Ok(resp),
-            Err(error) => Err(TcbsError {
-                message: format!("{:?}", error),
+            Err(err) => Err(TcbsError {
+                message: format!("{:?}", err),
             }),
         },
-        Err(error) => Err(TcbsError {
-            message: format!("{:?}", error),
+        Err(err) => Err(TcbsError {
+            message: format!("{:?}", err),
         }),
     }
 }
@@ -276,12 +281,12 @@ async fn fetch_balance_sheet_per_stock(
     match resp {
         Ok(resp) => match resp.json::<Vec<BalanceSheet>>().await {
             Ok(resp) => Ok(resp),
-            Err(error) => Err(TcbsError {
-                message: format!("{:?}", error),
+            Err(err) => Err(TcbsError {
+                message: format!("{:?}", err),
             }),
         },
-        Err(error) => Err(TcbsError {
-            message: format!("{:?}", error),
+        Err(err) => Err(TcbsError {
+            message: format!("{:?}", err),
         }),
     }
 }
@@ -358,12 +363,12 @@ async fn fetch_income_statement_per_stock(
     match resp {
         Ok(resp) => match resp.json::<Vec<IncomeStatement>>().await {
             Ok(resp) => Ok(resp),
-            Err(error) => Err(TcbsError {
-                message: format!("{:?}", error),
+            Err(err) => Err(TcbsError {
+                message: format!("{:?}", err),
             }),
         },
-        Err(error) => Err(TcbsError {
-            message: format!("{:?}", error),
+        Err(err) => Err(TcbsError {
+            message: format!("{:?}", err),
         }),
     }
 }
@@ -424,12 +429,12 @@ async fn fetch_cash_flow_per_stock(
     match resp {
         Ok(resp) => match resp.json::<Vec<CashFlow>>().await {
             Ok(resp) => Ok(resp),
-            Err(error) => Err(TcbsError {
-                message: format!("{:?}", error),
+            Err(err) => Err(TcbsError {
+                message: format!("{:?}", err),
             }),
         },
-        Err(error) => Err(TcbsError {
-            message: format!("{:?}", error),
+        Err(err) => Err(TcbsError {
+            message: format!("{:?}", err),
         }),
     }
 }
@@ -545,31 +550,130 @@ async fn set_alert(
                     })
                 }
             }
-            Err(error) => Err(TcbsError {
-                message: format!("{:?}", error),
+            Err(err) => Err(TcbsError {
+                message: format!("{:?}", err),
             }),
         },
-        Err(error) => Err(TcbsError {
-            message: format!("{:?}", error),
+        Err(err) => Err(TcbsError {
+            message: format!("{:?}", err),
         }),
     }
 }
 
+impl Handler<GetVariableCommand> for TcbsActor {
+    type Result = ResponseFuture<Result<f64, ActorError>>;
+
+    fn handle(&mut self, msg: GetVariableCommand, _: &mut Self::Context) -> Self::Result {
+        let variables = self.variables.clone();
+
+        Box::pin(async move {
+            let vars = variables.lock().map_err(|e| ActorError {
+                message: format!("Failed to acquire lock: {}", e),
+            })?;
+            let var_name = format!("{}.{}", msg.symbol, msg.variable);
+
+            vars.get_by_expr(&var_name).map_err(|e| ActorError {
+                message: format!("Failed to get variable {}: {}", var_name, e),
+            })
+        })
+    }
+}
+
 #[derive(Message)]
-#[rtype(result = "Result<bool, TcbsError>")]
+#[rtype(result = "Result<usize, TcbsError>")]
 pub struct UpdateVariablesCommand {
     pub orders: Vec<Order>,
     pub symbol: String,
 }
 
 impl Handler<UpdateVariablesCommand> for TcbsActor {
-    type Result = ResponseFuture<Result<bool, TcbsError>>;
+    type Result = ResponseFuture<Result<usize, TcbsError>>;
 
-    fn handle(&mut self, _msg: UpdateVariablesCommand, _: &mut Self::Context) -> Self::Result {
-        Box::pin(async move { Ok(false) })
+    fn handle(&mut self, msg: UpdateVariablesCommand, _: &mut Self::Context) -> Self::Result {
+        let variables = self.variables.clone();
+
+        Box::pin(async move {
+            let mut updated = 0;
+            let mut vars = variables.lock().unwrap();
+
+            let vars_to_create = [
+                format!("{}.price", msg.symbol),
+                format!("{}.volume", msg.symbol),
+                format!("{}.type", msg.symbol),
+                format!("{}.ba", msg.symbol),
+                format!("{}.sa", msg.symbol),
+            ];
+
+            for var in &vars_to_create {
+                if let Err(e) = vars.create(var.to_string()) {
+                    error!("Failed to create variable {}: {}", var, e);
+                }
+            }
+
+            for order in msg.orders {
+                if let Err(e) = vars.update(format!("{}.price", msg.symbol), order.p) {
+                    error!(
+                        "Failed to update variable {}: {}",
+                        format!("{}.price", msg.symbol),
+                        e
+                    );
+                    continue;
+                }
+
+                if let Err(e) = vars.update(format!("{}.volume", msg.symbol), order.v as f64) {
+                    error!(
+                        "Failed to update variable {}: {}",
+                        format!("{}.volume", msg.symbol),
+                        e
+                    );
+                    continue;
+                }
+
+                if let Err(e) = vars.update(
+                    format!("{}.type", msg.symbol),
+                    match order.t.as_str() {
+                        "BU" => 1.0,
+                        "SD" => 0.0,
+                        _ => continue,
+                    },
+                ) {
+                    error!(
+                        "Failed to update variable {}: {}",
+                        format!("{}.type", msg.symbol),
+                        e
+                    );
+                    continue;
+                }
+
+                if let Err(e) = vars.update(format!("{}.ba", msg.symbol), order.ba) {
+                    error!(
+                        "Failed to update variable {}: {}",
+                        format!("{}.ba", msg.symbol),
+                        e
+                    );
+                    continue;
+                }
+
+                if let Err(e) = vars.update(format!("{}.sa", msg.symbol), order.sa) {
+                    error!(
+                        "Failed to update variable {}: {}",
+                        format!("{}.sa", msg.symbol),
+                        e
+                    );
+                    continue;
+                }
+
+                updated += 1;
+            }
+            Ok(updated)
+        })
     }
 }
 
-pub fn connect_to_tcbs(stocks: &[String], token: String) -> Addr<TcbsActor> {
-    TcbsActor::new(stocks, token).start()
+pub fn connect_to_tcbs(
+    stocks: &[String],
+    token: String,
+    variables: Arc<Mutex<Variables>>,
+) -> Addr<TcbsActor> {
+    TcbsActor::new(stocks, token, variables).start()
 }
