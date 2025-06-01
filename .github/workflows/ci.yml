@@ -160,9 +160,39 @@ jobs:
             sudo apt install -y jq
           fi
 
-          COMMIT_COUNT=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN"         \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/commits?per_page=1"  \
-            | jq '.[0].parents | length + 1')
+          # Initialize commit count
+          COMMIT_COUNT=0
+          PAGE=1
+          PER_PAGE=100
+          BRANCH="main"
+
+          for i in $(seq 1 10000); do
+            # Fetch commits for the main branch
+            RESPONSE=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/commits?sha=$BRANCH&per_page=$PER_PAGE&page=$PAGE")
+
+            # Check if response is valid JSON
+            if ! echo "$RESPONSE" | jq . >/dev/null 2>&1; then
+              echo "Error: Invalid API response or authentication failed."
+              exit 1
+            fi
+
+            # Get the number of commits in this page
+            PAGE_COUNT=$(echo "$RESPONSE" | jq 'length')
+
+            # Add to total commit count
+            COMMIT_COUNT=$((COMMIT_COUNT + PAGE_COUNT))
+
+            # If fewer than PER_PAGE commits, we've reached the end
+            if [[ $PAGE_COUNT -lt $PER_PAGE ]]; then
+              break
+            fi
+
+            # Move to the next page
+            PAGE=$((PAGE + 1))
+          done
+
+          # Construct PEP 440 dev version
           DEV_VERSION="${BASE_VERSION}-dev${COMMIT_COUNT}" # Construct PEP 440 dev version
           echo "Updating backend/Cargo.toml version to: ${DEV_VERSION}"
 
