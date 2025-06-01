@@ -98,7 +98,7 @@ async fn synchronize(
 /// Loads environment variables, configures logging, initializes shared resources, and sets up HTTP routes and cron jobs. Handles asynchronous task coordination and ensures orderly shutdown on receiving system signals.
 ///
 /// # Returns
-/// 
+///
 /// An `Ok(())` result if the server shuts down gracefully, or an error if initialization or binding fails.
 ///
 /// # Examples
@@ -152,8 +152,17 @@ async fn main() -> std::io::Result<()> {
         })
         .collect::<Vec<ScheduleCommand>>();
 
-    let tcbs_vars = Arc::new(Mutex::new(Variables::new(6 * 60)));
-    let vps_vars = Arc::new(Mutex::new(Variables::new(1000)));
+    let tcbs_timeout = std::env::var("TCBS_TIMEOUT")
+        .unwrap_or_else(|_| "360".to_string())
+        .parse::<usize>()
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid TCBS_TIMEOUT"))?;
+    let vps_timeout = std::env::var("VPS_TIMEOUT")
+        .unwrap_or_else(|_| "1000".to_string())
+        .parse::<usize>()
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid VPS_TIMEOUT"))?;
+
+    let tcbs_vars = Arc::new(Mutex::new(Variables::new(tcbs_timeout)));
+    let vps_vars = Arc::new(Mutex::new(Variables::new(vps_timeout)));
 
     // @NOTE: setup cron and its resolvers
     let mut resolver = CronResolver::new();

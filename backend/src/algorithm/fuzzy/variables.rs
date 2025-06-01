@@ -14,20 +14,20 @@ impl Variables {
         }
     }
 
-    pub fn create(&mut self, name: String) -> Result<(), RuleError> {
-        if self.variables.contains_key(&name) {
+    pub fn create(&mut self, name: &String) -> Result<(), RuleError> {
+        if self.variables.contains_key(name) {
             return Err(RuleError {
                 message: format!("Variable {} already exists", name),
             });
         }
 
         self.variables
-            .insert(name, VecDeque::with_capacity(self.buffer_size));
+            .insert(name.clone(), VecDeque::with_capacity(self.buffer_size));
         Ok(())
     }
 
-    pub fn update(&mut self, name: String, value: f64) -> Result<usize, RuleError> {
-        let buffer = self.variables.get_mut(&name).ok_or_else(|| RuleError {
+    pub fn update(&mut self, name: &String, value: f64) -> Result<usize, RuleError> {
+        let buffer = self.variables.get_mut(name).ok_or_else(|| RuleError {
             message: format!("Variable {} not found", name),
         })?;
 
@@ -109,12 +109,12 @@ mod tests {
     #[test]
     fn test_variable_update() {
         let mut vars = Variables::new(3);
-        vars.create("test".to_string()).unwrap();
+        vars.create(&"test".to_string()).unwrap();
 
-        assert_eq!(vars.update("test".to_string(), 1.0).unwrap(), 1);
-        assert_eq!(vars.update("test".to_string(), 2.0).unwrap(), 2);
-        assert_eq!(vars.update("test".to_string(), 3.0).unwrap(), 3);
-        assert_eq!(vars.update("test".to_string(), 4.0).unwrap(), 3);
+        assert_eq!(vars.update(&"test".to_string(), 1.0).unwrap(), 1);
+        assert_eq!(vars.update(&"test".to_string(), 2.0).unwrap(), 2);
+        assert_eq!(vars.update(&"test".to_string(), 3.0).unwrap(), 3);
+        assert_eq!(vars.update(&"test".to_string(), 4.0).unwrap(), 3);
 
         assert_eq!(vars.get_by_expr("test[0]").unwrap(), 4.0);
         assert_eq!(vars.get_by_expr("test[1]").unwrap(), 3.0);

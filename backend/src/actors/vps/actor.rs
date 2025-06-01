@@ -280,7 +280,7 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
     /// Returns a map of variable names to their updated counts or lengths.
     ///
     /// # Returns
-    /// 
+    ///
     /// A `Result` containing a map from variable names to their updated counts, or a `VpsError` if an error occurs.
     ///
     /// # Examples
@@ -333,7 +333,7 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
 
                 // Create variables
                 for var in &vars_to_create {
-                    if let Err(e) = vars.create(var.to_string()) {
+                    if let Err(e) = vars.create(var) {
                         log::error!("Failed to create variable {}: {}", var, e);
                     }
                 }
@@ -344,10 +344,10 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                 } else {
                     price.lastPrice
                 };
-                if let Ok(len) = vars.update(format!("{}_price", price.sym), current_price) {
+                if let Ok(len) = vars.update(&format!("{}_price", price.sym), current_price) {
                     updates.insert(format!("{}_price", price.sym), len);
                 }
-                if let Ok(len) = vars.update(format!("{}_volume", price.sym), price.lot as f64) {
+                if let Ok(len) = vars.update(&format!("{}_volume", price.sym), price.lot as f64) {
                     updates.insert(format!("{}_volume", price.sym), len);
                 }
 
@@ -357,7 +357,7 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                 } else {
                     -1.0 * price.changePc.parse::<f64>().unwrap_or(0.0)
                 };
-                if let Ok(len) = vars.update(format!("{}_change", price.sym), change_percent) {
+                if let Ok(len) = vars.update(&format!("{}_change", price.sym), change_percent) {
                     updates.insert(format!("{}_change", price.sym), len);
                 }
 
@@ -382,28 +382,28 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                 ];
 
                 // Update all price levels
-                for (var, val) in price_updates {
-                    if let Ok(len) = vars.update(var.clone(), val.parse::<f64>().unwrap_or(0.0)) {
-                        updates.insert(var, len);
+                for (var, val) in &price_updates {
+                    if let Ok(len) = vars.update(var, val.parse::<f64>().unwrap_or(0.0)) {
+                        updates.insert(var.clone(), len);
                     }
                 }
 
                 // Update all volume levels
-                for (var, val) in volume_updates {
-                    if let Ok(len) = vars.update(var.clone(), val.parse::<f64>().unwrap_or(0.0)) {
-                        updates.insert(var, len);
+                for (var, val) in &volume_updates {
+                    if let Ok(len) = vars.update(var, val.parse::<f64>().unwrap_or(0.0)) {
+                        updates.insert(var.clone(), len);
                     }
                 }
 
                 // Update foreign flow
                 if let Ok(len) = vars.update(
-                    format!("{}.fb_buy_volume", price.sym),
+                    &format!("{}.fb_buy_volume", price.sym),
                     price.fBVol.parse::<f64>().unwrap_or(0.0),
                 ) {
                     updates.insert(format!("{}.fb_buy_volume", price.sym), len);
                 }
                 if let Ok(len) = vars.update(
-                    format!("{}.fb_sell_volume", price.sym),
+                    &format!("{}.fb_sell_volume", price.sym),
                     price.fSVolume.parse::<f64>().unwrap_or(0.0),
                 ) {
                     updates.insert(format!("{}_fb_sell_volume", price.sym), len);

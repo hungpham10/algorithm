@@ -731,13 +731,13 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
             ];
 
             for var in &vars_to_create {
-                if let Err(e) = vars.create(var.to_string()) {
+                if let Err(e) = vars.create(var) {
                     error!("Failed to create variable {}: {}", var, e);
                 }
             }
 
             for order in msg.orders {
-                if let Err(e) = vars.update(format!("{}.price", msg.symbol), order.p) {
+                if let Err(e) = vars.update(&vars_to_create[0].to_string(), order.p) {
                     error!(
                         "Failed to update variable {}: {}",
                         format!("{}.price", msg.symbol),
@@ -746,7 +746,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     continue;
                 }
 
-                if let Err(e) = vars.update(format!("{}.volume", msg.symbol), order.v as f64) {
+                if let Err(e) = vars.update(&vars_to_create[1].to_string(), order.v as f64) {
                     error!(
                         "Failed to update variable {}: {}",
                         format!("{}.volume", msg.symbol),
@@ -756,7 +756,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                 }
 
                 if let Err(e) = vars.update(
-                    format!("{}.type", msg.symbol),
+                    &vars_to_create[2].to_string(),
                     match order.t.as_str() {
                         "BU" => 1.0,
                         "SD" => 0.0,
@@ -771,7 +771,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     continue;
                 }
 
-                if let Err(e) = vars.update(format!("{}.ba", msg.symbol), order.ba) {
+                if let Err(e) = vars.update(&vars_to_create[3].to_string(), order.ba) {
                     error!(
                         "Failed to update variable {}: {}",
                         format!("{}.ba", msg.symbol),
@@ -780,7 +780,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     continue;
                 }
 
-                if let Err(e) = vars.update(format!("{}.sa", msg.symbol), order.sa) {
+                if let Err(e) = vars.update(&vars_to_create[4].to_string(), order.sa) {
                     error!(
                         "Failed to update variable {}: {}",
                         format!("{}.sa", msg.symbol),
