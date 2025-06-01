@@ -13,10 +13,10 @@ use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
 use crate::actors::cron::CronResolver;
-use crate::actors::FUZZY_TRIGGER_THRESHOLD;
+use crate::actors::{GetVariableCommand, FUZZY_TRIGGER_THRESHOLD};
 use crate::algorithm::{Delegate, Format, Variables};
 
-use super::{GetPriceCommand, GetVariableCommand, UpdateVariablesCommand, VpsActor, VpsError};
+use super::{GetPriceCommand, UpdateVariablesCommand, VpsActor, VpsError};
 
 pub fn resolve_vps_routes(
     resolver: &mut CronResolver,
@@ -97,7 +97,6 @@ fn resolve_watching_vps_board(actor: Arc<Addr<VpsActor>>, resolver: &mut CronRes
                         .send(GetVariableCommand {
                             symbol: symbol.clone(),
                             variable: label.clone(),
-                            index: 0,
                         })
                         .await
                     {
