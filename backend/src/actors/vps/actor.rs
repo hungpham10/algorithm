@@ -101,6 +101,9 @@ pub struct VpsError {
 }
 
 impl fmt::Display for VpsError {
+    /// Formats the error message for display.
+    ///
+    /// This method writes the contained error message to the given formatter.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.message)
     }
@@ -270,6 +273,24 @@ pub struct UpdateVariablesCommand {
 impl Handler<UpdateVariablesCommand> for VpsActor {
     type Result = ResponseFuture<Result<HashMap<String, usize>, VpsError>>;
 
+    /// Updates shared variables with the latest stock price and order book data.
+    ///
+    /// For each provided `Price`, this function creates and updates variables representing
+    /// the current price, volume, change percent, price and volume levels, and foreign buy/sell volumes.
+    /// Returns a map of variable names to their updated counts or lengths.
+    ///
+    /// # Returns
+    /// 
+    /// A `Result` containing a map from variable names to their updated counts, or a `VpsError` if an error occurs.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // Assume `actor` is a VpsActor and `prices` is a Vec<Price>
+    /// let cmd = UpdateVariablesCommand { prices };
+    /// let result = actor.handle(cmd, &mut ctx).await;
+    /// assert!(result.is_ok());
+    /// ```
     fn handle(&mut self, msg: UpdateVariablesCommand, _: &mut Self::Context) -> Self::Result {
         let variables = self.variables.clone();
 
@@ -397,6 +418,9 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
 impl Handler<GetVariableCommand> for VpsActor {
     type Result = ResponseFuture<Result<f64, ActorError>>;
 
+    /// Retrieves the value of a specific variable for a given stock symbol asynchronously.
+    ///
+    /// Returns the variable value as an `f64` if found, or an `ActorError` if the variable does not exist or the lock cannot be acquired.
     fn handle(&mut self, msg: GetVariableCommand, _: &mut Self::Context) -> Self::Result {
         let variables = self.variables.clone();
 

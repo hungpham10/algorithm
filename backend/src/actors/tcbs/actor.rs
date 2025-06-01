@@ -26,6 +26,9 @@ pub struct TcbsError {
 }
 
 impl fmt::Display for TcbsError {
+    /// Formats the error message for display.
+    ///
+    /// This method writes the contained error message to the given formatter.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.message)
     }
@@ -42,6 +45,19 @@ pub struct TcbsActor {
 }
 
 impl TcbsActor {
+    /// Creates a new `TcbsActor` with the specified stock symbols, authentication token, and shared variables store.
+    ///
+    /// Initializes the actor with a default timeout of 60 seconds and a page size of 100.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::{Arc, Mutex};
+    /// let stocks = vec!["ABC".to_string(), "XYZ".to_string()];
+    /// let token = "my_token".to_string();
+    /// let variables = Arc::new(Mutex::new(Variables::default()));
+    /// let actor = TcbsActor::new(&stocks, token, variables);
+    /// ```
     pub fn new(stocks: &[String], token: String, variables: Arc<Mutex<Variables>>) -> Self {
         Self {
             stocks: stocks.to_owned(),
@@ -166,6 +182,26 @@ async fn fetch_orders(
     .collect::<Vec<_>>()
 }
 
+/// Fetches paginated intraday order data for a specific stock from the TCBS API.
+///
+/// Sends an HTTP GET request to the TCBS intraday order endpoint for the given stock symbol and page parameters, applying the specified timeout. Parses the response into an `OrderResponse` on success.
+///
+/// # Parameters
+/// - `stock`: The stock symbol to fetch order data for.
+/// - `timeout`: Timeout in seconds for the HTTP request.
+/// - `page`: The page number to retrieve.
+/// - `page_size`: The number of orders per page.
+///
+/// # Returns
+/// Returns `Ok(OrderResponse)` containing the order data if the request and parsing succeed, or a `TcbsError` if an error occurs.
+///
+/// # Examples
+///
+/// ```
+/// let client = Arc::new(HttpClient::new());
+/// let result = fetch_order_per_stock(client, &"VCB".to_string(), 30, 1, 100).await;
+/// assert!(result.is_ok());
+/// ```
 async fn fetch_order_per_stock(
     client: Arc<HttpClient>,
     stock: &String,
@@ -265,6 +301,24 @@ pub struct BalanceSheet {
     payable: Option<i32>,
 }
 
+/// Fetches the balance sheet data for a given stock symbol from the TCBS API.
+///
+/// Sends an asynchronous HTTP GET request to retrieve the balance sheet information for the specified stock. Returns a vector of `BalanceSheet` records on success, or a `TcbsError` if the request or parsing fails.
+///
+/// # Parameters
+/// - `stock`: The stock symbol to fetch balance sheet data for.
+/// - `timeout`: The request timeout in seconds.
+///
+/// # Returns
+/// A `Result` containing a vector of `BalanceSheet` structs if successful, or a `TcbsError` on failure.
+///
+/// # Examples
+///
+/// ```
+/// let client = Arc::new(HttpClient::new());
+/// let result = fetch_balance_sheet_per_stock(client, &"ABC".to_string(), 30).await;
+/// assert!(result.is_ok());
+/// ```
 async fn fetch_balance_sheet_per_stock(
     client: Arc<HttpClient>,
     stock: &String,
@@ -347,6 +401,17 @@ pub struct IncomeStatement {
     ebitda: Option<i32>,
 }
 
+/// Fetches the quarterly income statement data for a given stock from the TCBS API.
+///
+/// Sends an HTTP GET request to the TCBS financial API to retrieve all available quarterly income statements for the specified stock symbol. Returns a vector of `IncomeStatement` structs on success, or a `TcbsError` if the request or parsing fails.
+///
+/// # Examples
+///
+/// ```
+/// let client = Arc::new(HttpClient::new());
+/// let result = fetch_income_statement_per_stock(client, &"ABC".to_string(), 30).await;
+/// assert!(result.is_ok());
+/// ```
 async fn fetch_income_statement_per_stock(
     client: Arc<HttpClient>,
     stock: &String,
@@ -412,6 +477,24 @@ pub struct CashFlow {
     freeCashFlow: Option<i32>,
 }
 
+/// Fetches the cash flow statements for a given stock from the TCBS API.
+///
+/// Sends an HTTP GET request to the TCBS financial API to retrieve cash flow data for the specified stock symbol. Returns a vector of `CashFlow` records on success, or a `TcbsError` if the request or parsing fails.
+///
+/// # Parameters
+/// - `stock`: The stock symbol to fetch cash flow data for.
+/// - `timeout`: The request timeout in seconds.
+///
+/// # Returns
+/// A `Result` containing a vector of `CashFlow` structs if successful, or a `TcbsError` on failure.
+///
+/// # Examples
+///
+/// ```
+/// let client = Arc::new(HttpClient::new());
+/// let cash_flows = fetch_cash_flow_per_stock(client, &"ABC".to_string(), 30).await?;
+/// assert!(!cash_flows.is_empty());
+/// ```
 async fn fetch_cash_flow_per_stock(
     client: Arc<HttpClient>,
     stock: &String,
@@ -508,6 +591,24 @@ struct SetAlertResponse {
     data: SetAlertResponsePayload,
 }
 
+/// Sends a request to set a price alert for a specific stock using the TCBS API.
+///
+/// The alert is configured to trigger when the stock price is less than or equal to the specified value. Additional alert information is included in the request. Returns `Ok(true)` if the alert is successfully enabled, or an error if the request fails or the API responds with a non-success status.
+///
+/// # Parameters
+/// - `stock`: The stock symbol for which to set the alert.
+/// - `price`: The price threshold for triggering the alert.
+/// - `timeout`: The request timeout in seconds.
+///
+/// # Returns
+/// `Ok(true)` if the alert is enabled; otherwise, returns a `TcbsError`.
+///
+/// # Examples
+///
+/// ```
+/// let enabled = set_alert(client, "ABC", &token, 100.0, 30).await?;
+/// assert!(enabled);
+/// ```
 async fn set_alert(
     client: Arc<HttpClient>,
     stock: &str,
@@ -563,6 +664,17 @@ async fn set_alert(
 impl Handler<GetVariableCommand> for TcbsActor {
     type Result = ResponseFuture<Result<f64, ActorError>>;
 
+    /// Retrieves the value of a specific variable for a given stock symbol from the shared variables store.
+    ///
+    /// Returns an error if the variable does not exist or if the mutex lock cannot be acquired.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let cmd = GetVariableCommand { symbol: "ABC".to_string(), variable: "price".to_string() };
+    /// let result = actor.handle(cmd, &mut ctx).await;
+    /// assert!(result.is_ok());
+    /// ```
     fn handle(&mut self, msg: GetVariableCommand, _: &mut Self::Context) -> Self::Result {
         let variables = self.variables.clone();
 
@@ -589,6 +701,20 @@ pub struct UpdateVariablesCommand {
 impl Handler<UpdateVariablesCommand> for TcbsActor {
     type Result = ResponseFuture<Result<usize, TcbsError>>;
 
+    /// Updates variables for a given stock symbol based on a list of orders.
+    ///
+    /// For each order, updates the associated price, volume, type, buyer, and seller variables in the shared store. Creates variables if they do not exist. Returns the number of successfully updated orders.
+    ///
+    /// # Returns
+    /// The number of orders for which all variable updates succeeded.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let cmd = UpdateVariablesCommand { symbol: "ABC".to_string(), orders: vec![order1, order2] };
+    /// let updated_count = actor.handle(cmd, &mut ctx).await.unwrap();
+    /// assert!(updated_count <= 2);
+    /// ```
     fn handle(&mut self, msg: UpdateVariablesCommand, _: &mut Self::Context) -> Self::Result {
         let variables = self.variables.clone();
 
@@ -670,6 +796,19 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
     }
 }
 
+/// Creates and starts a `TcbsActor` for interacting with TCBS APIs.
+///
+/// Initializes the actor with the provided list of stock symbols, authentication token, and a shared, thread-safe variables store. Returns the address of the running actor for message-based communication.
+///
+/// # Examples
+///
+/// ```
+/// let stocks = vec!["ABC".to_string(), "XYZ".to_string()];
+/// let token = "your_token".to_string();
+/// let variables = Arc::new(Mutex::new(Variables::default()));
+/// let addr = connect_to_tcbs(&stocks, token, variables.clone());
+/// // Use `addr` to send commands to the actor
+/// ```
 pub fn connect_to_tcbs(
     stocks: &[String],
     token: String,
