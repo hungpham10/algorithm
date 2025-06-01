@@ -2,6 +2,7 @@ use std::io::{Error, ErrorKind};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use actix::Addr;
 use actix_web::middleware::Logger;
 use actix_web::web::{get, put, Data};
 use actix_web::{App, HttpResponse, HttpServer, Result};
@@ -13,16 +14,59 @@ use chrono::Utc;
 use log::{error, info};
 
 use vnscope::actors::cron::{connect_to_cron, CronResolver, ScheduleCommand, TickCommand};
-use vnscope::actors::tcbs::resolve_tcbs_routes;
-use vnscope::actors::vps::resolve_vps_routes;
+use vnscope::actors::tcbs::{resolve_tcbs_routes, TcbsActor};
+use vnscope::actors::vps::{resolve_vps_routes, VpsActor};
+use vnscope::actors::UpdateStocksCommand;
 use vnscope::algorithm::Variables;
 use vnscope::schemas::Portal;
 
+/// Health check endpoint that returns a 200 OK response.
+///
+/// # Examples
+///
+/// ```
+/// let resp = health().await.unwrap();
+/// assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+/// ```
 async fn health() -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().body("ok"))
 }
 
-async fn synchronize() -> Result<HttpResponse> {
+/// Synchronizes the stock symbol list between the portal and both the TcbsActor and VpsActor.
+///
+/// Fetches the current watchlist of stock symbols from the portal, then sends an update command with these symbols to both the TcbsActor and VpsActor. Returns an HTTP 200 OK response if synchronization succeeds; otherwise, returns an error if fetching the watchlist or communicating with the actors fails.
+///
+/// # Examples
+///
+/// ```
+/// // This handler is registered as a PUT endpoint at `/api/v1/config/synchronize`.
+/// // It is typically called via an HTTP client:
+/// let response = client.put("/api/v1/config/synchronize").send().await?;
+/// assert_eq!(response.status(), 200);
+/// ```
+async fn synchronize(
+    portal: Data<Arc<Portal>>,
+    tcbs: Data<Arc<Addr<TcbsActor>>>,
+    vps: Data<Arc<Addr<VpsActor>>>,
+) -> Result<HttpResponse> {
+    let symbols: Vec<String> = portal
+        .watchlist()
+        .await
+        .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?
+        .iter()
+        .filter_map(|record| Some(record.fields.symbol.as_ref()?.clone()))
+        .collect::<Vec<String>>();
+
+    tcbs.send(UpdateStocksCommand {
+        stocks: symbols.clone(),
+    })
+    .await
+    .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?;
+    vps.send(UpdateStocksCommand {
+        stocks: symbols.clone(),
+    })
+    .await
+    .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?;
     Ok(HttpResponse::Ok().body("ok"))
 }
 
@@ -49,6 +93,21 @@ async fn synchronize() -> Result<HttpResponse> {
 /// async fn main() -> std::io::Result<()> {
 ///     my_crate::main().await
 /// }
+/// Initializes and runs the Actix-web server with integrated cron job scheduling and graceful shutdown.
+///
+/// Loads environment variables, configures logging, initializes shared resources, and sets up HTTP routes and cron jobs. Handles asynchronous task coordination and ensures orderly shutdown on receiving system signals.
+///
+/// # Returns
+///
+/// An `Ok(())` result if the server shuts down gracefully, or an error if initialization or binding fails.
+///
+/// # Examples
+///
+/// ```no_run
+/// #[actix_rt::main]
+/// async fn main() -> std::io::Result<()> {
+///     main().await
+/// }
 /// ```
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
@@ -61,14 +120,14 @@ async fn main() -> std::io::Result<()> {
         .parse::<u16>()
         .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid SERVER_PORT"))?;
 
-    let portal = Portal::new(
+    let portal = Arc::new(Portal::new(
         std::env::var("AIRTABLE_API_KEY")
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid AIRTABLE_API_KEY"))?
             .as_str(),
         std::env::var("AIRTABLE_BASE_ID")
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid AIRTABLE_BASE_ID"))?
             .as_str(),
-    );
+    ));
 
     // @NOTE: cronjob configuration
     let symbols: Vec<String> = portal
@@ -93,12 +152,22 @@ async fn main() -> std::io::Result<()> {
         })
         .collect::<Vec<ScheduleCommand>>();
 
-    let variables = Arc::new(Mutex::new(Variables::new(6 * 60)));
+    let tcbs_timeout = std::env::var("TCBS_TIMEOUT")
+        .unwrap_or_else(|_| "360".to_string())
+        .parse::<usize>()
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid TCBS_TIMEOUT"))?;
+    let vps_timeout = std::env::var("VPS_TIMEOUT")
+        .unwrap_or_else(|_| "1000".to_string())
+        .parse::<usize>()
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid VPS_TIMEOUT"))?;
+
+    let tcbs_vars = Arc::new(Mutex::new(Variables::new(tcbs_timeout)));
+    let vps_vars = Arc::new(Mutex::new(Variables::new(vps_timeout)));
 
     // @NOTE: setup cron and its resolvers
     let mut resolver = CronResolver::new();
-    let tcbs = resolve_tcbs_routes(&mut resolver, &symbols);
-    let vps = resolve_vps_routes(&mut resolver, &symbols, variables.clone());
+    let tcbs = resolve_tcbs_routes(&mut resolver, &symbols, tcbs_vars.clone());
+    let vps = resolve_vps_routes(&mut resolver, &symbols, vps_vars.clone());
     let cron = connect_to_cron(Rc::new(resolver));
 
     for command in cronjob {
@@ -157,8 +226,11 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .route("/health", get().to(health))
             .route("/api/v1/config/synchronize", put().to(synchronize))
+            .app_data(Data::new(portal.clone()))
             .app_data(Data::new(tcbs.clone()))
             .app_data(Data::new(vps.clone()))
+            .app_data(Data::new(tcbs_vars.clone()))
+            .app_data(Data::new(vps_vars.clone()))
     })
     .bind((host.as_str(), port))
     .map_err(|e| {

@@ -1,16 +1,22 @@
 use polars::prelude::*; // Use polars_core for DataFrame and Series
+use std::sync::{Arc, Mutex};
 
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3_polars::PyDataFrame;
 
 use crate::actors::tcbs::{connect_to_tcbs, GetOrderCommand};
+use crate::algorithm::Variables;
 
 #[pyfunction]
 pub fn order(symbol: String) -> PyResult<PyDataFrame> {
     let datapoints = actix_rt::Runtime::new().unwrap().block_on(async {
         let mut datapoints = Vec::new();
-        let actor = connect_to_tcbs(&[symbol.clone()], "".to_string());
+        let actor = connect_to_tcbs(
+            &[symbol.clone()],
+            "".to_string(),
+            Arc::new(Mutex::new(Variables::default())),
+        );
 
         for i in 0..10000 {
             let block = actor.send(GetOrderCommand { page: i }).await.unwrap();

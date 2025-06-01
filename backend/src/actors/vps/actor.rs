@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::error;
+use std::error::Error;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -16,7 +16,7 @@ use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use actix::prelude::*;
 use actix::Addr;
 
-use crate::actors::{HealthCommand, UpdateStocksCommand};
+use crate::actors::{ActorError, GetVariableCommand, HealthCommand, UpdateStocksCommand};
 use crate::algorithm::Variables;
 
 #[allow(non_snake_case)]
@@ -101,12 +101,15 @@ pub struct VpsError {
 }
 
 impl fmt::Display for VpsError {
+    /// Formats the error message for display.
+    ///
+    /// This method writes the contained error message to the given formatter.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.message)
     }
 }
 
-impl error::Error for VpsError {}
+impl Error for VpsError {}
 
 pub struct VpsActor {
     variables: Arc<Mutex<Variables>>,
@@ -270,6 +273,24 @@ pub struct UpdateVariablesCommand {
 impl Handler<UpdateVariablesCommand> for VpsActor {
     type Result = ResponseFuture<Result<HashMap<String, usize>, VpsError>>;
 
+    /// Updates shared variables with the latest stock price and order book data.
+    ///
+    /// For each provided `Price`, this function creates and updates variables representing
+    /// the current price, volume, change percent, price and volume levels, and foreign buy/sell volumes.
+    /// Returns a map of variable names to their updated counts or lengths.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing a map from variable names to their updated counts, or a `VpsError` if an error occurs.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // Assume `actor` is a VpsActor and `prices` is a Vec<Price>
+    /// let cmd = UpdateVariablesCommand { prices };
+    /// let result = actor.handle(cmd, &mut ctx).await;
+    /// assert!(result.is_ok());
+    /// ```
     fn handle(&mut self, msg: UpdateVariablesCommand, _: &mut Self::Context) -> Self::Result {
         let variables = self.variables.clone();
 
@@ -312,8 +333,8 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
 
                 // Create variables
                 for var in &vars_to_create {
-                    if let Err(e) = vars.create(var.to_string()) {
-                        eprintln!("Failed to create variable {}: {}", var, e);
+                    if let Err(e) = vars.create(var) {
+                        log::error!("Failed to create variable {}: {}", var, e);
                     }
                 }
 
@@ -323,10 +344,10 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                 } else {
                     price.lastPrice
                 };
-                if let Ok(len) = vars.update(format!("{}_price", price.sym), current_price) {
+                if let Ok(len) = vars.update(&format!("{}_price", price.sym), current_price) {
                     updates.insert(format!("{}_price", price.sym), len);
                 }
-                if let Ok(len) = vars.update(format!("{}_volume", price.sym), price.lot as f64) {
+                if let Ok(len) = vars.update(&format!("{}_volume", price.sym), price.lot as f64) {
                     updates.insert(format!("{}_volume", price.sym), len);
                 }
 
@@ -336,7 +357,7 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                 } else {
                     -1.0 * price.changePc.parse::<f64>().unwrap_or(0.0)
                 };
-                if let Ok(len) = vars.update(format!("{}_change", price.sym), change_percent) {
+                if let Ok(len) = vars.update(&format!("{}_change", price.sym), change_percent) {
                     updates.insert(format!("{}_change", price.sym), len);
                 }
 
@@ -361,28 +382,28 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                 ];
 
                 // Update all price levels
-                for (var, val) in price_updates {
-                    if let Ok(len) = vars.update(var.clone(), val.parse::<f64>().unwrap_or(0.0)) {
-                        updates.insert(var, len);
+                for (var, val) in &price_updates {
+                    if let Ok(len) = vars.update(var, val.parse::<f64>().unwrap_or(0.0)) {
+                        updates.insert(var.clone(), len);
                     }
                 }
 
                 // Update all volume levels
-                for (var, val) in volume_updates {
-                    if let Ok(len) = vars.update(var.clone(), val.parse::<f64>().unwrap_or(0.0)) {
-                        updates.insert(var, len);
+                for (var, val) in &volume_updates {
+                    if let Ok(len) = vars.update(var, val.parse::<f64>().unwrap_or(0.0)) {
+                        updates.insert(var.clone(), len);
                     }
                 }
 
                 // Update foreign flow
                 if let Ok(len) = vars.update(
-                    format!("{}_fb_buy_volume", price.sym),
+                    &format!("{}.fb_buy_volume", price.sym),
                     price.fBVol.parse::<f64>().unwrap_or(0.0),
                 ) {
-                    updates.insert(format!("{}_fb_buy_volume", price.sym), len);
+                    updates.insert(format!("{}.fb_buy_volume", price.sym), len);
                 }
                 if let Ok(len) = vars.update(
-                    format!("{}_fb_sell_volume", price.sym),
+                    &format!("{}.fb_sell_volume", price.sym),
                     price.fSVolume.parse::<f64>().unwrap_or(0.0),
                 ) {
                     updates.insert(format!("{}_fb_sell_volume", price.sym), len);
@@ -394,30 +415,24 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
     }
 }
 
-#[derive(Message)]
-#[rtype(result = "Result<f64, VpsError>")]
-pub struct GetVariableCommand {
-    pub symbol: String,
-    pub variable: String,
-    pub index: usize,
-}
-
 impl Handler<GetVariableCommand> for VpsActor {
-    type Result = ResponseFuture<Result<f64, VpsError>>;
+    type Result = ResponseFuture<Result<f64, ActorError>>;
 
+    /// Retrieves the value of a specific variable for a given stock symbol asynchronously.
+    ///
+    /// Returns the variable value as an `f64` if found, or an `ActorError` if the variable does not exist or the lock cannot be acquired.
     fn handle(&mut self, msg: GetVariableCommand, _: &mut Self::Context) -> Self::Result {
         let variables = self.variables.clone();
 
         Box::pin(async move {
-            let vars = variables.lock().map_err(|e| VpsError {
+            let vars = variables.lock().map_err(|e| ActorError {
                 message: format!("Failed to acquire lock: {}", e),
             })?;
             let var_name = format!("{}.{}", msg.symbol, msg.variable);
 
-            vars.get_by_index(&var_name, msg.index)
-                .map_err(|e| VpsError {
-                    message: format!("Failed to get variable {}[{}]: {}", var_name, msg.index, e),
-                })
+            vars.get_by_expr(&var_name).map_err(|e| ActorError {
+                message: format!("Failed to get variable {}: {}", var_name, e),
+            })
         })
     }
 }

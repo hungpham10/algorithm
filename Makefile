@@ -20,6 +20,7 @@ lint:
 	export PATH="$$HOME/.cargo/bin:$$PATH"  && 					\
 	cd $(BACKEND_DIR) 			&& 					\
 	rustup component add clippy rustfmt 	&& 					\
+	cargo clippy --features python --lib	&& 					\
 	cargo clippy 				&& 					\
 	cargo fmt --all -- --check
 
