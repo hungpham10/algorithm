@@ -47,38 +47,7 @@ pub fn filter(df: PyDataFrame, rule: Py<PyDict>, memory_size: usize) -> PyResult
         .block_on(async move { filter_in_async(&df, &rule, memory_size).await })
 }
 
-/// Asynchronously evaluates a rule on each row of a DataFrame and returns the indices of rows that meet the rule's condition.
-///
-/// Only columns of type `Float64` are considered for rule evaluation. For each row, variables are updated with the corresponding values, and the rule is evaluated. If the evaluation result equals the fuzzy trigger threshold, the row index is included in the output.
-///
-/// # Arguments
-///
-/// * `df` - Reference to the Polars DataFrame to be filtered.
-/// * `rule` - Reference to the rule to evaluate on each row.
-/// * `memory_size` - The memory size parameter for variable management.
-///
-/// # Returns
-///
-/// Returns a Python result containing a vector of row indices (`Vec<u32>`) where the rule condition is satisfied.
-///
-/// # Errors
-///
-/// Returns a Python runtime error if variable creation, update, retrieval, or rule evaluation fails.
-///
-/// # Examples
-///
-/// ```
-/// # use polars::prelude::*;
-/// # use your_crate::{filter_in_async, Rule};
-/// # use pyo3::Python;
-/// # async fn example() -> pyo3::PyResult<()> {
-/// let df = DataFrame::new(vec![Series::new("x", &[1.0, 2.0, 3.0])])?;
-/// let rule = Rule::from_str("x > 1.5")?;
-/// let indices = filter_in_async(&df, &rule, 10).await?;
-/// assert_eq!(indices, vec![1, 2]);
-/// # Ok(())
-/// # }
-/// ```
+#[inline]
 async fn filter_in_async(df: &DataFrame, rule: &Rule, memory_size: usize) -> PyResult<Vec<u32>> {
     let mut selected_indices = Vec::new();
     let mut vars = Variables::new(memory_size, 0);
