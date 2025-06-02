@@ -108,6 +108,20 @@ async fn synchronize(
 /// async fn main() -> std::io::Result<()> {
 ///     main().await
 /// }
+/// Initializes and runs the Actix-web server with integrated cron job scheduling and graceful shutdown.
+///
+/// Loads configuration from environment variables, sets up the portal and actor system, registers HTTP endpoints, and manages cron jobs based on dynamic schedules. Handles Unix signals for coordinated shutdown of both the cron system and the HTTP server.
+///
+/// # Returns
+/// Returns `Ok(())` if the server and cron system shut down gracefully, or an error if initialization or runtime fails.
+///
+/// # Examples
+///
+/// ```no_run
+/// #[actix_rt::main]
+/// async fn main() -> std::io::Result<()> {
+///     main().await
+/// }
 /// ```
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();

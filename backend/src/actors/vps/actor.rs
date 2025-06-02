@@ -290,6 +290,21 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
     /// let cmd = UpdateVariablesCommand { prices };
     /// let result = actor.handle(cmd, &mut ctx).await;
     /// assert!(result.is_ok());
+    /// Updates shared variables with the latest stock price and order book data.
+    ///
+    /// For each provided `Price`, creates and updates variables representing current price, volume, change percent, price levels, volume levels, and foreign buy/sell volumes. Returns a map of variable names to their updated counts or lengths.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing a map from variable names to their update counts on success, or a `VpsError` on failure.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // Assume `actor` is an instance of VpsActor and `prices` is a Vec<Price>.
+    /// let cmd = UpdateVariablesCommand { prices };
+    /// let result = actor.handle(cmd, &mut ctx).await;
+    /// assert!(result.is_ok());
     /// ```
     fn handle(&mut self, msg: UpdateVariablesCommand, _: &mut Self::Context) -> Self::Result {
         let variables = self.variables.clone();
@@ -452,6 +467,17 @@ impl Handler<GetVariableCommand> for VpsActor {
     }
 }
 
+/// Creates and starts a new `VpsActor` to manage stock data for the specified symbols.
+///
+/// Initializes the actor with a thread-safe, empty variable store and returns its address for asynchronous interaction.
+///
+/// # Examples
+///
+/// ```
+/// let stocks = vec!["VIC".to_string(), "VNM".to_string()];
+/// let vps_addr = connect_to_vps(&stocks);
+/// // Use vps_addr to send commands to the actor
+/// ```
 pub fn connect_to_vps(stocks: &[String]) -> Addr<VpsActor> {
     VpsActor::new(stocks, Arc::new(Mutex::new(Variables::new(0, 0)))).start()
 }
