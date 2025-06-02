@@ -2,7 +2,8 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use parquet::arrow::ArrowWriter;
-use parquet::file::properties::WriterProperties;
+use parquet::basic::{Compression, ZstdLevel};
+use parquet::file::properties::{WriterProperties, WriterVersion};
 
 use arrow::array::{ArrayRef, Float64Array};
 use arrow::datatypes::{DataType, Field, Schema};
@@ -363,7 +364,10 @@ impl Variables {
         .map_err(|e| RuleError {
             message: format!("Failed to create batch: {}", e),
         })?;
-        let props = WriterProperties::builder().build();
+        let props = WriterProperties::builder()
+            .set_compression(Compression::ZSTD(ZstdLevel::default()))
+            .set_writer_version(WriterVersion::PARQUET_2_0)
+            .build();
 
         let mut buffer = Vec::new();
         {

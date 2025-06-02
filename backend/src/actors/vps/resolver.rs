@@ -139,6 +139,8 @@ fn resolve_watching_vps_board(actor: Arc<Addr<VpsActor>>, resolver: &mut CronRes
                     message: e.to_string(),
                 });
 
+                eprintln!("Result: {:?}", result);
+
                 // Handle result and callback
                 match result {
                     Ok(result) => {
