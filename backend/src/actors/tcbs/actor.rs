@@ -714,6 +714,20 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
     /// let cmd = UpdateVariablesCommand { symbol: "ABC".to_string(), orders: vec![order1, order2] };
     /// let updated_count = actor.handle(cmd, &mut ctx).await.unwrap();
     /// assert!(updated_count <= 2);
+    /// Updates or creates variables for a stock symbol based on a list of orders.
+    ///
+    /// For each order, updates the variables representing price, volume, type, buyer active ID, and seller active ID for the given stock symbol. If the variables do not exist, they are created. Returns the number of orders successfully processed.
+    ///
+    /// # Returns
+    /// The number of orders for which all variable updates succeeded.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // Assume `actor` is a running TcbsActor and `orders` is a Vec<Order>.
+    /// let cmd = UpdateVariablesCommand { symbol: "ABC".to_string(), orders };
+    /// let updated_count = actor.send(cmd).await.unwrap();
+    /// assert!(updated_count > 0);
     /// ```
     fn handle(&mut self, msg: UpdateVariablesCommand, _: &mut Self::Context) -> Self::Result {
         let variables = self.variables.clone();

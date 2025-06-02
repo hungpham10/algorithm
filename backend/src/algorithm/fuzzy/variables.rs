@@ -31,6 +31,21 @@ pub struct Variables {
 }
 
 impl Variables {
+    /// Creates a new `Variables` instance with specified time series and buffer sizes.
+    ///
+    /// Initializes empty collections for variables and buffers, and sets up configuration for optional S3 integration.
+    ///
+    /// # Parameters
+    /// - `timeseries_size`: Maximum number of recent values to retain for each variable.
+    /// - `flush_after_incremental_size`: Number of updates to buffer before triggering a flush (e.g., to S3).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let vars = Variables::new(100, 50);
+    /// assert_eq!(vars.variables_size, 100);
+    /// assert_eq!(vars.buffers_size, 50);
+    /// ```
     pub fn new(timeseries_size: usize, flush_after_incremental_size: usize) -> Self {
         Self {
             variables_size: timeseries_size,
@@ -44,6 +59,9 @@ impl Variables {
         }
     }
 
+    /// Creates a new time series variable with the specified name.
+    ///
+    /// Returns an error if the variable already exists. If S3 buffering is enabled, creation is only allowed before any updates have occurred and when the number of variables matches the number of buffers. Initializes both the time series and, if applicable, the buffer for the new variable.
     pub fn create(&mut self, name: &String) -> Result<(), RuleError> {
         if self.variables.contains_key(name) {
             return Err(RuleError {
@@ -80,6 +98,24 @@ impl Variables {
         Ok(())
     }
 
+    /// Updates the specified variable with a new value and manages buffer flushing to S3 if enabled.
+    ///
+    /// Inserts the new value into the time series for the given variable, maintaining its fixed size. If S3 buffering is enabled, updates the corresponding buffer and triggers an asynchronous flush to S3 in Parquet format when all buffers are full and the flush threshold is reached. Returns the current length of the variable's time series after the update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the variable does not exist, if buffer consistency checks fail, or if flushing to S3 encounters an error.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use your_crate::Variables;
+    /// # use tokio_test::block_on;
+    /// let mut vars = Variables::new(3, 2);
+    /// vars.create(&"temperature".to_string()).unwrap();
+    /// let len = block_on(vars.update(&"temperature".to_string(), 25.0)).unwrap();
+    /// assert_eq!(len, 1);
+    /// ```
     pub async fn update(&mut self, name: &String, value: f64) -> Result<usize, RuleError> {
         let ret = self.update_variable(name, value).map_err(|e| e)?;
 
@@ -112,6 +148,9 @@ impl Variables {
         Ok(ret)
     }
 
+    /// Retrieves a value from a variable's time series using an expression of the form `"variable[index]"`.
+    ///
+    /// Returns an error if the expression format is invalid, the variable does not exist, or the index is out of bounds.
     pub fn get_by_expr(&self, expr: &str) -> Result<f64, RuleError> {
         // Parse expression like "variable[index]"
         let parts: Vec<&str> = expr.split('[').collect();
@@ -136,6 +175,9 @@ impl Variables {
         })
     }
 
+    /// Retrieves the value at the specified index for a given variable.
+    ///
+    /// Returns an error if the variable does not exist or the index is out of bounds.
     pub fn get_by_index(&self, name: &str, index: usize) -> Result<f64, RuleError> {
         let buffer = self.variables.get(name).ok_or_else(|| RuleError {
             message: format!("Variable {} not found", name),
@@ -146,10 +188,25 @@ impl Variables {
         })
     }
 
+    /// Returns a vector of references to all variable names currently managed by the struct.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut vars = Variables::new(10, 5);
+    /// vars.create(&"temperature".to_string()).unwrap();
+    /// vars.create(&"humidity".to_string()).unwrap();
+    /// let names = vars.list();
+    /// assert!(names.contains(&&"temperature".to_string()));
+    /// assert!(names.contains(&&"humidity".to_string()));
+    /// ```
     pub fn list(&self) -> Vec<&String> {
         self.variables.keys().collect()
     }
 
+    /// Removes all stored values for the specified variable.
+    ///
+    /// Returns an error if the variable does not exist.
     pub fn clear(&mut self, name: &str) -> Result<(), RuleError> {
         let buffer = self.variables.get_mut(name).ok_or_else(|| RuleError {
             message: format!("Variable {} not found", name),
@@ -158,6 +215,20 @@ impl Variables {
         Ok(())
     }
 
+    /// Returns the number of stored values for the specified variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the variable does not exist.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut vars = Variables::new(5, 10);
+    /// vars.create(&"temperature".to_string()).unwrap();
+    /// vars.update(&"temperature".to_string(), 23.5).await.unwrap();
+    /// assert_eq!(vars.len("temperature").unwrap(), 1);
+    /// ```
     pub fn len(&self, name: &str) -> Result<usize, RuleError> {
         let buffer = self.variables.get(name).ok_or_else(|| RuleError {
             message: format!("Variable {} not found", name),
@@ -165,6 +236,26 @@ impl Variables {
         Ok(buffer.len())
     }
 
+    /// Configures the struct to use S3-compatible storage for buffered data uploads.
+    ///
+    /// Initializes the S3 client with the specified bucket, object name prefix, and optional region and endpoint.
+    /// Subsequent flush operations will upload Parquet files to the configured S3 location.
+    ///
+    /// # Parameters
+    /// - `name`: Prefix for S3 object names.
+    /// - `bucket`: Name of the S3 bucket.
+    /// - `region`: Optional AWS region; uses a default if not provided.
+    /// - `endpoint`: Optional custom endpoint; uses a default if not provided.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use your_crate::Variables;
+    /// # async fn example() {
+    /// let mut vars = Variables::new(100, 10);
+    /// vars.use_s3("mydata", "mybucket", Some("us-west-2"), None).await;
+    /// # }
+    /// ```
     pub async fn use_s3(
         &mut self,
         name: &str,
@@ -188,6 +279,9 @@ impl Variables {
         self.s3_bucket = Some(bucket.to_string());
     }
 
+    /// Updates the buffer for the specified variable at the current counter index with a new value.
+    ///
+    /// Returns an error if the buffer for the given variable does not exist. Increments the global update counter after the update.
     fn update_buffer(&mut self, name: &str, value: f64) -> Result<(), RuleError> {
         let buffer = self.buffers.get_mut(name).ok_or_else(|| RuleError {
             message: format!("Variable {} not found", name),
@@ -198,6 +292,9 @@ impl Variables {
         Ok(())
     }
 
+    /// Inserts a new value at the front of the specified variable's time series, removing the oldest value if the series is full.
+    ///
+    /// Returns the updated length of the variable's time series. Returns an error if the variable does not exist.
     fn update_variable(&mut self, name: &str, value: f64) -> Result<usize, RuleError> {
         let variable = self.variables.get_mut(name).ok_or_else(|| RuleError {
             message: format!("Variable {} not found", name),
@@ -213,6 +310,15 @@ impl Variables {
         Ok(variable.len())
     }
 
+    /// Serializes buffered variable data to Parquet format and uploads it to the configured S3 bucket.
+    ///
+    /// Converts all variable buffers into an Apache Arrow `RecordBatch`, writes the batch to an in-memory Parquet file,
+    /// and uploads the file to S3 using a timestamped key. Resets the update counter after a successful upload.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the S3 client, bucket, or variable name is not configured, or if any step in batch creation,
+    /// Parquet writing, or S3 upload fails.
     async fn flush(&mut self) -> Result<(), RuleError> {
         let client = self.s3_client.as_ref().ok_or_else(|| RuleError {
             message: "S3 client not initialized".to_string(),
