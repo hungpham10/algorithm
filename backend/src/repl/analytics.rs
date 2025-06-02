@@ -6,18 +6,51 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3_polars::PyDataFrame;
 
-use crate::algorithm::{Delegate, Format, Variables};
+use crate::algorithm::{Delegate, Format, Rule, Variables};
 
 const FUZZY_TRIGGER_THRESHOLD: f64 = 1.0;
 
 #[pyfunction]
+/// Filters rows in a Polars DataFrame based on a rule and returns the indices of matching rows.
+///
+/// Converts a Python Polars DataFrame and a rule (provided as a Python dictionary) into Rust types,
+/// evaluates the rule for each row, and returns the indices of rows where the rule condition is met.
+///
+/// # Parameters
+/// - `df`: The input DataFrame to filter, provided as a Python Polars DataFrame.
+/// - `rule`: The rule to evaluate, provided as a Python dictionary in Python format.
+/// - `memory_size`: The memory size to allocate for variable storage during rule evaluation.
+///
+/// # Returns
+/// A vector of row indices (`Vec<u32>`) where the rule condition is satisfied.
+///
+/// # Errors
+/// Returns a Python runtime error if rule construction or evaluation fails.
+///
+/// # Examples
+///
+/// ```
+/// use pyo3::types::PyDict;
+/// let df = ...; // PyDataFrame from Python
+/// let rule = ...; // Py<PyDict> representing the rule
+/// let indices = filter(df, rule, 1024)?;
+/// assert!(indices.len() <= df.height());
+/// ```
 pub fn filter(df: PyDataFrame, rule: Py<PyDict>, memory_size: usize) -> PyResult<Vec<u32>> {
-    let mut selected_indices = Vec::new();
-    let mut vars = Variables::new(memory_size);
+    let df: DataFrame = df.into();
     let rule = Delegate::new()
         .build(&rule, Format::Python)
         .map_err(|e| PyRuntimeError::new_err(format!("Invalid rule: {}", e)))?;
-    let df: DataFrame = df.into();
+
+    actix_rt::Runtime::new()
+        .unwrap()
+        .block_on(async move { filter_in_async(&df, &rule, memory_size).await })
+}
+
+#[inline]
+async fn filter_in_async(df: &DataFrame, rule: &Rule, memory_size: usize) -> PyResult<Vec<u32>> {
+    let mut selected_indices = Vec::new();
+    let mut vars = Variables::new(memory_size, 0);
     let data: HashMap<String, Vec<f64>> = df
         .get_column_names()
         .into_iter()
@@ -47,7 +80,7 @@ pub fn filter(df: PyDataFrame, rule: Py<PyDict>, memory_size: usize) -> PyResult
         let mut inputs = HashMap::new();
 
         for (col, vals) in data.iter() {
-            vars.update(col, vals[irow]).map_err(|e| {
+            vars.update(col, vals[irow]).await.map_err(|e| {
                 PyRuntimeError::new_err(format!("Failed to update variable {}: {}", col, e))
             })?;
         }

@@ -108,6 +108,20 @@ async fn synchronize(
 /// async fn main() -> std::io::Result<()> {
 ///     main().await
 /// }
+/// Initializes and runs the Actix-web server with integrated cron job scheduling and graceful shutdown.
+///
+/// Loads configuration from environment variables, sets up the portal and actor system, registers HTTP endpoints, and manages cron jobs based on dynamic schedules. Handles Unix signals for coordinated shutdown of both the cron system and the HTTP server.
+///
+/// # Returns
+/// Returns `Ok(())` if the server and cron system shut down gracefully, or an error if initialization or runtime fails.
+///
+/// # Examples
+///
+/// ```no_run
+/// #[actix_rt::main]
+/// async fn main() -> std::io::Result<()> {
+///     main().await
+/// }
 /// ```
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
@@ -152,17 +166,53 @@ async fn main() -> std::io::Result<()> {
         })
         .collect::<Vec<ScheduleCommand>>();
 
-    let tcbs_timeout = std::env::var("TCBS_TIMEOUT")
+    let tcbs_timeseries = std::env::var("TCBS_TIMESERIES")
         .unwrap_or_else(|_| "360".to_string())
         .parse::<usize>()
-        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid TCBS_TIMEOUT"))?;
-    let vps_timeout = std::env::var("VPS_TIMEOUT")
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid TCBS_TIMESERIES"))?;
+    let tcbs_flush = std::env::var("TCBS_FLUSH")
+        .unwrap_or_else(|_| "360".to_string())
+        .parse::<usize>()
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid TCBS_FLUSH"))?;
+    let vps_timeseries = std::env::var("VPS_TIMESERIES")
         .unwrap_or_else(|_| "1000".to_string())
         .parse::<usize>()
-        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid VPS_TIMEOUT"))?;
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid VPS_TIMESERIES"))?;
+    let vps_flush = std::env::var("VPS_FLUSH")
+        .unwrap_or_else(|_| "1000".to_string())
+        .parse::<usize>()
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid VPS_FLUSH"))?;
+    let s3_vps_name = std::env::var("S3_VPS_NAME").unwrap_or_else(|_| "vps".to_string());
+    let s3_tcbs_name = std::env::var("S3_TCBS_NAME").unwrap_or_else(|_| "tcbs".to_string());
+    let s3_bucket = std::env::var("S3_BUCKET")
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid S3_BUCKET"))?;
+    let s3_region = std::env::var("S3_REGION")
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid S3_REGION"))?;
+    let s3_endpoint = std::env::var("S3_ENDPOINT")
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid S3_ENDPOINT"))?;
 
-    let tcbs_vars = Arc::new(Mutex::new(Variables::new(tcbs_timeout)));
-    let vps_vars = Arc::new(Mutex::new(Variables::new(vps_timeout)));
+    let tcbs_vars = Arc::new(Mutex::new(
+        Variables::new_with_s3(
+            tcbs_timeseries,
+            tcbs_flush,
+            s3_bucket.as_str(),
+            s3_vps_name.as_str(),
+            Some(s3_region.as_str()),
+            Some(s3_endpoint.as_str()),
+        )
+        .await,
+    ));
+    let vps_vars = Arc::new(Mutex::new(
+        Variables::new_with_s3(
+            vps_timeseries,
+            vps_flush,
+            s3_bucket.as_str(),
+            s3_tcbs_name.as_str(),
+            Some(s3_region.as_str()),
+            Some(s3_endpoint.as_str()),
+        )
+        .await,
+    ));
 
     // @NOTE: setup cron and its resolvers
     let mut resolver = CronResolver::new();
