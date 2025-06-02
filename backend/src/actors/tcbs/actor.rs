@@ -737,7 +737,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
             }
 
             for order in msg.orders {
-                if let Err(e) = vars.update(&vars_to_create[0].to_string(), order.p) {
+                if let Err(e) = vars.update(&vars_to_create[0].to_string(), order.p).await {
                     error!(
                         "Failed to update variable {}: {}",
                         format!("{}.price", msg.symbol),
@@ -746,7 +746,10 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     continue;
                 }
 
-                if let Err(e) = vars.update(&vars_to_create[1].to_string(), order.v as f64) {
+                if let Err(e) = vars
+                    .update(&vars_to_create[1].to_string(), order.v as f64)
+                    .await
+                {
                     error!(
                         "Failed to update variable {}: {}",
                         format!("{}.volume", msg.symbol),
@@ -755,14 +758,17 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     continue;
                 }
 
-                if let Err(e) = vars.update(
-                    &vars_to_create[2].to_string(),
-                    match order.t.as_str() {
-                        "BU" => 1.0,
-                        "SD" => 0.0,
-                        _ => continue,
-                    },
-                ) {
+                if let Err(e) = vars
+                    .update(
+                        &vars_to_create[2].to_string(),
+                        match order.t.as_str() {
+                            "BU" => 1.0,
+                            "SD" => 0.0,
+                            _ => continue,
+                        },
+                    )
+                    .await
+                {
                     error!(
                         "Failed to update variable {}: {}",
                         format!("{}.type", msg.symbol),
@@ -771,7 +777,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     continue;
                 }
 
-                if let Err(e) = vars.update(&vars_to_create[3].to_string(), order.ba) {
+                if let Err(e) = vars.update(&vars_to_create[3].to_string(), order.ba).await {
                     error!(
                         "Failed to update variable {}: {}",
                         format!("{}.ba", msg.symbol),
@@ -780,7 +786,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     continue;
                 }
 
-                if let Err(e) = vars.update(&vars_to_create[4].to_string(), order.sa) {
+                if let Err(e) = vars.update(&vars_to_create[4].to_string(), order.sa).await {
                     error!(
                         "Failed to update variable {}: {}",
                         format!("{}.sa", msg.symbol),
