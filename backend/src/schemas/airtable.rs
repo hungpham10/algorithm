@@ -33,6 +33,25 @@ impl Portal {
         Self { airtable }
     }
 
+    /// Retrieves all cronjob records from the Airtable "WatchList" table.
+    ///
+    /// Returns a vector of `Record<Cronjob>` containing the fields "Symbol".
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching records from Airtable fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # async fn example(portal: &Portal) -> anyhow::Result<()> {
+    /// let watchlist = portal.WatchList().await?;
+    /// for record in watchlist {
+    ///     println!("{:?}", record.fields);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn watchlist(&self) -> Result<Vec<Record<WatchList>>> {
         self.airtable
             .list_records("WatchList", "Watch", vec!["Symbol"])

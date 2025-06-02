@@ -344,10 +344,16 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                 } else {
                     price.lastPrice
                 };
-                if let Ok(len) = vars.update(&format!("{}_price", price.sym), current_price) {
+                if let Ok(len) = vars
+                    .update(&format!("{}_price", price.sym), current_price)
+                    .await
+                {
                     updates.insert(format!("{}_price", price.sym), len);
                 }
-                if let Ok(len) = vars.update(&format!("{}_volume", price.sym), price.lot as f64) {
+                if let Ok(len) = vars
+                    .update(&format!("{}_volume", price.sym), price.lot as f64)
+                    .await
+                {
                     updates.insert(format!("{}_volume", price.sym), len);
                 }
 
@@ -357,7 +363,10 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                 } else {
                     -1.0 * price.changePc.parse::<f64>().unwrap_or(0.0)
                 };
-                if let Ok(len) = vars.update(&format!("{}_change", price.sym), change_percent) {
+                if let Ok(len) = vars
+                    .update(&format!("{}_change", price.sym), change_percent)
+                    .await
+                {
                     updates.insert(format!("{}_change", price.sym), len);
                 }
 
@@ -383,29 +392,35 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
 
                 // Update all price levels
                 for (var, val) in &price_updates {
-                    if let Ok(len) = vars.update(var, val.parse::<f64>().unwrap_or(0.0)) {
+                    if let Ok(len) = vars.update(var, val.parse::<f64>().unwrap_or(0.0)).await {
                         updates.insert(var.clone(), len);
                     }
                 }
 
                 // Update all volume levels
                 for (var, val) in &volume_updates {
-                    if let Ok(len) = vars.update(var, val.parse::<f64>().unwrap_or(0.0)) {
+                    if let Ok(len) = vars.update(var, val.parse::<f64>().unwrap_or(0.0)).await {
                         updates.insert(var.clone(), len);
                     }
                 }
 
                 // Update foreign flow
-                if let Ok(len) = vars.update(
-                    &format!("{}.fb_buy_volume", price.sym),
-                    price.fBVol.parse::<f64>().unwrap_or(0.0),
-                ) {
+                if let Ok(len) = vars
+                    .update(
+                        &format!("{}.fb_buy_volume", price.sym),
+                        price.fBVol.parse::<f64>().unwrap_or(0.0),
+                    )
+                    .await
+                {
                     updates.insert(format!("{}.fb_buy_volume", price.sym), len);
                 }
-                if let Ok(len) = vars.update(
-                    &format!("{}.fb_sell_volume", price.sym),
-                    price.fSVolume.parse::<f64>().unwrap_or(0.0),
-                ) {
+                if let Ok(len) = vars
+                    .update(
+                        &format!("{}.fb_sell_volume", price.sym),
+                        price.fSVolume.parse::<f64>().unwrap_or(0.0),
+                    )
+                    .await
+                {
                     updates.insert(format!("{}_fb_sell_volume", price.sym), len);
                 }
             }
@@ -438,5 +453,5 @@ impl Handler<GetVariableCommand> for VpsActor {
 }
 
 pub fn connect_to_vps(stocks: &[String]) -> Addr<VpsActor> {
-    VpsActor::new(stocks, Arc::new(Mutex::new(Variables::new(0)))).start()
+    VpsActor::new(stocks, Arc::new(Mutex::new(Variables::new(0, 0)))).start()
 }

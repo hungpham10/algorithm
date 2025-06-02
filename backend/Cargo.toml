@@ -22,6 +22,7 @@ serde = "1.0.123"
 serde_json = "1.0.44"
 polars = { version = "0.36.2", features = ["parquet", "lazy"], optional = true }
 parquet = "53"
+arrow = "53"
 anyhow = "1.0"
 
 # Python bindings
@@ -44,6 +45,8 @@ reqwest-retry = "0.6.1"
 reqwest-middleware = { version = "0.3.3", features = ["json"] }
 actix-rt = "2.10.0"
 actix = "0.13.5"
+aws-sdk-s3 = "1.90.0"
+aws-config = "1.6.3"
 awc = "3.5.1"
 libc = "0.2.171"
 tokio = { version = "1.26.0", features = ["full"] }

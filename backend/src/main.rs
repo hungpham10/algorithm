@@ -152,17 +152,25 @@ async fn main() -> std::io::Result<()> {
         })
         .collect::<Vec<ScheduleCommand>>();
 
-    let tcbs_timeout = std::env::var("TCBS_TIMEOUT")
+    let tcbs_timeseries = std::env::var("TCBS_TIMESERIES")
         .unwrap_or_else(|_| "360".to_string())
         .parse::<usize>()
-        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid TCBS_TIMEOUT"))?;
-    let vps_timeout = std::env::var("VPS_TIMEOUT")
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid TCBS_TIMESERIES"))?;
+    let tcbs_flush = std::env::var("TCBS_FLUSH")
+        .unwrap_or_else(|_| "360".to_string())
+        .parse::<usize>()
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid TCBS_TIMESERIES"))?;
+    let vps_timeseries = std::env::var("VPS_TIMESERIES")
         .unwrap_or_else(|_| "1000".to_string())
         .parse::<usize>()
-        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid VPS_TIMEOUT"))?;
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid VPS_TIMESERIES"))?;
+    let vps_flush = std::env::var("VPS_FLUSH")
+        .unwrap_or_else(|_| "1000".to_string())
+        .parse::<usize>()
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid VPS_TIMESERIES"))?;
 
-    let tcbs_vars = Arc::new(Mutex::new(Variables::new(tcbs_timeout)));
-    let vps_vars = Arc::new(Mutex::new(Variables::new(vps_timeout)));
+    let tcbs_vars = Arc::new(Mutex::new(Variables::new(tcbs_timeseries, tcbs_flush)));
+    let vps_vars = Arc::new(Mutex::new(Variables::new(vps_timeseries, vps_flush)));
 
     // @NOTE: setup cron and its resolvers
     let mut resolver = CronResolver::new();
