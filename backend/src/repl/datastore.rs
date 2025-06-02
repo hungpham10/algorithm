@@ -12,6 +12,19 @@ pub struct Datastore {
 #[pymethods]
 impl Datastore {
     #[new]
+    /// Creates a new `Datastore` with separate variable stores for VPS and TCBS memory.
+    ///
+    /// Initializes the VPS and TCBS variable stores with the specified memory sizes and an initial value of 0.
+    ///
+    /// # Parameters
+    /// - `vps_memory_size`: The memory size to allocate for the VPS variable store.
+    /// - `tcbs_memory_size`: The memory size to allocate for the TCBS variable store.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let datastore = Datastore::new(128, 64);
+    /// ```
     fn new(vps_memory_size: usize, tcbs_memory_size: usize) -> Self {
         Datastore {
             vps_vars: Arc::new(Mutex::new(Variables::new(vps_memory_size, 0))),

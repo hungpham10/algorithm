@@ -28,6 +28,13 @@ pub struct Portal {
 }
 
 impl Portal {
+    /// Creates a new `Portal` instance configured to access the specified Airtable base.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let portal = Portal::new("your_api_key", "your_base_id");
+    /// ```
     pub fn new(api_key: &str, base_id: &str) -> Self {
         let airtable = Airtable::new(api_key, base_id, "");
         Self { airtable }
@@ -48,6 +55,24 @@ impl Portal {
     /// let watchlist = portal.WatchList().await?;
     /// for record in watchlist {
     ///     println!("{:?}", record.fields);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// Retrieves all records from the "WatchList" table in Airtable, returning only the "Symbol" field for each entry.
+    ///
+    /// Returns a vector of `Record<WatchList>` on success, or an error if the fetch operation fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use your_crate::{Portal, WatchList};
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let portal = Portal::new("api_key", "base_id");
+    /// let watchlist = portal.watchlist().await?;
+    /// for record in watchlist {
+    ///     if let Some(symbol) = &record.fields.symbol {
+    ///         println!("Symbol: {}", symbol);
+    ///     }
     /// }
     /// # Ok(())
     /// # }

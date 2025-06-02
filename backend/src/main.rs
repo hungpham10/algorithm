@@ -108,6 +108,21 @@ async fn synchronize(
 /// async fn main() -> std::io::Result<()> {
 ///     main().await
 /// }
+/// Initializes and runs the Actix-web server and cron job system, handling configuration, startup, and graceful shutdown.
+///
+/// Loads environment variables for server and cron job configuration, sets up shared resources, registers HTTP routes, and manages the lifecycle of both the HTTP server and the cron scheduler. Handles shutdown signals to ensure a graceful termination of all services.
+///
+/// # Errors
+///
+/// Returns an error if environment variables are missing or invalid, if the server fails to bind to the specified address, or if there are issues initializing required resources.
+///
+/// # Examples
+///
+/// ```no_run
+/// #[actix_rt::main]
+/// async fn main() -> std::io::Result<()> {
+///     main().await
+/// }
 /// ```
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
