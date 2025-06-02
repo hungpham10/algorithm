@@ -59,6 +59,21 @@ impl Variables {
         }
     }
 
+    pub async fn new_with_s3(
+        timeseries_size: usize,
+        flush_after_incremental_size: usize,
+        s3_bucket: &str,
+        s3_name: &str,
+        s3_region: Option<&str>,
+        s3_endpoint: Option<&str>,
+    ) -> Self {
+        let mut vars = Self::new(timeseries_size, flush_after_incremental_size);
+
+        vars.use_s3(s3_bucket, s3_name, s3_region, s3_endpoint)
+            .await;
+        vars
+    }
+
     /// Creates a new time series variable with the specified name.
     ///
     /// Returns an error if the variable already exists. If S3 buffering is enabled, creation is only allowed before any updates have occurred and when the number of variables matches the number of buffers. Initializes both the time series and, if applicable, the buffer for the new variable.

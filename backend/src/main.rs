@@ -182,9 +182,37 @@ async fn main() -> std::io::Result<()> {
         .unwrap_or_else(|_| "1000".to_string())
         .parse::<usize>()
         .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid VPS_FLUSH"))?;
+    let s3_bucket = std::env::var("S3_BUCKET")
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid S3_BUCKET"))?;
+    let s3_name = std::env::var("S3_NAME")
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid S3_NAME"))?;
+    let s3_region = std::env::var("S3_REGION")
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid S3_REGION"))?;
+    let s3_endpoint = std::env::var("S3_ENDPOINT")
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid S3_ENDPOINT"))?;
 
-    let tcbs_vars = Arc::new(Mutex::new(Variables::new(tcbs_timeseries, tcbs_flush)));
-    let vps_vars = Arc::new(Mutex::new(Variables::new(vps_timeseries, vps_flush)));
+    let tcbs_vars = Arc::new(Mutex::new(
+        Variables::new_with_s3(
+            tcbs_timeseries,
+            tcbs_flush,
+            s3_bucket.as_str(),
+            s3_name.as_str(),
+            Some(s3_region.as_str()),
+            Some(s3_endpoint.as_str()),
+        )
+        .await,
+    ));
+    let vps_vars = Arc::new(Mutex::new(
+        Variables::new_with_s3(
+            vps_timeseries,
+            vps_flush,
+            s3_bucket.as_str(),
+            s3_name.as_str(),
+            Some(s3_region.as_str()),
+            Some(s3_endpoint.as_str()),
+        )
+        .await,
+    ));
 
     // @NOTE: setup cron and its resolvers
     let mut resolver = CronResolver::new();
