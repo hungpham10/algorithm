@@ -104,8 +104,7 @@ impl Variables {
                 });
             }
 
-            self.buffers
-                .insert(name.clone(), Vec::with_capacity(self.buffers_size));
+            self.buffers.insert(name.clone(), Vec::new());
         }
 
         self.variables
@@ -302,7 +301,7 @@ impl Variables {
             message: format!("Variable {} not found", name),
         })?;
 
-        buffer[self.counter] = value;
+        buffer.push(value);
         self.counter += 1;
         Ok(())
     }
@@ -392,6 +391,13 @@ impl Variables {
             .map_err(|e| RuleError {
                 message: format!("Failed to upload to S3: {}", e),
             })?;
+
+        self.buffers
+            .get_mut(name)
+            .ok_or_else(|| RuleError {
+                message: format!("Variable {} not found", name),
+            })?
+            .clear();
         self.counter = 0;
         Ok(())
     }
