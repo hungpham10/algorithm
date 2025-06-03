@@ -93,7 +93,7 @@ impl Variables {
                 });
             }
 
-            self.insert_new_buffer(name);
+            self.clean_all_buffer_and_insert_new_buffer(name);
         }
 
         self.variables
@@ -101,7 +101,8 @@ impl Variables {
         Ok(())
     }
 
-    fn insert_new_buffer(&mut self, name: &String) {
+    fn clean_all_buffer_and_insert_new_buffer(&mut self, name: &String) {
+        // @NOTE: This clears all existing buffer data
         for (_, buffer) in self.buffers.iter_mut() {
             buffer.clear();
         }
