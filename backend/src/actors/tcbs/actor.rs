@@ -819,7 +819,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                         format!("{}.price", msg.symbol),
                         e
                     );
-                    continue;
+                    panic!("Failed to update variable");
                 }
 
                 if let Err(e) = vars
@@ -831,7 +831,6 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                         format!("{}.volume", msg.symbol),
                         e
                     );
-                    continue;
                 }
 
                 if let Err(e) = vars
@@ -841,7 +840,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                         match order.t.as_str() {
                             "BU" => 1.0,
                             "SD" => 0.0,
-                            _ => continue,
+                            _ => 0.5,
                         },
                     )
                     .await
@@ -851,7 +850,6 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                         format!("{}.type", msg.symbol),
                         e
                     );
-                    continue;
                 }
 
                 if let Err(e) = vars
@@ -863,7 +861,6 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                         format!("{}.ba", msg.symbol),
                         e
                     );
-                    continue;
                 }
 
                 if let Err(e) = vars
@@ -875,7 +872,6 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                         format!("{}.sa", msg.symbol),
                         e
                     );
-                    continue;
                 }
 
                 updated += 1;

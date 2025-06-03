@@ -467,7 +467,25 @@ impl Variables {
             .map_err(|e| RuleError {
                 message: format!("Failed to upload to S3: {}", e),
             })?;
+
+        self.clean_cache_after_flushing(scope);
         Ok(())
+    }
+
+    fn clean_cache_after_flushing(&mut self, scope: &String) {
+        let mapping: HashSet<String> = self
+            .get_scope_columns(scope)
+            .into_iter()
+            .map(|column| column.clone())
+            .collect();
+
+        for (column, buffer) in self.buffers.iter_mut() {
+            if !mapping.contains(column) {
+                continue;
+            }
+
+            buffer.clear();
+        }
     }
 }
 
