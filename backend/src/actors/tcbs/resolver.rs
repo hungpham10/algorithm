@@ -79,10 +79,7 @@ fn resolve_watching_tcbs_bid_ask_flow(actor: Arc<Addr<TcbsActor>>, resolver: &mu
                         message: e.to_string(),
                     }) {
                     Ok(rule) => rule,
-                    Err(err) => {
-                        error!("Failed to build fuzzy rule: {}", err);
-                        return;
-                    }
+                    Err(_) => Delegate::new().default(),
                 }
             } else {
                 #[cfg(feature = "python")]
@@ -94,10 +91,7 @@ fn resolve_watching_tcbs_bid_ask_flow(actor: Arc<Addr<TcbsActor>>, resolver: &mu
                             }
                         }) {
                             Ok(rule) => rule,
-                            Err(err) => {
-                                error!("Failed to build fuzzy rule: {}", err);
-                                return;
-                            }
+                            Err(_) => Delegate::new().default(),
                         }
                     } else {
                         Delegate::new().default()

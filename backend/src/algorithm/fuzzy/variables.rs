@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -28,6 +28,7 @@ pub struct Variables {
     variables_size: usize,
     buffers: HashMap<String, Vec<f64>>,
     buffers_size: usize,
+    mapping: HashMap<String, Vec<String>>,
     s3_bucket: Option<String>,
     s3_name: Option<String>,
     s3_client: Option<Client>,
@@ -55,6 +56,7 @@ impl Variables {
             variables: HashMap::new(),
             buffers_size: flush_after_incremental_size,
             buffers: HashMap::new(),
+            mapping: HashMap::new(),
             s3_bucket: None,
             s3_name: None,
             s3_client: None,
@@ -74,6 +76,13 @@ impl Variables {
         vars.use_s3(s3_bucket, s3_name, s3_region, s3_endpoint)
             .await;
         vars
+    }
+
+    pub fn scope(&mut self, name: &str, columns: &[String]) {
+        self.mapping.insert(
+            name.to_string(),
+            columns.iter().map(|s| s.to_string()).collect(),
+        );
     }
 
     /// Creates a new time series variable with the specified name.
@@ -110,6 +119,13 @@ impl Variables {
         self.buffers.insert(name.clone(), Vec::new());
     }
 
+    fn get_scope_columns<'a>(&'a self, scope: &str) -> HashSet<&'a String> {
+        match self.mapping.get(scope) {
+            Some(mapping) => mapping.iter().collect(),
+            None => self.variables.keys().collect(),
+        }
+    }
+
     /// Updates the specified variable with a new value and manages buffer flushing to S3 if enabled.
     ///
     /// Inserts the new value into the time series for the given variable, maintaining its fixed size. If S3 buffering is enabled, updates the corresponding buffer and triggers an asynchronous flush to S3 in Parquet format when all buffers are full and the flush threshold is reached. Returns the current length of the variable's time series after the update.
@@ -128,14 +144,25 @@ impl Variables {
     /// let len = block_on(vars.update(&"temperature".to_string(), 25.0)).unwrap();
     /// assert_eq!(len, 1);
     /// ```
-    pub async fn update(&mut self, name: &String, value: f64) -> Result<usize, RuleError> {
+    pub async fn update(
+        &mut self,
+        scope: &String,
+        name: &String,
+        value: f64,
+    ) -> Result<usize, RuleError> {
         let ret = self.update_variable(name, value).map_err(|e| e)?;
 
         if !self.s3_client.is_none() {
             let mut count_row_of_buffer: Option<i32> = None;
             let mut is_full_fill = true;
 
+            let mapping = self.get_scope_columns(scope);
+
             for (column, buffer) in &self.buffers {
+                if !mapping.contains(column) {
+                    continue;
+                }
+
                 if let Some(count_row_of_buffer) = count_row_of_buffer {
                     let diff = (count_row_of_buffer - (buffer.len() as i32)).abs();
 
@@ -154,9 +181,9 @@ impl Variables {
             }
 
             if is_full_fill && count_row_of_buffer.unwrap() >= self.buffers_size as i32 {
-                let buffer = self.prepare_flushing().map_err(|e| e)?;
+                let buffer = self.prepare_flushing(scope).map_err(|e| e)?;
 
-                self.do_flushing(buffer).await.map_err(|e| e)?;
+                self.do_flushing(buffer, scope).await.map_err(|e| e)?;
             }
 
             self.update_buffer(&name, value).map_err(|e| e)?;
@@ -307,14 +334,23 @@ impl Variables {
         self.s3_bucket = Some(bucket.to_string());
     }
 
-    pub async fn flush(&mut self) -> Result<(), RuleError> {
+    pub async fn flush_all(&mut self) -> Result<(), RuleError> {
+        let scopes: Vec<String> = self.mapping.keys().map(|s| s.to_string()).collect();
+
+        for scope in scopes {
+            self.flush(&scope).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn flush(&mut self, scope: &str) -> Result<(), RuleError> {
         if self.s3_client.is_none() {
             return Ok(());
         }
 
-        let buffer = self.prepare_flushing()?;
+        let buffer = self.prepare_flushing(&scope.to_string())?;
 
-        self.do_flushing(buffer).await
+        self.do_flushing(buffer, &scope.to_string()).await
     }
 
     /// Updates the buffer for the specified variable at the current counter index with a new value.
@@ -356,11 +392,19 @@ impl Variables {
     ///
     /// Returns an error if the S3 client, bucket, or variable name is not configured, or if any step in batch creation,
     /// Parquet writing, or S3 upload fails.
-    fn prepare_flushing(&mut self) -> Result<Vec<u8>, RuleError> {
+    fn prepare_flushing(&mut self, scope: &String) -> Result<Vec<u8>, RuleError> {
+        let scope = self.get_scope_columns(scope);
+
         let mapping = self
             .buffers
             .iter()
-            .map(|(column, buffer)| (Field::new(column, DataType::Float64, false), buffer))
+            .filter_map(|(column, buffer)| {
+                if scope.contains(&column) {
+                    Some((Field::new(column, DataType::Float64, false), buffer))
+                } else {
+                    None
+                }
+            })
             .collect::<Vec<_>>();
         let batch = RecordBatch::try_new(
             Arc::new(Schema::new(
@@ -397,7 +441,7 @@ impl Variables {
         Ok(buffer)
     }
 
-    async fn do_flushing(&mut self, buffer: Vec<u8>) -> Result<(), RuleError> {
+    async fn do_flushing(&mut self, buffer: Vec<u8>, scope: &String) -> Result<(), RuleError> {
         let client = self.s3_client.as_ref().ok_or_else(|| RuleError {
             message: "S3 client not initialized".to_string(),
         })?;
@@ -408,12 +452,13 @@ impl Variables {
             message: "Bucket name not set".to_string(),
         })?;
 
-        let resp = client
+        client
             .put_object()
             .bucket(bucket)
             .key(&format!(
-                "{}-{}.parquet",
+                "{}-{}-{}.parquet",
                 name,
+                scope,
                 Utc::now().timestamp_millis()
             ))
             .body(buffer.into())

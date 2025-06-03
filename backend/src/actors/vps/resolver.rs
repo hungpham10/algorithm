@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 
-use log::error;
-
 use actix::prelude::*;
 use actix::Actor;
 

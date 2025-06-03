@@ -163,6 +163,8 @@ impl VpsActor {
 
                     // Create variables
                     for var in &vars_to_create {
+                        vars.scope(sym, &vars_to_create);
+
                         if let Err(err) = vars.create(var) {
                             error!("Failed to create variable {}: {}", var, err);
                             status = false;
@@ -408,7 +410,7 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                     price.lastPrice
                 };
                 match vars
-                    .update(&vars_to_create[0].to_string(), current_price)
+                    .update(&price.sym, &vars_to_create[0].to_string(), current_price)
                     .await
                 {
                     Ok(len) => {
@@ -417,7 +419,7 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                     Err(e) => error!("Failed to update variable {}: {}", vars_to_create[0], e),
                 }
                 if let Ok(len) = vars
-                    .update(&vars_to_create[1].to_string(), price.lot as f64)
+                    .update(&price.sym, &vars_to_create[1].to_string(), price.lot as f64)
                     .await
                 {
                     updates.insert(vars_to_create[1].to_string(), len);
@@ -430,7 +432,7 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                     -1.0 * price.changePc.parse::<f64>().unwrap_or(0.0)
                 };
                 match vars
-                    .update(&vars_to_create[2].to_string(), change_percent)
+                    .update(&price.sym, &vars_to_create[2].to_string(), change_percent)
                     .await
                 {
                     Ok(len) => {
@@ -461,7 +463,10 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
 
                 // Update all price levels
                 for (var, val) in &price_updates {
-                    match vars.update(var, val.parse::<f64>().unwrap_or(0.0)).await {
+                    match vars
+                        .update(&price.sym, var, val.parse::<f64>().unwrap_or(0.0))
+                        .await
+                    {
                         Ok(len) => {
                             updates.insert(var.clone(), len);
                         }
@@ -471,7 +476,10 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
 
                 // Update all volume levels
                 for (var, val) in &volume_updates {
-                    match vars.update(var, val.parse::<f64>().unwrap_or(0.0)).await {
+                    match vars
+                        .update(&price.sym, var, val.parse::<f64>().unwrap_or(0.0))
+                        .await
+                    {
                         Ok(len) => {
                             updates.insert(var.clone(), len);
                         }
@@ -482,6 +490,7 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                 // Update foreign flow
                 match vars
                     .update(
+                        &price.sym,
                         &vars_to_create[15].to_string(),
                         price.fBVol.parse::<f64>().unwrap_or(0.0),
                     )
@@ -494,6 +503,7 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                 }
                 match vars
                     .update(
+                        &price.sym,
                         &vars_to_create[16].to_string(),
                         price.fSVolume.parse::<f64>().unwrap_or(0.0),
                     )
