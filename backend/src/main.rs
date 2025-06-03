@@ -196,7 +196,7 @@ async fn main() -> std::io::Result<()> {
             tcbs_timeseries,
             tcbs_flush,
             s3_bucket.as_str(),
-            s3_vps_name.as_str(),
+            s3_tcbs_name.as_str(),
             Some(s3_region.as_str()),
             Some(s3_endpoint.as_str()),
         )
@@ -207,7 +207,7 @@ async fn main() -> std::io::Result<()> {
             vps_timeseries,
             vps_flush,
             s3_bucket.as_str(),
-            s3_tcbs_name.as_str(),
+            s3_vps_name.as_str(),
             Some(s3_region.as_str()),
             Some(s3_endpoint.as_str()),
         )
@@ -329,14 +329,14 @@ async fn main() -> std::io::Result<()> {
             tcbs_vars.clone()
                 .lock()
                 .map_err(|e| Error::new(ErrorKind::Other, format!("{:?}", e)))?
-                .flush()
+                .flush_all()
                 .await
                 .map_err(|e| Error::new(ErrorKind::Other, e.message))?;
 
             vps_vars.clone()
                 .lock()
                 .map_err(|e| Error::new(ErrorKind::Other, format!("{:?}", e)))?
-                .flush()
+                .flush_all()
                 .await
                 .map_err(|e| Error::new(ErrorKind::Other, e.message))?;
             info!("Server is downed gracefully...");

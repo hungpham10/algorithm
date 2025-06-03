@@ -69,6 +69,7 @@ async fn filter_in_async(df: &DataFrame, rule: &Rule, memory_size: usize) -> PyR
                 })
         })
         .collect();
+    let default = "default".to_string();
 
     for col in data.keys() {
         vars.create(col).map_err(|e| {
@@ -80,7 +81,7 @@ async fn filter_in_async(df: &DataFrame, rule: &Rule, memory_size: usize) -> PyR
         let mut inputs = HashMap::new();
 
         for (col, vals) in data.iter() {
-            vars.update(col, vals[irow]).await.map_err(|e| {
+            vars.update(&default, col, vals[irow]).await.map_err(|e| {
                 PyRuntimeError::new_err(format!("Failed to update variable {}: {}", col, e))
             })?;
         }

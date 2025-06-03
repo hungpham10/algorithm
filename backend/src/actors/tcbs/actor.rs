@@ -71,6 +71,8 @@ impl TcbsActor {
             for var in &vars_to_create {
                 match variables.lock() {
                     Ok(mut vars) => {
+                        vars.scope(&symbol, &vars_to_create);
+
                         if let Err(err) = vars.create(var) {
                             error!("Failed to create variable {}: {}", var, err);
                             break;
@@ -134,6 +136,8 @@ impl Handler<UpdateStocksCommand> for TcbsActor {
             for var in &vars_to_create {
                 match self.variables.lock() {
                     Ok(mut vars) => {
+                        vars.scope(&symbol, &vars_to_create);
+
                         if let Err(err) = vars.create(var) {
                             error!("Failed to create variable {}: {}", var, err);
                             return Box::pin(async move { false });
@@ -806,7 +810,10 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
             ];
 
             for order in msg.orders {
-                if let Err(e) = vars.update(&vars_to_create[0].to_string(), order.p).await {
+                if let Err(e) = vars
+                    .update(&msg.symbol, &vars_to_create[0].to_string(), order.p)
+                    .await
+                {
                     error!(
                         "Failed to update variable {}: {}",
                         format!("{}.price", msg.symbol),
@@ -816,7 +823,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                 }
 
                 if let Err(e) = vars
-                    .update(&vars_to_create[1].to_string(), order.v as f64)
+                    .update(&msg.symbol, &vars_to_create[1].to_string(), order.v as f64)
                     .await
                 {
                     error!(
@@ -829,6 +836,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
 
                 if let Err(e) = vars
                     .update(
+                        &msg.symbol,
                         &vars_to_create[2].to_string(),
                         match order.t.as_str() {
                             "BU" => 1.0,
@@ -846,7 +854,10 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     continue;
                 }
 
-                if let Err(e) = vars.update(&vars_to_create[3].to_string(), order.ba).await {
+                if let Err(e) = vars
+                    .update(&msg.symbol, &vars_to_create[3].to_string(), order.ba)
+                    .await
+                {
                     error!(
                         "Failed to update variable {}: {}",
                         format!("{}.ba", msg.symbol),
@@ -855,7 +866,10 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     continue;
                 }
 
-                if let Err(e) = vars.update(&vars_to_create[4].to_string(), order.sa).await {
+                if let Err(e) = vars
+                    .update(&msg.symbol, &vars_to_create[4].to_string(), order.sa)
+                    .await
+                {
                     error!(
                         "Failed to update variable {}: {}",
                         format!("{}.sa", msg.symbol),
