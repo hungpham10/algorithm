@@ -279,8 +279,6 @@ async fn main() -> std::io::Result<()> {
             .app_data(Data::new(portal.clone()))
             .app_data(Data::new(tcbs.clone()))
             .app_data(Data::new(vps.clone()))
-            .app_data(Data::new(tcbs_vars.clone()))
-            .app_data(Data::new(vps_vars.clone()))
     })
     .bind((host.as_str(), port))
     .map_err(|e| {
@@ -328,6 +326,19 @@ async fn main() -> std::io::Result<()> {
     tokio::select! {
         result = server => result,
         _ = rxserver => {
+            tcbs_vars.clone()
+                .lock()
+                .map_err(|e| Error::new(ErrorKind::Other, format!("{:?}", e)))?
+                .flush()
+                .await
+                .map_err(|e| Error::new(ErrorKind::Other, e.message))?;
+
+            vps_vars.clone()
+                .lock()
+                .map_err(|e| Error::new(ErrorKind::Other, format!("{:?}", e)))?
+                .flush()
+                .await
+                .map_err(|e| Error::new(ErrorKind::Other, e.message))?;
             info!("Server is downed gracefully...");
             Ok(())
         }

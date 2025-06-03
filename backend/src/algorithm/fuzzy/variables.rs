@@ -307,6 +307,16 @@ impl Variables {
         self.s3_bucket = Some(bucket.to_string());
     }
 
+    pub async fn flush(&mut self) -> Result<(), RuleError> {
+        if self.s3_client.is_none() {
+            return Ok(());
+        }
+
+        let buffer = self.prepare_flushing()?;
+
+        self.do_flushing(buffer).await
+    }
+
     /// Updates the buffer for the specified variable at the current counter index with a new value.
     ///
     /// Returns an error if the buffer for the given variable does not exist. Increments the global update counter after the update.
