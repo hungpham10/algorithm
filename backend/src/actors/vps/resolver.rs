@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use log::error;
 
@@ -36,8 +36,9 @@ pub fn resolve_vps_routes(
 ) -> Arc<Addr<VpsActor>> {
     let vps = VpsActor::new(stocks, variables);
     let actor = Arc::new(vps.start());
+    let lock = Arc::new(RwLock::new(0));
 
-    resolve_watching_vps_board(actor.clone(), resolver);
+    resolve_watching_vps_board(actor.clone(), resolver, lock);
     actor
 }
 
@@ -53,7 +54,11 @@ pub fn resolve_vps_routes(
 /// resolve_watching_vps_board(actor, &mut resolver);
 /// // The resolver will now periodically process VPS board data.
 /// ```
-fn resolve_watching_vps_board(actor: Arc<Addr<VpsActor>>, resolver: &mut CronResolver) {
+fn resolve_watching_vps_board(
+    actor: Arc<Addr<VpsActor>>,
+    resolver: &mut CronResolver,
+    lock: Arc<RwLock<usize>>,
+) {
     resolver.resolve("vps.watch_boards".to_string(), move |task, _, _| {
         let actor = actor.clone();
 
@@ -69,10 +74,7 @@ fn resolve_watching_vps_board(actor: Arc<Addr<VpsActor>>, resolver: &mut CronRes
                         message: e.to_string(),
                     }) {
                     Ok(rule) => rule,
-                    Err(err) => {
-                        error!("Failed to build fuzzy rule: {}", err);
-                        return;
-                    }
+                    Err(_) => Delegate::new().default(),
                 }
             } else {
                 #[cfg(feature = "python")]
@@ -84,10 +86,7 @@ fn resolve_watching_vps_board(actor: Arc<Addr<VpsActor>>, resolver: &mut CronRes
                                 message: e.to_string(),
                             }) {
                             Ok(rule) => rule,
-                            Err(err) => {
-                                error!("Failed to build fuzzy rule: {}", err);
-                                return;
-                            }
+                            Err(_) => Delegate::new().default(),
                         }
                     } else {
                         Delegate::new().default()
@@ -138,8 +137,6 @@ fn resolve_watching_vps_board(actor: Arc<Addr<VpsActor>>, resolver: &mut CronRes
                 let result = rule.evaluate().map_err(|e| VpsError {
                     message: e.to_string(),
                 });
-
-                eprintln!("Result: {:?}", result);
 
                 // Handle result and callback
                 match result {

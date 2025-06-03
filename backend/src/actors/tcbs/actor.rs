@@ -745,8 +745,8 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
             ];
 
             for var in &vars_to_create {
-                if let Err(e) = vars.create(var) {
-                    error!("Failed to create variable {}: {}", var, e);
+                if let Err(_) = vars.create(var) {
+                    break;
                 }
             }
 

@@ -1,5 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
+use std::time::Duration;
+
+use chrono::Utc;
 
 use parquet::arrow::ArrowWriter;
 use parquet::basic::{Compression, ZstdLevel};
@@ -9,19 +12,18 @@ use arrow::array::{ArrayRef, Float64Array};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 
-use aws_config::meta::region::RegionProviderChain;
-use aws_config::{BehaviorVersion, Region};
+use aws_config::{
+    meta::region::RegionProviderChain, timeout::TimeoutConfig, BehaviorVersion, Region,
+};
 use aws_sdk_s3::Client;
 
 use super::RuleError;
-use chrono::Utc;
 
 const DEFAULT_REGION: &str = "us-west-000";
 const DEFAULT_ENDPOINT: &str = "https://s3.us-west-000.backblazeb2.com";
 
 #[derive(Default, Clone)]
 pub struct Variables {
-    counter: usize,
     variables: HashMap<String, VecDeque<f64>>,
     variables_size: usize,
     buffers: HashMap<String, Vec<f64>>,
@@ -53,7 +55,6 @@ impl Variables {
             variables: HashMap::new(),
             buffers_size: flush_after_incremental_size,
             buffers: HashMap::new(),
-            counter: 0,
             s3_bucket: None,
             s3_name: None,
             s3_client: None,
@@ -86,15 +87,6 @@ impl Variables {
         }
 
         if !self.s3_client.is_none() {
-            if self.counter > 0 {
-                return Err(RuleError {
-                    message: format!(
-                        "Cannot create variable {} after {} updates",
-                        name, self.counter
-                    ),
-                });
-            }
-
             if self.variables.len() != self.buffers.len() {
                 return Err(RuleError {
                     message: format!(
@@ -148,14 +140,18 @@ impl Variables {
                         });
                     }
 
-                    is_full_fill = diff == 0;
+                    if is_full_fill {
+                        is_full_fill = diff == 0;
+                    }
                 } else {
                     count_row_of_buffer = Some(buffer.len() as i32);
                 }
             }
 
-            if is_full_fill && self.counter >= self.buffers_size {
-                self.flush().await.map_err(|e| e)?;
+            if is_full_fill && count_row_of_buffer.unwrap() >= self.buffers_size as i32 {
+                let buffer = self.prepare_flushing().map_err(|e| e)?;
+
+                self.do_flushing(buffer).await.map_err(|e| e)?;
             }
 
             self.update_buffer(&name, value).map_err(|e| e)?;
@@ -273,8 +269,8 @@ impl Variables {
     /// ```
     pub async fn use_s3(
         &mut self,
-        name: &str,
         bucket: &str,
+        name: &str,
         region: Option<&str>,
         endpoint: Option<&str>,
     ) {
@@ -285,6 +281,12 @@ impl Variables {
         let region_provider =
             RegionProviderChain::default_provider().or_else(Region::new(region_value));
         let config = aws_config::defaults(BehaviorVersion::latest())
+            .timeout_config(
+                TimeoutConfig::builder()
+                    .operation_timeout(Duration::from_secs(5))
+                    .operation_attempt_timeout(Duration::from_millis(1500))
+                    .build(),
+            )
             .region(region_provider)
             .endpoint_url(endpoint_value)
             .load()
@@ -299,11 +301,10 @@ impl Variables {
     /// Returns an error if the buffer for the given variable does not exist. Increments the global update counter after the update.
     fn update_buffer(&mut self, name: &str, value: f64) -> Result<(), RuleError> {
         let buffer = self.buffers.get_mut(name).ok_or_else(|| RuleError {
-            message: format!("Variable {} not found", name),
+            message: format!("Buffer {} not found", name),
         })?;
 
         buffer.push(value);
-        self.counter += 1;
         Ok(())
     }
 
@@ -334,16 +335,7 @@ impl Variables {
     ///
     /// Returns an error if the S3 client, bucket, or variable name is not configured, or if any step in batch creation,
     /// Parquet writing, or S3 upload fails.
-    async fn flush(&mut self) -> Result<(), RuleError> {
-        let client = self.s3_client.as_ref().ok_or_else(|| RuleError {
-            message: "S3 client not initialized".to_string(),
-        })?;
-        let name = self.s3_name.as_ref().ok_or_else(|| RuleError {
-            message: "Variable name not set".to_string(),
-        })?;
-        let bucket = self.s3_bucket.as_ref().ok_or_else(|| RuleError {
-            message: "Bucket name not set".to_string(),
-        })?;
+    fn prepare_flushing(&mut self) -> Result<Vec<u8>, RuleError> {
         let mapping = self
             .buffers
             .iter()
@@ -381,7 +373,21 @@ impl Variables {
             })?;
         }
 
-        client
+        Ok(buffer)
+    }
+
+    async fn do_flushing(&mut self, buffer: Vec<u8>) -> Result<(), RuleError> {
+        let client = self.s3_client.as_ref().ok_or_else(|| RuleError {
+            message: "S3 client not initialized".to_string(),
+        })?;
+        let name = self.s3_name.as_ref().ok_or_else(|| RuleError {
+            message: "Variable name not set".to_string(),
+        })?;
+        let bucket = self.s3_bucket.as_ref().ok_or_else(|| RuleError {
+            message: "Bucket name not set".to_string(),
+        })?;
+
+        let resp = client
             .put_object()
             .bucket(bucket)
             .key(&format!(
@@ -395,14 +401,6 @@ impl Variables {
             .map_err(|e| RuleError {
                 message: format!("Failed to upload to S3: {}", e),
             })?;
-
-        self.buffers
-            .get_mut(name)
-            .ok_or_else(|| RuleError {
-                message: format!("Variable {} not found", name),
-            })?
-            .clear();
-        self.counter = 0;
         Ok(())
     }
 }
