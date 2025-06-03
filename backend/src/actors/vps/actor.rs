@@ -129,45 +129,53 @@ impl VpsActor {
         }
     }
 
-    fn prepare_variables(variables: Arc<Mutex<Variables>>, stocks: &[String]) {
-        let mut vars = variables.lock().unwrap();
+    fn prepare_variables(variables: Arc<Mutex<Variables>>, stocks: &[String]) -> bool {
+        match variables.lock() {
+            Ok(mut vars) => {
+                let mut status = true;
 
-        for sym in stocks {
-            let mut done = true;
-            // Create variable names
-            let vars_to_create = [
-                format!("{}.price", sym),
-                format!("{}.volume", sym),
-                format!("{}.change", sym),
-                // Price levels
-                format!("{}.price_minus1", sym),
-                format!("{}.price_minus2", sym),
-                format!("{}.price_minus3", sym),
-                format!("{}.price_plus1", sym),
-                format!("{}.price_plus2", sym),
-                format!("{}.price_plus3", sym),
-                // Volume levels
-                format!("{}.volume_minus1", sym),
-                format!("{}.volume_minus2", sym),
-                format!("{}.volume_minus3", sym),
-                format!("{}.volume_plus1", sym),
-                format!("{}.volume_plus2", sym),
-                format!("{}.volume_plus3", sym),
-                // Foreign flow
-                format!("{}.fb_buy_volume", sym),
-                format!("{}.fb_sell_volume", sym),
-            ];
+                vars.clear_all();
 
-            // Create variables
-            for var in &vars_to_create {
-                if let Err(_) = vars.create(var) {
-                    done = false;
-                    break;
+                for sym in stocks {
+                    // Create variable names
+                    let vars_to_create = [
+                        format!("{}.price", sym),
+                        format!("{}.volume", sym),
+                        format!("{}.change", sym),
+                        // Price levels
+                        format!("{}.price_minus1", sym),
+                        format!("{}.price_minus2", sym),
+                        format!("{}.price_minus3", sym),
+                        format!("{}.price_plus1", sym),
+                        format!("{}.price_plus2", sym),
+                        format!("{}.price_plus3", sym),
+                        // Volume levels
+                        format!("{}.volume_minus1", sym),
+                        format!("{}.volume_minus2", sym),
+                        format!("{}.volume_minus3", sym),
+                        format!("{}.volume_plus1", sym),
+                        format!("{}.volume_plus2", sym),
+                        format!("{}.volume_plus3", sym),
+                        // Foreign flow
+                        format!("{}.fb_buy_volume", sym),
+                        format!("{}.fb_sell_volume", sym),
+                    ];
+
+                    // Create variables
+                    for var in &vars_to_create {
+                        if let Err(err) = vars.create(var) {
+                            error!("Failed to create variable {}: {}", var, err);
+                            status = false;
+                            break;
+                        }
+                    }
                 }
-            }
 
-            if !done {
-                break;
+                status
+            }
+            Err(err) => {
+                error!("Failed to clear variables: {}", err);
+                false
             }
         }
     }
@@ -189,9 +197,10 @@ impl Handler<UpdateStocksCommand> for VpsActor {
     type Result = ResponseFuture<bool>;
 
     fn handle(&mut self, msg: UpdateStocksCommand, _: &mut Self::Context) -> Self::Result {
-        self.stocks = msg.stocks.clone();
+        let status = Self::prepare_variables(self.variables.clone(), &self.stocks);
 
-        Box::pin(async move { true })
+        self.stocks = msg.stocks.clone();
+        Box::pin(async move { status })
     }
 }
 

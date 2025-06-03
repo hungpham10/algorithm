@@ -89,20 +89,24 @@ impl Variables {
         if !self.s3_client.is_none() {
             if self.variables.len() != self.buffers.len() {
                 return Err(RuleError {
-                    message: format!(
-                        "Cannot create variable {} after {} variables",
-                        name,
-                        self.variables.len()
-                    ),
+                    message: format!("Cannot create variable {}", name),
                 });
             }
 
-            self.buffers.insert(name.clone(), Vec::new());
+            self.insert_new_buffer(name);
         }
 
         self.variables
             .insert(name.clone(), VecDeque::with_capacity(self.variables_size));
         Ok(())
+    }
+
+    fn insert_new_buffer(&mut self, name: &String) {
+        for (_, buffer) in self.buffers.iter_mut() {
+            buffer.clear();
+        }
+
+        self.buffers.insert(name.clone(), Vec::new());
     }
 
     /// Updates the specified variable with a new value and manages buffer flushing to S3 if enabled.
@@ -223,7 +227,13 @@ impl Variables {
             message: format!("Variable {} not found", name),
         })?;
         buffer.clear();
+
         Ok(())
+    }
+
+    pub fn clear_all(&mut self) {
+        self.buffers.clear();
+        self.variables.clear();
     }
 
     /// Returns the number of stored values for the specified variable.
