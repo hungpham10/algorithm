@@ -59,6 +59,31 @@ impl TcbsActor {
     /// let actor = TcbsActor::new(&stocks, token, variables);
     /// ```
     pub fn new(stocks: &[String], token: String, variables: Arc<Mutex<Variables>>) -> Self {
+        for symbol in stocks {
+            let vars_to_create = [
+                format!("{}.price", symbol),
+                format!("{}.volume", symbol),
+                format!("{}.type", symbol),
+                format!("{}.ba", symbol),
+                format!("{}.sa", symbol),
+            ];
+
+            for var in &vars_to_create {
+                match variables.lock() {
+                    Ok(mut vars) => {
+                        if let Err(err) = vars.create(var) {
+                            error!("Failed to create variable {}: {}", var, err);
+                            break;
+                        }
+                    }
+                    Err(err) => {
+                        error!("Failed to create variable {}: {}", var, err);
+                        break;
+                    }
+                }
+            }
+        }
+
         Self {
             stocks: stocks.to_owned(),
             timeout: 60,
@@ -85,8 +110,44 @@ impl Handler<UpdateStocksCommand> for TcbsActor {
     type Result = ResponseFuture<bool>;
 
     fn handle(&mut self, msg: UpdateStocksCommand, _: &mut Self::Context) -> Self::Result {
-        self.stocks = msg.stocks.clone();
+        let stocks = msg.stocks.clone();
 
+        match self.variables.lock() {
+            Ok(mut vars) => {
+                vars.clear_all();
+            }
+            Err(err) => {
+                error!("Failed to clear variables: {}", err);
+                return Box::pin(async move { false });
+            }
+        }
+
+        for symbol in stocks {
+            let vars_to_create = [
+                format!("{}.price", symbol),
+                format!("{}.volume", symbol),
+                format!("{}.type", symbol),
+                format!("{}.ba", symbol),
+                format!("{}.sa", symbol),
+            ];
+
+            for var in &vars_to_create {
+                match self.variables.lock() {
+                    Ok(mut vars) => {
+                        if let Err(err) = vars.create(var) {
+                            error!("Failed to create variable {}: {}", var, err);
+                            return Box::pin(async move { false });
+                        }
+                    }
+                    Err(err) => {
+                        error!("Failed to create variable {}: {}", var, err);
+                        return Box::pin(async move { false });
+                    }
+                }
+            }
+        }
+
+        self.stocks = msg.stocks.clone();
         Box::pin(async move { true })
     }
 }
@@ -743,12 +804,6 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                 format!("{}.ba", msg.symbol),
                 format!("{}.sa", msg.symbol),
             ];
-
-            for var in &vars_to_create {
-                if let Err(e) = vars.create(var) {
-                    error!("Failed to create variable {}: {}", var, e);
-                }
-            }
 
             for order in msg.orders {
                 if let Err(e) = vars.update(&vars_to_create[0].to_string(), order.p).await {

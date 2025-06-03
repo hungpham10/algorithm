@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::future;
+use log::error;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
@@ -119,10 +120,63 @@ pub struct VpsActor {
 
 impl VpsActor {
     pub fn new(stocks: &[String], variables: Arc<Mutex<Variables>>) -> Self {
+        Self::prepare_variables(variables.clone(), stocks);
+
         Self {
             stocks: stocks.to_owned(),
             timeout: 300,
             variables,
+        }
+    }
+
+    fn prepare_variables(variables: Arc<Mutex<Variables>>, stocks: &[String]) -> bool {
+        match variables.lock() {
+            Ok(mut vars) => {
+                let mut status = true;
+
+                vars.clear_all();
+
+                for sym in stocks {
+                    // Create variable names
+                    let vars_to_create = [
+                        format!("{}.price", sym),
+                        format!("{}.volume", sym),
+                        format!("{}.change", sym),
+                        // Price levels
+                        format!("{}.price_minus1", sym),
+                        format!("{}.price_minus2", sym),
+                        format!("{}.price_minus3", sym),
+                        format!("{}.price_plus1", sym),
+                        format!("{}.price_plus2", sym),
+                        format!("{}.price_plus3", sym),
+                        // Volume levels
+                        format!("{}.volume_minus1", sym),
+                        format!("{}.volume_minus2", sym),
+                        format!("{}.volume_minus3", sym),
+                        format!("{}.volume_plus1", sym),
+                        format!("{}.volume_plus2", sym),
+                        format!("{}.volume_plus3", sym),
+                        // Foreign flow
+                        format!("{}.fb_buy_volume", sym),
+                        format!("{}.fb_sell_volume", sym),
+                    ];
+
+                    // Create variables
+                    for var in &vars_to_create {
+                        if let Err(err) = vars.create(var) {
+                            error!("Failed to create variable {}: {}", var, err);
+                            status = false;
+                            break;
+                        }
+                    }
+                }
+
+                status
+            }
+            Err(err) => {
+                error!("Failed to clear variables: {}", err);
+                false
+            }
         }
     }
 }
@@ -143,9 +197,10 @@ impl Handler<UpdateStocksCommand> for VpsActor {
     type Result = ResponseFuture<bool>;
 
     fn handle(&mut self, msg: UpdateStocksCommand, _: &mut Self::Context) -> Self::Result {
-        self.stocks = msg.stocks.clone();
+        let status = Self::prepare_variables(self.variables.clone(), &self.stocks);
 
-        Box::pin(async move { true })
+        self.stocks = msg.stocks.clone();
+        Box::pin(async move { status })
     }
 }
 
@@ -313,7 +368,7 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
             let mut updates = HashMap::new();
             let mut vars = variables.lock().unwrap();
 
-            for price in msg.prices {
+            for price in &msg.prices {
                 // Split order book data
                 let g1 = price.g1.split("|").collect::<Vec<&str>>();
                 let g2 = price.g2.split("|").collect::<Vec<&str>>();
@@ -346,30 +401,26 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                     format!("{}.fb_sell_volume", price.sym),
                 ];
 
-                // Create variables
-                for var in &vars_to_create {
-                    if let Err(e) = vars.create(var) {
-                        log::error!("Failed to create variable {}: {}", var, e);
-                    }
-                }
-
                 // Update current price and volume
                 let current_price = if price.lastPrice == 0.0 {
                     price.r
                 } else {
                     price.lastPrice
                 };
-                if let Ok(len) = vars
-                    .update(&format!("{}_price", price.sym), current_price)
+                match vars
+                    .update(&vars_to_create[0].to_string(), current_price)
                     .await
                 {
-                    updates.insert(format!("{}_price", price.sym), len);
+                    Ok(len) => {
+                        updates.insert(vars_to_create[0].to_string(), len);
+                    }
+                    Err(e) => error!("Failed to update variable {}: {}", vars_to_create[0], e),
                 }
                 if let Ok(len) = vars
-                    .update(&format!("{}_volume", price.sym), price.lot as f64)
+                    .update(&vars_to_create[1].to_string(), price.lot as f64)
                     .await
                 {
-                    updates.insert(format!("{}_volume", price.sym), len);
+                    updates.insert(vars_to_create[1].to_string(), len);
                 }
 
                 // Update change percent
@@ -378,65 +429,80 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
                 } else {
                     -1.0 * price.changePc.parse::<f64>().unwrap_or(0.0)
                 };
-                if let Ok(len) = vars
-                    .update(&format!("{}_change", price.sym), change_percent)
+                match vars
+                    .update(&vars_to_create[2].to_string(), change_percent)
                     .await
                 {
-                    updates.insert(format!("{}_change", price.sym), len);
+                    Ok(len) => {
+                        updates.insert(vars_to_create[2].to_string(), len);
+                    }
+                    Err(e) => error!("Failed to update variable {}: {}", vars_to_create[2], e),
                 }
 
                 // Update price levels
                 let price_updates = [
-                    (format!("{}.price_minus1", price.sym), g4[0]),
-                    (format!("{}.price_minus2", price.sym), g5[0]),
-                    (format!("{}.price_minus3", price.sym), g6[0]),
-                    (format!("{}.price_plus1", price.sym), g1[0]),
-                    (format!("{}.price_plus2", price.sym), g2[0]),
-                    (format!("{}.price_plus3", price.sym), g3[0]),
+                    (vars_to_create[3].to_string(), g4[0]),
+                    (vars_to_create[4].to_string(), g5[0]),
+                    (vars_to_create[5].to_string(), g6[0]),
+                    (vars_to_create[6].to_string(), g1[0]),
+                    (vars_to_create[7].to_string(), g2[0]),
+                    (vars_to_create[8].to_string(), g3[0]),
                 ];
 
                 // Update volume levels
                 let volume_updates = [
-                    (format!("{}.volume_minus1", price.sym), g4[1]),
-                    (format!("{}.volume_minus2", price.sym), g5[1]),
-                    (format!("{}.volume_minus3", price.sym), g6[1]),
-                    (format!("{}.volume_plus1", price.sym), g1[1]),
-                    (format!("{}.volume_plus2", price.sym), g2[1]),
-                    (format!("{}.volume_plus3", price.sym), g3[1]),
+                    (vars_to_create[9].to_string(), g4[1]),
+                    (vars_to_create[10].to_string(), g5[1]),
+                    (vars_to_create[11].to_string(), g6[1]),
+                    (vars_to_create[12].to_string(), g1[1]),
+                    (vars_to_create[13].to_string(), g2[1]),
+                    (vars_to_create[14].to_string(), g3[1]),
                 ];
 
                 // Update all price levels
                 for (var, val) in &price_updates {
-                    if let Ok(len) = vars.update(var, val.parse::<f64>().unwrap_or(0.0)).await {
-                        updates.insert(var.clone(), len);
+                    match vars.update(var, val.parse::<f64>().unwrap_or(0.0)).await {
+                        Ok(len) => {
+                            updates.insert(var.clone(), len);
+                        }
+                        Err(e) => error!("Failed to update variable {}: {}", var, e),
                     }
                 }
 
                 // Update all volume levels
                 for (var, val) in &volume_updates {
-                    if let Ok(len) = vars.update(var, val.parse::<f64>().unwrap_or(0.0)).await {
-                        updates.insert(var.clone(), len);
+                    match vars.update(var, val.parse::<f64>().unwrap_or(0.0)).await {
+                        Ok(len) => {
+                            updates.insert(var.clone(), len);
+                        }
+                        Err(e) => error!("Failed to update variable {}: {}", var, e),
                     }
                 }
 
                 // Update foreign flow
-                if let Ok(len) = vars
+                match vars
                     .update(
-                        &format!("{}.fb_buy_volume", price.sym),
+                        &vars_to_create[15].to_string(),
                         price.fBVol.parse::<f64>().unwrap_or(0.0),
                     )
                     .await
                 {
-                    updates.insert(format!("{}.fb_buy_volume", price.sym), len);
+                    Ok(len) => {
+                        updates.insert(vars_to_create[15].to_string(), len);
+                    }
+                    Err(e) => error!("Failed to update variable {}: {}", vars_to_create[15], e),
                 }
-                if let Ok(len) = vars
+                match vars
                     .update(
-                        &format!("{}.fb_sell_volume", price.sym),
+                        &vars_to_create[16].to_string(),
                         price.fSVolume.parse::<f64>().unwrap_or(0.0),
                     )
                     .await
                 {
-                    updates.insert(format!("{}_fb_sell_volume", price.sym), len);
+                    Ok(len) => {
+                        updates.insert(vars_to_create[16].to_string(), len);
+                    }
+                    Err(e) => error!("Failed to update variable {}: {}", vars_to_create[16], e),
                 }
             }
 
