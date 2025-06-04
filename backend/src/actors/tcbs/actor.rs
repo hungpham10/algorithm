@@ -845,7 +845,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     .update(
                         &msg.symbol,
                         &vars_to_create[2].to_string(),
-                        match order.t.as_str() {
+                        match order.a.as_str() {
                             "BU" => 1.0,
                             "SD" => 0.0,
                             _ => 0.5,
