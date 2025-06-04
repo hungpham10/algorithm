@@ -60,13 +60,7 @@ impl TcbsActor {
     /// ```
     pub fn new(stocks: &[String], token: String, variables: Arc<Mutex<Variables>>) -> Self {
         for symbol in stocks {
-            let vars_to_create = [
-                format!("{}.price", symbol),
-                format!("{}.volume", symbol),
-                format!("{}.type", symbol),
-                format!("{}.ba", symbol),
-                format!("{}.sa", symbol),
-            ];
+            let vars_to_create = Self::list_of_variables(symbol);
 
             for var in &vars_to_create {
                 match variables.lock() {
@@ -93,6 +87,17 @@ impl TcbsActor {
             token,
             variables,
         }
+    }
+
+    fn list_of_variables(symbol: &str) -> Vec<String> {
+        vec![
+            format!("{}.price", symbol),
+            format!("{}.volume", symbol),
+            format!("{}.type", symbol),
+            format!("{}.ba", symbol),
+            format!("{}.sa", symbol),
+            format!("{}.time", symbol),
+        ]
     }
 }
 
@@ -801,14 +806,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
             let mut updated = 0;
             let mut vars = variables.lock().unwrap();
 
-            let vars_to_create = [
-                format!("{}.price", msg.symbol),
-                format!("{}.volume", msg.symbol),
-                format!("{}.type", msg.symbol),
-                format!("{}.ba", msg.symbol),
-                format!("{}.sa", msg.symbol),
-                format!("{}.time", msg.symbol),
-            ];
+            let vars_to_create = Self::list_of_variables(&msg.symbol);
 
             for order in msg.orders {
                 let (hour, min, sec) = if let Ok(parts) = order
