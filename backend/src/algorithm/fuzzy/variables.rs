@@ -19,6 +19,7 @@ use aws_sdk_s3::Client;
 
 use super::RuleError;
 
+const DEFAULT_SCOPE: &str = "default";
 const DEFAULT_REGION: &str = "us-west-000";
 const DEFAULT_ENDPOINT: &str = "https://s3.us-west-000.backblazeb2.com";
 
@@ -337,8 +338,11 @@ impl Variables {
     pub async fn flush_all(&mut self) -> Result<(), RuleError> {
         let scopes: Vec<String> = self.mapping.keys().map(|s| s.to_string()).collect();
 
-        for scope in scopes {
-            self.flush(&scope).await?;
+        for scope in &scopes {
+            self.flush(scope).await?;
+        }
+        if scopes.len() == 0 {
+            self.flush(DEFAULT_SCOPE).await?;
         }
         Ok(())
     }

@@ -323,9 +323,14 @@ async fn main() -> std::io::Result<()> {
     });
 
     // @NOTE: wait for everything to finish
-    tokio::select! {
+    let ok = tokio::select! {
         result = server => result,
+    };
+
+    tokio::select! {
         _ = rxserver => {
+            info!("Server is downed gracefully...");
+
             tcbs_vars.clone()
                 .lock()
                 .map_err(|e| Error::new(ErrorKind::Other, format!("{:?}", e)))?
@@ -339,8 +344,8 @@ async fn main() -> std::io::Result<()> {
                 .flush_all()
                 .await
                 .map_err(|e| Error::new(ErrorKind::Other, e.message))?;
-            info!("Server is downed gracefully...");
-            Ok(())
+            info!("Finish flushing variables");
+            ok
         }
     }
 }
