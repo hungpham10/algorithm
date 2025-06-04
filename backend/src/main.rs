@@ -49,21 +49,34 @@ async fn synchronize(
     tcbs: Data<Arc<Addr<TcbsActor>>>,
     vps: Data<Arc<Addr<VpsActor>>>,
 ) -> Result<HttpResponse> {
-    let symbols: Vec<String> = portal
+    let vps_symbols: Vec<String> = portal
         .watchlist()
         .await
         .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?
         .iter()
         .filter_map(|record| Some(record.fields.symbol.as_ref()?.clone()))
         .collect::<Vec<String>>();
+    let tcbs_symbols: Vec<String> = portal
+        .watchlist()
+        .await
+        .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?
+        .iter()
+        .filter_map(|record| {
+            if *(record.fields.use_order_flow.as_ref()?) {
+                Some(record.fields.symbol.as_ref()?.clone())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<String>>();
 
     tcbs.send(UpdateStocksCommand {
-        stocks: symbols.clone(),
+        stocks: tcbs_symbols.clone(),
     })
     .await
     .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?;
     vps.send(UpdateStocksCommand {
-        stocks: symbols.clone(),
+        stocks: vps_symbols.clone(),
     })
     .await
     .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?;

@@ -811,14 +811,20 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
             ];
 
             for order in msg.orders {
-                let parts: Vec<i64> = order
+                let (hour, min, sec) = if let Ok(parts) = order
                     .t
                     .split(':')
-                    .filter_map(|s| s.parse::<i64>().ok())
-                    .collect();
-                let hour = parts[0];
-                let min = parts[1];
-                let sec = parts[2];
+                    .map(|s| s.parse::<i64>())
+                    .collect::<Result<Vec<_>, _>>()
+                {
+                    if parts.len() == 3 {
+                        (parts[0], parts[1], parts[2])
+                    } else {
+                        (0, 0, 0) // Default values for invalid format
+                    }
+                } else {
+                    (0, 0, 0) // Default values for parse errors
+                };
 
                 if let Err(e) = vars
                     .update(&msg.symbol, &vars_to_create[0].to_string(), order.p)
