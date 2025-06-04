@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 pub struct WatchList {
     #[serde(rename = "Symbol")]
     pub symbol: Option<String>,
+
+    #[serde(rename = "OrderFlow")]
+    pub use_order_flow: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -79,7 +82,7 @@ impl Portal {
     /// ```
     pub async fn watchlist(&self) -> Result<Vec<Record<WatchList>>> {
         self.airtable
-            .list_records("WatchList", "Watch", vec!["Symbol"])
+            .list_records("WatchList", "Watch", vec!["Symbol", "OrderFlow"])
             .await
             .map_err(|e| anyhow::anyhow!("Failed to fetch WatchList from Airtable: {}", e))
     }

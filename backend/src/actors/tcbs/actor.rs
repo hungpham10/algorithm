@@ -60,13 +60,7 @@ impl TcbsActor {
     /// ```
     pub fn new(stocks: &[String], token: String, variables: Arc<Mutex<Variables>>) -> Self {
         for symbol in stocks {
-            let vars_to_create = [
-                format!("{}.price", symbol),
-                format!("{}.volume", symbol),
-                format!("{}.type", symbol),
-                format!("{}.ba", symbol),
-                format!("{}.sa", symbol),
-            ];
+            let vars_to_create = Self::list_of_variables(symbol);
 
             for var in &vars_to_create {
                 match variables.lock() {
@@ -88,11 +82,22 @@ impl TcbsActor {
 
         Self {
             stocks: stocks.to_owned(),
-            timeout: 60,
+            timeout: 10,
             page_size: 100,
             token,
             variables,
         }
+    }
+
+    fn list_of_variables(symbol: &str) -> Vec<String> {
+        vec![
+            format!("{}.price", symbol),
+            format!("{}.volume", symbol),
+            format!("{}.type", symbol),
+            format!("{}.ba", symbol),
+            format!("{}.sa", symbol),
+            format!("{}.time", symbol),
+        ]
     }
 }
 
@@ -229,7 +234,7 @@ async fn fetch_orders(
     page: usize,
     page_size: usize,
 ) -> Vec<OrderResponse> {
-    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(100);
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(7);
     let client = Arc::new(
         ClientBuilder::new(reqwest::Client::new())
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
@@ -286,7 +291,16 @@ async fn fetch_order_per_stock(
 
     match resp {
         Ok(resp) => match resp.json::<OrderResponse>().await {
-            Ok(resp) => Ok(resp),
+            Ok(resp) => Ok(OrderResponse {
+                page: resp.page,
+                size: resp.size,
+                headIndex: resp.headIndex,
+                numberOfItems: resp.numberOfItems,
+                total: resp.total,
+                ticker: resp.ticker,
+                data: resp.data.iter().rev().map(|d| d.clone()).collect(),
+                d: resp.d,
+            }),
             Err(err) => Err(TcbsError {
                 message: format!("{:?}", err),
             }),
@@ -801,24 +815,35 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
             let mut updated = 0;
             let mut vars = variables.lock().unwrap();
 
-            let vars_to_create = [
-                format!("{}.price", msg.symbol),
-                format!("{}.volume", msg.symbol),
-                format!("{}.type", msg.symbol),
-                format!("{}.ba", msg.symbol),
-                format!("{}.sa", msg.symbol),
-            ];
+            let vars_to_create = Self::list_of_variables(&msg.symbol);
 
             for order in msg.orders {
+                let (hour, min, sec) = if let Ok(parts) = order
+                    .t
+                    .split(':')
+                    .map(|s| s.parse::<i64>())
+                    .collect::<Result<Vec<_>, _>>()
+                {
+                    if parts.len() == 3 {
+                        (parts[0], parts[1], parts[2])
+                    } else {
+                        (0, 0, 0) // Default values for invalid format
+                    }
+                } else {
+                    (0, 0, 0) // Default values for parse errors
+                };
+                let time = (hour * 3600 + min * 60 + sec) as f64;
+                let last = vars.last(vars_to_create[5].as_str()).unwrap_or(0.0);
+
+                if time <= last {
+                    break;
+                }
+
                 if let Err(e) = vars
                     .update(&msg.symbol, &vars_to_create[0].to_string(), order.p)
                     .await
                 {
-                    error!(
-                        "Failed to update variable {}: {}",
-                        format!("{}.price", msg.symbol),
-                        e
-                    );
+                    error!("Failed to update variable {}: {}", vars_to_create[0], e);
                     panic!("Failed to update variable");
                 }
 
@@ -826,18 +851,14 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     .update(&msg.symbol, &vars_to_create[1].to_string(), order.v as f64)
                     .await
                 {
-                    error!(
-                        "Failed to update variable {}: {}",
-                        format!("{}.volume", msg.symbol),
-                        e
-                    );
+                    error!("Failed to update variable {}: {}", vars_to_create[1], e);
                 }
 
                 if let Err(e) = vars
                     .update(
                         &msg.symbol,
                         &vars_to_create[2].to_string(),
-                        match order.t.as_str() {
+                        match order.a.as_str() {
                             "BU" => 1.0,
                             "SD" => 0.0,
                             _ => 0.5,
@@ -845,33 +866,32 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     )
                     .await
                 {
-                    error!(
-                        "Failed to update variable {}: {}",
-                        format!("{}.type", msg.symbol),
-                        e
-                    );
+                    error!("Failed to update variable {}: {}", vars_to_create[2], e);
                 }
 
                 if let Err(e) = vars
                     .update(&msg.symbol, &vars_to_create[3].to_string(), order.ba)
                     .await
                 {
-                    error!(
-                        "Failed to update variable {}: {}",
-                        format!("{}.ba", msg.symbol),
-                        e
-                    );
+                    error!("Failed to update variable {}: {}", vars_to_create[3], e);
                 }
 
                 if let Err(e) = vars
                     .update(&msg.symbol, &vars_to_create[4].to_string(), order.sa)
                     .await
                 {
-                    error!(
-                        "Failed to update variable {}: {}",
-                        format!("{}.sa", msg.symbol),
-                        e
-                    );
+                    error!("Failed to update variable {}: {}", vars_to_create[4], e);
+                }
+
+                if let Err(e) = vars
+                    .update(
+                        &msg.symbol,
+                        &vars_to_create[5].to_string(),
+                        (hour * 3600 + min * 60 + sec) as f64,
+                    )
+                    .await
+                {
+                    error!("Failed to update variable {}: {}", vars_to_create[5], e);
                 }
 
                 updated += 1;

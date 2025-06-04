@@ -232,6 +232,20 @@ impl Variables {
         })
     }
 
+    pub fn last(&self, name: &str) -> Result<f64, RuleError> {
+        let buffer = self.variables.get(name).ok_or_else(|| RuleError {
+            message: format!("Variable {} not found", name),
+        })?;
+
+        if let Some(val) = buffer.back() {
+            Ok(*val)
+        } else {
+            Err(RuleError {
+                message: format!("Variable {} is empty", name),
+            })
+        }
+    }
+
     /// Returns a vector of references to all variable names currently managed by the struct.
     ///
     /// # Examples
@@ -459,12 +473,14 @@ impl Variables {
         let bucket = self.s3_bucket.as_ref().ok_or_else(|| RuleError {
             message: "Bucket name not set".to_string(),
         })?;
+        let folder = Utc::now().format("%Y-%m-%d");
 
         client
             .put_object()
             .bucket(bucket)
             .key(&format!(
-                "{}-{}-{}.parquet",
+                "{}/{}-{}-{}.parquet",
+                folder,
                 name,
                 scope,
                 Utc::now().timestamp_millis()

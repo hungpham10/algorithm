@@ -1,8 +1,11 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 use actix::prelude::*;
 use actix::Actor;
+
+use chrono::Utc;
+use log::info;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -34,9 +37,8 @@ pub fn resolve_vps_routes(
 ) -> Arc<Addr<VpsActor>> {
     let vps = VpsActor::new(stocks, variables);
     let actor = Arc::new(vps.start());
-    let lock = Arc::new(RwLock::new(0));
 
-    resolve_watching_vps_board(actor.clone(), resolver, lock);
+    resolve_watching_vps_board(actor.clone(), resolver);
     actor
 }
 
@@ -52,15 +54,16 @@ pub fn resolve_vps_routes(
 /// resolve_watching_vps_board(actor, &mut resolver);
 /// // The resolver will now periodically process VPS board data.
 /// ```
-fn resolve_watching_vps_board(
-    actor: Arc<Addr<VpsActor>>,
-    resolver: &mut CronResolver,
-    lock: Arc<RwLock<usize>>,
-) {
+fn resolve_watching_vps_board(actor: Arc<Addr<VpsActor>>, resolver: &mut CronResolver) {
     resolver.resolve("vps.watch_boards".to_string(), move |task, _, _| {
         let actor = actor.clone();
 
         async move {
+            info!(
+                "Running VPS board watcher at {}...",
+                Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+            );
+
             // Get price data
             let datapoints = actor.send(GetPriceCommand).await.unwrap();
 
@@ -95,6 +98,11 @@ fn resolve_watching_vps_board(
                     Delegate::new().default()
                 }
             };
+
+            info!(
+                "Analyse board screeing at {}...",
+                Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+            );
 
             // Get labels
             let labels: Vec<String> = rule.labels().iter().map(|l| l.to_string()).collect();
@@ -158,6 +166,11 @@ fn resolve_watching_vps_board(
                     Err(e) => eprintln!("Resolver error: {:?}", e),
                 }
             }
+
+            info!(
+                "Finished VPS board watcher at {}...",
+                Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+            );
         }
     });
 }

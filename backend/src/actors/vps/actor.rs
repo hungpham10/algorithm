@@ -124,7 +124,7 @@ impl VpsActor {
 
         Self {
             stocks: stocks.to_owned(),
-            timeout: 300,
+            timeout: 10,
             variables,
         }
     }
@@ -222,7 +222,7 @@ impl Handler<GetPriceCommand> for VpsActor {
 }
 
 async fn fetch_price_depth(stocks: &Vec<String>, timeout: u64) -> Vec<Price> {
-    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(100);
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(5);
     let client = Arc::new(
         ClientBuilder::new(reqwest::Client::new())
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
