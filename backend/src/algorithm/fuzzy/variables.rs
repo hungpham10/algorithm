@@ -459,12 +459,14 @@ impl Variables {
         let bucket = self.s3_bucket.as_ref().ok_or_else(|| RuleError {
             message: "Bucket name not set".to_string(),
         })?;
+        let folder = Utc::now().format("%Y-%m-%d");
 
         client
             .put_object()
             .bucket(bucket)
             .key(&format!(
-                "{}-{}-{}.parquet",
+                "{}/{}-{}-{}.parquet",
+                folder,
                 name,
                 scope,
                 Utc::now().timestamp_millis()
