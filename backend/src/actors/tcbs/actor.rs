@@ -291,7 +291,16 @@ async fn fetch_order_per_stock(
 
     match resp {
         Ok(resp) => match resp.json::<OrderResponse>().await {
-            Ok(resp) => Ok(resp),
+            Ok(resp) => Ok(OrderResponse {
+                page: resp.page,
+                size: resp.size,
+                headIndex: resp.headIndex,
+                numberOfItems: resp.numberOfItems,
+                total: resp.total,
+                ticker: resp.ticker,
+                data: resp.data.iter().rev().map(|d| d.clone()).collect(),
+                d: resp.d,
+            }),
             Err(err) => Err(TcbsError {
                 message: format!("{:?}", err),
             }),
@@ -823,6 +832,12 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                 } else {
                     (0, 0, 0) // Default values for parse errors
                 };
+                let time = (hour * 3600 + min * 60 + sec) as f64;
+                let last = vars.last(vars_to_create[5].as_str()).unwrap_or(0.0);
+
+                if time <= last {
+                    break;
+                }
 
                 if let Err(e) = vars
                     .update(&msg.symbol, &vars_to_create[0].to_string(), order.p)

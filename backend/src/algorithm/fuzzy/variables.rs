@@ -232,6 +232,20 @@ impl Variables {
         })
     }
 
+    pub fn last(&self, name: &str) -> Result<f64, RuleError> {
+        let buffer = self.variables.get(name).ok_or_else(|| RuleError {
+            message: format!("Variable {} not found", name),
+        })?;
+
+        if let Some(val) = buffer.back() {
+            Ok(*val)
+        } else {
+            Err(RuleError {
+                message: format!("Variable {} is empty", name),
+            })
+        }
+    }
+
     /// Returns a vector of references to all variable names currently managed by the struct.
     ///
     /// # Examples
