@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use actix::prelude::*;
-use log::error;
+use chrono::Utc;
+use log::{error, info};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -69,6 +70,11 @@ fn resolve_watching_tcbs_bid_ask_flow(actor: Arc<Addr<TcbsActor>>, resolver: &mu
         let actor = actor.clone();
 
         async move {
+            info!(
+                "Resolving tcbs.watch_bid_ask_flow at {}...",
+                Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+            );
+
             let datapoints = actor.send(GetOrderCommand { page: 0 }).await.unwrap();
 
             // Build rule
@@ -102,6 +108,11 @@ fn resolve_watching_tcbs_bid_ask_flow(actor: Arc<Addr<TcbsActor>>, resolver: &mu
                     Delegate::new().default()
                 }
             };
+
+            info!(
+                "Analyse order flow at {}...",
+                Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+            );
 
             // Get labels
             let labels: Vec<String> = rule.labels().iter().map(|l| l.to_string()).collect();
@@ -174,6 +185,11 @@ fn resolve_watching_tcbs_bid_ask_flow(actor: Arc<Addr<TcbsActor>>, resolver: &mu
                     }
                 }
             }
+
+            info!(
+                "Done resolving order flow at {}...",
+                Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+            );
         }
     });
 }

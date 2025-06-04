@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 pub struct WatchList {
     #[serde(rename = "Symbol")]
     pub symbol: Option<String>,
+
+    #[serde(rename = "OrderFlow")]
+    pub use_order_flow: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

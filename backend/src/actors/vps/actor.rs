@@ -124,7 +124,7 @@ impl VpsActor {
 
         Self {
             stocks: stocks.to_owned(),
-            timeout: 300,
+            timeout: 10,
             variables,
         }
     }

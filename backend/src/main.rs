@@ -144,12 +144,25 @@ async fn main() -> std::io::Result<()> {
     ));
 
     // @NOTE: cronjob configuration
-    let symbols: Vec<String> = portal
+    let vps_symbols: Vec<String> = portal
         .watchlist()
         .await
         .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?
         .iter()
         .filter_map(|record| Some(record.fields.symbol.as_ref()?.clone()))
+        .collect::<Vec<String>>();
+    let tcbs_symbols: Vec<String> = portal
+        .watchlist()
+        .await
+        .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?
+        .iter()
+        .filter_map(|record| {
+            if *(record.fields.use_order_flow.as_ref()?) {
+                Some(record.fields.symbol.as_ref()?.clone())
+            } else {
+                None
+            }
+        })
         .collect::<Vec<String>>();
     let cronjob: Vec<ScheduleCommand> = portal
         .cronjob()
@@ -216,8 +229,8 @@ async fn main() -> std::io::Result<()> {
 
     // @NOTE: setup cron and its resolvers
     let mut resolver = CronResolver::new();
-    let tcbs = resolve_tcbs_routes(&mut resolver, &symbols, tcbs_vars.clone());
-    let vps = resolve_vps_routes(&mut resolver, &symbols, vps_vars.clone());
+    let tcbs = resolve_tcbs_routes(&mut resolver, &tcbs_symbols, tcbs_vars.clone());
+    let vps = resolve_vps_routes(&mut resolver, &vps_symbols, vps_vars.clone());
     let cron = connect_to_cron(Rc::new(resolver));
 
     for command in cronjob {

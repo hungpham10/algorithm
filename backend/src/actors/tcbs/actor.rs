@@ -88,7 +88,7 @@ impl TcbsActor {
 
         Self {
             stocks: stocks.to_owned(),
-            timeout: 60,
+            timeout: 10,
             page_size: 100,
             token,
             variables,
@@ -807,18 +807,24 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                 format!("{}.type", msg.symbol),
                 format!("{}.ba", msg.symbol),
                 format!("{}.sa", msg.symbol),
+                format!("{}.time", msg.symbol),
             ];
 
             for order in msg.orders {
+                let parts: Vec<i64> = order
+                    .t
+                    .split(':')
+                    .filter_map(|s| s.parse::<i64>().ok())
+                    .collect();
+                let hour = parts[0];
+                let min = parts[1];
+                let sec = parts[2];
+
                 if let Err(e) = vars
                     .update(&msg.symbol, &vars_to_create[0].to_string(), order.p)
                     .await
                 {
-                    error!(
-                        "Failed to update variable {}: {}",
-                        format!("{}.price", msg.symbol),
-                        e
-                    );
+                    error!("Failed to update variable {}: {}", vars_to_create[0], e);
                     panic!("Failed to update variable");
                 }
 
@@ -826,11 +832,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     .update(&msg.symbol, &vars_to_create[1].to_string(), order.v as f64)
                     .await
                 {
-                    error!(
-                        "Failed to update variable {}: {}",
-                        format!("{}.volume", msg.symbol),
-                        e
-                    );
+                    error!("Failed to update variable {}: {}", vars_to_create[1], e);
                 }
 
                 if let Err(e) = vars
@@ -845,33 +847,32 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     )
                     .await
                 {
-                    error!(
-                        "Failed to update variable {}: {}",
-                        format!("{}.type", msg.symbol),
-                        e
-                    );
+                    error!("Failed to update variable {}: {}", vars_to_create[2], e);
                 }
 
                 if let Err(e) = vars
                     .update(&msg.symbol, &vars_to_create[3].to_string(), order.ba)
                     .await
                 {
-                    error!(
-                        "Failed to update variable {}: {}",
-                        format!("{}.ba", msg.symbol),
-                        e
-                    );
+                    error!("Failed to update variable {}: {}", vars_to_create[3], e);
                 }
 
                 if let Err(e) = vars
                     .update(&msg.symbol, &vars_to_create[4].to_string(), order.sa)
                     .await
                 {
-                    error!(
-                        "Failed to update variable {}: {}",
-                        format!("{}.sa", msg.symbol),
-                        e
-                    );
+                    error!("Failed to update variable {}: {}", vars_to_create[4], e);
+                }
+
+                if let Err(e) = vars
+                    .update(
+                        &msg.symbol,
+                        &vars_to_create[5].to_string(),
+                        (hour * 3600 + min * 60 + sec) as f64,
+                    )
+                    .await
+                {
+                    error!("Failed to update variable {}: {}", vars_to_create[5], e);
                 }
 
                 updated += 1;
