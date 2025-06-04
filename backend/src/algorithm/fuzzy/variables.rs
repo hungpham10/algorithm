@@ -425,6 +425,7 @@ impl Variables {
         .map_err(|e| RuleError {
             message: format!("Failed to create batch: {}", e),
         })?;
+
         let props = WriterProperties::builder()
             .set_compression(Compression::ZSTD(ZstdLevel::default()))
             .set_writer_version(WriterVersion::PARQUET_2_0)
@@ -439,6 +440,9 @@ impl Variables {
 
             writer.write(&batch).map_err(|e| RuleError {
                 message: format!("Failed to write batch: {}", e),
+            })?;
+            writer.close().map_err(|e| RuleError {
+                message: format!("Failed to close writer: {}", e),
             })?;
         }
 
