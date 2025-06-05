@@ -18,7 +18,7 @@ COPY scripts/release.sh /app/endpoint.sh
 
 # Install runtime dependencies
 RUN apt update 																	&& \
-    apt install -y postgresql-client ca-certificates curl unzip screen supervisor 								&& \
+    apt install -y postgresql-client ca-certificates curl unzip screen supervisor  gettext-base							&& \
     curl -kO https://localtonet.com/download/localtonet-linux-x64.zip 										&& \
     unzip localtonet-linux-x64.zip 														&& \
     chmod +x ./localtonet 															&& \
