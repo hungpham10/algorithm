@@ -6,7 +6,7 @@ use actix::Addr;
 use actix_web::middleware::Logger;
 use actix_web::web::{get, put, Data};
 use actix_web::{App, HttpResponse, HttpServer, Result};
-use actix_web_prometheus::{PrometheusMetrics, PrometheusMetricsBuilder};
+use actix_web_prometheus::PrometheusMetricsBuilder;
 
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::oneshot;
@@ -141,18 +141,6 @@ async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
     env_logger::init();
 
-    let prometheus = Arc::new(
-        PrometheusMetricsBuilder::new("api")
-            .endpoint("/metrics")
-            .build()
-            .map_err(|e| {
-                Error::new(
-                    ErrorKind::Other,
-                    format!("Failed to build prometheus metrics: {:?}", e),
-                )
-            })?,
-    );
-
     // @NOTE: server configuration
     let host = std::env::var("SERVER_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = std::env::var("SERVER_PORT")
@@ -255,8 +243,17 @@ async fn main() -> std::io::Result<()> {
 
     // @NOTE: setup cron and its resolvers
     let mut resolver = CronResolver::new();
-    let tcbs = resolve_tcbs_routes(&mut resolver, &tcbs_symbols, tcbs_vars.clone());
-    let vps = resolve_vps_routes(&mut resolver, &vps_symbols, vps_vars.clone());
+    let prometheus = PrometheusMetricsBuilder::new("api")
+        .endpoint("/metrics")
+        .build()
+        .map_err(|e| {
+            Error::new(
+                ErrorKind::Other,
+                format!("Failed to build prometheus metrics: {:?}", e),
+            )
+        })?;
+    let tcbs = resolve_tcbs_routes(&prometheus, &mut resolver, &tcbs_symbols, tcbs_vars.clone());
+    let vps = resolve_vps_routes(&prometheus, &mut resolver, &vps_symbols, vps_vars.clone());
     let cron = connect_to_cron(Rc::new(resolver));
 
     for command in cronjob {

@@ -73,10 +73,13 @@ pub fn industry(name: String) -> Vec<String> {
 
 #[pyfunction]
 pub fn market(symbols: Vec<String>) -> PyResult<PyDataFrame> {
-    let datapoints = actix_rt::Runtime::new().unwrap().block_on(async {
-        let actor = connect_to_vps(&symbols);
-        actor.send(GetPriceCommand).await.unwrap()
-    });
+    let datapoints = actix_rt::Runtime::new()
+        .unwrap()
+        .block_on(async {
+            let actor = connect_to_vps(&symbols);
+            actor.send(GetPriceCommand).await.unwrap()
+        })
+        .map_err(|e| PyRuntimeError::new_err(format!("{:?}", e)))?;
 
     let mapping: HashMap<String, &Price> = datapoints.iter().map(|p| (p.sym.clone(), p)).collect();
 
