@@ -3,9 +3,9 @@ use std::sync::{Arc, Mutex};
 
 use actix::prelude::*;
 use actix::Actor;
+use actix_web_prometheus::PrometheusMetrics;
 
-use chrono::Utc;
-use log::info;
+use prometheus::{opts, IntCounterVec};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -31,14 +31,30 @@ use super::{GetPriceCommand, UpdateVariablesCommand, VpsActor, VpsError};
 /// assert!(Arc::strong_count(&vps_addr) > 0);
 /// ```
 pub fn resolve_vps_routes(
+    #[cfg(not(feature = "python"))] prometheus: &PrometheusMetrics,
     resolver: &mut CronResolver,
     stocks: &[String],
     variables: Arc<Mutex<Variables>>,
 ) -> Arc<Addr<VpsActor>> {
+    let counter = IntCounterVec::new(
+        opts!(
+            "vps_watching_board_count",
+            "Number of watching board received by the VpsActor"
+        )
+        .namespace("api"),
+        &["status"],
+    )
+    .unwrap();
     let vps = VpsActor::new(stocks, variables);
     let actor = Arc::new(vps.start());
 
-    resolve_watching_vps_board(actor.clone(), resolver);
+    #[cfg(not(feature = "python"))]
+    prometheus
+        .registry
+        .register(Box::new(counter.clone()))
+        .unwrap();
+
+    resolve_watching_vps_board(actor.clone(), Arc::new(counter), resolver);
     actor
 }
 
@@ -54,18 +70,30 @@ pub fn resolve_vps_routes(
 /// resolve_watching_vps_board(actor, &mut resolver);
 /// // The resolver will now periodically process VPS board data.
 /// ```
-fn resolve_watching_vps_board(actor: Arc<Addr<VpsActor>>, resolver: &mut CronResolver) {
+fn resolve_watching_vps_board(
+    actor: Arc<Addr<VpsActor>>,
+    counter: Arc<IntCounterVec>,
+    resolver: &mut CronResolver,
+) {
     resolver.resolve("vps.watch_boards".to_string(), move |task, _, _| {
         let actor = actor.clone();
+        let counter = counter.clone();
 
         async move {
-            info!(
-                "Running VPS board watcher at {}...",
-                Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
-            );
-
             // Get price data
-            let datapoints = actor.send(GetPriceCommand).await.unwrap();
+            let datapoints = match actor.send(GetPriceCommand).await.map_err(|e| VpsError {
+                message: e.to_string(),
+            }) {
+                Ok(Ok(datapoints)) => datapoints,
+                Ok(Err(_)) => {
+                    counter.with_label_values(&["fail"]).inc();
+                    return;
+                }
+                Err(_) => {
+                    counter.with_label_values(&["fail"]).inc();
+                    return;
+                }
+            };
 
             // Build rule
             let mut rule = if let Some(fuzzy) = task.jsfuzzy() {
@@ -99,11 +127,6 @@ fn resolve_watching_vps_board(actor: Arc<Addr<VpsActor>>, resolver: &mut CronRes
                 }
             };
 
-            info!(
-                "Analyse board screeing at {}...",
-                Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
-            );
-
             // Get labels
             let labels: Vec<String> = rule.labels().iter().map(|l| l.to_string()).collect();
 
@@ -132,7 +155,11 @@ fn resolve_watching_vps_board(actor: Arc<Addr<VpsActor>>, resolver: &mut CronRes
                             Ok(val) => {
                                 inputs.insert(label.to_string(), val);
                             }
-                            Err(e) => eprintln!("Failed to get value for {}: {}", label, e),
+                            Err(e) => {
+                                eprintln!("Failed to get value for {}: {}", label, e);
+                                counter.with_label_values(&["fail"]).inc();
+                                return;
+                            }
                         }
                     }
                 }
@@ -163,14 +190,15 @@ fn resolve_watching_vps_board(actor: Arc<Addr<VpsActor>>, resolver: &mut CronRes
                             }
                         }
                     }
-                    Err(e) => eprintln!("Resolver error: {:?}", e),
+                    Err(e) => {
+                        eprintln!("Resolver error: {:?}", e);
+                        counter.with_label_values(&["fail"]).inc();
+                        return;
+                    }
                 }
             }
 
-            info!(
-                "Finished VPS board watcher at {}...",
-                Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
-            );
+            counter.with_label_values(&["success"]).inc();
         }
     });
 }

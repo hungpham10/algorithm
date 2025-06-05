@@ -40,6 +40,7 @@ airtable-api = "0.1"
 
 # feature dashboard monitoring
 actix-web-prometheus = "0.1.2"
+prometheus = "0.13.3"
 
 # Crawling data in background
 cron-parser = "0.8.1"

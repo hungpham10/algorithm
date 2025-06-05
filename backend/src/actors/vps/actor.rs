@@ -207,11 +207,11 @@ impl Handler<UpdateStocksCommand> for VpsActor {
 }
 
 #[derive(Message, Debug)]
-#[rtype(result = "Vec<Price>")]
+#[rtype(result = "Result<Vec<Price>, VpsError>")]
 pub struct GetPriceCommand;
 
 impl Handler<GetPriceCommand> for VpsActor {
-    type Result = ResponseFuture<Vec<Price>>;
+    type Result = ResponseFuture<Result<Vec<Price>, VpsError>>;
 
     fn handle(&mut self, _msg: GetPriceCommand, _: &mut Self::Context) -> Self::Result {
         let stocks = self.stocks.clone();
@@ -221,7 +221,7 @@ impl Handler<GetPriceCommand> for VpsActor {
     }
 }
 
-async fn fetch_price_depth(stocks: &Vec<String>, timeout: u64) -> Vec<Price> {
+async fn fetch_price_depth(stocks: &Vec<String>, timeout: u64) -> Result<Vec<Price>, VpsError> {
     let retry_policy = ExponentialBackoff::builder().build_with_max_retries(5);
     let client = Arc::new(
         ClientBuilder::new(reqwest::Client::new())
@@ -233,16 +233,18 @@ async fn fetch_price_depth(stocks: &Vec<String>, timeout: u64) -> Vec<Price> {
         .map(|block| block.iter().map(|stock| (*stock).clone()).collect())
         .collect();
 
-    future::try_join_all(
+    Ok(future::try_join_all(
         blocks
             .iter()
             .map(move |block| fetch_price_depth_per_block(client.clone(), block, timeout)),
     )
     .await
-    .unwrap()
+    .map_err(|e| VpsError {
+        message: format!("{:?}", e),
+    })?
     .into_iter()
     .flatten()
-    .collect()
+    .collect())
 }
 
 async fn fetch_price_depth_per_block(

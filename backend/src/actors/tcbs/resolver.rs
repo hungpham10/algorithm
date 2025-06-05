@@ -2,8 +2,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use actix::prelude::*;
-use chrono::Utc;
-use log::{error, info};
+use actix_web_prometheus::PrometheusMetrics;
+
+use log::error;
+use prometheus::{opts, IntCounterVec};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -37,14 +39,30 @@ use super::{GetOrderCommand, TcbsActor, TcbsError, UpdateVariablesCommand};
 /// let actor_addr = resolve_tcbs_routes(&mut resolver, &stocks, variables.clone());
 /// ```
 pub fn resolve_tcbs_routes(
+    #[cfg(not(feature = "python"))] prometheus: &PrometheusMetrics,
     resolver: &mut CronResolver,
     stocks: &[String],
     variables: Arc<Mutex<Variables>>,
 ) -> Arc<Addr<TcbsActor>> {
+    let counter = IntCounterVec::new(
+        opts!(
+            "tcbs_bid_ask_count",
+            "Number of bid-ask flow updates received by the TcbsActor"
+        )
+        .namespace("api"),
+        &["status"],
+    )
+    .unwrap();
     let tcbs = TcbsActor::new(stocks, "".to_string(), variables);
     let actor = Arc::new(tcbs.start());
 
-    resolve_watching_tcbs_bid_ask_flow(actor.clone(), resolver);
+    #[cfg(not(feature = "python"))]
+    prometheus
+        .registry
+        .register(Box::new(counter.clone()))
+        .unwrap();
+
+    resolve_watching_tcbs_bid_ask_flow(actor.clone(), Arc::new(counter), resolver);
     actor.clone()
 }
 
@@ -65,17 +83,29 @@ pub fn resolve_tcbs_routes(
 /// let mut resolver = CronResolver::new();
 /// resolve_watching_tcbs_bid_ask_flow(actor, &mut resolver);
 /// ```
-fn resolve_watching_tcbs_bid_ask_flow(actor: Arc<Addr<TcbsActor>>, resolver: &mut CronResolver) {
+fn resolve_watching_tcbs_bid_ask_flow(
+    actor: Arc<Addr<TcbsActor>>,
+    counter: Arc<IntCounterVec>,
+    resolver: &mut CronResolver,
+) {
     resolver.resolve("tcbs.watch_bid_ask_flow".to_string(), move |task, _, _| {
         let actor = actor.clone();
+        let counter = counter.clone();
 
         async move {
-            info!(
-                "Resolving tcbs.watch_bid_ask_flow at {}...",
-                Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
-            );
-
-            let datapoints = actor.send(GetOrderCommand { page: 0 }).await.unwrap();
+            let datapoints =
+                match actor
+                    .send(GetOrderCommand { page: 0 })
+                    .await
+                    .map_err(|e| TcbsError {
+                        message: e.to_string(),
+                    }) {
+                    Ok(datapoints) => datapoints,
+                    Err(_) => {
+                        counter.with_label_values(&["fail"]).inc();
+                        return;
+                    }
+                };
 
             // Build rule
             let mut rule = if let Some(fuzzy) = task.jsfuzzy() {
@@ -109,11 +139,6 @@ fn resolve_watching_tcbs_bid_ask_flow(actor: Arc<Addr<TcbsActor>>, resolver: &mu
                 }
             };
 
-            info!(
-                "Analyse order flow at {}...",
-                Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
-            );
-
             // Get labels
             let labels: Vec<String> = rule.labels().iter().map(|l| l.to_string()).collect();
 
@@ -140,7 +165,11 @@ fn resolve_watching_tcbs_bid_ask_flow(actor: Arc<Addr<TcbsActor>>, resolver: &mu
                             Ok(val) => {
                                 inputs.insert(label.to_string(), val);
                             }
-                            Err(e) => error!("Failed to get variable: {}", e),
+                            Err(e) => {
+                                error!("Failed to get variable: {}", e);
+                                counter.with_label_values(&["fail"]).inc();
+                                return;
+                            }
                         }
                     }
                 }
@@ -182,14 +211,12 @@ fn resolve_watching_tcbs_bid_ask_flow(actor: Arc<Addr<TcbsActor>>, resolver: &mu
                     }
                     Err(e) => {
                         eprintln!("Failed to evaluate rule: {}", e);
+                        counter.with_label_values(&["fail"]).inc();
+                        return;
                     }
                 }
             }
-
-            info!(
-                "Done resolving order flow at {}...",
-                Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
-            );
+            counter.with_label_values(&["success"]).inc();
         }
     });
 }
