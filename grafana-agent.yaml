@@ -17,7 +17,7 @@ metrics:
           static_configs:
             - targets: ['localhost:12345'] # Port of Grafana Agent
       remote_write:
-        - url: https://prometheus-prod-18-prod-ap-southeast-0.grafana.net/api/prom
+        - url: https://prometheus-prod-18-prod-ap-southeast-0.grafana.net/api/prom/push
           basic_auth:
             username: ${GRAFANA_CLOUD_ID}
             password: ${GRAFANA_CLOUD_TOKEN}
