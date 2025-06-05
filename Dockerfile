@@ -40,7 +40,7 @@ COPY supervisord.conf /etc/supervisor/supervisord.conf
 RUN mkdir -p /etc/grafana-agent
 
 # Copy Grafana Agent configuration
-COPY grafana-agent.yaml /etc/grafana-agent/config.yaml
+COPY grafana-agent.yaml /etc/grafana-agent/config.yaml.shenv
 
-ENTRYPOINT ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
+ENTRYPOINT ["/app/endpoint.sh", "/usr/bin/supervisord", "/sql"]
 EXPOSE 8000
