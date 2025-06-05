@@ -11,7 +11,10 @@
 
 function prepare() {
   if [ -f /etc/grafana-agent/config.yaml.shenv ]; then
-    envsubst < /etc/grafana-agent/config.yaml.j2 > /etc/grafana-agent/config.yaml
+    if ! envsubst < /etc/grafana-agent/config.yaml.shenv > /etc/grafana-agent/config.yaml; then
+      echo "Error: failed to generate /etc/grafana-agent/config.yaml" >&2
+      exit 1
+    fi
   fi
 
   if [[ ${DISABLE_AUTO_INIT_DATABASE} = "true" ]]; then
