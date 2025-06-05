@@ -6,6 +6,7 @@ use actix::Addr;
 use actix_web::middleware::Logger;
 use actix_web::web::{get, put, Data};
 use actix_web::{App, HttpResponse, HttpServer, Result};
+use actix_web_prometheus::{PrometheusMetrics, PrometheusMetricsBuilder};
 
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::oneshot;
@@ -139,6 +140,18 @@ async fn synchronize(
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
     env_logger::init();
+
+    let prometheus = Arc::new(
+        PrometheusMetricsBuilder::new("api")
+            .endpoint("/metrics")
+            .build()
+            .map_err(|e| {
+                Error::new(
+                    ErrorKind::Other,
+                    format!("Failed to build prometheus metrics: {:?}", e),
+                )
+            })?,
+    );
 
     // @NOTE: server configuration
     let host = std::env::var("SERVER_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
@@ -300,6 +313,7 @@ async fn main() -> std::io::Result<()> {
     let server = HttpServer::new(move || {
         App::new()
             .wrap(Logger::default())
+            .wrap(prometheus.clone())
             .route("/health", get().to(health))
             .route("/api/v1/config/synchronize", put().to(synchronize))
             .app_data(Data::new(portal.clone()))
