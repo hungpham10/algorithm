@@ -1,0 +1,23 @@
+server:
+  log_level: info
+
+metrics:
+  wal_directory: /tmp/wal
+  global:
+    scrape_interval: 15s
+  configs:
+    - name: app
+      scrape_configs:
+        - job_name: rust_app
+          static_configs:
+            - targets: ['localhost:8000'] # Port of Rust application
+              labels:
+                instance: rust-server
+        - job_name: agent
+          static_configs:
+            - targets: ['localhost:12345'] # Port of Grafana Agent
+      remote_write:
+        - url: https://prometheus-prod-18-prod-ap-southeast-0.grafana.net/api/prom
+          basic_auth:
+            username: ${GRAFANA_CLOUD_ID}
+            password: ${GRAFANA_CLOUD_TOKEN}
