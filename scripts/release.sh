@@ -10,6 +10,10 @@
 
 
 function prepare() {
+  if [ -f /etc/grafana-agent/config.yaml.shenv ]; then
+    envsubst < /etc/grafana-agent/config.yaml.j2 > /etc/grafana-agent/config.yaml
+  fi
+
   if [[ ${DISABLE_AUTO_INIT_DATABASE} = "true" ]]; then
     return
   fi
