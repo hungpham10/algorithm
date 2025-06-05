@@ -38,6 +38,9 @@ rayon = "1.10.0"
 # feature order management
 airtable-api = "0.1"
 
+# feature dashboard monitoring
+actix-web-prometheus = "0.1.2"
+
 # Crawling data in background
 cron-parser = "0.8.1"
 reqwest = { version = "0.12.7", features = ["json", "blocking"] }

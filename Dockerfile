@@ -17,14 +17,30 @@ COPY sql ./sql
 COPY scripts/release.sh /app/endpoint.sh
 
 # Install runtime dependencies
-RUN apt update && \
-    apt install -y postgresql-client ca-certificates curl unzip screen && \
-    curl -kO https://localtonet.com/download/localtonet-linux-x64.zip && \
-    unzip localtonet-linux-x64.zip && \
-    chmod +x ./localtonet && \
-    mv ./localtonet /usr/bin/localtonet && \
-    rm localtonet-linux-x64.zip && \
+RUN apt update 																	&& \
+    apt install -y postgresql-client ca-certificates curl unzip screen supervisor 								&& \
+    curl -kO https://localtonet.com/download/localtonet-linux-x64.zip 										&& \
+    unzip localtonet-linux-x64.zip 														&& \
+    chmod +x ./localtonet 															&& \
+    mv ./localtonet /usr/bin/localtonet 													&& \
+    rm localtonet-linux-x64.zip 														&& \
+    curl -fsSL https://apt.grafana.com/gpg.key | gpg --dearmor -o /usr/share/keyrings/grafana.gpg 						&& \
+    echo "deb [signed-by=/usr/share/keyrings/grafana.gpg] https://apt.grafana.com stable main" | tee /etc/apt/sources.list.d/grafana.list 	&& \
+    apt update 																	&& \
+    apt install -y grafana-agent 														&& \
     apt autoremove -y && apt clean
 
-ENTRYPOINT ["/app/endpoint.sh", "./server", "/sql"]
+# Create supervisor configuration directory
+RUN mkdir -p /etc/supervisor/conf.d
+
+# Copy supervisor configuration files
+COPY supervisord.conf /etc/supervisor/supervisord.conf
+
+# Create directory for Grafana Agent configuration
+RUN mkdir -p /etc/grafana-agent
+
+# Copy Grafana Agent configuration
+COPY grafana-agent.yaml /etc/grafana-agent/config.yaml
+
+ENTRYPOINT ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
 EXPOSE 8000
