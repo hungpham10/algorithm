@@ -21,6 +21,7 @@ use actix::Addr;
 use crate::actors::{ActorError, GetVariableCommand, HealthCommand, UpdateStocksCommand};
 use crate::algorithm::Variables;
 
+#[cfg(not(feature = "python"))]
 use super::monitor::monitor_order_flow;
 
 #[derive(Debug, Clone)]
