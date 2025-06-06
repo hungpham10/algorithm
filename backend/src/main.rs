@@ -193,6 +193,11 @@ async fn main() -> std::io::Result<()> {
         })
         .collect::<Vec<ScheduleCommand>>();
 
+    let tcbs_depth = std::env::var("TCBS_DEPTH")
+        .unwrap_or_else(|_| "1".to_string())
+        .parse::<usize>()
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid TCBS_DEPTH"))?;
+
     let tcbs_timeseries = std::env::var("TCBS_TIMESERIES")
         .unwrap_or_else(|_| "360".to_string())
         .parse::<usize>()
@@ -252,7 +257,13 @@ async fn main() -> std::io::Result<()> {
                 format!("Failed to build prometheus metrics: {:?}", e),
             )
         })?;
-    let tcbs = resolve_tcbs_routes(&prometheus, &mut resolver, &tcbs_symbols, tcbs_vars.clone());
+    let tcbs = resolve_tcbs_routes(
+        &prometheus,
+        &mut resolver,
+        &tcbs_symbols,
+        tcbs_vars.clone(),
+        tcbs_depth,
+    );
     let vps = resolve_vps_routes(&prometheus, &mut resolver, &vps_symbols, vps_vars.clone());
     let cron = connect_to_cron(Rc::new(resolver));
 
