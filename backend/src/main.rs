@@ -309,8 +309,8 @@ async fn main() -> std::io::Result<()> {
     // @NOTE: spawn new http server
     let server = HttpServer::new(move || {
         App::new()
-            .wrap(Logger::default())
             .wrap(prometheus.clone())
+            .wrap(Logger::default())
             .route("/health", get().to(health))
             .route("/api/v1/config/synchronize", put().to(synchronize))
             .app_data(Data::new(portal.clone()))
