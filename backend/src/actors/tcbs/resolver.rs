@@ -198,6 +198,7 @@ fn resolve_watching_tcbs_bid_ask_flow(
                         continue;
                     }
 
+                    #[cfg(not(feature = "python"))]
                     info!("Updated variables for {}: {}", response.ticker, size);
 
                     // Load inputs

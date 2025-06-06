@@ -845,6 +845,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     break;
                 }
 
+                #[cfg(not(feature = "python"))]
                 monitor_order_flow(symbol, &order, counter.clone());
 
                 if let Err(e) = vars
