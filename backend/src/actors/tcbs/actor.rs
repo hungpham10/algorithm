@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use log::error;
+use prometheus::IntCounterVec;
 
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
@@ -19,6 +20,8 @@ use actix::Addr;
 
 use crate::actors::{ActorError, GetVariableCommand, HealthCommand, UpdateStocksCommand};
 use crate::algorithm::Variables;
+
+use super::monitor::monitor_order_flow;
 
 #[derive(Debug, Clone)]
 pub struct TcbsError {
@@ -775,6 +778,7 @@ impl Handler<GetVariableCommand> for TcbsActor {
 pub struct UpdateVariablesCommand {
     pub orders: Vec<Order>,
     pub symbol: String,
+    pub counter: Arc<IntCounterVec>,
 }
 
 impl Handler<UpdateVariablesCommand> for TcbsActor {
@@ -816,6 +820,8 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
             let mut vars = variables.lock().unwrap();
 
             let vars_to_create = Self::list_of_variables(&msg.symbol);
+            let symbol = msg.symbol.as_str();
+            let counter = msg.counter.clone();
 
             for order in msg.orders {
                 let (hour, min, sec) = if let Ok(parts) = order
@@ -838,6 +844,8 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                 if time <= last {
                     break;
                 }
+
+                monitor_order_flow(symbol, &order, counter.clone());
 
                 if let Err(e) = vars
                     .update(&msg.symbol, &vars_to_create[0].to_string(), order.p)
