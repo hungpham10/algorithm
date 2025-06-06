@@ -8,14 +8,11 @@ metrics:
   configs:
     - name: app
       scrape_configs:
-        - job_name: rust_app
+        - job_name: application
           static_configs:
             - targets: ['localhost:8000'] # Port of Rust application
               labels:
                 instance: rust-server
-        - job_name: agent
-          static_configs:
-            - targets: ['localhost:12345'] # Port of Grafana Agent
       remote_write:
         - url: https://prometheus-prod-18-prod-ap-southeast-0.grafana.net/api/prom/push
           basic_auth:
