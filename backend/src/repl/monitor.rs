@@ -66,7 +66,7 @@ impl Monitor {
             actix_rt::spawn(async move {
                 let mut resolver = CronResolver::new();
                 let _ = resolve_vps_routes(&mut resolver, &stocks, vps_vars.clone());
-                let _ = resolve_tcbs_routes(&mut resolver, &stocks, tcbs_vars.clone());
+                let _ = resolve_tcbs_routes(&mut resolver, &stocks, tcbs_vars.clone(), 1);
                 let cron = Arc::new(connect_to_cron(Rc::new(resolver)));
 
                 for command in schedules {

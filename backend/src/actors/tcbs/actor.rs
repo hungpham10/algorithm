@@ -21,6 +21,7 @@ use actix::Addr;
 use crate::actors::{ActorError, GetVariableCommand, HealthCommand, UpdateStocksCommand};
 use crate::algorithm::Variables;
 
+#[cfg(not(feature = "python"))]
 use super::monitor::monitor_order_flow;
 
 #[derive(Debug, Clone)]
@@ -845,6 +846,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     break;
                 }
 
+                #[cfg(not(feature = "python"))]
                 monitor_order_flow(symbol, &order, counter.clone());
 
                 if let Err(e) = vars
