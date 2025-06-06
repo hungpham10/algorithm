@@ -44,25 +44,48 @@ pub fn resolve_tcbs_routes(
     stocks: &[String],
     variables: Arc<Mutex<Variables>>,
 ) -> Arc<Addr<TcbsActor>> {
-    let counter = IntCounterVec::new(
+    let status_counter = IntCounterVec::new(
         opts!(
-            "tcbs_bid_ask_count",
+            "tcbs_bid_ask_status_count",
             "Number of bid-ask flow updates received by the TcbsActor"
         )
         .namespace("api"),
         &["status"],
     )
     .unwrap();
+
+    let order_counter = IntCounterVec::new(
+        opts!(
+            "tcbs_bid_ask_order_flow_count",
+            "Number of bid-ask orders received by the TcbsActor"
+        )
+        .namespace("api"),
+        &["symbol"],
+    )
+    .unwrap();
+
     let tcbs = TcbsActor::new(stocks, "".to_string(), variables);
     let actor = Arc::new(tcbs.start());
 
     #[cfg(not(feature = "python"))]
-    prometheus
-        .registry
-        .register(Box::new(counter.clone()))
-        .unwrap();
+    {
+        prometheus
+            .registry
+            .register(Box::new(status_counter.clone()))
+            .unwrap();
 
-    resolve_watching_tcbs_bid_ask_flow(actor.clone(), Arc::new(counter), resolver);
+        prometheus
+            .registry
+            .register(Box::new(order_counter.clone()))
+            .unwrap();
+    }
+
+    resolve_watching_tcbs_bid_ask_flow(
+        actor.clone(),
+        resolver,
+        Arc::new(status_counter),
+        Arc::new(order_counter),
+    );
     actor.clone()
 }
 
@@ -85,12 +108,14 @@ pub fn resolve_tcbs_routes(
 /// ```
 fn resolve_watching_tcbs_bid_ask_flow(
     actor: Arc<Addr<TcbsActor>>,
-    counter: Arc<IntCounterVec>,
     resolver: &mut CronResolver,
+    status_counter: Arc<IntCounterVec>,
+    order_counter: Arc<IntCounterVec>,
 ) {
     resolver.resolve("tcbs.watch_bid_ask_flow".to_string(), move |task, _, _| {
         let actor = actor.clone();
-        let counter = counter.clone();
+        let status_counter = status_counter.clone();
+        let order_counter = order_counter.clone();
 
         async move {
             let datapoints =
@@ -102,7 +127,7 @@ fn resolve_watching_tcbs_bid_ask_flow(
                     }) {
                     Ok(datapoints) => datapoints,
                     Err(_) => {
-                        counter.with_label_values(&["fail"]).inc();
+                        status_counter.with_label_values(&["fail"]).inc();
                         return;
                     }
                 };
@@ -149,6 +174,7 @@ fn resolve_watching_tcbs_bid_ask_flow(
                     .send(UpdateVariablesCommand {
                         symbol: response.ticker.clone(),
                         orders: response.data.clone(),
+                        counter: order_counter.clone(),
                     })
                     .await;
 
@@ -167,7 +193,7 @@ fn resolve_watching_tcbs_bid_ask_flow(
                             }
                             Err(e) => {
                                 error!("Failed to get variable: {}", e);
-                                counter.with_label_values(&["fail"]).inc();
+                                status_counter.with_label_values(&["fail"]).inc();
                                 return;
                             }
                         }
@@ -211,12 +237,12 @@ fn resolve_watching_tcbs_bid_ask_flow(
                     }
                     Err(e) => {
                         eprintln!("Failed to evaluate rule: {}", e);
-                        counter.with_label_values(&["fail"]).inc();
+                        status_counter.with_label_values(&["fail"]).inc();
                         return;
                     }
                 }
             }
-            counter.with_label_values(&["success"]).inc();
+            status_counter.with_label_values(&["success"]).inc();
         }
     });
 }
