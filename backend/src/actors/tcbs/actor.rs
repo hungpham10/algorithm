@@ -820,9 +820,10 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
             let mut updated = 0;
             let mut vars = variables.lock().unwrap();
 
-            let vars_to_create = Self::list_of_variables(&msg.symbol);
-            let symbol = msg.symbol.as_str();
+            #[cfg(not(feature = "python"))]
             let counter = msg.counter.clone();
+
+            let vars_to_create = Self::list_of_variables(&msg.symbol);
 
             for order in msg.orders {
                 let (hour, min, sec) = if let Ok(parts) = order
@@ -847,7 +848,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                 }
 
                 #[cfg(not(feature = "python"))]
-                monitor_order_flow(symbol, &order, counter.clone());
+                monitor_order_flow(&msg.symbol.to_string(), &order, counter.clone());
 
                 if let Err(e) = vars
                     .update(&msg.symbol, &vars_to_create[0].to_string(), order.p)

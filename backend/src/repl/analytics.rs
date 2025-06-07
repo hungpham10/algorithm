@@ -36,20 +36,24 @@ const FUZZY_TRIGGER_THRESHOLD: f64 = 1.0;
 /// let indices = filter(df, rule, 1024)?;
 /// assert!(indices.len() <= df.height());
 /// ```
-pub fn filter(df: PyDataFrame, rule: Py<PyDict>, memory_size: usize) -> PyResult<Vec<u32>> {
+pub fn filter(df: PyDataFrame, rule: Py<PyDict>, memory_size: usize) -> PyResult<Vec<f64>> {
     let df: DataFrame = df.into();
-    let rule = Delegate::new()
+    let mut rule = Delegate::new()
         .build(&rule, Format::Python)
         .map_err(|e| PyRuntimeError::new_err(format!("Invalid rule: {}", e)))?;
 
     actix_rt::Runtime::new()
         .unwrap()
-        .block_on(async move { filter_in_async(&df, &rule, memory_size).await })
+        .block_on(async move { filter_in_async(&df, &mut rule, memory_size).await })
 }
 
 #[inline]
-async fn filter_in_async(df: &DataFrame, rule: &Rule, memory_size: usize) -> PyResult<Vec<u32>> {
-    let mut selected_indices = Vec::new();
+async fn filter_in_async(
+    df: &DataFrame,
+    rule: &mut Rule,
+    memory_size: usize,
+) -> PyResult<Vec<f64>> {
+    let mut ret = Vec::new();
     let mut vars = Variables::new(memory_size, 0);
     let data: HashMap<String, Vec<f64>> = df
         .get_column_names()
@@ -86,7 +90,7 @@ async fn filter_in_async(df: &DataFrame, rule: &Rule, memory_size: usize) -> PyR
             })?;
         }
 
-        for label in rule.labels() {
+        for label in rule.inputs() {
             inputs.insert(
                 label.to_string(),
                 vars.get_by_expr(label).map_err(|e| {
@@ -95,15 +99,14 @@ async fn filter_in_async(df: &DataFrame, rule: &Rule, memory_size: usize) -> PyR
             );
         }
 
-        let result = rule
-            .evaluate()
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to evaluate rule: {}", e)))?;
+        rule.reload(&inputs);
 
-        if result == FUZZY_TRIGGER_THRESHOLD {
-            selected_indices.push(irow as u32);
-        }
+        ret.push(
+            rule.evaluate()
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to evaluate rule: {}", e)))?,
+        );
     }
 
     // Filter DataFrame using take
-    Ok(selected_indices)
+    Ok(ret)
 }

@@ -77,9 +77,9 @@ impl Function for Triangle {
         }
 
         if pins[0].1 <= pins[2].1 {
-            Ok((pins[0].1 - pins[1].1) / (pins[2].1 - pins[1].1) + pins[1].1)
+            Ok((pins[0].1 - pins[1].1) / (pins[2].1 - pins[1].1))
         } else {
-            Ok((pins[0].1 - pins[2].1) / (pins[3].1 - pins[2].1) + pins[2].1)
+            Ok((pins[0].1 - pins[2].1) / (pins[3].1 - pins[2].1))
         }
     }
 }
