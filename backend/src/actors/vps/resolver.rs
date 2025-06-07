@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use actix::prelude::*;
 use actix::Actor;
+#[cfg(not(feature = "python"))]
 use actix_web_prometheus::PrometheusMetrics;
 
 use prometheus::{opts, IntCounterVec};
@@ -36,7 +37,7 @@ pub fn resolve_vps_routes(
     stocks: &[String],
     variables: Arc<Mutex<Variables>>,
 ) -> Arc<Addr<VpsActor>> {
-    let counter = IntCounterVec::new(
+    let status_counter = IntCounterVec::new(
         opts!(
             "vps_watching_board_count",
             "Number of watching board received by the VpsActor"
@@ -51,10 +52,10 @@ pub fn resolve_vps_routes(
     #[cfg(not(feature = "python"))]
     prometheus
         .registry
-        .register(Box::new(counter.clone()))
+        .register(Box::new(status_counter.clone()))
         .unwrap();
 
-    resolve_watching_vps_board(actor.clone(), Arc::new(counter), resolver);
+    resolve_watching_vps_board(actor.clone(), resolver, Arc::new(status_counter));
     actor
 }
 
@@ -72,12 +73,12 @@ pub fn resolve_vps_routes(
 /// ```
 fn resolve_watching_vps_board(
     actor: Arc<Addr<VpsActor>>,
-    counter: Arc<IntCounterVec>,
     resolver: &mut CronResolver,
+    status_counter: Arc<IntCounterVec>,
 ) {
     resolver.resolve("vps.watch_boards".to_string(), move |task, _, _| {
         let actor = actor.clone();
-        let counter = counter.clone();
+        let status_counter = status_counter.clone();
 
         async move {
             // Get price data
@@ -86,11 +87,11 @@ fn resolve_watching_vps_board(
             }) {
                 Ok(Ok(datapoints)) => datapoints,
                 Ok(Err(_)) => {
-                    counter.with_label_values(&["fail"]).inc();
+                    status_counter.with_label_values(&["fail"]).inc();
                     return;
                 }
                 Err(_) => {
-                    counter.with_label_values(&["fail"]).inc();
+                    status_counter.with_label_values(&["fail"]).inc();
                     return;
                 }
             };
@@ -128,7 +129,7 @@ fn resolve_watching_vps_board(
             };
 
             // Get labels
-            let labels: Vec<String> = rule.labels().iter().map(|l| l.to_string()).collect();
+            let labels: Vec<String> = rule.inputs().iter().map(|l| l.to_string()).collect();
 
             // Update variables
             let _ = actor
@@ -157,7 +158,7 @@ fn resolve_watching_vps_board(
                             }
                             Err(e) => {
                                 eprintln!("Failed to get value for {}: {}", label, e);
-                                counter.with_label_values(&["fail"]).inc();
+                                status_counter.with_label_values(&["fail"]).inc();
                                 return;
                             }
                         }
@@ -192,13 +193,13 @@ fn resolve_watching_vps_board(
                     }
                     Err(e) => {
                         eprintln!("Resolver error: {:?}", e);
-                        counter.with_label_values(&["fail"]).inc();
+                        status_counter.with_label_values(&["fail"]).inc();
                         return;
                     }
                 }
             }
 
-            counter.with_label_values(&["success"]).inc();
+            status_counter.with_label_values(&["success"]).inc();
         }
     });
 }

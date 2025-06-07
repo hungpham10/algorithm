@@ -2,9 +2,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use actix::prelude::*;
+#[cfg(not(feature = "python"))]
 use actix_web_prometheus::PrometheusMetrics;
 
-use log::{error, info};
+use log::error;
 use prometheus::{opts, IntCounterVec};
 
 #[cfg(feature = "python")]
@@ -169,7 +170,7 @@ fn resolve_watching_tcbs_bid_ask_flow(
                 };
 
                 // Get labels
-                let labels: Vec<String> = rule.labels().iter().map(|l| l.to_string()).collect();
+                let labels: Vec<String> = rule.inputs().iter().map(|l| l.to_string()).collect();
 
                 for response in datapoints {
                     let mut inputs = HashMap::new();
@@ -197,9 +198,6 @@ fn resolve_watching_tcbs_bid_ask_flow(
                     if size == 0 {
                         continue;
                     }
-
-                    #[cfg(not(feature = "python"))]
-                    info!("Updated variables for {}: {}", response.ticker, size);
 
                     // Load inputs
                     for label in &labels {

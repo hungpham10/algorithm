@@ -86,22 +86,22 @@ impl CronResolver {
     }
 
     pub async fn perform(&self, tasks: Vec<Task>, from: i32, to: i32) -> usize {
+        let mut concurrents = Vec::new();
         let mut cnt = tasks.len();
 
         for task in tasks {
-            match self.resolvers.get(&task.route) {
-                Some(callback) => {
-                    tokio::time::timeout(
-                        Duration::from_secs(task.timeout as u64),
-                        callback(task.clone(), from, to),
-                    )
-                    .await
-                    .ok();
-                }
-                None => {
-                    cnt -= 1;
-                }
+            if let Some(callback) = self.resolvers.get(&task.route) {
+                concurrents.push(tokio::time::timeout(
+                    Duration::from_secs(task.timeout as u64),
+                    callback(task.clone(), from, to),
+                ));
+            } else {
+                cnt -= 1;
             }
+        }
+
+        for task in concurrents {
+            task.await.ok();
         }
 
         cnt

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyList};
 
 use serde::{Deserialize, Serialize};
 
@@ -44,8 +44,10 @@ impl fmt::Display for RuleError {
 pub struct ExprTree {
     op: Arc<dyn Function>,
     slots: Vec<bool>,
+    consts: Vec<bool>,
     nodes: Vec<ExprTree>,
-    labels: HashMap<String, usize>,
+    labels: Vec<String>,
+    mapping: HashMap<String, usize>,
     values: Vec<f64>,
 }
 
@@ -55,6 +57,7 @@ pub struct Pin {
     name: String,
     value: Option<f64>,
     nested: Option<Expression>,
+    immutable: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -71,7 +74,8 @@ impl ExprTree {
         let mut ivalue = 0;
 
         for (iarg, slot) in self.slots.iter().enumerate() {
-            let label = self.labels.keys().nth(iarg).unwrap();
+            let label = self.labels.get(iarg).unwrap();
+
             let value = if *slot {
                 self.nodes[inode].evaluate()?
             } else {
@@ -90,22 +94,39 @@ impl ExprTree {
         self.op.evaluate(arguments)
     }
 
-    fn labels(&self) -> Vec<&String> {
-        let mut labels = self.labels.keys().collect::<Vec<_>>();
+    fn labels(&self, is_immutable: bool) -> Vec<&String> {
+        let mut ret = Vec::new();
+        let mut inode = 0;
+        let mut ivalue = 0;
 
-        for node in &self.nodes {
-            labels.extend(node.labels());
+        for (iarg, slot) in self.slots.iter().enumerate() {
+            let label = self.labels.get(iarg).unwrap();
+
+            if *slot {
+                ret.extend(self.nodes[inode].labels(is_immutable));
+            } else if self.consts[ivalue] == is_immutable {
+                ret.push(label);
+            }
+
+            if *slot {
+                inode += 1;
+            } else {
+                ivalue += 1;
+            }
         }
+        ret
+    }
 
-        labels
+    fn inputs(&self) -> Vec<&String> {
+        self.labels(false)
     }
 
     fn update(&mut self, name: &String, value: f64) -> bool {
-        if let Some(index) = self.labels.get(name) {
+        if let Some(index) = self.mapping.get(name) {
             let mut inode = 0;
 
             for (iarg, slot) in self.slots.iter().enumerate() {
-                if inode == *index && self.labels.keys().nth(iarg).unwrap() == name {
+                if inode == *index && self.labels.get(iarg).unwrap() == name {
                     self.values[*index] = value;
                     return true;
                 }
@@ -126,9 +147,11 @@ impl Default for Rule {
             optree: ExprTree {
                 op: Arc::new(Noop {}),
                 slots: Vec::new(),
+                consts: Vec::new(),
                 nodes: Vec::new(),
-                labels: HashMap::new(),
+                labels: Vec::new(),
                 values: Vec::new(),
+                mapping: HashMap::new(),
             },
         }
     }
@@ -186,8 +209,8 @@ impl Rule {
         cnt
     }
 
-    pub fn labels(&self) -> Vec<&String> {
-        self.optree.labels()
+    pub fn inputs(&self) -> Vec<&String> {
+        self.optree.inputs()
     }
 
     pub fn evaluate(&self) -> Result<f64, RuleError> {
@@ -202,16 +225,19 @@ impl Rule {
             let mut output = ExprTree {
                 op: functions.get(&expression.operator).unwrap().clone(),
                 slots: Vec::new(),
+                consts: Vec::new(),
                 nodes: Vec::new(),
                 values: Vec::new(),
-                labels: HashMap::new(),
+                labels: Vec::new(),
+                mapping: HashMap::new(),
             };
 
             for pin in &expression.pins {
+                output.mapping.insert(pin.name.clone(), output.slots.len());
+
                 match &pin.nested {
                     Some(nested) => {
                         output.slots.push(true);
-                        output.labels.insert(pin.name.clone(), output.nodes.len());
 
                         match Self::build_expression_nested_tree(functions, nested) {
                             Ok(tree) => output.nodes.push(tree),
@@ -220,10 +246,13 @@ impl Rule {
                     }
                     None => {
                         output.slots.push(false);
-                        output.labels.insert(pin.name.clone(), output.values.len());
 
                         if let Some(value) = pin.value {
                             output.values.push(value);
+                            output.consts.push(false);
+                        } else if let Some(value) = pin.immutable {
+                            output.values.push(value);
+                            output.consts.push(true);
                         } else {
                             return Err(RuleError {
                                 message: "Pin value is missing".to_string(),
@@ -231,12 +260,147 @@ impl Rule {
                         }
                     }
                 }
+
+                output.labels.push(pin.name.clone());
             }
 
             Ok(output)
         } else {
             Err(RuleError {
                 message: "Not implemented".to_string(),
+            })
+        }
+    }
+
+    #[cfg(feature = "python")]
+    fn build_pydict_nested_tree(
+        functions: &HashMap<String, Arc<dyn Function>>,
+        pydict: &PyDict,
+    ) -> Result<ExprTree, RuleError> {
+        let mut op = None;
+        let mut slots = Vec::new();
+        let mut nodes = Vec::new();
+        let mut values = Vec::new();
+        let mut consts = Vec::new();
+        let mut labels = Vec::new();
+        let mut mapping = HashMap::new();
+
+        for item in pydict.items() {
+            let (key, value): (&PyAny, &PyAny) = item.extract().map_err(|error| RuleError {
+                message: format!("Failed to extract data from pydict: {:?}", error),
+            })?;
+
+            let key = key
+                .str()
+                .map_err(|error| RuleError {
+                    message: format!("Failed to extract key: {:?}", error),
+                })?
+                .to_string();
+
+            match key.as_str() {
+                "operator" => {
+                    let operator = value.extract::<String>().map_err(|error| RuleError {
+                        message: format!("Failed to extract operator: {:?}", error),
+                    })?;
+
+                    if functions.contains_key(&operator) {
+                        op = Some(functions.get(&operator).unwrap().clone());
+                    }
+                }
+                "pins" => {
+                    let pypins: &PyList =
+                        value.downcast::<PyList>().map_err(|error| RuleError {
+                            message: format!("'pins' is not a list: {:?}", error),
+                        })?;
+
+                    for item in pypins {
+                        let pydict: &PyDict =
+                            item.downcast::<PyDict>().map_err(|error| RuleError {
+                                message: format!("Pin item is not a dict: {:?}", error),
+                            })?;
+
+                        let name: String = pydict
+                            .get_item("name")
+                            .map_err(|error| RuleError {
+                                message: format!("Failed to extract 'name': {:?}", error),
+                            })?
+                            .ok_or_else(|| RuleError {
+                                message: "Missing 'name' key in pin".to_string(),
+                            })?
+                            .extract()
+                            .map_err(|error| RuleError {
+                                message: format!("Failed to extract 'name': {:?}", error),
+                            })?;
+
+                        mapping.insert(name.clone(), slots.len());
+
+                        if let Some(pynested) =
+                            pydict.get_item("nested").map_err(|error| RuleError {
+                                message: format!("Failed to extract `nested`: {:?}", error),
+                            })?
+                        {
+                            // Handle nested dictionary
+                            let nested_dict: &PyDict =
+                                pynested.downcast::<PyDict>().map_err(|error| RuleError {
+                                    message: format!("'nested' is not a dict: {:?}", error),
+                                })?;
+                            nodes.push(Self::build_pydict_nested_tree(functions, nested_dict)?);
+                            slots.push(true);
+                        } else if let Some(pyvalue) =
+                            pydict.get_item("value").map_err(|error| RuleError {
+                                message: format!("Failed to get 'value' item: {:?}", error),
+                            })?
+                        {
+                            // Handle value
+                            let value: f64 = pyvalue.extract().map_err(|error| RuleError {
+                                message: format!("Failed to extract 'value': {:?}", error),
+                            })?;
+                            values.push(value);
+                            slots.push(false);
+                            consts.push(false);
+                        } else if let Some(pyvalue) =
+                            pydict.get_item("const").map_err(|error| RuleError {
+                                message: format!("Failed to get 'const' item: {:?}", error),
+                            })?
+                        {
+                            // Handle value
+                            let value: f64 = pyvalue.extract().map_err(|error| RuleError {
+                                message: format!("Failed to extract 'const': {:?}", error),
+                            })?;
+                            values.push(value);
+                            slots.push(false);
+                            consts.push(true);
+                        } else {
+                            // Handle with default value
+                            values.push(0.0);
+                            slots.push(false);
+                            consts.push(false);
+                        }
+
+                        labels.push(name);
+                    }
+                }
+                _ => {
+                    return Err(RuleError {
+                        message: format!("Unknown key '{}' in expression dictionary", key),
+                    });
+                }
+            }
+        }
+
+        if let Some(op) = op {
+            Ok(ExprTree {
+                op,
+                slots,
+                nodes,
+                labels,
+                values,
+                consts,
+                mapping,
+            })
+        } else {
+            Err(RuleError {
+                message: format!("cannot build the provided pydict"),
             })
         }
     }
@@ -273,13 +437,6 @@ impl Rule {
         functions: &HashMap<String, Arc<dyn Function>>,
         expression: &Py<PyDict>,
     ) -> Result<ExprTree, RuleError> {
-        Python::with_gil(|py| {
-            let pydict = expression.as_ref(py);
-            let expression = pydict.extract::<Expression>().map_err(|error| RuleError {
-                message: format!("Failed to extract expresstion: {:?}", error),
-            })?;
-
-            Self::build_expression_nested_tree(functions, &expression)
-        })
+        Python::with_gil(|py| Self::build_pydict_nested_tree(functions, expression.as_ref(py)))
     }
 }

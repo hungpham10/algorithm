@@ -36,7 +36,14 @@ pub fn order(symbol: String) -> PyResult<PyDataFrame> {
 
     let df = DataFrame::new(vec![
         Series::new("p", datapoints.iter().map(|d| d.p).collect::<Vec<f64>>()),
-        Series::new("v", datapoints.iter().map(|d| d.v).collect::<Vec<u64>>()),
+        Series::new(
+            "v",
+            datapoints
+                .iter()
+                .map(|d| d.v)
+                .map(|v| v as f64)
+                .collect::<Vec<f64>>(),
+        ),
         Series::new("cp", datapoints.iter().map(|d| d.cp).collect::<Vec<f64>>()),
         Series::new(
             "rcp",
