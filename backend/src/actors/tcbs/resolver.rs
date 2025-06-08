@@ -39,7 +39,7 @@ use super::{GetOrderCommand, TcbsActor, TcbsError, UpdateVariablesCommand};
 /// let mut resolver = CronResolver::new();
 /// let actor_addr = resolve_tcbs_routes(&mut resolver, &stocks, variables.clone());
 /// ```
-pub fn resolve_tcbs_routes(
+pub async fn resolve_tcbs_routes(
     #[cfg(not(feature = "python"))] prometheus: &PrometheusMetrics,
     resolver: &mut CronResolver,
     stocks: &[String],
@@ -66,7 +66,7 @@ pub fn resolve_tcbs_routes(
     )
     .unwrap();
 
-    let tcbs = TcbsActor::new(stocks, "".to_string(), variables);
+    let tcbs = TcbsActor::new(stocks, "".to_string(), variables).await;
     let actor = Arc::new(tcbs.start());
 
     #[cfg(not(feature = "python"))]

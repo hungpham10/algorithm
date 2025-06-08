@@ -278,6 +278,30 @@ pub async fn list_active_stocks() -> Vec<String> {
     list_of_vn30().await
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct Future {
+    #[serde(rename = "SYMBOL")]
+    symbol: String,
+
+    #[serde(rename = "CHART_CODE")]
+    code: String,
+
+    #[serde(rename = "FULL_NAME")]
+    full_name: String,
+}
+
+pub async fn list_futures() -> Vec<String> {
+    reqwest::get("https://bgapidatafeed.vps.com.vn/pslistmap")
+        .await
+        .unwrap()
+        .json::<Vec<Future>>()
+        .await
+        .unwrap()
+        .iter()
+        .map(|item| item.symbol.clone())
+        .collect()
+}
+
 pub async fn list_of_hose() -> Vec<String> {
     reqwest::get("https://bgapidatafeed.vps.com.vn/getlistckindex/hose")
         .await

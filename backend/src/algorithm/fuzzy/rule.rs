@@ -44,7 +44,7 @@ impl fmt::Display for RuleError {
 pub struct ExprTree {
     op: Arc<dyn Function>,
     slots: Vec<bool>,
-    consts: Vec<bool>,
+    thresholds: Vec<bool>,
     nodes: Vec<ExprTree>,
     labels: Vec<String>,
     mapping: HashMap<String, usize>,
@@ -57,7 +57,7 @@ pub struct Pin {
     name: String,
     value: Option<f64>,
     nested: Option<Expression>,
-    immutable: Option<f64>,
+    threshold: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -94,7 +94,7 @@ impl ExprTree {
         self.op.evaluate(arguments)
     }
 
-    fn labels(&self, is_immutable: bool) -> Vec<&String> {
+    fn labels(&self, is_threshold: bool) -> Vec<&String> {
         let mut ret = Vec::new();
         let mut inode = 0;
         let mut ivalue = 0;
@@ -103,8 +103,8 @@ impl ExprTree {
             let label = self.labels.get(iarg).unwrap();
 
             if *slot {
-                ret.extend(self.nodes[inode].labels(is_immutable));
-            } else if self.consts[ivalue] == is_immutable {
+                ret.extend(self.nodes[inode].labels(is_threshold));
+            } else if self.thresholds[ivalue] == is_threshold {
                 ret.push(label);
             }
 
@@ -147,7 +147,7 @@ impl Default for Rule {
             optree: ExprTree {
                 op: Arc::new(Noop {}),
                 slots: Vec::new(),
-                consts: Vec::new(),
+                thresholds: Vec::new(),
                 nodes: Vec::new(),
                 labels: Vec::new(),
                 values: Vec::new(),
@@ -225,7 +225,7 @@ impl Rule {
             let mut output = ExprTree {
                 op: functions.get(&expression.operator).unwrap().clone(),
                 slots: Vec::new(),
-                consts: Vec::new(),
+                thresholds: Vec::new(),
                 nodes: Vec::new(),
                 values: Vec::new(),
                 labels: Vec::new(),
@@ -249,10 +249,10 @@ impl Rule {
 
                         if let Some(value) = pin.value {
                             output.values.push(value);
-                            output.consts.push(false);
-                        } else if let Some(value) = pin.immutable {
+                            output.thresholds.push(false);
+                        } else if let Some(value) = pin.threshold {
                             output.values.push(value);
-                            output.consts.push(true);
+                            output.thresholds.push(true);
                         } else {
                             return Err(RuleError {
                                 message: "Pin value is missing".to_string(),
@@ -281,7 +281,7 @@ impl Rule {
         let mut slots = Vec::new();
         let mut nodes = Vec::new();
         let mut values = Vec::new();
-        let mut consts = Vec::new();
+        let mut thresholds = Vec::new();
         let mut labels = Vec::new();
         let mut mapping = HashMap::new();
 
@@ -357,24 +357,24 @@ impl Rule {
                             })?;
                             values.push(value);
                             slots.push(false);
-                            consts.push(false);
+                            thresholds.push(false);
                         } else if let Some(pyvalue) =
-                            pydict.get_item("const").map_err(|error| RuleError {
-                                message: format!("Failed to get 'const' item: {:?}", error),
+                            pydict.get_item("threshold").map_err(|error| RuleError {
+                                message: format!("Failed to get 'threshold' item: {:?}", error),
                             })?
                         {
                             // Handle value
                             let value: f64 = pyvalue.extract().map_err(|error| RuleError {
-                                message: format!("Failed to extract 'const': {:?}", error),
+                                message: format!("Failed to extract 'threshold': {:?}", error),
                             })?;
                             values.push(value);
                             slots.push(false);
-                            consts.push(true);
+                            thresholds.push(true);
                         } else {
                             // Handle with default value
                             values.push(0.0);
                             slots.push(false);
-                            consts.push(false);
+                            thresholds.push(false);
                         }
 
                         labels.push(name);
@@ -395,7 +395,7 @@ impl Rule {
                 nodes,
                 labels,
                 values,
-                consts,
+                thresholds,
                 mapping,
             })
         } else {

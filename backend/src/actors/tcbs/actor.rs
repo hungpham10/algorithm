@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -18,6 +19,7 @@ use pyo3::prelude::*;
 use actix::prelude::*;
 use actix::Addr;
 
+use crate::actors::vps::list_futures;
 use crate::actors::{ActorError, GetVariableCommand, HealthCommand, UpdateStocksCommand};
 use crate::algorithm::Variables;
 
@@ -42,6 +44,7 @@ impl Error for TcbsError {}
 
 pub struct TcbsActor {
     stocks: Vec<String>,
+    futures: HashSet<String>,
     token: String,
     timeout: u64,
     page_size: usize,
@@ -62,7 +65,7 @@ impl TcbsActor {
     /// let variables = Arc::new(Mutex::new(Variables::default()));
     /// let actor = TcbsActor::new(&stocks, token, variables);
     /// ```
-    pub fn new(stocks: &[String], token: String, variables: Arc<Mutex<Variables>>) -> Self {
+    pub async fn new(stocks: &[String], token: String, variables: Arc<Mutex<Variables>>) -> Self {
         for symbol in stocks {
             let vars_to_create = Self::list_of_variables(symbol);
 
@@ -86,6 +89,7 @@ impl TcbsActor {
 
         Self {
             stocks: stocks.to_owned(),
+            futures: list_futures().await.into_iter().collect(),
             timeout: 10,
             page_size: 100,
             token,
@@ -225,15 +229,17 @@ impl Handler<GetOrderCommand> for TcbsActor {
 
     fn handle(&mut self, msg: GetOrderCommand, _: &mut Self::Context) -> Self::Result {
         let stocks = self.stocks.clone();
+        let futures = self.futures.clone();
         let timeout = self.timeout;
         let page_size = self.page_size;
 
-        Box::pin(async move { fetch_orders(&stocks, timeout, msg.page, page_size).await })
+        Box::pin(async move { fetch_orders(&stocks, &futures, timeout, msg.page, page_size).await })
     }
 }
 
 async fn fetch_orders(
     stocks: &[String],
+    futures: &HashSet<String>,
     timeout: u64,
     page: usize,
     page_size: usize,
@@ -245,11 +251,9 @@ async fn fetch_orders(
             .build(),
     );
 
-    future::try_join_all(
-        stocks.iter().map(move |stock| {
-            fetch_order_per_stock(client.clone(), stock, timeout, page, page_size)
-        }),
-    )
+    future::try_join_all(stocks.iter().map(move |stock| {
+        fetch_order_per_stock(client.clone(), stock, futures, timeout, page, page_size)
+    }))
     .await
     .unwrap()
     .into_iter()
@@ -279,12 +283,20 @@ async fn fetch_orders(
 async fn fetch_order_per_stock(
     client: Arc<HttpClient>,
     stock: &String,
+    futures: &HashSet<String>,
     timeout: u64,
     page: usize,
     page_size: usize,
 ) -> Result<OrderResponse, TcbsError> {
+    let kind = if futures.contains(stock) {
+        "futures"
+    } else {
+        "stock"
+    };
+
     let resp = client.get(format!(
-            "https://apipubaws.tcbs.com.vn/stock-insight/v1/intraday/{}/his/paging?page={}&size={}&headIndex={}",
+            "https://apipubaws.tcbs.com.vn/{}-insight/v1/intraday/{}/his/paging?page={}&size={}&headIndex={}",
+            kind,
             stock,
             page, page_size,
             -1,
@@ -925,10 +937,10 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
 /// let addr = connect_to_tcbs(&stocks, token, variables.clone());
 /// // Use `addr` to send commands to the actor
 /// ```
-pub fn connect_to_tcbs(
+pub async fn connect_to_tcbs(
     stocks: &[String],
     token: String,
     variables: Arc<Mutex<Variables>>,
 ) -> Addr<TcbsActor> {
-    TcbsActor::new(stocks, token, variables).start()
+    TcbsActor::new(stocks, token, variables).await.start()
 }
