@@ -8,6 +8,19 @@ impl Function for Noop {
     }
 }
 
+pub struct Add {}
+
+impl Function for Add {
+    fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
+        if pins.len() < 2 {
+            return Err(RuleError {
+                message: "Add function requires at least 2 arguments".to_string(),
+            });
+        }
+        Ok(pins[0].1 + pins[1].1)
+    }
+}
+
 pub struct If {}
 
 impl Function for If {

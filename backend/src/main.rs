@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -19,7 +20,7 @@ use vnscope::actors::tcbs::{resolve_tcbs_routes, TcbsActor};
 use vnscope::actors::vps::{resolve_vps_routes, VpsActor};
 use vnscope::actors::UpdateStocksCommand;
 use vnscope::algorithm::Variables;
-use vnscope::schemas::Portal;
+use vnscope::schemas::{Portal, CRONJOB, WATCHLIST};
 
 /// Health check endpoint that returns a 200 OK response.
 ///
@@ -155,6 +156,16 @@ async fn main() -> std::io::Result<()> {
         std::env::var("AIRTABLE_BASE_ID")
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid AIRTABLE_BASE_ID"))?
             .as_str(),
+        &HashMap::from([
+            (
+                WATCHLIST.to_string(),
+                std::env::var("AIRTABLE_TABLE_WATCHLIST").unwrap_or_else(|_| WATCHLIST.to_string()),
+            ),
+            (
+                CRONJOB.to_string(),
+                std::env::var("AIRTABLE_TABLE_CRONJOB").unwrap_or_else(|_| CRONJOB.to_string()),
+            ),
+        ]),
     ));
 
     // @NOTE: cronjob configuration
@@ -263,7 +274,8 @@ async fn main() -> std::io::Result<()> {
         &tcbs_symbols,
         tcbs_vars.clone(),
         tcbs_depth,
-    );
+    )
+    .await;
     let vps = resolve_vps_routes(&prometheus, &mut resolver, &vps_symbols, vps_vars.clone());
     let cron = connect_to_cron(Rc::new(resolver));
 

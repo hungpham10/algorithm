@@ -16,7 +16,8 @@ pub fn order(symbol: String) -> PyResult<PyDataFrame> {
             &[symbol.clone()],
             "".to_string(),
             Arc::new(Mutex::new(Variables::default())),
-        );
+        )
+        .await;
 
         for i in 0..10000 {
             let block = actor.send(GetOrderCommand { page: i }).await.unwrap();
