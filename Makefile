@@ -1,5 +1,6 @@
 .PHONY: setup lint build test publish clean all
 
+CARGO := cargo
 PYTHON := python3
 PIP_CACHE := .pip-cache
 
@@ -43,6 +44,10 @@ server:
 	@mkdir -p $(DIST_DIR)
 	export PATH="$$HOME/.cargo/bin:$$PATH" &&					\
 	cargo build --release
+
+ipython:
+	@cp -av target/debug/libvnscope.dylib target/debug/vnscope.so || 		\
+		cp -av target/release/libvnscope.dylib target/release/vnscope.so
 
 install: library
 	$(PYTHON) -m pip install --upgrade $(DIST_DIR)/*.whl

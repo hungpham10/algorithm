@@ -1,9 +1,9 @@
-use super::rule::{Function, RuleError};
+use super::rule::{Function, Rule, RuleError};
 
 pub struct Noop {}
 
 impl Function for Noop {
-    fn evaluate(&self, _: Vec<(String, f64)>) -> Result<f64, RuleError> {
+    fn evaluate(&self, _: &Rule, _: Vec<(String, f64)>) -> Result<f64, RuleError> {
         Ok(0.0)
     }
 }
@@ -11,7 +11,7 @@ impl Function for Noop {
 pub struct Add {}
 
 impl Function for Add {
-    fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
+    fn evaluate(&self, _: &Rule, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
         if pins.len() < 2 {
             return Err(RuleError {
                 message: "Add function requires at least 2 arguments".to_string(),
@@ -21,10 +21,23 @@ impl Function for Add {
     }
 }
 
+pub struct Mult {}
+
+impl Function for Mult {
+    fn evaluate(&self, _: &Rule, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
+        if pins.len() < 2 {
+            return Err(RuleError {
+                message: "Mult function requires at least 2 arguments".to_string(),
+            });
+        }
+        Ok(pins[0].1 * pins[1].1)
+    }
+}
+
 pub struct If {}
 
 impl Function for If {
-    fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
+    fn evaluate(&self, _: &Rule, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
         Ok(if pins[0].0 == pins[1].0 {
             pins[2].1
         } else {
@@ -36,7 +49,7 @@ impl Function for If {
 pub struct And {}
 
 impl Function for And {
-    fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
+    fn evaluate(&self, _: &Rule, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
         Ok(if pins[0].1 < pins[1].1 {
             pins[0].1
         } else {
@@ -48,7 +61,7 @@ impl Function for And {
 pub struct Or {}
 
 impl Function for Or {
-    fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
+    fn evaluate(&self, _: &Rule, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
         Ok(if pins[0].1 > pins[1].1 {
             pins[0].1
         } else {
@@ -60,7 +73,7 @@ impl Function for Or {
 pub struct Not {}
 
 impl Function for Not {
-    fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
+    fn evaluate(&self, _: &Rule, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
         Ok(1.0 - pins[0].1)
     }
 }
@@ -68,7 +81,7 @@ impl Function for Not {
 pub struct Singleton {}
 
 impl Function for Singleton {
-    fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
+    fn evaluate(&self, _: &Rule, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
         Ok(if pins[0].1 == pins[1].1 { 1.0 } else { 0.0 })
     }
 }
@@ -76,7 +89,7 @@ impl Function for Singleton {
 pub struct Trapezoid {}
 
 impl Function for Trapezoid {
-    fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
+    fn evaluate(&self, _: &Rule, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
         Ok((pins[0].1 - pins[1].1) / (pins[2].1 - pins[3].1))
     }
 }
@@ -84,7 +97,7 @@ impl Function for Trapezoid {
 pub struct Triangle {}
 
 impl Function for Triangle {
-    fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
+    fn evaluate(&self, _: &Rule, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
         if pins[0].1 < pins[1].1 || pins[0].1 > pins[3].1 {
             return Ok(0.0);
         }

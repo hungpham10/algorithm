@@ -8,8 +8,6 @@ use pyo3_polars::PyDataFrame;
 
 use crate::algorithm::{Delegate, Format, Rule, Variables};
 
-const FUZZY_TRIGGER_THRESHOLD: f64 = 1.0;
-
 #[pyfunction]
 /// Filters rows in a Polars DataFrame based on a rule and returns the indices of matching rows.
 ///
@@ -109,4 +107,94 @@ async fn filter_in_async(
 
     // Filter DataFrame using take
     Ok(ret)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use polars::prelude::*;
+    use pyo3::prelude::*;
+    use pyo3::types::PyDict;
+    use pyo3_polars::PyDataFrame;
+    use std::collections::HashMap;
+    use tokio;
+
+    #[derive(Default)]
+    struct TestRule;
+
+    impl TestRule {
+        fn inputs(&self) -> Vec<&str> {
+            Vec::new()
+        }
+
+        fn reload(&mut self, _vars: &HashMap<String, f64>) {}
+
+        fn evaluate(&self) -> Result<f64, String> {
+            Ok(1.0)
+        }
+    }
+
+    async fn build_test_df() -> DataFrame {
+        let s1 = Series::new("col1", &[1.0_f64, 2.0, 3.0]);
+        let s2 = Series::new("col2", &[4.0_f64, 5.0, 6.0]);
+        DataFrame::new(vec![s1, s2]).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_filter_in_async_happy_path() {
+        let df = build_test_df().await;
+        let mut rule = TestRule::default();
+        let res = filter_in_async(&df, &mut rule, 8).await.expect("ok");
+        assert_eq!(res.len(), df.height());
+        assert!(res.iter().all(|v| *v == 1.0));
+    }
+
+    #[derive(Default)]
+    struct DummyRule;
+
+    impl DummyRule {
+        fn inputs(&self) -> Vec<&str> {
+            Vec::new()
+        }
+
+        fn reload(&mut self, _vars: &HashMap<String, f64>) {}
+
+        fn evaluate(&self) -> Result<f64, String> {
+            Err("boom".to_string())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_filter_in_async_evaluate_error() {
+        let df = build_test_df().await;
+        let mut rule = DummyRule::default();
+        let res = filter_in_async(&df, &mut rule, 8).await;
+        assert!(matches!(res, Err(e) if e.to_string().contains("Failed to evaluate rule")));
+    }
+
+    // Override Delegate build to simulate construction error
+    #[cfg(test)]
+    mod delegate_override {
+        use crate::algorithm::{Delegate, Format};
+        use pyo3::types::PyDict;
+
+        impl Delegate {
+            pub fn build(&mut self, _dict: &PyDict, _fmt: Format) -> Result<&mut Self, String> {
+                Err("bad".to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn test_filter_delegate_error() {
+        Python::with_gil(|py| {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let df = rt.block_on(build_test_df());
+            let py_df = PyDataFrame::new(py, df).unwrap();
+            let dict = PyDict::new(py);
+            let res = filter(py_df, dict.into(), 8);
+            assert!(res.is_err());
+            let err = res.unwrap_err();
+            assert!(err.to_string().contains("Invalid rule"));
+        });
+    }
 }

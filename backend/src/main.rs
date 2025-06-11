@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Error, ErrorKind};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -13,14 +13,28 @@ use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::oneshot;
 
 use chrono::Utc;
-use log::{error, info};
+use log::{debug, error, info};
 
-use vnscope::actors::cron::{connect_to_cron, CronResolver, ScheduleCommand, TickCommand};
+use vnscope::actors::cron::{
+    connect_to_cron, CronActor, CronResolver, ScheduleCommand, TickCommand,
+};
 use vnscope::actors::tcbs::{resolve_tcbs_routes, TcbsActor};
 use vnscope::actors::vps::{resolve_vps_routes, VpsActor};
 use vnscope::actors::UpdateStocksCommand;
 use vnscope::algorithm::Variables;
 use vnscope::schemas::{Portal, CRONJOB, WATCHLIST};
+
+struct AppState {
+    // @NOTE: monitoring
+    crontime: Arc<Mutex<VecDeque<i64>>>,
+    timeframe: usize,
+
+    // @NOTE: shared components
+    portal: Arc<Portal>,
+    tcbs: Arc<Addr<TcbsActor>>,
+    vps: Arc<Addr<VpsActor>>,
+    cron: Arc<Addr<CronActor>>,
+}
 
 /// Health check endpoint that returns a 200 OK response.
 ///
@@ -30,8 +44,25 @@ use vnscope::schemas::{Portal, CRONJOB, WATCHLIST};
 /// let resp = health().await.unwrap();
 /// assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
 /// ```
-async fn health() -> Result<HttpResponse> {
-    Ok(HttpResponse::Ok().body("ok"))
+async fn health(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
+    if let Ok(crontime) = appstate.crontime.lock() {
+        if let Some(updated) = crontime.back() {
+            let current = Utc::now().timestamp();
+
+            if current - updated > 2 * 60 {
+                Ok(HttpResponse::GatewayTimeout().body(format!(
+                    "Cronjob is hanging [expected({}) != actual({})]",
+                    current, updated
+                )))
+            } else {
+                Ok(HttpResponse::Ok().body("ok"))
+            }
+        } else {
+            Ok(HttpResponse::Ok().body("ok"))
+        }
+    } else {
+        Ok(HttpResponse::InternalServerError().body("Failed to unlock crontime"))
+    }
 }
 
 /// Synchronizes the stock symbol list between the portal and both the TcbsActor and VpsActor.
@@ -46,11 +77,8 @@ async fn health() -> Result<HttpResponse> {
 /// let response = client.put("/api/v1/config/synchronize").send().await?;
 /// assert_eq!(response.status(), 200);
 /// ```
-async fn synchronize(
-    portal: Data<Arc<Portal>>,
-    tcbs: Data<Arc<Addr<TcbsActor>>>,
-    vps: Data<Arc<Addr<VpsActor>>>,
-) -> Result<HttpResponse> {
+async fn synchronize(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
+    let portal = appstate.portal.clone();
     let vps_symbols: Vec<String> = portal
         .watchlist()
         .await
@@ -71,6 +99,8 @@ async fn synchronize(
             }
         })
         .collect::<Vec<String>>();
+    let tcbs = appstate.tcbs.clone();
+    let vps = appstate.vps.clone();
 
     tcbs.send(UpdateStocksCommand {
         stocks: tcbs_symbols.clone(),
@@ -86,58 +116,6 @@ async fn synchronize(
 }
 
 #[actix_rt::main]
-/// Starts the Actix-web server, initializes the cron job system, and manages graceful shutdown.
-///
-/// Loads configuration from environment variables, sets up logging, initializes the Airtable-backed portal,
-/// fetches cronjob schedules and watchlist symbols, and registers cronjobs. Spawns asynchronous tasks to run
-/// the cron loop and handle HTTP requests. Listens for system signals to coordinate an orderly shutdown of
-/// both the cron system and the HTTP server.
-///
-/// # Returns
-///
-/// Returns `Ok(())` if the server and cron system shut down gracefully, or an error if initialization or binding fails.
-///
-/// # Errors
-///
-/// Returns an error if required environment variables are missing or invalid, if the server fails to bind to the specified address, or if there are issues communicating with the Airtable API.
-///
-/// # Examples
-///
-/// ```no_run
-/// #[tokio::main]
-/// async fn main() -> std::io::Result<()> {
-///     my_crate::main().await
-/// }
-/// Initializes and runs the Actix-web server with integrated cron job scheduling and graceful shutdown.
-///
-/// Loads environment variables, configures logging, initializes shared resources, and sets up HTTP routes and cron jobs. Handles asynchronous task coordination and ensures orderly shutdown on receiving system signals.
-///
-/// # Returns
-///
-/// An `Ok(())` result if the server shuts down gracefully, or an error if initialization or binding fails.
-///
-/// # Examples
-///
-/// ```no_run
-/// #[actix_rt::main]
-/// async fn main() -> std::io::Result<()> {
-///     main().await
-/// }
-/// Initializes and runs the Actix-web server with integrated cron job scheduling and graceful shutdown.
-///
-/// Loads configuration from environment variables, sets up the portal and actor system, registers HTTP endpoints, and manages cron jobs based on dynamic schedules. Handles Unix signals for coordinated shutdown of both the cron system and the HTTP server.
-///
-/// # Returns
-/// Returns `Ok(())` if the server and cron system shut down gracefully, or an error if initialization or runtime fails.
-///
-/// # Examples
-///
-/// ```no_run
-/// #[actix_rt::main]
-/// async fn main() -> std::io::Result<()> {
-///     main().await
-/// }
-/// ```
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
     env_logger::init();
@@ -277,18 +255,18 @@ async fn main() -> std::io::Result<()> {
     )
     .await;
     let vps = resolve_vps_routes(&prometheus, &mut resolver, &vps_symbols, vps_vars.clone());
-    let cron = connect_to_cron(Rc::new(resolver));
+    let cron = Arc::new(connect_to_cron(Rc::new(resolver)));
 
     for command in cronjob {
+        let cron = cron.clone();
         let route = command.route.clone();
         let cronjob = command.cron.clone();
 
         match cron.send(command).await {
-            Ok(Ok(_)) => info!(
+            Ok(_) => info!(
                 "Registry {} running with cronjob {} success",
                 route, cronjob
             ),
-            Ok(Err(err)) => error!("Registry schedule {} failed: {:?}", route, err),
             Err(err) => {
                 error!("Fail in mailbox when schedule {}: {:?}", route, err);
                 break;
@@ -301,9 +279,26 @@ async fn main() -> std::io::Result<()> {
     let (txcron, rxcron) = oneshot::channel::<()>();
     let (txserver, rxserver) = oneshot::channel::<()>();
 
+    // @NOTE: store appstate
+    let appstate_for_control = Arc::new(AppState {
+        crontime: Arc::new(Mutex::new(VecDeque::new())),
+        timeframe: std::env::var("APPSTATE_TIMEFRAME")
+            .unwrap_or_else(|_| "4".to_string())
+            .parse::<usize>()
+            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid APPSTATE_TIMEFRAME"))?,
+
+        // @NOTE:
+        portal: portal.clone(),
+        cron: cron.clone(),
+        vps: vps.clone(),
+        tcbs: tcbs.clone(),
+    });
+    let appstate_for_config = appstate_for_control.clone();
+
     // @NOTE: start cron
     actix_rt::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
+        let appstate = appstate_for_config.clone();
 
         info!(
             "Cron started at {}",
@@ -311,10 +306,27 @@ async fn main() -> std::io::Result<()> {
         );
 
         loop {
+            let appstate = appstate.clone();
+
             tokio::select! {
                 _ = interval.tick() => {
+                    let appstate = appstate.clone();
+                    let cron = appstate.cron.clone();
+
+                    match appstate.crontime.lock() {
+                        Ok(mut crontime) => {
+                            crontime.push_back(Utc::now().timestamp());
+                            if crontime.len() > appstate.timeframe {
+                                crontime.pop_front();
+                            }
+                        }
+                        Err(_) => {
+                            error!("Failed to lock crontime mutex - skipping timestamp update");
+                        }
+                    }
+
                     match cron.send(TickCommand).await {
-                        Ok(Ok(_)) => {}
+                        Ok(Ok(cnt)) => debug!("Success trigger {} jobs", cnt),
                         Ok(Err(err)) => error!("Tick command failed: {:?}", err),
                         Err(error) => panic!("Panic: Fail to send command: {:?}", error),
                     }
@@ -336,9 +348,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .route("/health", get().to(health))
             .route("/api/v1/config/synchronize", put().to(synchronize))
-            .app_data(Data::new(portal.clone()))
-            .app_data(Data::new(tcbs.clone()))
-            .app_data(Data::new(vps.clone()))
+            .app_data(Data::new(appstate_for_control.clone()))
     })
     .bind((host.as_str(), port))
     .map_err(|e| {

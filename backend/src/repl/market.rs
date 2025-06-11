@@ -1,3 +1,4 @@
+use chrono::{NaiveDate, NaiveDateTime};
 use polars::prelude::*;
 
 use pyo3::exceptions::PyRuntimeError;
@@ -7,6 +8,7 @@ use pyo3_polars::PyDataFrame;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 
+use crate::actors::dnse::{connect_to_dnse, GetOHCLCommand};
 use crate::actors::vps::{
     connect_to_vps, list_of_industry, list_of_vn100, list_of_vn30, GetPriceCommand, Price,
 };
@@ -188,4 +190,62 @@ pub fn market(symbols: Vec<String>) -> PyResult<PyDataFrame> {
     .map_err(|e| PyRuntimeError::new_err(format!("Failed to create DataFrame: {}", e)))?;
 
     Ok(PyDataFrame(df))
+}
+
+#[pyfunction]
+pub fn price(
+    symbol: String,
+    resolution: String,
+    from: String,
+    to: String,
+) -> PyResult<PyDataFrame> {
+    let from = NaiveDate::parse_from_str(from.as_str(), "%Y-%m-%d")
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to parse `from`: {}", e)))?
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| PyRuntimeError::new_err("Invalid time component for `from` date"))?
+        .and_utc()
+        .timestamp();
+    let to = NaiveDate::parse_from_str(to.as_str(), "%Y-%m-%d")
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to parse `to`: {}", e)))?
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| PyRuntimeError::new_err("Invalid time component for `to` date"))?
+        .and_utc()
+        .timestamp();
+    let datapoints = actix_rt::Runtime::new()
+        .unwrap()
+        .block_on(async {
+            let actor = connect_to_dnse();
+
+            actor
+                .send(GetOHCLCommand {
+                    resolution: resolution.clone(),
+                    stock: symbol.clone(),
+                    from,
+                    to,
+                })
+                .await
+                .unwrap()
+        })
+        .map_err(|e| PyRuntimeError::new_err(format!("{:?}", e)))?;
+
+    Ok(PyDataFrame(
+        DataFrame::new(vec![
+            Series::new(
+                "t",
+                datapoints
+                    .iter()
+                    .map(|it| NaiveDateTime::from_timestamp(it.t.into(), 0))
+                    .collect::<Vec<_>>(),
+            ),
+            Series::new("o", datapoints.iter().map(|it| it.o).collect::<Vec<_>>()),
+            Series::new("h", datapoints.iter().map(|it| it.h).collect::<Vec<_>>()),
+            Series::new("c", datapoints.iter().map(|it| it.c).collect::<Vec<_>>()),
+            Series::new("l", datapoints.iter().map(|it| it.l).collect::<Vec<_>>()),
+            Series::new(
+                "v",
+                datapoints.iter().map(|it| it.v as f64).collect::<Vec<_>>(),
+            ),
+        ])
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to create DataFrame: {:?}", e)))?,
+    ))
 }
