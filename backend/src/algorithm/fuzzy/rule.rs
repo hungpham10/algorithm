@@ -440,3 +440,118 @@ impl Rule {
         Python::with_gil(|py| Self::build_pydict_nested_tree(functions, expression.as_ref(py)))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::collections::HashMap;
+
+    struct TestInput {
+        json: Option<String>,
+        expr: Option<Expression>,
+    }
+    impl Input for TestInput {
+        fn as_json(&self) -> Option<&String> { self.json.as_ref() }
+        fn as_expression(&self) -> Option<&Expression> { self.expr.as_ref() }
+    }
+
+    struct AlwaysOne;
+    impl Function for AlwaysOne {
+        fn evaluate(&self, _rule: &Rule, _pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
+            Ok(1.0)
+        }
+    }
+    struct Sum;
+    impl Function for Sum {
+        fn evaluate(&self, _rule: &Rule, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
+            Ok(pins.into_iter().map(|(_, v)| v).sum())
+        }
+    }
+
+    fn make_functions() -> HashMap<String, Arc<dyn Function>> {
+        let mut map = HashMap::new();
+        map.insert("one".into(), Arc::new(AlwaysOne));
+        map.insert("sum".into(), Arc::new(Sum));
+        map
+    }
+
+    #[test]
+    fn test_rule_evaluate_expression_happy_path() {
+        let expr = Expression {
+            operator: "one".into(),
+            pins: vec![Pin {
+                name: "x".into(),
+                value: Some(2.0),
+                nested: None,
+                threshold: None,
+            }],
+        };
+        let input = TestInput { json: None, expr: Some(expr.clone()) };
+        let rule = Rule::new(&make_functions(), &input, Format::Expression).expect("build rule");
+        assert_eq!(rule.evaluate().unwrap(), 1.0);
+    }
+
+    #[test]
+    fn test_rule_evaluate_json_happy_path() {
+        let json = serde_json::json!({
+            "operator": "one",
+            "pins": [
+                { "name": "x", "value": 5.0 }
+            ]
+        }).to_string();
+        let input = TestInput { json: Some(json), expr: None };
+        let rule = Rule::new(&make_functions(), &input, Format::Json).expect("build rule");
+        assert_eq!(rule.evaluate().unwrap(), 1.0);
+    }
+
+    #[test]
+    fn test_rule_error_missing_pin_value() {
+        let expr = Expression {
+            operator: "one".into(),
+            pins: vec![Pin {
+                name: "z".into(),
+                value: None,
+                nested: None,
+                threshold: None,
+            }],
+        };
+        let input = TestInput { json: None, expr: Some(expr) };
+        let err = Rule::new(&make_functions(), &input, Format::Expression).unwrap_err();
+        assert_eq!(err.message, "Pin value is missing");
+    }
+
+    #[test]
+    fn test_rule_reload_updates_values() {
+        // sum with two pins
+        let expr = Expression {
+            operator: "sum".into(),
+            pins: vec![
+                Pin { name: "a".into(), value: Some(1.0), nested: None, threshold: None },
+                Pin { name: "b".into(), value: Some(2.0), nested: None, threshold: None },
+            ],
+        };
+        let input = TestInput { json: None, expr: Some(expr) };
+        let mut rule = Rule::new(&make_functions(), &input, Format::Expression).unwrap();
+        // update only "a"
+        let mut updates = HashMap::new();
+        updates.insert("a".to_string(), 10.0);
+        assert_eq!(rule.reload(&updates), 1);
+        assert_eq!(rule.evaluate().unwrap(), 12.0); // 10 + 2
+    }
+
+    #[test]
+    fn test_rule_inputs_returns_expected_labels() {
+        let expr = Expression {
+            operator: "sum".into(),
+            pins: vec![
+                Pin { name: "t1".into(), value: Some(1.0), nested: None, threshold: None },
+                Pin { name: "thr".into(), value: None, nested: None, threshold: Some(0.5) },
+            ],
+        };
+        let input = TestInput { json: None, expr: Some(expr) };
+        let rule = Rule::new(&make_functions(), &input, Format::Expression).unwrap();
+        let labels = rule.inputs();
+        assert_eq!(labels, vec![&"t1".to_string()]);
+    }
+}

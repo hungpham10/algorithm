@@ -419,3 +419,208 @@ async fn main() -> std::io::Result<()> {
         }
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::{test, web, App};
+    use actix::prelude::*;
+    use std::sync::{Arc, Mutex};
+    use std::collections::VecDeque;
+    use chrono::Utc;
+
+    // === simple mock types ==================================================
+
+    // Minimal WatchlistRecord & Portal trait alias so we can build fake data.
+    // Adjust field paths if actual types differ.
+    use vnscope::schemas::{WatchlistRecord, WatchlistFields};
+
+    fn make_record(symbol: &str, use_order_flow: bool) -> WatchlistRecord {
+        WatchlistRecord {
+            id: String::new(),
+            created_time: None,
+            fields: WatchlistFields {
+                symbol: Some(symbol.to_string()),
+                use_order_flow: Some(use_order_flow),
+                ..Default::default()
+            },
+        }
+    }
+
+    // A dummy Portal that can be configured per-test.
+    struct FakePortal {
+        watchlist_res: anyhow::Result<Vec<WatchlistRecord>>,
+    }
+
+    #[async_trait::async_trait]
+    impl vnscope::schemas::PortalTrait for FakePortal {
+        async fn watchlist(&self) -> anyhow::Result<Vec<WatchlistRecord>> {
+            self.watchlist_res.clone()
+        }
+        async fn cronjob(&self) -> anyhow::Result<Vec<_>> {
+            Ok(vec![])
+        }
+    }
+
+    // Mock actor that records the last UpdateStocksCommand received.
+    struct DummyStocksActor {
+        last: Mutex<Option<UpdateStocksCommand>>,
+    }
+    impl Actor for DummyStocksActor {
+        type Context = Context<Self>;
+    }
+    impl Handler<UpdateStocksCommand> for DummyStocksActor {
+        type Result = anyhow::Result<()>;
+        fn handle(&mut self, msg: UpdateStocksCommand, _: &mut Context<Self>) -> Self::Result {
+            *self.last.lock().unwrap() = Some(msg);
+            Ok(())
+        }
+    }
+
+    // Helper to construct an Arc<AppState> customised for each test.
+    fn build_state(
+        cron_times: Vec<i64>,
+        portal: Arc<dyn vnscope::schemas::PortalTrait + 'static>,
+        tcbs: Addr<DummyStocksActor>,
+        vps: Addr<DummyStocksActor>,
+    ) -> Arc<AppState> {
+        Arc::new(AppState {
+            crontime: Arc::new(Mutex::new(cron_times.into_iter().collect::<VecDeque<_>>())),
+            timeframe: 4,
+            portal,
+            tcbs: Arc::new(tcbs),
+            vps: Arc::new(vps),
+            cron: Arc::new(connect_to_cron(Rc::new(CronResolver::new()))),
+        })
+    }
+
+    // === health handler tests ==============================================
+
+    #[actix_rt::test]
+    async fn health_ok_when_recent() {
+        let portal = Arc::new(FakePortal { watchlist_res: Ok(vec![]) });
+        let tcbs = DummyStocksActor { last: Mutex::new(None) }.start();
+        let vps  = DummyStocksActor { last: Mutex::new(None) }.start();
+
+        let state = build_state(vec![Utc::now().timestamp()], portal, tcbs, vps);
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::from(state))
+                .route("/health", web::get().to(health)),
+        )
+        .await;
+
+        let req = test::TestRequest::get().uri("/health").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+    }
+
+    #[actix_rt::test]
+    async fn health_timeout_when_old() {
+        let old_ts = Utc::now().timestamp() - 180; // 3 minutes ago (> 2min threshold)
+        let portal = Arc::new(FakePortal { watchlist_res: Ok(vec![]) });
+        let tcbs = DummyStocksActor { last: Mutex::new(None) }.start();
+        let vps  = DummyStocksActor { last: Mutex::new(None) }.start();
+
+        let state = build_state(vec![old_ts], portal, tcbs, vps);
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::from(state))
+                .route("/health", web::get().to(health)),
+        )
+        .await;
+
+        let req = test::TestRequest::get().uri("/health").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), actix_web::http::StatusCode::GATEWAY_TIMEOUT);
+    }
+
+    #[actix_rt::test]
+    async fn health_ok_when_empty() {
+        let portal = Arc::new(FakePortal { watchlist_res: Ok(vec![]) });
+        let tcbs = DummyStocksActor { last: Mutex::new(None) }.start();
+        let vps  = DummyStocksActor { last: Mutex::new(None) }.start();
+
+        let state = build_state(vec![], portal, tcbs, vps);
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::from(state))
+                .route("/health", web::get().to(health)),
+        )
+        .await;
+
+        let req = test::TestRequest::get().uri("/health").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+    }
+
+    // === synchronize handler tests =========================================
+
+    #[actix_rt::test]
+    async fn synchronize_updates_both_actors() {
+        let records = vec![
+            make_record("AAA", true),
+            make_record("BBB", false),
+        ];
+        let portal = Arc::new(FakePortal { watchlist_res: Ok(records) });
+
+        let tcbs_actor = DummyStocksActor { last: Mutex::new(None) }.start();
+        let vps_actor  = DummyStocksActor { last: Mutex::new(None) }.start();
+
+        let state = build_state(Vec::new(), portal.clone(), tcbs_actor.clone(), vps_actor.clone());
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::from(state))
+                .route("/sync", web::put().to(synchronize)),
+        )
+        .await;
+
+        let req = test::TestRequest::put().uri("/sync").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+
+        // Validate the symbol lists sent to each actor.
+        let tcbs_msg = tcbs_actor
+            .send(vnscope::actors::GetLastMessage)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(tcbs_msg.stocks, vec!["AAA"]);
+
+        let vps_msg = vps_actor
+            .send(vnscope::actors::GetLastMessage)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(vps_msg.stocks, vec!["AAA", "BBB"]);
+    }
+
+    #[actix_rt::test]
+    async fn synchronize_returns_500_on_portal_error() {
+        let portal = Arc::new(FakePortal { watchlist_res: Err(anyhow::anyhow!("fail")) });
+
+        let tcbs_actor = DummyStocksActor { last: Mutex::new(None) }.start();
+        let vps_actor  = DummyStocksActor { last: Mutex::new(None) }.start();
+
+        let state = build_state(Vec::new(), portal, tcbs_actor, vps_actor);
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::from(state))
+                .route("/sync", web::put().to(synchronize)),
+        )
+        .await;
+
+        let req = test::TestRequest::put().uri("/sync").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_server_error());
+    }
+
+    // =======================================================================
+    // All tests above use Rust’s standard `cargo test` runner along with
+    // `actix_rt::test` and `actix_web::test` for asynchronous Actix handlers.
+    // =======================================================================
+}
