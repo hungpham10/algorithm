@@ -13,6 +13,7 @@ fn vnscope(_: Python, m: &PyModule) -> PyResult<()> {
 
     m.add_function(wrap_pyfunction!(analytics::filter, m)?)?;
     m.add_function(wrap_pyfunction!(order::order, m)?)?;
+    m.add_function(wrap_pyfunction!(market::price, m)?)?;
     m.add_function(wrap_pyfunction!(market::market, m)?)?;
     m.add_function(wrap_pyfunction!(market::vn30, m)?)?;
     m.add_function(wrap_pyfunction!(market::vn100, m)?)?;

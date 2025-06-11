@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
+use futures::future::join_all;
 
 #[cfg(feature = "python")]
 use std::sync::Arc;
@@ -85,6 +86,10 @@ impl CronResolver {
         self.resolvers.keys().map(|k| k.to_string()).collect()
     }
 
+    pub fn size(&self) -> usize {
+        self.resolvers.len()
+    }
+
     pub async fn perform(&self, tasks: Vec<Task>, from: i32, to: i32) -> usize {
         let mut concurrents = Vec::new();
         let mut cnt = tasks.len();
@@ -100,10 +105,14 @@ impl CronResolver {
             }
         }
 
-        for task in concurrents {
-            task.await.ok();
+        for result in join_all(concurrents).await {
+            match result {
+                Ok(_) => {}
+                Err(_) => {
+                    cnt -= 1;
+                }
+            }
         }
-
         cnt
     }
 
@@ -157,15 +166,12 @@ impl Actor for CronActor {
 
 #[derive(Debug, Clone)]
 pub struct CronError {
-    code: i32,
+    message: String,
 }
 
 impl fmt::Display for CronError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.code {
-            0 => write!(f, "timeout"),
-            _ => write!(f, "unknown error"),
-        }
+        write!(f, "{}", self.message)
     }
 }
 
@@ -217,12 +223,30 @@ impl Handler<TickCommand> for CronActor {
 
         self.clock = clock_now.timestamp();
 
-        Box::pin(async move { Ok(resolver.perform(tasks, -1, -1).await) })
+        Box::pin(async move {
+            if tasks.len() > 0 {
+                let size = resolver.size();
+                let ret = resolver.perform(tasks, -1, -1).await;
+
+                if ret == size {
+                    Ok(ret)
+                } else {
+                    Err(CronError {
+                        message: format!(
+                            "Fail trigger tasks [actual({}) != expected({})]",
+                            ret, size
+                        ),
+                    })
+                }
+            } else {
+                Ok(0)
+            }
+        })
     }
 }
 
 #[derive(Message, Debug, Clone)]
-#[rtype(result = "Result<i64, CronError>")]
+#[rtype(result = "i64")]
 pub struct ScheduleCommand {
     pub cron: String,
     pub timeout: i32,
@@ -237,7 +261,7 @@ pub struct ScheduleCommand {
 }
 
 impl Handler<ScheduleCommand> for CronActor {
-    type Result = ResponseFuture<Result<i64, CronError>>;
+    type Result = ResponseFuture<i64>;
 
     fn handle(&mut self, msg: ScheduleCommand, _: &mut Self::Context) -> Self::Result {
         let id = self.timekeeper.size();
@@ -259,9 +283,9 @@ impl Handler<ScheduleCommand> for CronActor {
                 pycallback: msg.pycallback.clone(),
             });
 
-            Box::pin(async move { Ok(id as i64) })
+            Box::pin(async move { id as i64 })
         } else {
-            Box::pin(async move { Ok(0) })
+            Box::pin(async move { 0 })
         }
     }
 }

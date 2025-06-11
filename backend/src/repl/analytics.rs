@@ -8,8 +8,6 @@ use pyo3_polars::PyDataFrame;
 
 use crate::algorithm::{Delegate, Format, Rule, Variables};
 
-const FUZZY_TRIGGER_THRESHOLD: f64 = 1.0;
-
 #[pyfunction]
 /// Filters rows in a Polars DataFrame based on a rule and returns the indices of matching rows.
 ///

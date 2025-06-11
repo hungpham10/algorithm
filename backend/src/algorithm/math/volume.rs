@@ -2,18 +2,6 @@ use crate::schemas::CandleStick as OHCL;
 use std::cmp::min;
 
 #[inline]
-fn order_pressure(candle: &OHCL) -> f64 {
-    // @NOTE:
-    // boolean logic
-    // f = (candle.c - candle.l) > (candle.h - candle.c) -> up
-    // f = (candle.c - candle.l) <= (candle.h - candle.c) -> down
-    // fuzzy logic
-    // f == true -> fz > 0.5
-    // f == false -> fz <= 0.5
-    (candle.c - candle.l) / ((candle.c - candle.l) + (candle.h - candle.c))
-}
-
-#[inline]
 fn cumulate_volume_profile_with_condition(
     candles: &[OHCL],
     number_of_levels: usize,

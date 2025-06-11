@@ -23,7 +23,7 @@ pub enum Format {
 }
 
 pub trait Function {
-    fn evaluate(&self, pins: Vec<(String, f64)>) -> Result<f64, RuleError>;
+    fn evaluate(&self, rule: &Rule, pins: Vec<(String, f64)>) -> Result<f64, RuleError>;
 }
 
 pub struct Rule {
@@ -68,7 +68,7 @@ pub struct Expression {
 }
 
 impl ExprTree {
-    fn evaluate(&self) -> Result<f64, RuleError> {
+    fn evaluate(&self, rule: &Rule) -> Result<f64, RuleError> {
         let mut arguments = Vec::new();
         let mut inode = 0;
         let mut ivalue = 0;
@@ -77,7 +77,7 @@ impl ExprTree {
             let label = self.labels.get(iarg).unwrap();
 
             let value = if *slot {
-                self.nodes[inode].evaluate()?
+                self.nodes[inode].evaluate(rule)?
             } else {
                 self.values[ivalue]
             };
@@ -91,7 +91,7 @@ impl ExprTree {
             }
         }
 
-        self.op.evaluate(arguments)
+        self.op.evaluate(rule, arguments)
     }
 
     fn labels(&self, is_threshold: bool) -> Vec<&String> {
@@ -214,7 +214,7 @@ impl Rule {
     }
 
     pub fn evaluate(&self) -> Result<f64, RuleError> {
-        self.optree.evaluate()
+        self.optree.evaluate(self)
     }
 
     fn build_expression_nested_tree(
