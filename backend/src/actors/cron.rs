@@ -224,17 +224,18 @@ impl Handler<TickCommand> for CronActor {
         self.clock = clock_now.timestamp();
 
         Box::pin(async move {
-            if tasks.len() > 0 {
-                let size = resolver.size();
+            let expected = tasks.len();
+
+            if expected > 0 {
                 let ret = resolver.perform(tasks, -1, -1).await;
 
-                if ret == size {
+                if ret == expected {
                     Ok(ret)
                 } else {
                     Err(CronError {
                         message: format!(
                             "Fail trigger tasks [actual({}) != expected({})]",
-                            ret, size
+                            ret, expected,
                         ),
                     })
                 }

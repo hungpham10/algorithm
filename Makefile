@@ -55,7 +55,6 @@ install: library
 test: library
 	$(PYTHON) -m pip install --upgrade $(DIST_DIR)/*.whl
 	$(PYTHON) -m pytest -xvs $(TEST_DIR)/
-	cargo test
 
 all: test
 

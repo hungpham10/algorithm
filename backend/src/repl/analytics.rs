@@ -112,11 +112,11 @@ async fn filter_in_async(
 mod tests {
     use super::*;
     use polars::prelude::*;
-    use std::collections::HashMap;
-    use tokio;
     use pyo3::prelude::*;
     use pyo3::types::PyDict;
     use pyo3_polars::PyDataFrame;
+    use std::collections::HashMap;
+    use tokio;
 
     #[derive(Default)]
     struct TestRule;

@@ -90,12 +90,25 @@ mod tests {
 
     /// Helper to create a CandleStick; open=low, close=high.
     fn make_candle(t: i64, low: f64, high: f64, volume: f64) -> CandleStick {
-        CandleStick { t, o: low, h: high, l: low, c: high, v: volume }
+        CandleStick {
+            t: t.try_into().unwrap(),
+            o: low,
+            h: high,
+            l: low,
+            c: high,
+            v: volume,
+        }
     }
 
     /// Asserts two f64 values are approximately equal.
     fn assert_f64_eq(a: f64, b: f64, eps: f64) {
-        assert!((a - b).abs() <= eps, "expected {} approx {}, difference {}", a, b, (a - b).abs());
+        assert!(
+            (a - b).abs() <= eps,
+            "expected {} approx {}, difference {}",
+            a,
+            b,
+            (a - b).abs()
+        );
     }
 
     #[test]
@@ -157,7 +170,14 @@ mod tests {
     fn only_green_candles() {
         use super::cumulate_volume_profile_with_condition as priv_fn;
         let green = make_candle(0, 1.0, 2.0, 100.0);
-        let red = CandleStick { t: 0, o: 2.0, h: 3.0, l: 2.0, c: 1.0, v: 200.0 };
+        let red = CandleStick {
+            t: 0,
+            o: 2.0,
+            h: 3.0,
+            l: 2.0,
+            c: 1.0,
+            v: 200.0,
+        };
         let (profiles, _) = priv_fn(&[green, red], 2, 0, |c| c.c > c.o);
         assert_eq!(profiles.len(), 1);
         // Only green candle contributes to first level
