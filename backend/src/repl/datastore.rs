@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
 use std::sync::{Arc, Mutex};
 
-use crate::algorithm::Variables;
+use crate::algorithm::fuzzy::Variables;
 
 #[pyclass]
 pub struct Datastore {

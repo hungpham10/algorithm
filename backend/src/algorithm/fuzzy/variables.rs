@@ -36,21 +36,6 @@ pub struct Variables {
 }
 
 impl Variables {
-    /// Creates a new `Variables` instance with specified time series and buffer sizes.
-    ///
-    /// Initializes empty collections for variables and buffers, and sets up configuration for optional S3 integration.
-    ///
-    /// # Parameters
-    /// - `timeseries_size`: Maximum number of recent values to retain for each variable.
-    /// - `flush_after_incremental_size`: Number of updates to buffer before triggering a flush (e.g., to S3).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// let vars = Variables::new(100, 50);
-    /// assert_eq!(vars.variables_size, 100);
-    /// assert_eq!(vars.buffers_size, 50);
-    /// ```
     pub fn new(timeseries_size: usize, flush_after_incremental_size: usize) -> Self {
         Self {
             variables_size: timeseries_size,
@@ -127,24 +112,6 @@ impl Variables {
         }
     }
 
-    /// Updates the specified variable with a new value and manages buffer flushing to S3 if enabled.
-    ///
-    /// Inserts the new value into the time series for the given variable, maintaining its fixed size. If S3 buffering is enabled, updates the corresponding buffer and triggers an asynchronous flush to S3 in Parquet format when all buffers are full and the flush threshold is reached. Returns the current length of the variable's time series after the update.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the variable does not exist, if buffer consistency checks fail, or if flushing to S3 encounters an error.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use your_crate::Variables;
-    /// # use tokio_test::block_on;
-    /// let mut vars = Variables::new(3, 2);
-    /// vars.create(&"temperature".to_string()).unwrap();
-    /// let len = block_on(vars.update(&"temperature".to_string(), 25.0)).unwrap();
-    /// assert_eq!(len, 1);
-    /// ```
     pub async fn update(
         &mut self,
         scope: &String,
@@ -246,18 +213,6 @@ impl Variables {
         }
     }
 
-    /// Returns a vector of references to all variable names currently managed by the struct.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// let mut vars = Variables::new(10, 5);
-    /// vars.create(&"temperature".to_string()).unwrap();
-    /// vars.create(&"humidity".to_string()).unwrap();
-    /// let names = vars.list();
-    /// assert!(names.contains(&&"temperature".to_string()));
-    /// assert!(names.contains(&&"humidity".to_string()));
-    /// ```
     pub fn list(&self) -> Vec<&String> {
         self.variables.keys().collect()
     }
@@ -279,20 +234,6 @@ impl Variables {
         self.variables.clear();
     }
 
-    /// Returns the number of stored values for the specified variable.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the variable does not exist.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// let mut vars = Variables::new(5, 10);
-    /// vars.create(&"temperature".to_string()).unwrap();
-    /// vars.update(&"temperature".to_string(), 23.5).await.unwrap();
-    /// assert_eq!(vars.len("temperature").unwrap(), 1);
-    /// ```
     pub fn len(&self, name: &str) -> Result<usize, RuleError> {
         let buffer = self.variables.get(name).ok_or_else(|| RuleError {
             message: format!("Variable {} not found", name),
@@ -300,26 +241,6 @@ impl Variables {
         Ok(buffer.len())
     }
 
-    /// Configures the struct to use S3-compatible storage for buffered data uploads.
-    ///
-    /// Initializes the S3 client with the specified bucket, object name prefix, and optional region and endpoint.
-    /// Subsequent flush operations will upload Parquet files to the configured S3 location.
-    ///
-    /// # Parameters
-    /// - `name`: Prefix for S3 object names.
-    /// - `bucket`: Name of the S3 bucket.
-    /// - `region`: Optional AWS region; uses a default if not provided.
-    /// - `endpoint`: Optional custom endpoint; uses a default if not provided.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use your_crate::Variables;
-    /// # async fn example() {
-    /// let mut vars = Variables::new(100, 10);
-    /// vars.use_s3("mydata", "mybucket", Some("us-west-2"), None).await;
-    /// # }
-    /// ```
     pub async fn use_s3(
         &mut self,
         bucket: &str,

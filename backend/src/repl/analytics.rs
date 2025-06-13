@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3_polars::PyDataFrame;
 
-use crate::algorithm::{Delegate, Format, Rule, Variables};
+use crate::algorithm::fuzzy::{Delegate, Format, Rule, Variables};
 
 #[pyfunction]
 /// Filters rows in a Polars DataFrame based on a rule and returns the indices of matching rows.

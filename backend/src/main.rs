@@ -21,7 +21,7 @@ use vnscope::actors::cron::{
 use vnscope::actors::tcbs::{resolve_tcbs_routes, TcbsActor};
 use vnscope::actors::vps::{resolve_vps_routes, VpsActor};
 use vnscope::actors::UpdateStocksCommand;
-use vnscope::algorithm::Variables;
+use vnscope::algorithm::fuzzy::Variables;
 use vnscope::schemas::{Portal, CRONJOB, WATCHLIST};
 
 struct AppState {
