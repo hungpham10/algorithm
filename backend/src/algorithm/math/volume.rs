@@ -1,5 +1,4 @@
 use crate::schemas::CandleStick as OHCL;
-use std::cmp::min;
 
 #[inline]
 fn cumulate_volume_profile_with_condition(
@@ -8,11 +7,16 @@ fn cumulate_volume_profile_with_condition(
     overlap: usize,
     condition: fn(&OHCL) -> bool,
 ) -> (Vec<Vec<f64>>, Vec<f64>) {
+    if candles.is_empty() || number_of_levels == 0 {
+        return (vec![], vec![]);
+    }
+
     let number_of_days = candles
         .windows(2)
         .filter(|w| w[0].t / 86400 != w[1].t / 86400)
         .count()
         + 1;
+
     let max_price = candles
         .iter()
         .map(|candle| candle.h)
@@ -21,47 +25,58 @@ fn cumulate_volume_profile_with_condition(
         .iter()
         .map(|candle| candle.l)
         .fold(f64::MAX, f64::min);
+    if max_price == min_price {
+        return (
+            vec![vec![0.0; number_of_levels]; number_of_days],
+            vec![min_price; number_of_levels],
+        );
+    }
+
     let price_step = (max_price - min_price) / number_of_levels as f64;
-    let overlap = min(overlap, number_of_days);
-    let mut profiles = vec![vec![0.0; number_of_levels]; number_of_days - overlap + 1];
-    let mut chunk = -1;
-    let mut current = 0;
+    let profiles_len = if overlap == 0 {
+        number_of_days
+    } else {
+        number_of_days.saturating_sub(overlap) + 1
+    };
+    let mut profiles = vec![vec![0.0; number_of_levels]; profiles_len];
+    let mut chunk = 0;
+    let mut current = candles[0].t / 86400;
 
     for candle in candles {
         let day = candle.t / 86400;
-        let price_range = candle.h - candle.l;
-        let volume_per_price = candle.v / price_range;
+        if day != current {
+            chunk += 1;
+            current = day;
+        }
 
         if !condition(candle) {
             continue;
         }
 
-        for _ in 0..2 {
-            if current == day {
-                for level in 0..number_of_levels {
-                    let price_level_low = min_price + (level as f64) * price_step;
-                    let price_level_high = min_price + ((level + 1) as f64) * price_step;
+        let price_range = candle.h - candle.l;
+        if price_range == 0.0 {
+            continue;
+        }
 
-                    let overlap_start = candle.l.max(price_level_low);
-                    let overlap_end = candle.h.min(price_level_high);
+        let volume_per_price = candle.v / price_range;
 
-                    if overlap_start < overlap_end {
-                        for (i, profile) in profiles
-                            .iter_mut()
-                            .enumerate()
-                            .take(number_of_days - overlap + 1)
-                        {
-                            if i as i64 <= chunk && chunk < (i + overlap) as i64 {
-                                profile[level] += volume_per_price * (overlap_end - overlap_start);
-                            }
+        for level in 0..number_of_levels {
+            let price_level_low = min_price + (level as f64) * price_step;
+            let price_level_high = min_price + ((level + 1) as f64) * price_step;
+
+            let overlap_start = candle.l.max(price_level_low);
+            let overlap_end = candle.h.min(price_level_high);
+
+            if overlap_start < overlap_end {
+                for (i, profile) in profiles.iter_mut().enumerate() {
+                    if overlap == 0 {
+                        if i == chunk {
+                            profile[level] += volume_per_price * (overlap_end - overlap_start);
                         }
+                    } else if i <= chunk && chunk < i + overlap {
+                        profile[level] += volume_per_price * (overlap_end - overlap_start);
                     }
                 }
-
-                break;
-            } else {
-                chunk += 1;
-                current = day;
             }
         }
     }

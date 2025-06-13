@@ -18,7 +18,7 @@ use actix::prelude::*;
 use actix::Addr;
 
 use crate::actors::{ActorError, GetVariableCommand, HealthCommand, UpdateStocksCommand};
-use crate::algorithm::Variables;
+use crate::algorithm::fuzzy::Variables;
 
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -102,9 +102,6 @@ pub struct VpsError {
 }
 
 impl fmt::Display for VpsError {
-    /// Formats the error message for display.
-    ///
-    /// This method writes the contained error message to the given formatter.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.message)
     }
@@ -356,39 +353,6 @@ pub struct UpdateVariablesCommand {
 impl Handler<UpdateVariablesCommand> for VpsActor {
     type Result = ResponseFuture<Result<HashMap<String, usize>, VpsError>>;
 
-    /// Updates shared variables with the latest stock price and order book data.
-    ///
-    /// For each provided `Price`, this function creates and updates variables representing
-    /// the current price, volume, change percent, price and volume levels, and foreign buy/sell volumes.
-    /// Returns a map of variable names to their updated counts or lengths.
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing a map from variable names to their updated counts, or a `VpsError` if an error occurs.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// // Assume `actor` is a VpsActor and `prices` is a Vec<Price>
-    /// let cmd = UpdateVariablesCommand { prices };
-    /// let result = actor.handle(cmd, &mut ctx).await;
-    /// assert!(result.is_ok());
-    /// Updates shared variables with the latest stock price and order book data.
-    ///
-    /// For each provided `Price`, creates and updates variables representing current price, volume, change percent, price levels, volume levels, and foreign buy/sell volumes. Returns a map of variable names to their updated counts or lengths.
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing a map from variable names to their update counts on success, or a `VpsError` on failure.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// // Assume `actor` is an instance of VpsActor and `prices` is a Vec<Price>.
-    /// let cmd = UpdateVariablesCommand { prices };
-    /// let result = actor.handle(cmd, &mut ctx).await;
-    /// assert!(result.is_ok());
-    /// ```
     fn handle(&mut self, msg: UpdateVariablesCommand, _: &mut Self::Context) -> Self::Result {
         let variables = self.variables.clone();
 
@@ -550,9 +514,6 @@ impl Handler<UpdateVariablesCommand> for VpsActor {
 impl Handler<GetVariableCommand> for VpsActor {
     type Result = ResponseFuture<Result<f64, ActorError>>;
 
-    /// Retrieves the value of a specific variable for a given stock symbol asynchronously.
-    ///
-    /// Returns the variable value as an `f64` if found, or an `ActorError` if the variable does not exist or the lock cannot be acquired.
     fn handle(&mut self, msg: GetVariableCommand, _: &mut Self::Context) -> Self::Result {
         let variables = self.variables.clone();
 
@@ -569,17 +530,6 @@ impl Handler<GetVariableCommand> for VpsActor {
     }
 }
 
-/// Creates and starts a new `VpsActor` to manage stock data for the specified symbols.
-///
-/// Initializes the actor with a thread-safe, empty variable store and returns its address for asynchronous interaction.
-///
-/// # Examples
-///
-/// ```
-/// let stocks = vec!["VIC".to_string(), "VNM".to_string()];
-/// let vps_addr = connect_to_vps(&stocks);
-/// // Use vps_addr to send commands to the actor
-/// ```
 pub fn connect_to_vps(stocks: &[String]) -> Addr<VpsActor> {
     VpsActor::new(stocks, Arc::new(Mutex::new(Variables::new(0, 0)))).start()
 }

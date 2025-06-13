@@ -21,9 +21,9 @@ lint:
 	export PATH="$$HOME/.cargo/bin:$$PATH"  && 					\
 	cd $(BACKEND_DIR) 			&& 					\
 	rustup component add clippy rustfmt 	&& 					\
-	cargo clippy --features python --lib	&& 					\
-	cargo clippy 				&& 					\
-	cargo fmt --all -- --check
+	$(CARGO) clippy --features python --lib	&& 					\
+	$(CARGO) clippy 			&& 					\
+	$(CARGO) fmt --all -- --check
 
 library:
 	@echo "Building release version $(VERSION)"
@@ -43,7 +43,7 @@ server:
 	@echo "Building release version $(VERSION)"
 	@mkdir -p $(DIST_DIR)
 	export PATH="$$HOME/.cargo/bin:$$PATH" &&					\
-	cargo build --release
+	$(CARGO) build --release
 
 ipython:
 	@cp -av target/debug/libvnscope.dylib target/debug/vnscope.so || 		\
@@ -55,6 +55,7 @@ install: library
 test: library
 	$(PYTHON) -m pip install --upgrade $(DIST_DIR)/*.whl
 	$(PYTHON) -m pytest -xvs $(TEST_DIR)/
+	$(CARGO) test
 
 all: test
 

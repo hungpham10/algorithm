@@ -16,29 +16,10 @@ use pyo3::types::{PyList, PyTuple};
 
 use crate::actors::cron::CronResolver;
 use crate::actors::{GetVariableCommand, FUZZY_TRIGGER_THRESHOLD};
-use crate::algorithm::{Delegate, Format, Variables};
+use crate::algorithm::fuzzy::{Delegate, Format, Variables};
 
 use super::{GetOrderCommand, TcbsActor, TcbsError, UpdateVariablesCommand};
 
-/// Initializes and starts a `TcbsActor` for the specified stocks and shared variables, registers periodic bid-ask flow updates, and returns the actor's address.
-///
-/// This function creates a new `TcbsActor` with the provided stock symbols and shared variables, starts it as an Actix actor, and registers a cron task to periodically update and evaluate bid-ask flow data. The actor's address is returned for further interaction.
-///
-/// # Parameters
-/// - `stocks`: List of stock symbols to be managed by the actor.
-/// - `variables`: Shared, thread-safe state for variable storage and updates.
-///
-/// # Returns
-/// An `Arc`-wrapped address of the started `TcbsActor`.
-///
-/// # Examples
-///
-/// ```
-/// let variables = Arc::new(Mutex::new(Variables::default()));
-/// let stocks = vec!["AAPL".to_string(), "GOOG".to_string()];
-/// let mut resolver = CronResolver::new();
-/// let actor_addr = resolve_tcbs_routes(&mut resolver, &stocks, variables.clone());
-/// ```
 pub async fn resolve_tcbs_routes(
     #[cfg(not(feature = "python"))] prometheus: &PrometheusMetrics,
     resolver: &mut CronResolver,
@@ -92,23 +73,6 @@ pub async fn resolve_tcbs_routes(
     actor.clone()
 }
 
-/// Registers a periodic cron task to evaluate fuzzy logic rules on TCBS order data using the provided actor.
-///
-/// For each scheduled run, retrieves order datapoints from the actor, builds a fuzzy rule from the cron task configuration,
-/// updates the actor's variables, and evaluates the rule with current variable values. If the rule evaluation meets the trigger
-/// threshold and a Python callback is configured (with the `python` feature enabled), the callback is invoked with the order data.
-///
-/// # Parameters
-/// - `actor`: Address of the `TcbsActor` used for retrieving and updating order data.
-/// - `resolver`: The `CronResolver` used to schedule and manage the periodic task.
-///
-/// # Examples
-///
-/// ```
-/// let actor = Arc::new(tcbs_actor.start());
-/// let mut resolver = CronResolver::new();
-/// resolve_watching_tcbs_bid_ask_flow(actor, &mut resolver);
-/// ```
 fn resolve_watching_tcbs_bid_ask_flow(
     actor: Arc<Addr<TcbsActor>>,
     resolver: &mut CronResolver,

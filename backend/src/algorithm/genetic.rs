@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 use rand::Rng;
 use rayon::prelude::*;
 
@@ -158,26 +159,40 @@ impl<T: Player + Clone + Sync + Send + std::fmt::Debug> Genetic<T> {
         }
     }
 
-    pub fn evolute(&mut self, number_of_couple: usize, session: i64) {
+    pub fn evolute(
+        &mut self,
+        number_of_couple: usize,
+        session: i64,
+        mutation_rate: f64,
+    ) -> Result<()> {
         let mut rng = rand::thread_rng();
         let mut extintion = Vec::<usize>::new();
-        let mut roulette = vec![0.0; self.population.len()];
-        let mut sumup = 0.0;
 
-        let individual_estimation = self
-            .population
-            .par_iter()
-            .enumerate()
-            .map(|(i, iter)| (i, iter.player.estimate()))
-            .collect::<Vec<(usize, f64)>>();
+        if !(0.0..=1.0).contains(&mutation_rate) || mutation_rate.is_nan() {
+            return Err(anyhow!("`mutation_rate` must be within [0.0, 1.0]"));
+        }
+
+        if 2 * number_of_couple >= self.limit {
+            return Err(anyhow!("Number of couple is excessing the limitation"));
+        }
+
+        let individual_estimation = if self.population.len() > 100 {
+            self.population
+                .par_iter()
+                .enumerate()
+                .map(|(i, iter)| (i, iter.player.estimate()))
+                .collect::<Vec<(usize, f64)>>()
+        } else {
+            self.population
+                .iter()
+                .enumerate()
+                .map(|(i, iter)| (i, iter.player.estimate()))
+                .collect::<Vec<(usize, f64)>>()
+        };
 
         for (i, fitness) in individual_estimation {
             // @NOTE: update fitness of current session into each player
             self.population[i].update_fitness(session, fitness);
-
-            // @NOTE: cache fitness for calculating later
-            roulette[i] = fitness;
-            sumup += fitness;
 
             // @NOTE: to make some events like mass extinction, we need to perform estimation
             //        who would be removed out of our population
@@ -187,18 +202,19 @@ impl<T: Player + Clone + Sync + Send + std::fmt::Debug> Genetic<T> {
         }
 
         // @NOTE: remove dead player
-        if extintion.len() < self.population.len() {
+        if !extintion.is_empty() && extintion.len() < self.population.len() {
             let percent = extintion.len() as f64 / self.population.len() as f64;
-
-            for i in extintion.into_iter().rev() {
-                if rng.gen::<f64>() < percent {
-                    self.population.remove(i);
+            let mut new_population = Vec::with_capacity(self.population.len());
+            for (i, individual) in self.population.drain(..).enumerate() {
+                if !extintion.contains(&i) || rng.gen::<f64>() >= percent {
+                    new_population.push(individual);
                 }
             }
+            self.population = new_population;
         }
 
         // @NOTE: force to remove players who have bad quality
-        if self.population.len() > self.limit {
+        if self.population.len() > self.limit.saturating_sub(number_of_couple) {
             // @NOTE: sort by estimation fitness
             self.population.sort_by(|a, b| {
                 b.estimate(session)
@@ -207,11 +223,29 @@ impl<T: Player + Clone + Sync + Send + std::fmt::Debug> Genetic<T> {
             });
 
             // @NOTE: remove old player
-            self.population.truncate(self.population.len() - self.limit);
+            self.population
+                .truncate(self.limit.saturating_sub(number_of_couple));
         }
 
-        for item in roulette.iter_mut() {
-            *item /= sumup;
+        let mut roulette = vec![0.0; self.population.len()];
+        let mut sumup = 0.0;
+
+        for (i, individual) in self.population.iter().enumerate() {
+            let fitness = individual.estimate(session);
+            roulette[i] = fitness;
+            sumup += fitness;
+        }
+
+        if sumup <= 0.0 {
+            let uniform_prob = 1.0 / self.population.len() as f64;
+
+            for item in roulette.iter_mut() {
+                *item = uniform_prob;
+            }
+        } else {
+            for item in roulette.iter_mut() {
+                *item /= sumup;
+            }
         }
 
         for i in 1..self.population.len() {
@@ -220,24 +254,38 @@ impl<T: Player + Clone + Sync + Send + std::fmt::Debug> Genetic<T> {
 
         // @NOTE: try to promote new player
         for _ in 0..number_of_couple {
-            // @NOTE: random picks two players who has very lucky
             let f = self.roulette_wheel_selection(&mut roulette, rng.gen::<f64>());
             let m = self.roulette_wheel_selection(&mut roulette, rng.gen::<f64>());
-
-            // @NOTE: add new player
-            self.population.push(Individual::<T>::new((self.crossover)(
+            let mut new_player = (self.crossover)(
                 self,
                 &self.population[f].player,
                 f,
                 &self.population[m].player,
                 m,
                 session,
-            )));
+            );
+            for i in 0..new_player.gene().len() {
+                if rng.gen::<f64>() < mutation_rate {
+                    (self.mutate)(&mut new_player, &Vec::new(), i);
+                }
+            }
+            self.population.push(Individual::<T>::new(new_player));
         }
+
+        Ok(())
     }
 
-    pub fn fluctuate(&mut self, session: i64, arguments: Vec<Vec<f64>>, mutation_rate: f64) {
+    pub fn fluctuate(
+        &mut self,
+        session: i64,
+        arguments: Vec<Vec<f64>>,
+        mutation_rate: f64,
+    ) -> Result<()> {
         let mut rng = rand::thread_rng();
+
+        if !(0.0..=1.0).contains(&mutation_rate) || mutation_rate.is_nan() {
+            return Err(anyhow!("`mutation_rate` must be within [0.0, 1.0]"));
+        }
 
         for player in &mut self.population {
             for i in 0..player.player.gene().len() {
@@ -252,104 +300,285 @@ impl<T: Player + Clone + Sync + Send + std::fmt::Debug> Genetic<T> {
 
             player.estimate_mut(session);
         }
+        Ok(())
     }
 
     fn roulette_wheel_selection(&self, roulette: &mut [f64], target: f64) -> usize {
-        // @TODO: use binary search to reduce if we have a lot of players
-        for (i, item) in roulette.iter_mut().enumerate() {
-            if target < *item {
-                return i;
-            }
+        match roulette
+            .binary_search_by(|x| x.partial_cmp(&target).unwrap_or(std::cmp::Ordering::Equal))
+        {
+            Ok(i) => i,
+            Err(i) => i.min(self.population.len() - 1),
         }
-
-        self.population.len() - 1
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::Rng;
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Copy, Debug, PartialEq)]
     struct TestPlayer {
-        count: f64,
+        genes: [f64; 3],
+        fitness: f64,
+    }
+
+    impl TestPlayer {
+        fn new(fitness: f64) -> Self {
+            TestPlayer {
+                genes: [0.0, 0.0, 0.0],
+                fitness,
+            }
+        }
     }
 
     impl Player for TestPlayer {
         fn initialize(&mut self) {
-            let mut rng = rand::thread_rng();
-
-            self.count = (rng.gen::<f64>() - 0.5) * 1.0;
+            self.genes = [1.0, 2.0, 3.0];
         }
 
         fn estimate(&self) -> f64 {
-            if self.count < 10.0 {
-                1.0 / (10.0 - self.count)
-            } else {
-                1.0 / (self.count - 10.0)
-            }
+            self.fitness
         }
 
         fn gene(&self) -> Vec<f64> {
-            vec![self.count]
+            self.genes.to_vec()
         }
     }
 
-    fn generate_players() -> Vec<TestPlayer> {
-        let mut players: Vec<TestPlayer> = Vec::<TestPlayer>::new();
-        for _ in 0..10 {
-            players.push(TestPlayer { count: 0.0 });
-        }
+    unsafe impl Sync for TestPlayer {}
+    unsafe impl Send for TestPlayer {}
 
-        players
+    fn test_crossover<T: Player + Clone + Sync + Send>(
+        _genetic: &Genetic<T>,
+        p1: &T,
+        _p1_idx: usize,
+        _p2: &T,
+        _p2_idx: usize,
+        _session: i64,
+    ) -> T {
+        p1.clone()
     }
 
-    fn merging_crossover(
-        _controller: &Genetic<TestPlayer>,
-        father_ctx: &TestPlayer,
-        father_id: usize,
-        mother_ctx: &TestPlayer,
-        mother_id: usize,
-        session_id: i64,
-    ) -> TestPlayer {
-        TestPlayer {
-            count: (father_ctx.count + mother_ctx.count) / 2.0,
-        }
-    }
+    fn test_mutate<T: Clone + Sync + Send>(_player: &mut T, _args: &Vec<f64>, _idx: usize) {}
 
-    fn adaptive_crossover(
-        controller: &Genetic<TestPlayer>,
-        father_ctx: &TestPlayer,
-        father_id: usize,
-        mother_ctx: &TestPlayer,
-        mother_id: usize,
-        session_id: i64,
-    ) -> TestPlayer {
-        let mut rng = rand::thread_rng();
-        let alpha = rng.gen::<f64>() * (session_id as f64)
-            / (father_ctx.estimate() + mother_ctx.estimate());
-
-        TestPlayer {
-            count: alpha * father_ctx.count + (1.0 - alpha) * mother_ctx.count,
-        }
-    }
-
-    fn mutate(_player: &mut TestPlayer, _arguments: &Vec<f64>, _gene: usize) {}
-
-    fn policy(_player: &Individual<TestPlayer>, _session_id: i64) -> bool {
+    fn test_extinguish<T: Clone + Sync + Send>(_individual: &Individual<T>, _session: i64) -> bool {
         false
     }
 
+    fn test_extinguish_all<T: Clone + Sync + Send>(
+        _individual: &Individual<T>,
+        _session: i64,
+    ) -> bool {
+        true
+    }
+
     #[test]
-    fn test_genetic_algorithm_workflow() {
-        let mut genetic = Genetic::<TestPlayer>::new(10, adaptive_crossover, mutate, policy);
+    fn test_evolute_normal_operation() {
+        let mut genetic = Genetic::new(
+            5,
+            test_crossover::<TestPlayer>,
+            test_mutate::<TestPlayer>,
+            test_extinguish::<TestPlayer>,
+        );
+        let players = vec![
+            TestPlayer::new(1.0),
+            TestPlayer::new(2.0),
+            TestPlayer::new(3.0),
+            TestPlayer::new(4.0),
+        ];
+        genetic.initialize(players);
 
-        genetic.initialize(generate_players());
+        let session = 1;
+        let number_of_couple = 2;
+        let mutation_rate = 0.1;
 
-        for j in 0..1 {
-            for i in 0..100 {
-                genetic.evolute(10, j * 100 + i);
-            }
+        genetic
+            .evolute(number_of_couple, session, mutation_rate)
+            .unwrap();
+
+        assert_eq!(genetic.size(), 5);
+        let avg_fitness = genetic.average_fitness(session);
+        assert!(avg_fitness > 0.0, "Average fitness should be positive");
+        let best_fitness = genetic.best_fitness(session);
+        assert!(
+            best_fitness <= 4.0,
+            "Best fitness should not exceed initial max"
+        );
+    }
+
+    #[test]
+    fn test_evolute_zero_fitness() {
+        let mut genetic = Genetic::new(
+            5,
+            test_crossover::<TestPlayer>,
+            test_mutate::<TestPlayer>,
+            test_extinguish::<TestPlayer>,
+        );
+        let players = vec![
+            TestPlayer::new(0.0),
+            TestPlayer::new(0.0),
+            TestPlayer::new(0.0),
+        ];
+        genetic.initialize(players);
+
+        let session = 1;
+        let number_of_couple = 2;
+        let mutation_rate = 0.1;
+
+        genetic
+            .evolute(number_of_couple, session, mutation_rate)
+            .unwrap();
+
+        assert_eq!(
+            genetic.size(),
+            5,
+            "Population should grow by number_of_couple"
+        );
+        let avg_fitness = genetic.average_fitness(session);
+        assert_eq!(avg_fitness, 0.0);
+    }
+
+    #[test]
+    fn test_evolute_extinction() {
+        let mut genetic = Genetic::new(
+            5,
+            test_crossover::<TestPlayer>,
+            test_mutate::<TestPlayer>,
+            test_extinguish_all::<TestPlayer>,
+        );
+        let players = vec![
+            TestPlayer::new(1.0),
+            TestPlayer::new(2.0),
+            TestPlayer::new(3.0),
+        ];
+        genetic.initialize(players);
+
+        let session = 1;
+        let number_of_couple = 1;
+        let mutation_rate = 0.1;
+
+        genetic
+            .evolute(number_of_couple, session, mutation_rate)
+            .unwrap();
+
+        assert!(genetic.size() > 0, "Population should not be empty");
+        assert!(
+            genetic.size() <= 3 + number_of_couple,
+            "Population should not exceed initial + new"
+        );
+    }
+
+    #[test]
+    fn test_evolute_truncation() {
+        let mut genetic = Genetic::new(
+            3,
+            test_crossover::<TestPlayer>,
+            test_mutate::<TestPlayer>,
+            test_extinguish::<TestPlayer>,
+        );
+        let players = vec![
+            TestPlayer::new(1.0),
+            TestPlayer::new(2.0),
+            TestPlayer::new(3.0),
+            TestPlayer::new(4.0),
+        ];
+        genetic.initialize(players);
+
+        let session = 1;
+        let number_of_couple = 1;
+        let mutation_rate = 0.1;
+
+        genetic
+            .evolute(number_of_couple, session, mutation_rate)
+            .unwrap();
+
+        assert_eq!(genetic.size(), 3, "Population should be truncated to limit");
+        let best_fitness = genetic.best_fitness(session);
+        assert!(
+            best_fitness >= 3.0,
+            "Best fitness should be from top individuals"
+        );
+    }
+
+    #[test]
+    fn test_roulette_wheel_selection() {
+        let mut genetic = Genetic::new(
+            5,
+            test_crossover::<TestPlayer>,
+            test_mutate::<TestPlayer>,
+            test_extinguish::<TestPlayer>,
+        );
+        let players = vec![
+            TestPlayer::new(1.0),
+            TestPlayer::new(2.0),
+            TestPlayer::new(3.0),
+        ];
+        genetic.initialize(players);
+
+        let mut roulette = vec![1.0, 3.0, 6.0];
+        let sumup = 6.0;
+        for item in roulette.iter_mut() {
+            *item /= sumup;
         }
+        for i in 1..roulette.len() {
+            roulette[i] += roulette[i - 1];
+        }
+
+        let idx = genetic.roulette_wheel_selection(&mut roulette[..], 0.1);
+        assert_eq!(idx, 0, "Should select first individual for low target");
+
+        let idx = genetic.roulette_wheel_selection(&mut roulette[..], 0.5);
+        assert_eq!(idx, 1, "Should select second individual for mid target");
+
+        let idx = genetic.roulette_wheel_selection(&mut roulette[..], 0.9);
+        assert_eq!(idx, 2, "Should select third individual for high target");
+    }
+
+    #[test]
+    fn test_fluctuate_mutation() {
+        let mut genetic = Genetic::new(
+            5,
+            test_crossover::<TestPlayer>,
+            test_mutate::<TestPlayer>,
+            test_extinguish::<TestPlayer>,
+        );
+        let players = vec![TestPlayer::new(1.0), TestPlayer::new(2.0)];
+        genetic.initialize(players);
+
+        let session = 1;
+        let mutation_rate = 1.0;
+        let arguments = vec![vec![0.0], vec![0.0], vec![0.0]];
+
+        let _ = genetic.fluctuate(session, arguments, mutation_rate);
+
+        let avg_fitness = genetic.average_fitness(session);
+        assert!(
+            avg_fitness > 0.0,
+            "Fitness should be updated after fluctuation"
+        );
+    }
+
+    #[test]
+    fn test_best_player() {
+        let mut genetic = Genetic::new(
+            5,
+            test_crossover::<TestPlayer>,
+            test_mutate::<TestPlayer>,
+            test_extinguish::<TestPlayer>,
+        );
+        let players = vec![
+            TestPlayer::new(1.0),
+            TestPlayer::new(4.0),
+            TestPlayer::new(2.0),
+        ];
+        genetic.initialize(players);
+
+        let session = 1;
+        genetic.estimate(session);
+
+        let best = genetic.best_player(session);
+        assert_eq!(best.fitness, 4.0, "Best player should have highest fitness");
     }
 }

@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use pyo3_polars::PyDataFrame;
 
 use crate::actors::tcbs::{connect_to_tcbs, GetOrderCommand};
-use crate::algorithm::Variables;
+use crate::algorithm::fuzzy::Variables;
 
 #[pyfunction]
 pub fn order(symbol: String) -> PyResult<PyDataFrame> {
