@@ -19,7 +19,7 @@ use pyo3::prelude::*;
 use actix::prelude::*;
 use actix::Addr;
 
-use crate::actors::vps::list_futures;
+use crate::actors::list_futures;
 use crate::actors::{ActorError, GetVariableCommand, HealthCommand, UpdateStocksCommand};
 use crate::algorithm::fuzzy::Variables;
 
