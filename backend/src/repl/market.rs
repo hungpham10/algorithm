@@ -9,9 +9,8 @@ use lazy_static::lazy_static;
 use std::collections::HashMap;
 
 use crate::actors::dnse::{connect_to_dnse, GetOHCLCommand};
-use crate::actors::vps::{
-    connect_to_vps, list_of_industry, list_of_vn100, list_of_vn30, GetPriceCommand, Price,
-};
+use crate::actors::vps::{connect_to_vps, GetPriceCommand, Price};
+use crate::actors::{list_cw, list_futures, list_of_industry, list_of_vn100, list_of_vn30};
 
 lazy_static! {
     static ref INDUSTRY_CODES: HashMap<&'static str, &'static str> = {
@@ -37,6 +36,97 @@ lazy_static! {
         m.insert("information technology", "9500");
         m
     };
+}
+
+#[pyfunction]
+pub fn futures() -> Vec<String> {
+    actix_rt::Runtime::new()
+        .unwrap()
+        .block_on(async { list_futures().await })
+}
+
+#[pyfunction]
+pub fn cw() -> PyResult<PyDataFrame> {
+    let datapoints = actix_rt::Runtime::new()
+        .unwrap()
+        .block_on(async { list_cw().await });
+
+    let last_trading_time_parsed = datapoints
+        .iter()
+        .map(|it| {
+            let day: i32 = it.last_trading_date.as_str()[6..8].parse().unwrap();
+            let year: i32 = it.last_trading_date.as_str()[0..4].parse().unwrap();
+            let month: i32 = it.last_trading_date.as_str()[4..6].parse().unwrap();
+
+            (day, month, year)
+        })
+        .collect::<Vec<_>>();
+
+    Ok(PyDataFrame(
+        DataFrame::new(vec![
+            Series::new(
+                "symbol",
+                datapoints
+                    .iter()
+                    .map(|it| it.symbol.clone())
+                    .collect::<Vec<_>>(),
+            ),
+            Series::new(
+                "underlying",
+                datapoints
+                    .iter()
+                    .map(|it| it.underlying.clone())
+                    .collect::<Vec<_>>(),
+            ),
+            Series::new(
+                "year",
+                last_trading_time_parsed
+                    .iter()
+                    .map(|it| it.2)
+                    .collect::<Vec<_>>(),
+            ),
+            Series::new(
+                "month",
+                last_trading_time_parsed
+                    .iter()
+                    .map(|it| it.1)
+                    .collect::<Vec<_>>(),
+            ),
+            Series::new(
+                "day",
+                last_trading_time_parsed
+                    .iter()
+                    .map(|it| it.0)
+                    .collect::<Vec<_>>(),
+            ),
+            Series::new(
+                "last_trading_date",
+                datapoints
+                    .iter()
+                    .map(|it| it.last_trading_date.clone())
+                    .collect::<Vec<_>>(),
+            ),
+            Series::new(
+                "exercise_price",
+                datapoints
+                    .iter()
+                    .map(|it| it.exercise_price)
+                    .collect::<Vec<_>>(),
+            ),
+            Series::new(
+                "exercise_ratio",
+                datapoints
+                    .iter()
+                    .map(|it| {
+                        let parts = it.exercise_ratio.split(':').collect::<Vec<&str>>();
+
+                        parts[0].parse::<f64>().unwrap()
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+        ])
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to create DataFrame: {:?}", e)))?,
+    ))
 }
 
 #[pyfunction]
