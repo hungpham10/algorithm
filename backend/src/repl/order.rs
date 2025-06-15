@@ -35,6 +35,17 @@ pub fn order(symbol: String) -> PyResult<PyDataFrame> {
         datapoints
     });
 
+    let t = datapoints
+        .iter()
+        .map(|d| {
+            (
+                d.t.as_str()[0..2].parse::<i32>().unwrap_or(0),
+                d.t.as_str()[3..5].parse::<i32>().unwrap_or(0),
+                d.t.as_str()[6..8].parse::<i32>().unwrap_or(0),
+            )
+        })
+        .collect::<Vec<_>>();
+
     let df = DataFrame::new(vec![
         Series::new("p", datapoints.iter().map(|d| d.p).collect::<Vec<f64>>()),
         Series::new(
@@ -57,20 +68,14 @@ pub fn order(symbol: String) -> PyResult<PyDataFrame> {
                 .map(|d| d.a.clone())
                 .collect::<Vec<String>>(),
         ),
-        Series::new("ba", datapoints.iter().map(|d| d.ba).collect::<Vec<f64>>()),
-        Series::new("sa", datapoints.iter().map(|d| d.sa).collect::<Vec<f64>>()),
         Series::new("hl", datapoints.iter().map(|d| d.hl).collect::<Vec<bool>>()),
         Series::new(
             "pcp",
             datapoints.iter().map(|d| d.pcp).collect::<Vec<f64>>(),
         ),
-        Series::new(
-            "t",
-            datapoints
-                .iter()
-                .map(|d| d.t.clone())
-                .collect::<Vec<String>>(),
-        ),
+        Series::new("h", t.iter().map(|i| i.0).collect::<Vec<_>>()),
+        Series::new("m", t.iter().map(|i| i.1).collect::<Vec<_>>()),
+        Series::new("s", t.iter().map(|i| i.2).collect::<Vec<_>>()),
     ])
     .map_err(|e| PyRuntimeError::new_err(format!("Failed to create DataFrame: {}", e)))?;
 

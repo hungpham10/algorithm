@@ -11,3 +11,4 @@ pub mod lru;
 pub mod markov;
 
 pub use binarysearch::*;
+pub use math::*;

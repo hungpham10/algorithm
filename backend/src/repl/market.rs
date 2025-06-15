@@ -1,4 +1,4 @@
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::{NaiveDate, NaiveDateTime, Utc};
 use polars::prelude::*;
 
 use pyo3::exceptions::PyRuntimeError;
@@ -11,6 +11,8 @@ use std::collections::HashMap;
 use crate::actors::dnse::{connect_to_dnse, GetOHCLCommand};
 use crate::actors::vps::{connect_to_vps, GetPriceCommand, Price};
 use crate::actors::{list_cw, list_futures, list_of_industry, list_of_vn100, list_of_vn30};
+use crate::algorithm::cumulate_volume_profile;
+use crate::schemas::CandleStick;
 
 lazy_static! {
     static ref INDUSTRY_CODES: HashMap<&'static str, &'static str> = {
@@ -198,15 +200,31 @@ pub fn market(symbols: Vec<String>) -> PyResult<PyDataFrame> {
         .iter()
         .map(|s| mapping.get(s).unwrap().lastVolume)
         .collect::<Vec<_>>();
+    let lots = symbols
+        .iter()
+        .map(|s| mapping.get(s).unwrap().lot as f64)
+        .collect::<Vec<_>>();
     let change_percent = symbols
         .iter()
         .map(|s| {
-            mapping
-                .get(s)
-                .unwrap()
-                .changePc
-                .parse::<f64>()
-                .unwrap_or(0.0_f64)
+            let c = mapping.get(s).unwrap().lastPrice;
+            let r = mapping.get(s).unwrap().r;
+
+            if c > r {
+                mapping
+                    .get(s)
+                    .unwrap()
+                    .changePc
+                    .parse::<f64>()
+                    .unwrap_or(0.0_f64)
+            } else {
+                -mapping
+                    .get(s)
+                    .unwrap()
+                    .changePc
+                    .parse::<f64>()
+                    .unwrap_or(0.0_f64)
+            }
         })
         .collect::<Vec<_>>();
     let fb_vols = symbols
@@ -260,6 +278,7 @@ pub fn market(symbols: Vec<String>) -> PyResult<PyDataFrame> {
     let df = DataFrame::new(vec![
         Series::new("symbol", &symbols),
         Series::new("price", &prices),
+        Series::new("lot", &lots),
         Series::new("volume", &volumes),
         Series::new("change", &change_percent),
         Series::new("price_minus1", &price_minus1),
@@ -338,4 +357,172 @@ pub fn price(
         ])
         .map_err(|e| PyRuntimeError::new_err(format!("Failed to create DataFrame: {:?}", e)))?,
     ))
+}
+
+#[pyfunction]
+pub fn profile(
+    symbols: Vec<String>,
+    resolution: String,
+    lookback: i64,
+    number_of_levels: usize,
+) -> PyResult<PyDataFrame> {
+    let mut columns = vec![Series::new("symbol", symbols.clone())];
+    let to = Utc::now().timestamp();
+    let from = match resolution.as_str() {
+        "1D" => Ok(to - 24 * 60 * 60 * lookback),
+        "1W" => Ok(to - 7 * 24 * 60 * 60 * lookback),
+        _ => Err(PyRuntimeError::new_err(format!(
+            "Not support resolution `{}`",
+            resolution
+        ))),
+    }?;
+
+    let datapoints = symbols
+        .iter()
+        .map(|symbol| {
+            actix_rt::Runtime::new().unwrap().block_on(async {
+                let actor = connect_to_dnse();
+                let candles = actor
+                    .send(GetOHCLCommand {
+                        resolution: match resolution.as_str() {
+                            "1D" => "1H".to_string(),
+                            "1W" => "4H".to_string(),
+                            _ => "1D".to_string(),
+                        },
+                        stock: symbol.clone(),
+                        from,
+                        to,
+                    })
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let (profiles, levels) = cumulate_volume_profile(&candles, number_of_levels, 0);
+
+                (
+                    profiles[0].clone(),
+                    levels.first().cloned().unwrap_or(0.0),
+                    levels.last().cloned().unwrap_or(0.0),
+                )
+            })
+        })
+        .collect::<Vec<(Vec<f64>, f64, f64)>>();
+
+    let profile_length = datapoints
+        .get(0)
+        .map(|(profile, _, _)| profile.len())
+        .unwrap_or(0);
+
+    for i in 0..profile_length {
+        let col_name = format!("level_{}", i);
+        let values = datapoints
+            .iter()
+            .map(|(profile, _, _)| profile.get(i).cloned().unwrap_or(0.0))
+            .collect::<Vec<f64>>();
+        columns.push(Series::new(&col_name, values));
+    }
+
+    columns.push(Series::new(
+        "price_at_level_first",
+        datapoints
+            .iter()
+            .map(|(_, first, _)| *first)
+            .collect::<Vec<f64>>(),
+    ));
+    columns.push(Series::new(
+        "price_at_level_last",
+        datapoints
+            .iter()
+            .map(|(_, _, last)| *last)
+            .collect::<Vec<f64>>(),
+    ));
+
+    Ok(PyDataFrame(DataFrame::new(columns).map_err(|e| {
+        PyRuntimeError::new_err(format!("Failed to create DataFrame: {}", e))
+    })?))
+}
+
+#[pyfunction]
+pub fn history(symbols: Vec<String>, resolution: String, lookback: i64) -> PyResult<PyDataFrame> {
+    let to = Utc::now().timestamp();
+    let from = match resolution.as_str() {
+        "1D" => Ok(to - 24 * 60 * 60 * lookback),
+        "1W" => Ok(to - 7 * 24 * 60 * 60 * lookback),
+        _ => Err(PyRuntimeError::new_err(format!(
+            "Not support resolution `{}`",
+            resolution
+        ))),
+    }?;
+
+    let datapoints = symbols
+        .iter()
+        .map(|symbol| {
+            actix_rt::Runtime::new().unwrap().block_on(async {
+                let actor = connect_to_dnse();
+
+                actor
+                    .send(GetOHCLCommand {
+                        resolution: resolution.clone(),
+                        stock: symbol.clone(),
+                        from,
+                        to,
+                    })
+                    .await
+                    .unwrap()
+                    .unwrap()
+            })
+        })
+        .collect::<Vec<_>>();
+
+    // Find the maximum number of candlesticks across all symbols
+    let max_candles = datapoints
+        .iter()
+        .map(|candles| candles.len())
+        .max()
+        .unwrap_or(0);
+    if max_candles == 0 {
+        return Ok(PyDataFrame(
+            DataFrame::new(vec![Series::new("symbol", &symbols)]).map_err(|e| {
+                PyRuntimeError::new_err(format!("Failed to create DataFrame: {:?}", e))
+            })?,
+        ));
+    }
+
+    // Prepare columns for the DataFrame
+    let mut columns = vec![Series::new("symbol", &symbols)];
+
+    // For each candlestick index (day), create columns for o, h, c, l, v
+    for i in 0..max_candles {
+        let mut o_values = Vec::new();
+        let mut h_values = Vec::new();
+        let mut c_values = Vec::new();
+        let mut l_values = Vec::new();
+        let mut v_values = Vec::new();
+
+        for candles in &datapoints {
+            if let Some(candle) = candles.get(i) {
+                o_values.push(candle.o);
+                h_values.push(candle.h);
+                c_values.push(candle.c);
+                l_values.push(candle.l);
+                v_values.push(candle.v);
+            } else {
+                o_values.push(f64::NAN);
+                h_values.push(f64::NAN);
+                c_values.push(f64::NAN);
+                l_values.push(f64::NAN);
+                v_values.push(f64::NAN);
+            }
+        }
+
+        columns.push(Series::new(&format!("o_day_{}", i + 1), o_values));
+        columns.push(Series::new(&format!("h_day_{}", i + 1), h_values));
+        columns.push(Series::new(&format!("c_day_{}", i + 1), c_values));
+        columns.push(Series::new(&format!("l_day_{}", i + 1), l_values));
+        columns.push(Series::new(&format!("v_day_{}", i + 1), v_values));
+    }
+
+    // Create DataFrame
+    Ok(PyDataFrame(DataFrame::new(columns).map_err(|e| {
+        PyRuntimeError::new_err(format!("Failed to create DataFrame: {:?}", e))
+    })?))
 }
