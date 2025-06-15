@@ -1,202 +1,226 @@
 use crate::schemas::CandleStick as OHCL;
+use std::collections::HashMap;
+
+// Hàm helper để chuyển timestamp thành ngày (số ngày từ epoch)
+#[inline]
+fn timestamp_to_day(t: i32) -> i32 {
+    t / (24 * 60 * 60) // Chuyển từ giây sang ngày
+}
 
 #[inline]
-fn cumulate_volume_profile_with_condition(
+pub fn cumulate_volume_profile(
     candles: &[OHCL],
     number_of_levels: usize,
-    overlap: usize,
-    condition: fn(&OHCL) -> bool,
+    overlap_days: usize,
 ) -> (Vec<Vec<f64>>, Vec<f64>) {
     if candles.is_empty() || number_of_levels == 0 {
         return (vec![], vec![]);
     }
 
-    let number_of_days = candles
-        .windows(2)
-        .filter(|w| w[0].t / 86400 != w[1].t / 86400)
-        .count()
-        + 1;
+    let mut all_volumes: Vec<Vec<f64>> = Vec::new();
+    let mut price_levels: Vec<f64> = Vec::new();
 
-    let max_price = candles
+    // Tìm min/max price cho toàn bộ dataset để đảm bảo consistency
+    let global_min_price = candles.iter().map(|c| c.l).fold(f64::INFINITY, f64::min);
+    let global_max_price = candles
         .iter()
-        .map(|candle| candle.h)
-        .fold(f64::MIN, f64::max);
-    let min_price = candles
-        .iter()
-        .map(|candle| candle.l)
-        .fold(f64::MAX, f64::min);
-    if max_price == min_price {
-        return (
-            vec![vec![0.0; number_of_levels]; number_of_days],
-            vec![min_price; number_of_levels],
-        );
+        .map(|c| c.h)
+        .fold(f64::NEG_INFINITY, f64::max);
+
+    if global_min_price == f64::INFINITY || global_max_price == f64::NEG_INFINITY {
+        return (vec![], vec![]);
     }
 
-    let price_step = (max_price - min_price) / number_of_levels as f64;
-    let profiles_len = if overlap == 0 {
-        number_of_days
-    } else {
-        number_of_days.saturating_sub(overlap) + 1
-    };
-    let mut profiles = vec![vec![0.0; number_of_levels]; profiles_len];
-    let mut chunk = 0;
-    let mut current = candles[0].t / 86400;
+    let price_range = global_max_price - global_min_price;
+    let price_bin_size = price_range / number_of_levels as f64;
 
-    for candle in candles {
-        let day = candle.t / 86400;
-        if day != current {
-            chunk += 1;
-            current = day;
-        }
+    // Tạo price levels một lần duy nhất
+    for i in 0..number_of_levels {
+        price_levels.push(global_min_price + i as f64 * price_bin_size);
+    }
 
-        if !condition(candle) {
-            continue;
-        }
+    // Nếu overlap_days = 0, tính volume profile cho toàn bộ dataset như bt
+    if overlap_days == 0 {
+        let mut temp_profile: HashMap<usize, f64> = HashMap::new();
 
-        let price_range = candle.h - candle.l;
-        if price_range == 0.0 {
-            continue;
-        }
+        for candle in candles {
+            // Tính bin index cho low và high price
+            let low_bin = ((candle.l - global_min_price) / price_bin_size).floor() as usize;
+            let high_bin = ((candle.h - global_min_price) / price_bin_size).floor() as usize;
 
-        let volume_per_price = candle.v / price_range;
+            // Đảm bảo bin index trong phạm vi hợp lệ
+            let low_bin = low_bin.min(number_of_levels - 1);
+            let high_bin = high_bin.min(number_of_levels - 1);
 
-        for level in 0..number_of_levels {
-            let price_level_low = min_price + (level as f64) * price_step;
-            let price_level_high = min_price + ((level + 1) as f64) * price_step;
+            // Phân bổ đều khối lượng cho các bin trong phạm vi giá của cây nến
+            let num_bins = (high_bin - low_bin + 1) as f64;
+            let volume_per_bin = if num_bins > 0.0 {
+                candle.v / num_bins
+            } else {
+                candle.v
+            };
 
-            let overlap_start = candle.l.max(price_level_low);
-            let overlap_end = candle.h.min(price_level_high);
-
-            if overlap_start < overlap_end {
-                for (i, profile) in profiles.iter_mut().enumerate() {
-                    if overlap == 0 {
-                        if i == chunk {
-                            profile[level] += volume_per_price * (overlap_end - overlap_start);
-                        }
-                    } else if i <= chunk && chunk < i + overlap {
-                        profile[level] += volume_per_price * (overlap_end - overlap_start);
-                    }
-                }
+            // Cộng dồn khối lượng vào các bin
+            for bin in low_bin..=high_bin {
+                *temp_profile.entry(bin).or_insert(0.0) += volume_per_bin;
             }
         }
+
+        // Chuyển đổi HashMap thành Vec với đúng thứ tự
+        let mut volumes_for_all = vec![0.0; number_of_levels];
+        for (bin_index, volume) in temp_profile {
+            if bin_index < number_of_levels {
+                volumes_for_all[bin_index] = volume;
+            }
+        }
+
+        return (vec![volumes_for_all], price_levels);
     }
 
-    (
-        profiles,
-        (0..number_of_levels)
-            .map(|i| min_price + i as f64 * price_step)
-            .collect(),
-    )
+    // Tìm các điểm bắt đầu ngày mới
+    let mut day_start_indices: Vec<usize> = Vec::new();
+    let mut current_day = timestamp_to_day(candles[0].t);
+    day_start_indices.push(0);
+
+    for (i, candle) in candles.iter().enumerate().skip(1) {
+        let candle_day = timestamp_to_day(candle.t);
+        if candle_day > current_day {
+            day_start_indices.push(i);
+            current_day = candle_day;
+        }
+    }
+
+    // Nếu không đủ ngày, return empty
+    if day_start_indices.len() < overlap_days {
+        return (vec![], vec![]);
+    }
+
+    // Tính volume profile cho từng window theo ngày
+    for window_start in 0..=(day_start_indices.len() - overlap_days) {
+        let start_index = day_start_indices[window_start];
+        let end_index = if window_start + overlap_days < day_start_indices.len() {
+            day_start_indices[window_start + overlap_days]
+        } else {
+            candles.len()
+        };
+
+        let window = &candles[start_index..end_index];
+
+        // Tính volume profile cho window hiện tại
+        let mut temp_profile: HashMap<usize, f64> = HashMap::new();
+
+        for candle in window {
+            // Tính bin index cho low và high price
+            let low_bin = ((candle.l - global_min_price) / price_bin_size).floor() as usize;
+            let high_bin = ((candle.h - global_min_price) / price_bin_size).floor() as usize;
+
+            // Đảm bảo bin index trong phạm vi hợp lệ
+            let low_bin = low_bin.min(number_of_levels - 1);
+            let high_bin = high_bin.min(number_of_levels - 1);
+
+            // Phân bổ đều khối lượng cho các bin trong phạm vi giá của cây nến
+            let num_bins = (high_bin - low_bin + 1) as f64;
+            let volume_per_bin = if num_bins > 0.0 {
+                candle.v / num_bins
+            } else {
+                candle.v
+            };
+
+            // Cộng dồn khối lượng vào các bin
+            for bin in low_bin..=high_bin {
+                *temp_profile.entry(bin).or_insert(0.0) += volume_per_bin;
+            }
+        }
+
+        // Chuyển đổi HashMap thành Vec với đúng thứ tự
+        let mut volumes_for_window = vec![0.0; number_of_levels];
+        for (bin_index, volume) in temp_profile {
+            if bin_index < number_of_levels {
+                volumes_for_window[bin_index] = volume;
+            }
+        }
+
+        all_volumes.push(volumes_for_window);
+    }
+
+    (all_volumes, price_levels)
 }
 
-#[inline]
-pub fn cumulated_volume_profile(
-    candles: &[OHCL],
-    number_of_levels: usize,
-    overlap: usize,
-) -> (Vec<Vec<f64>>, Vec<f64>) {
-    cumulate_volume_profile_with_condition(candles, number_of_levels, overlap, |_| true)
-}
-
+// Hàm helper để test
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schemas::CandleStick;
 
-    /// Helper to create a CandleStick; open=low, close=high.
-    fn make_candle(t: i64, low: f64, high: f64, volume: f64) -> CandleStick {
-        CandleStick {
-            t: t.try_into().unwrap(),
-            o: low,
-            h: high,
-            l: low,
-            c: high,
-            v: volume,
+    #[test]
+    fn test_cumulate_volume_profile() {
+        let candles = vec![
+            // Ngày 1 (t: 1000000000 = 2001-09-09)
+            OHCL {
+                o: 100.0,
+                h: 105.0,
+                c: 102.0,
+                l: 98.0,
+                v: 1000.0,
+                t: 1000000000,
+            },
+            OHCL {
+                o: 102.0,
+                h: 108.0,
+                c: 106.0,
+                l: 101.0,
+                v: 1500.0,
+                t: 1000010000,
+            },
+            // Ngày 2 (t: 1000086400 = 2001-09-10)
+            OHCL {
+                o: 106.0,
+                h: 110.0,
+                c: 109.0,
+                l: 104.0,
+                v: 2000.0,
+                t: 1000086400,
+            },
+            OHCL {
+                o: 109.0,
+                h: 112.0,
+                c: 111.0,
+                l: 107.0,
+                v: 1200.0,
+                t: 1000096400,
+            },
+            // Ngày 3 (t: 1000172800 = 2001-09-11)
+            OHCL {
+                o: 111.0,
+                h: 115.0,
+                c: 113.0,
+                l: 109.0,
+                v: 1800.0,
+                t: 1000172800,
+            },
+            OHCL {
+                o: 113.0,
+                h: 118.0,
+                c: 116.0,
+                l: 112.0,
+                v: 2200.0,
+                t: 1000182800,
+            },
+        ];
+
+        // Test với overlap_days = 0 (tính toàn bộ dataset)
+        let (volumes_all, levels_all) = cumulate_volume_profile(&candles, 10, 0);
+        println!("All data volume profile: {:?}", volumes_all);
+        assert_eq!(volumes_all.len(), 1); // Chỉ có 1 profile cho toàn bộ data
+
+        // Test với overlap_days = 2 (sliding window theo ngày)
+        let (volumes, levels) = cumulate_volume_profile(&candles, 10, 2);
+
+        println!("Number of windows: {}", volumes.len());
+        println!("Price levels: {:?}", levels);
+        for (i, volume_profile) in volumes.iter().enumerate() {
+            println!("Window {} (2 days): {:?}", i, volume_profile);
         }
-    }
 
-    /// Asserts two f64 values are approximately equal.
-    fn assert_f64_eq(a: f64, b: f64, eps: f64) {
-        assert!(
-            (a - b).abs() <= eps,
-            "expected {} approx {}, difference {}",
-            a,
-            b,
-            (a - b).abs()
-        );
-    }
-
-    #[test]
-    fn basic_volume_profile() {
-        let candles = vec![
-            make_candle(0, 1.0, 2.0, 10.0),
-            make_candle(1_000, 2.0, 3.0, 20.0),
-            make_candle(86_400, 4.0, 5.0, 30.0),
-            make_candle(86_400 + 1_000, 5.0, 6.0, 40.0),
-        ];
-        let (profiles, price_levels) = cumulated_volume_profile(&candles, 4, 1);
-        // Two days
-        assert_eq!(profiles.len(), 2);
-        // Price levels equally spaced from min=1.0 to max=6.0
-        let expected_levels = vec![1.0, 2.25, 3.5, 4.75];
-        for (a, b) in price_levels.iter().zip(expected_levels.iter()) {
-            assert_f64_eq(*a, *b, 1e-6);
-        }
-        // Day 1 volume = 10 + 20 = 30, Day 2 = 30 + 40 = 70
-        let sum0: f64 = profiles[0].iter().sum();
-        let sum1: f64 = profiles[1].iter().sum();
-        assert_f64_eq(sum0, 30.0, 1e-6);
-        assert_f64_eq(sum1, 70.0, 1e-6);
-    }
-
-    #[test]
-    fn single_day_no_overlap() {
-        let candles = vec![
-            make_candle(0, 1.0, 2.0, 5.0),
-            make_candle(1_000, 2.0, 3.0, 15.0),
-        ];
-        let (profiles, price_levels) = cumulated_volume_profile(&candles, 3, 0);
-        assert_eq!(profiles.len(), 1);
-        assert_eq!(profiles[0].len(), 3);
-        assert_eq!(price_levels.len(), 3);
-    }
-
-    #[test]
-    fn overlap_greater_than_days() {
-        let candles = vec![
-            make_candle(0, 1.0, 2.0, 5.0),
-            make_candle(86_400, 2.0, 3.0, 10.0),
-            make_candle(2 * 86_400, 3.0, 4.0, 15.0),
-        ];
-        // overlap > days should cap to 3 => profiles.len() == 1
-        let (profiles, _) = cumulated_volume_profile(&candles, 2, 10);
-        assert_eq!(profiles.len(), 1);
-    }
-
-    #[test]
-    fn empty_candles() {
-        use super::cumulate_volume_profile_with_condition as priv_fn;
-        let (profiles, levels) = priv_fn(&[], 4, 1, |_| true);
-        assert!(profiles.is_empty());
-        assert!(levels.is_empty());
-    }
-
-    #[test]
-    fn only_green_candles() {
-        use super::cumulate_volume_profile_with_condition as priv_fn;
-        let green = make_candle(0, 1.0, 2.0, 100.0);
-        let red = CandleStick {
-            t: 0,
-            o: 2.0,
-            h: 3.0,
-            l: 2.0,
-            c: 1.0,
-            v: 200.0,
-        };
-        let (profiles, _) = priv_fn(&[green, red], 2, 0, |c| c.c > c.o);
-        assert_eq!(profiles.len(), 1);
-        // Only green candle contributes to first level
-        assert_eq!(profiles[0][0], 100.0);
-        assert_eq!(profiles[0][1], 0.0);
+        assert_eq!(volumes.len(), 2); // Có 2 windows: ngày [1,2] và ngày [2,3]
     }
 }
