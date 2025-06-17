@@ -259,19 +259,19 @@ pub fn market(symbols: Vec<String>) -> PyResult<PyDataFrame> {
         let g5 = point.g5.split("|").collect::<Vec<&str>>();
         let g6 = point.g6.split("|").collect::<Vec<&str>>();
 
-        price_minus1.push(g4[0].parse::<f64>().unwrap_or(0.0_f64));
-        price_minus2.push(g5[0].parse::<f64>().unwrap_or(0.0_f64));
-        price_minus3.push(g6[0].parse::<f64>().unwrap_or(0.0_f64));
-        price_plus1.push(g1[0].parse::<f64>().unwrap_or(0.0_f64));
-        price_plus2.push(g2[0].parse::<f64>().unwrap_or(0.0_f64));
-        price_plus3.push(g3[0].parse::<f64>().unwrap_or(0.0_f64));
+        price_plus1.push(g4[0].parse::<f64>().unwrap_or(0.0_f64));
+        price_plus2.push(g5[0].parse::<f64>().unwrap_or(0.0_f64));
+        price_plus3.push(g6[0].parse::<f64>().unwrap_or(0.0_f64));
+        price_minus1.push(g1[0].parse::<f64>().unwrap_or(0.0_f64));
+        price_minus2.push(g2[0].parse::<f64>().unwrap_or(0.0_f64));
+        price_minus3.push(g3[0].parse::<f64>().unwrap_or(0.0_f64));
 
-        volume_minus1.push(g4[1].parse::<f64>().unwrap_or(0_f64));
-        volume_minus2.push(g5[1].parse::<f64>().unwrap_or(0_f64));
-        volume_minus3.push(g6[1].parse::<f64>().unwrap_or(0_f64));
-        volume_plus1.push(g1[1].parse::<f64>().unwrap_or(0_f64));
-        volume_plus2.push(g2[1].parse::<f64>().unwrap_or(0_f64));
-        volume_plus3.push(g3[1].parse::<f64>().unwrap_or(0_f64));
+        volume_plus1.push(g4[1].parse::<f64>().unwrap_or(0_f64));
+        volume_plus2.push(g5[1].parse::<f64>().unwrap_or(0_f64));
+        volume_plus3.push(g6[1].parse::<f64>().unwrap_or(0_f64));
+        volume_minus1.push(g1[1].parse::<f64>().unwrap_or(0_f64));
+        volume_minus2.push(g2[1].parse::<f64>().unwrap_or(0_f64));
+        volume_minus3.push(g3[1].parse::<f64>().unwrap_or(0_f64));
     }
 
     // Create series for each column using SmallString for column names
