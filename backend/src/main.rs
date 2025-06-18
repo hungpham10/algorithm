@@ -1,6 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{Error, ErrorKind};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use actix::Addr;
@@ -28,6 +29,8 @@ use vnscope::schemas::{Portal, CRONJOB, WATCHLIST};
 struct AppState {
     // @NOTE: monitoring
     crontime: Arc<Mutex<VecDeque<i64>>>,
+    running: Arc<AtomicI64>,
+    done: Arc<AtomicI64>,
     timeframe: usize,
 
     // @NOTE: shared components
@@ -41,6 +44,8 @@ struct AppState {
 struct Status {
     crontime: Vec<i64>,
     current: i64,
+    running: i64,
+    done: i64,
     status: bool,
 }
 
@@ -48,40 +53,37 @@ async fn health(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
     let current = Utc::now().timestamp();
     match appstate.crontime.lock() {
         Ok(crontime) => {
+            let running = appstate.running.load(Ordering::SeqCst);
+            let done = appstate.done.load(Ordering::SeqCst);
+            let inflight = running.saturating_sub(done);
             let last_ok = crontime
                 .back()
-                .map_or(true, |updated| current - updated <= 120);
+                .map_or(true, |updated| current - updated <= 120)
+                && inflight < 2;
             let builder = if last_ok {
                 HttpResponse::Ok
             } else {
                 HttpResponse::GatewayTimeout
             };
+
             Ok(builder().json(Status {
                 crontime: crontime.iter().cloned().collect(),
                 status: last_ok,
+                running,
+                done,
                 current,
             }))
         }
         Err(_) => Ok(HttpResponse::InternalServerError().json(Status {
             crontime: Vec::new(),
             status: false,
+            running: 0,
+            done: 0,
             current,
         })),
     }
 }
 
-/// Synchronizes the stock symbol list between the portal and both the TcbsActor and VpsActor.
-///
-/// Fetches the current watchlist of stock symbols from the portal, then sends an update command with these symbols to both the TcbsActor and VpsActor. Returns an HTTP 200 OK response if synchronization succeeds; otherwise, returns an error if fetching the watchlist or communicating with the actors fails.
-///
-/// # Examples
-///
-/// ```
-/// // This handler is registered as a PUT endpoint at `/api/v1/config/synchronize`.
-/// // It is typically called via an HTTP client:
-/// let response = client.put("/api/v1/config/synchronize").send().await?;
-/// assert_eq!(response.status(), 200);
-/// ```
 async fn synchronize(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
     let portal = appstate.portal.clone();
     let vps_symbols: Vec<String> = portal
@@ -287,6 +289,8 @@ async fn main() -> std::io::Result<()> {
     // @NOTE: store appstate
     let appstate_for_control = Arc::new(AppState {
         crontime: Arc::new(Mutex::new(VecDeque::new())),
+        running: Arc::new(AtomicI64::new(0)),
+        done: Arc::new(AtomicI64::new(0)),
         timeframe: std::env::var("APPSTATE_TIMEFRAME")
             .unwrap_or_else(|_| "4".to_string())
             .parse::<usize>()
@@ -330,7 +334,10 @@ async fn main() -> std::io::Result<()> {
                         }
                     }
 
-                    match cron.send(TickCommand).await {
+                    match cron.send(TickCommand{
+                        running: appstate.running.clone(),
+                        done: appstate.done.clone(),
+                    }).await {
                         Ok(Ok(cnt)) => debug!("Success trigger {} jobs", cnt),
                         Ok(Err(err)) => error!("Tick command failed: {:?}", err),
                         Err(error) => panic!("Panic: Fail to send command: {:?}", error),

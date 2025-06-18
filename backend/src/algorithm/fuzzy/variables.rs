@@ -81,7 +81,7 @@ impl Variables {
             });
         }
 
-        if !self.s3_client.is_none() {
+        if self.s3_client.is_some() {
             if self.variables.len() != self.buffers.len() {
                 return Err(RuleError {
                     message: format!("Cannot create variable {}", name),
@@ -91,8 +91,10 @@ impl Variables {
             self.clean_all_buffer_and_insert_new_buffer(name);
         }
 
-        self.variables
-            .insert(name.clone(), VecDeque::with_capacity(self.variables_size));
+        self.variables.insert(
+            name.to_owned(),
+            VecDeque::with_capacity(self.variables_size),
+        );
         Ok(())
     }
 
@@ -149,12 +151,12 @@ impl Variables {
             }
 
             if is_full_fill && count_row_of_buffer.unwrap() >= self.buffers_size as i32 {
-                let buffer = self.prepare_flushing(scope).map_err(|e| e)?;
+                let buffer = self.prepare_flushing(scope)?;
 
-                self.do_flushing(buffer, scope).await.map_err(|e| e)?;
+                self.do_flushing(buffer, scope).await?;
             }
 
-            self.update_buffer(&name, value).map_err(|e| e)?;
+            self.update_buffer(&name, value)?;
         }
         Ok(ret)
     }

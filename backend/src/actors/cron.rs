@@ -6,13 +6,11 @@ use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
 use futures::future::join_all;
-
-#[cfg(feature = "python")]
-use std::sync::Arc;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -90,10 +88,18 @@ impl CronResolver {
         self.resolvers.len()
     }
 
-    pub async fn perform(&self, tasks: Vec<Task>, from: i32, to: i32) -> usize {
+    pub async fn perform(
+        &self,
+        tasks: Vec<Task>,
+        from: i32,
+        to: i32,
+        running: &Arc<AtomicI64>,
+        done: &Arc<AtomicI64>,
+    ) -> usize {
         let mut concurrents = Vec::new();
         let mut cnt = tasks.len();
 
+        running.fetch_add(1, Ordering::SeqCst);
         for task in tasks {
             if let Some(callback) = self.resolvers.get(&task.route) {
                 concurrents.push(tokio::time::timeout(
@@ -113,6 +119,7 @@ impl CronResolver {
                 }
             }
         }
+        done.fetch_add(1, Ordering::SeqCst);
         cnt
     }
 
@@ -177,14 +184,19 @@ impl fmt::Display for CronError {
 
 #[derive(Message, Debug)]
 #[rtype(result = "Result<usize, CronError>")]
-pub struct TickCommand;
+pub struct TickCommand {
+    pub running: Arc<AtomicI64>,
+    pub done: Arc<AtomicI64>,
+}
 
 impl Handler<TickCommand> for CronActor {
     type Result = ResponseFuture<Result<usize, CronError>>;
 
-    fn handle(&mut self, _msg: TickCommand, _: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: TickCommand, _: &mut Self::Context) -> Self::Result {
         let mut tasks = Vec::<Task>::new();
         let clock_now = Utc::now();
+        let running = msg.running.clone();
+        let done = msg.done.clone();
 
         if clock_now.timestamp() == self.clock {
             // @NOTE: happen when timer run too fast and reach this point
@@ -225,9 +237,11 @@ impl Handler<TickCommand> for CronActor {
 
         Box::pin(async move {
             let expected = tasks.len();
+            let running = running.clone();
+            let done = done.clone();
 
             if expected > 0 {
-                let ret = resolver.perform(tasks, -1, -1).await;
+                let ret = resolver.perform(tasks, -1, -1, &running, &done).await;
 
                 if ret == expected {
                     Ok(ret)

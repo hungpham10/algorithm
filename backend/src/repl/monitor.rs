@@ -2,6 +2,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict};
 
 use std::rc::Rc;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -68,13 +69,21 @@ impl Monitor {
                 let _ = resolve_vps_routes(&mut resolver, &stocks, vps_vars.clone());
                 let _ = resolve_tcbs_routes(&mut resolver, &stocks, tcbs_vars.clone(), 1).await;
                 let cron = Arc::new(connect_to_cron(Rc::new(resolver)));
+                let running = Arc::new(AtomicI64::new(0));
+                let done = Arc::new(AtomicI64::new(0));
 
                 for command in schedules {
                     let _ = cron.send(command).await.unwrap();
                 }
 
                 while *enabled.lock().unwrap() {
-                    match cron.send(TickCommand).await {
+                    match cron
+                        .send(TickCommand {
+                            running: running.clone(),
+                            done: done.clone(),
+                        })
+                        .await
+                    {
                         Ok(Ok(_)) => {}
                         Ok(Err(_)) => {}
                         Err(_) => break,
