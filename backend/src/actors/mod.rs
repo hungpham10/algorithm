@@ -148,9 +148,5 @@ pub async fn list_cw() -> Vec<CWInfo> {
         .await
         .expect("Fail to parse list of CW");
 
-    if let Some(data) = resp.data {
-        data
-    } else {
-        Vec::new()
-    }
+    resp.data.unwrap_or_default()
 }
