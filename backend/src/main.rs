@@ -14,6 +14,7 @@ use tokio::sync::oneshot;
 
 use chrono::Utc;
 use log::{debug, error, info};
+use serde::{Deserialize, Serialize};
 
 use vnscope::actors::cron::{
     connect_to_cron, CronActor, CronResolver, ScheduleCommand, TickCommand,
@@ -36,32 +37,36 @@ struct AppState {
     cron: Arc<Addr<CronActor>>,
 }
 
-/// Health check endpoint that returns a 200 OK response.
-///
-/// # Examples
-///
-/// ```
-/// let resp = health().await.unwrap();
-/// assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-/// ```
-async fn health(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
-    if let Ok(crontime) = appstate.crontime.lock() {
-        if let Some(updated) = crontime.back() {
-            let current = Utc::now().timestamp();
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct Status {
+    crontime: Vec<i64>,
+    current: i64,
+    status: bool,
+}
 
-            if current - updated > 2 * 60 {
-                Ok(HttpResponse::GatewayTimeout().body(format!(
-                    "Cronjob is hanging [expected({}) != actual({})]",
-                    current, updated
-                )))
+async fn health(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
+    let current = Utc::now().timestamp();
+    match appstate.crontime.lock() {
+        Ok(crontime) => {
+            let last_ok = crontime
+                .back()
+                .map_or(true, |updated| current - updated <= 120);
+            let builder = if last_ok {
+                HttpResponse::Ok
             } else {
-                Ok(HttpResponse::Ok().body("ok"))
-            }
-        } else {
-            Ok(HttpResponse::Ok().body("ok"))
+                HttpResponse::GatewayTimeout
+            };
+            Ok(builder().json(Status {
+                crontime: crontime.iter().cloned().collect(),
+                status: last_ok,
+                current,
+            }))
         }
-    } else {
-        Ok(HttpResponse::InternalServerError().body("Failed to unlock crontime"))
+        Err(_) => Ok(HttpResponse::InternalServerError().json(Status {
+            crontime: Vec::new(),
+            status: false,
+            current,
+        })),
     }
 }
 
