@@ -50,15 +50,14 @@ impl Datastore {
         })
     }
 
-    fn list(&self, date: String, symbol: String) -> PyResult<Vec<String>> {
+    fn list(&self, date: String) -> PyResult<Vec<String>> {
         let client = self.s3_client.clone();
         let bucket = self.s3_bucket.clone();
 
         Ok(actix_rt::Runtime::new()
             .unwrap()
             .block_on(async move {
-                Self::list_in_async(client.clone(), bucket.clone(), date.clone(), symbol.clone())
-                    .await
+                Self::list_in_async(client.clone(), bucket.clone(), date.clone()).await
             })
             .map_err(|error| PyRuntimeError::new_err(format!("Failed to list: {}", error)))?)
     }
@@ -74,8 +73,7 @@ impl Datastore {
     }
 
     async fn new_s3_client_async(region: &String, endpoint: &String) -> Arc<Client> {
-        let region_provider =
-            RegionProviderChain::default_provider().or_else(Region::new(region.clone()));
+        let region_provider = Region::new(region.clone());
         let config = aws_config::defaults(BehaviorVersion::latest())
             .timeout_config(
                 TimeoutConfig::builder()
@@ -94,7 +92,6 @@ impl Datastore {
         client: Arc<Client>,
         bucket: String,
         date: String,
-        symbol: String,
     ) -> Result<Vec<String>> {
         let response = client
             .list_objects_v2()
