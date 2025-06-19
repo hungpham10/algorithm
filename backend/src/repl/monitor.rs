@@ -7,6 +7,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use log::{debug, error, warn};
+
 use crate::actors::cron::{connect_to_cron, CronResolver, ScheduleCommand, TickCommand};
 use crate::actors::tcbs::resolve_tcbs_routes;
 use crate::actors::vps::resolve_vps_routes;
@@ -18,6 +20,8 @@ pub struct Monitor {
     schedules: Vec<ScheduleCommand>,
     enabled: Arc<Mutex<bool>>,
     datastore: Py<Datastore>,
+    running: Arc<AtomicI64>,
+    done: Arc<AtomicI64>,
 }
 
 #[pymethods]
@@ -27,11 +31,13 @@ impl Monitor {
         Self {
             schedules: Vec::new(),
             enabled: Arc::new(Mutex::new(false)),
+            running: Arc::new(AtomicI64::new(0)),
+            done: Arc::new(AtomicI64::new(0)),
             datastore,
         }
     }
 
-    fn schedules(
+    fn schedule(
         &mut self,
         cron: String,
         route: String,
@@ -62,41 +68,46 @@ impl Monitor {
         *enabled = true;
 
         let enabled = self.enabled.clone();
+        let running = self.running.clone();
+        let done = self.done.clone();
 
         Python::allow_threads(py, move || {
-            actix_rt::spawn(async move {
-                let mut resolver = CronResolver::new();
-                let _ = resolve_vps_routes(&mut resolver, &stocks, vps_vars.clone());
-                let _ = resolve_tcbs_routes(&mut resolver, &stocks, tcbs_vars.clone(), 1).await;
-                let cron = Arc::new(connect_to_cron(Rc::new(resolver)));
-                let running = Arc::new(AtomicI64::new(0));
-                let done = Arc::new(AtomicI64::new(0));
+            thread::spawn(move || {
+                actix_rt::Runtime::new().unwrap().block_on(async move {
+                    let mut resolver = CronResolver::new();
+                    let _ = resolve_vps_routes(&mut resolver, &stocks, vps_vars.clone());
+                    let _ = resolve_tcbs_routes(&mut resolver, &stocks, tcbs_vars.clone(), 1).await;
+                    let cron = Arc::new(connect_to_cron(Rc::new(resolver)));
 
-                for command in schedules {
-                    let _ = cron.send(command).await.unwrap();
-                }
-
-                while *enabled.lock().unwrap() {
-                    match cron
-                        .send(TickCommand {
-                            running: running.clone(),
-                            done: done.clone(),
-                        })
-                        .await
-                    {
-                        Ok(Ok(_)) => {}
-                        Ok(Err(_)) => {}
-                        Err(_) => break,
+                    for command in schedules {
+                        let _ = cron.send(command).await.unwrap();
                     }
 
-                    thread::sleep(Duration::from_secs(1));
-                }
+                    while *enabled.lock().unwrap() {
+                        match cron
+                            .send(TickCommand {
+                                running: running.clone(),
+                                done: done.clone(),
+                            })
+                            .await
+                        {
+                            Ok(Ok(cnt)) => debug!("Finish {} tasks", cnt),
+                            Ok(Err(error)) => warn!("Failed with error: {}", error),
+                            Err(error) => {
+                                error!("Panic with error: {}", error);
+                                break;
+                            }
+                        }
 
-                if let Ok(mut enabled) = enabled.lock() {
-                    *enabled = false;
-                } else {
-                    panic!("fail to secure mutex");
-                }
+                        thread::sleep(Duration::from_secs(1));
+                    }
+
+                    if let Ok(mut enabled) = enabled.lock() {
+                        *enabled = false;
+                    } else {
+                        panic!("fail to secure mutex");
+                    }
+                });
             });
         });
         Ok(())
@@ -108,5 +119,11 @@ impl Monitor {
         })?;
         *enabled = false;
         Ok(())
+    }
+
+    fn inflight(&self) -> i64 {
+        let running = self.running.load(Ordering::SeqCst);
+        let done = self.done.load(Ordering::SeqCst);
+        running.saturating_sub(done)
     }
 }

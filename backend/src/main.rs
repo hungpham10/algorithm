@@ -59,7 +59,7 @@ async fn health(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
             let last_ok = crontime
                 .back()
                 .map_or(true, |updated| current - updated <= 120)
-                && inflight < 2;
+                && inflight <= 2;
             let builder = if last_ok {
                 HttpResponse::Ok
             } else {
@@ -319,28 +319,34 @@ async fn main() -> std::io::Result<()> {
 
             tokio::select! {
                 _ = interval.tick() => {
+                    let mut cron_on_updated = true;
                     let appstate = appstate.clone();
                     let cron = appstate.cron.clone();
-
-                    match appstate.crontime.lock() {
-                        Ok(mut crontime) => {
-                            crontime.push_back(Utc::now().timestamp());
-                            if crontime.len() > appstate.timeframe {
-                                crontime.pop_front();
-                            }
-                        }
-                        Err(_) => {
-                            error!("Failed to lock crontime mutex - skipping timestamp update");
-                        }
-                    }
 
                     match cron.send(TickCommand{
                         running: appstate.running.clone(),
                         done: appstate.done.clone(),
                     }).await {
-                        Ok(Ok(cnt)) => debug!("Success trigger {} jobs", cnt),
+                        Ok(Ok(cnt)) => {
+                            cron_on_updated = cnt > 0;
+                            debug!("Success trigger {} jobs", cnt)
+                        },
                         Ok(Err(err)) => error!("Tick command failed: {:?}", err),
                         Err(error) => panic!("Panic: Fail to send command: {:?}", error),
+                    }
+
+                    if cron_on_updated {
+                        match appstate.crontime.lock() {
+                            Ok(mut crontime) => {
+                                crontime.push_back(Utc::now().timestamp());
+                                if crontime.len() > appstate.timeframe {
+                                    crontime.pop_front();
+                                }
+                            }
+                            Err(_) => {
+                                error!("Failed to lock crontime mutex - skipping timestamp update");
+                            }
+                        }
                     }
                 }
                 _ = &mut rxstop => {

@@ -9,31 +9,6 @@ use pyo3_polars::PyDataFrame;
 use crate::algorithm::fuzzy::{Delegate, Format, Rule, Variables};
 
 #[pyfunction]
-/// Filters rows in a Polars DataFrame based on a rule and returns the indices of matching rows.
-///
-/// Converts a Python Polars DataFrame and a rule (provided as a Python dictionary) into Rust types,
-/// evaluates the rule for each row, and returns the indices of rows where the rule condition is met.
-///
-/// # Parameters
-/// - `df`: The input DataFrame to filter, provided as a Python Polars DataFrame.
-/// - `rule`: The rule to evaluate, provided as a Python dictionary in Python format.
-/// - `memory_size`: The memory size to allocate for variable storage during rule evaluation.
-///
-/// # Returns
-/// A vector of row indices (`Vec<u32>`) where the rule condition is satisfied.
-///
-/// # Errors
-/// Returns a Python runtime error if rule construction or evaluation fails.
-///
-/// # Examples
-///
-/// ```
-/// use pyo3::types::PyDict;
-/// let df = ...; // PyDataFrame from Python
-/// let rule = ...; // Py<PyDict> representing the rule
-/// let indices = filter(df, rule, 1024)?;
-/// assert!(indices.len() <= df.height());
-/// ```
 pub fn filter(df: PyDataFrame, rule: Py<PyDict>, memory_size: usize) -> PyResult<Vec<f64>> {
     let df: DataFrame = df.into();
     let mut rule = Delegate::new()
@@ -108,6 +83,7 @@ async fn filter_in_async(
     // Filter DataFrame using take
     Ok(ret)
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
