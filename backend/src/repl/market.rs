@@ -590,6 +590,8 @@ pub fn order(symbol: String) -> PyResult<PyDataFrame> {
                 .map(|d| d.a.clone())
                 .collect::<Vec<String>>(),
         ),
+        Series::new("ba", datapoints.iter().map(|d| d.ba).collect::<Vec<_>>()),
+        Series::new("sa", datapoints.iter().map(|d| d.sa).collect::<Vec<_>>()),
         Series::new("hl", datapoints.iter().map(|d| d.hl).collect::<Vec<bool>>()),
         Series::new(
             "pcp",

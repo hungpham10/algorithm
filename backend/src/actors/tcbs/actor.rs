@@ -91,6 +91,7 @@ impl TcbsActor {
             format!("{}.type", symbol),
             format!("{}.ba", symbol),
             format!("{}.sa", symbol),
+            format!("{}.cp", symbol),
             format!("{}.time", symbol),
         ]
     }
@@ -770,14 +771,21 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                 }
 
                 if let Err(e) = vars
+                    .update(&msg.symbol, &vars_to_create[5].to_string(), order.cp)
+                    .await
+                {
+                    error!("Failed to update variable {}: {}", vars_to_create[5], e);
+                }
+
+                if let Err(e) = vars
                     .update(
                         &msg.symbol,
-                        &vars_to_create[5].to_string(),
+                        &vars_to_create[6].to_string(),
                         (hour * 3600 + min * 60 + sec) as f64,
                     )
                     .await
                 {
-                    error!("Failed to update variable {}: {}", vars_to_create[5], e);
+                    error!("Failed to update variable {}: {}", vars_to_create[6], e);
                 }
 
                 updated += 1;
