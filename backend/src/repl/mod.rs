@@ -4,7 +4,6 @@ mod analytics;
 mod datastore;
 mod market;
 mod monitor;
-mod order;
 
 #[pymodule]
 fn vnscope(_: Python, m: &PyModule) -> PyResult<()> {
@@ -12,7 +11,7 @@ fn vnscope(_: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<datastore::Datastore>()?;
 
     m.add_function(wrap_pyfunction!(analytics::filter, m)?)?;
-    m.add_function(wrap_pyfunction!(order::order, m)?)?;
+    m.add_function(wrap_pyfunction!(market::order, m)?)?;
     m.add_function(wrap_pyfunction!(market::profile, m)?)?;
     m.add_function(wrap_pyfunction!(market::history, m)?)?;
     m.add_function(wrap_pyfunction!(market::price, m)?)?;
