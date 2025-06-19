@@ -1,9 +1,11 @@
+use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use polars::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
+use pyo3_polars::PyDataFrame;
 
 use anyhow::{anyhow, Result};
 
@@ -61,6 +63,20 @@ impl Datastore {
             })
             .map_err(|error| PyRuntimeError::new_err(format!("Failed to list: {}", error)))?)
     }
+
+    fn read(&self, file: String) -> PyResult<PyDataFrame> {
+        let client = self.s3_client.clone();
+        let bucket = self.s3_bucket.clone();
+
+        Ok(PyDataFrame(
+            actix_rt::Runtime::new()
+                .unwrap()
+                .block_on(async move {
+                    Self::read_parquet_in_sync(client.clone(), bucket.clone(), file.clone()).await
+                })
+                .map_err(|error| PyRuntimeError::new_err(format!("Failed to read: {}", error)))?,
+        ))
+    }
 }
 
 impl Datastore {
@@ -108,5 +124,18 @@ impl Datastore {
         } else {
             Err(anyhow!("Folder is empty or deleted"))
         }
+    }
+
+    async fn read_parquet_in_sync(
+        client: Arc<Client>,
+        bucket: String,
+        file: String,
+    ) -> Result<DataFrame> {
+        let response = client.get_object().bucket(bucket).key(file).send().await?;
+
+        Ok(
+            ParquetReader::new(Cursor::new(response.body.collect().await?.into_bytes()))
+                .finish()?,
+        )
     }
 }
