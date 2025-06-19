@@ -33,6 +33,9 @@ struct AppState {
     done: Arc<AtomicI64>,
     timeframe: usize,
 
+    // @NOTE:
+    locked: Arc<Mutex<bool>>,
+
     // @NOTE: shared components
     portal: Arc<Portal>,
     tcbs: Arc<Addr<TcbsActor>>,
@@ -49,8 +52,29 @@ struct Status {
     status: bool,
 }
 
+async fn unlock(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
+    match appstate.locked.lock() {
+        Ok(mut locked) => {
+            *locked = false;
+            Ok(HttpResponse::Ok().body("ok"))
+        }
+        Err(_) => Ok(HttpResponse::InternalServerError().body("Cannot unlock system")),
+    }
+}
+
+async fn lock(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
+    match appstate.locked.lock() {
+        Ok(mut locked) => {
+            *locked = true;
+            Ok(HttpResponse::Ok().body("ok"))
+        }
+        Err(_) => Ok(HttpResponse::InternalServerError().body("Cannot lock system")),
+    }
+}
+
 async fn health(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
     let current = Utc::now().timestamp();
+
     match appstate.crontime.lock() {
         Ok(crontime) => {
             let running = appstate.running.load(Ordering::SeqCst);
@@ -288,6 +312,7 @@ async fn main() -> std::io::Result<()> {
 
     // @NOTE: store appstate
     let appstate_for_control = Arc::new(AppState {
+        // @NOTE
         crontime: Arc::new(Mutex::new(VecDeque::new())),
         running: Arc::new(AtomicI64::new(0)),
         done: Arc::new(AtomicI64::new(0)),
@@ -295,6 +320,9 @@ async fn main() -> std::io::Result<()> {
             .unwrap_or_else(|_| "4".to_string())
             .parse::<usize>()
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid APPSTATE_TIMEFRAME"))?,
+
+        // @NOTE:
+        locked: Arc::new(Mutex::new(false)),
 
         // @NOTE:
         portal: portal.clone(),
@@ -322,17 +350,23 @@ async fn main() -> std::io::Result<()> {
                     let mut cron_on_updated = true;
                     let appstate = appstate.clone();
                     let cron = appstate.cron.clone();
+                    let locked = match appstate.locked.lock() {
+                        Ok(locked) => *locked,
+                        Err(_) => false,
+                    };
 
-                    match cron.send(TickCommand{
-                        running: appstate.running.clone(),
-                        done: appstate.done.clone(),
-                    }).await {
-                        Ok(Ok(cnt)) => {
-                            cron_on_updated = cnt > 0;
-                            debug!("Success trigger {} jobs", cnt)
-                        },
-                        Ok(Err(err)) => error!("Tick command failed: {:?}", err),
-                        Err(error) => panic!("Panic: Fail to send command: {:?}", error),
+                    if !locked {
+                        match cron.send(TickCommand{
+                            running: appstate.running.clone(),
+                            done: appstate.done.clone(),
+                        }).await {
+                            Ok(Ok(cnt)) => {
+                                cron_on_updated = cnt > 0;
+                                debug!("Success trigger {} jobs", cnt)
+                            },
+                            Ok(Err(err)) => error!("Tick command failed: {:?}", err),
+                            Err(error) => panic!("Panic: Fail to send command: {:?}", error),
+                        }
                     }
 
                     if cron_on_updated {
@@ -366,6 +400,8 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .route("/health", get().to(health))
             .route("/api/v1/config/synchronize", put().to(synchronize))
+            .route("/api/v1/config/lock", put().to(lock))
+            .route("/api/v1/config/unlock", put().to(unlock))
             .app_data(Data::new(appstate_for_control.clone()))
     })
     .bind((host.as_str(), port))
