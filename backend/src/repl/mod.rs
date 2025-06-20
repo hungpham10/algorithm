@@ -6,7 +6,10 @@ mod market;
 mod monitor;
 
 #[pymodule]
-fn vnscope(_: Python, m: &PyModule) -> PyResult<()> {
+fn core(_: Python, m: &PyModule) -> PyResult<()> {
+    dotenvy::dotenv().ok();
+    env_logger::init();
+
     m.add_class::<monitor::Monitor>()?;
     m.add_class::<datastore::Datastore>()?;
 
