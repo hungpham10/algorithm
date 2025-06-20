@@ -1,4 +1,6 @@
+use std::fs;
 use std::io::Cursor;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -18,8 +20,8 @@ use crate::algorithm::fuzzy::Variables;
 
 #[pyclass]
 pub struct Datastore {
-    s3_bucket: String,
-    s3_client: Arc<Client>,
+    s3_bucket: Option<String>,
+    s3_client: Option<Arc<Client>>,
     vps_vars: Arc<Mutex<Variables>>,
     tcbs_vars: Arc<Mutex<Variables>>,
 }
@@ -30,15 +32,18 @@ impl Datastore {
     fn new(vps_memory_size: usize, tcbs_memory_size: usize) -> PyResult<Self> {
         dotenvy::dotenv().ok();
 
-        let s3_region = std::env::var("S3_REGION").map_err(|error| {
-            PyRuntimeError::new_err(format!("Failed to get S3_REGION: {}", error))
-        })?;
-        let s3_endpoint = std::env::var("S3_ENDPOINT").map_err(|error| {
-            PyRuntimeError::new_err(format!("Failed to get S3_ENDPOINT: {}", error))
-        })?;
-        let s3_bucket = std::env::var("S3_BUCKET").map_err(|error| {
-            PyRuntimeError::new_err(format!("Failed to get S3_BUCKET: {}", error))
-        })?;
+        let s3_region = match std::env::var("S3_REGION") {
+            Ok(s3_region) => Some(s3_region),
+            Err(_) => None,
+        };
+        let s3_endpoint = match std::env::var("S3_ENDPOINT") {
+            Ok(s3_endpoint) => Some(s3_endpoint),
+            Err(_) => None,
+        };
+        let s3_bucket = match std::env::var("S3_BUCKET") {
+            Ok(s3_bucket) => Some(s3_bucket),
+            Err(_) => None,
+        };
 
         let s3_client = actix_rt::Runtime::new()
             .unwrap()
@@ -53,29 +58,95 @@ impl Datastore {
     }
 
     fn list(&self, date: String) -> PyResult<Vec<String>> {
-        let client = self.s3_client.clone();
-        let bucket = self.s3_bucket.clone();
+        match &self.s3_client {
+            Some(s3_client) => {
+                let client = s3_client.clone();
+                let bucket = match &self.s3_bucket {
+                    Some(s3_bucket) => s3_bucket,
+                    None => {
+                        return Err(PyRuntimeError::new_err("Not supported".to_string()));
+                    }
+                };
 
-        Ok(actix_rt::Runtime::new()
-            .unwrap()
-            .block_on(async move {
-                Self::list_in_async(client.clone(), bucket.clone(), date.clone()).await
-            })
-            .map_err(|error| PyRuntimeError::new_err(format!("Failed to list: {}", error)))?)
+                Ok(actix_rt::Runtime::new()
+                    .unwrap()
+                    .block_on(async move {
+                        Self::list_in_async(client.clone(), bucket.clone(), date.clone()).await
+                    })
+                    .map_err(|error| {
+                        PyRuntimeError::new_err(format!("Failed to list: {}", error))
+                    })?)
+            }
+            None => {
+                let path = Path::new(&date);
+
+                if !path.is_dir() {
+                    return Err(PyRuntimeError::new_err(format!("{} not exist", date)));
+                }
+
+                Ok(fs::read_dir(path)
+                    .map_err(|error| {
+                        PyRuntimeError::new_err(format!("Failed to scan {}: {}", date, error))
+                    })?
+                    .filter_map(|it| {
+                        if let Ok(it) = it {
+                            let path = it.path();
+
+                            if path.is_file() {
+                                if let Some(file_name) = path.file_name() {
+                                    if let Some(file_name) = file_name.to_str() {
+                                        return Some(file_name.to_string());
+                                    }
+                                }
+                            }
+                        }
+
+                        return None;
+                    })
+                    .collect::<Vec<_>>())
+            }
+        }
     }
 
     fn read(&self, file: String) -> PyResult<PyDataFrame> {
-        let client = self.s3_client.clone();
-        let bucket = self.s3_bucket.clone();
+        Ok(PyDataFrame(match &self.s3_client {
+            Some(s3_client) => {
+                let client = s3_client.clone();
+                let bucket = match &self.s3_bucket {
+                    Some(s3_bucket) => s3_bucket,
+                    None => {
+                        return Err(PyRuntimeError::new_err("Not supported".to_string()));
+                    }
+                };
 
-        Ok(PyDataFrame(
-            actix_rt::Runtime::new()
-                .unwrap()
-                .block_on(async move {
-                    Self::read_parquet_in_sync(client.clone(), bucket.clone(), file.clone()).await
-                })
-                .map_err(|error| PyRuntimeError::new_err(format!("Failed to read: {}", error)))?,
-        ))
+                actix_rt::Runtime::new()
+                    .unwrap()
+                    .block_on(async move {
+                        Self::read_parquet_in_sync(client.clone(), bucket.clone(), file.clone())
+                            .await
+                    })
+                    .map_err(|error| {
+                        PyRuntimeError::new_err(format!("Failed to read: {}", error))
+                    })?
+            }
+            None => {
+                let path = Path::new(&file);
+                if !path.exists() || !path.is_file() {
+                    return Err(PyRuntimeError::new_err(format!(
+                        "File {} does not exist or is not a file",
+                        file
+                    )));
+                }
+
+                let file = fs::File::open(path).map_err(|error| {
+                    PyRuntimeError::new_err(format!("Failed to open file: {}", error))
+                })?;
+
+                ParquetReader::new(file).finish().map_err(|error| {
+                    PyRuntimeError::new_err(format!("Failed to read parquet file: {}", error))
+                })?
+            }
+        }))
     }
 }
 
@@ -88,8 +159,14 @@ impl Datastore {
         self.vps_vars.clone()
     }
 
-    async fn new_s3_client_async(region: &String, endpoint: &String) -> Arc<Client> {
-        let region_provider = Region::new(region.clone());
+    async fn new_s3_client_async(
+        region: &Option<String>,
+        endpoint: &Option<String>,
+    ) -> Option<Arc<Client>> {
+        let region_provider = Region::new(match region {
+            Some(region) => region.clone(),
+            None => return None,
+        });
         let config = aws_config::defaults(BehaviorVersion::latest())
             .timeout_config(
                 TimeoutConfig::builder()
@@ -98,10 +175,13 @@ impl Datastore {
                     .build(),
             )
             .region(region_provider)
-            .endpoint_url(endpoint)
+            .endpoint_url(match endpoint {
+                Some(endpoint) => endpoint.clone(),
+                None => return None,
+            })
             .load()
             .await;
-        Arc::new(Client::new(&config))
+        Some(Arc::new(Client::new(&config)))
     }
 
     async fn list_in_async(

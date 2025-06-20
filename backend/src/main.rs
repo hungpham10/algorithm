@@ -33,7 +33,7 @@ struct AppState {
     done: Arc<AtomicI64>,
     timeframe: usize,
 
-    // @NOTE:
+    // @NOTE: state management
     locked: Arc<Mutex<bool>>,
 
     // @NOTE: shared components

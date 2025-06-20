@@ -16,4 +16,5 @@ dependencies = [
 ]
 
 [tool.maturin]
-features = ["pyo3/extension-module"]
+module-name = "vnscope.core"
+python-source = "sdk"
