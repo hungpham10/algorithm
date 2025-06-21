@@ -148,6 +148,45 @@ impl Datastore {
             }
         }))
     }
+
+    fn delete(&self, file: String) -> PyResult<Vec<bool>> {
+        match &self.s3_client {
+            Some(s3_client) => {
+                let client = s3_client.clone();
+                let bucket = match &self.s3_bucket {
+                    Some(s3_bucket) => s3_bucket,
+                    None => {
+                        return Err(PyRuntimeError::new_err(
+                            "S3 bucket not configured".to_string(),
+                        ));
+                    }
+                };
+
+                Ok(actix_rt::Runtime::new()
+                    .unwrap()
+                    .block_on(async move {
+                        Self::delete_in_async(client.clone(), bucket.clone(), file.clone()).await
+                    })
+                    .map_err(|error| {
+                        PyRuntimeError::new_err(format!("Failed to delete: {}", error))
+                    })?)
+            }
+            None => {
+                let path = Path::new(&file);
+                if !path.exists() {
+                    return Err(PyRuntimeError::new_err(format!(
+                        "File {} does not exist",
+                        file
+                    )));
+                }
+
+                fs::remove_file(path).map_err(|error| {
+                    PyRuntimeError::new_err(format!("Failed to delete file: {}", error))
+                })?;
+                Ok(vec![true])
+            }
+        }
+    }
 }
 
 impl Datastore {
@@ -217,5 +256,19 @@ impl Datastore {
             ParquetReader::new(Cursor::new(response.body.collect().await?.into_bytes()))
                 .finish()?,
         )
+    }
+
+    async fn delete_in_async(
+        client: Arc<Client>,
+        bucket: String,
+        file: String,
+    ) -> Result<Vec<bool>> {
+        client
+            .delete_object()
+            .bucket(bucket)
+            .key(file)
+            .send()
+            .await?;
+        Ok(vec![true])
     }
 }
