@@ -1,10 +1,33 @@
 use super::rule::{Function, Rule, RuleError};
+use std::collections::HashMap;
 
 pub struct Noop {}
 
 impl Function for Noop {
     fn evaluate(&self, _: &Rule, _: Vec<(String, f64)>) -> Result<f64, RuleError> {
         Ok(0.0)
+    }
+}
+
+pub struct Assign {}
+
+impl Function for Assign {
+    fn evaluate(&self, rule: &Rule, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
+        if pins.len() < 2 {
+            Err(RuleError {
+                message: "Assign function requires at least 2 arguments".to_string(),
+            })
+        } else {
+            let mapping = HashMap::from([(pins[0].0.clone(), pins[1].1)]);
+
+            if rule.reload(&mapping) == mapping.len() {
+                Ok(pins[1].1)
+            } else {
+                Err(RuleError {
+                    message: format!("Fail to assign {}", pins[0].0),
+                })
+            }
+        }
     }
 }
 

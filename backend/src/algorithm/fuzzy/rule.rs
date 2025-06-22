@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
@@ -48,7 +49,7 @@ pub struct ExprTree {
     nodes: Vec<ExprTree>,
     labels: Vec<String>,
     mapping: HashMap<String, usize>,
-    values: Vec<f64>,
+    values: RefCell<Vec<f64>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -79,7 +80,11 @@ impl ExprTree {
             let value = if *slot {
                 self.nodes[inode].evaluate(rule)?
             } else {
-                self.values[ivalue]
+                let values = self.values.borrow();
+
+                *values.get(ivalue).ok_or_else(|| RuleError {
+                    message: "Value index out of bounds".to_string(),
+                })?
             };
 
             arguments.push((label.to_string(), value));
@@ -121,14 +126,19 @@ impl ExprTree {
         self.labels(false)
     }
 
-    fn update(&mut self, name: &String, value: f64) -> bool {
+    fn update(&self, name: &String, value: f64) -> bool {
         if let Some(index) = self.mapping.get(name) {
             let mut inode = 0;
 
             for (iarg, slot) in self.slots.iter().enumerate() {
                 if inode == *index && self.labels.get(iarg).unwrap() == name {
-                    self.values[*index] = value;
-                    return true;
+                    let mut values = self.values.borrow_mut();
+
+                    if *index < values.len() {
+                        values[*index] = value;
+                        return true;
+                    }
+                    return false;
                 }
 
                 if *slot {
@@ -150,7 +160,7 @@ impl Default for Rule {
                 thresholds: Vec::new(),
                 nodes: Vec::new(),
                 labels: Vec::new(),
-                values: Vec::new(),
+                values: RefCell::new(Vec::new()),
                 mapping: HashMap::new(),
             },
         }
@@ -197,7 +207,7 @@ impl Rule {
         .map(|optree| Self { optree })
     }
 
-    pub fn reload(&mut self, inputs: &HashMap<String, f64>) -> usize {
+    pub fn reload(&self, inputs: &HashMap<String, f64>) -> usize {
         let mut cnt = 0;
 
         for (label, value) in inputs {
@@ -227,7 +237,7 @@ impl Rule {
                 slots: Vec::new(),
                 thresholds: Vec::new(),
                 nodes: Vec::new(),
-                values: Vec::new(),
+                values: RefCell::new(Vec::new()),
                 labels: Vec::new(),
                 mapping: HashMap::new(),
             };
@@ -248,10 +258,10 @@ impl Rule {
                         output.slots.push(false);
 
                         if let Some(value) = pin.value {
-                            output.values.push(value);
+                            output.values.borrow_mut().push(value); // Mượn mutable và push
                             output.thresholds.push(false);
                         } else if let Some(value) = pin.threshold {
-                            output.values.push(value);
+                            output.values.borrow_mut().push(value); // Mượn mutable và push
                             output.thresholds.push(true);
                         } else {
                             return Err(RuleError {
@@ -394,9 +404,10 @@ impl Rule {
                 slots,
                 nodes,
                 labels,
-                values,
                 thresholds,
                 mapping,
+
+                values: RefCell::new(values),
             })
         } else {
             Err(RuleError {

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::functions::{Add, And, If, Mult, Not, Or, Singleton, Trapezoid, Triangle};
+use super::functions::{Add, And, Assign, If, Mult, Not, Or, Singleton, Trapezoid, Triangle};
 use super::rule::{Function, Rule, RuleError};
 use super::{Format, Input};
 
@@ -32,6 +32,10 @@ impl Delegate {
             "triangle".to_string(),
             Arc::new(Triangle {}) as Arc<dyn Function>,
         );
+        functions.insert(
+            "assign".to_string(),
+            Arc::new(Assign {}) as Arc<dyn Function>,
+        );
         functions.insert("if".to_string(), Arc::new(If {}) as Arc<dyn Function>);
         functions.insert("and".to_string(), Arc::new(And {}) as Arc<dyn Function>);
         functions.insert("or".to_string(), Arc::new(Or {}) as Arc<dyn Function>);
@@ -40,6 +44,11 @@ impl Delegate {
         functions.insert("mult".to_string(), Arc::new(Mult {}) as Arc<dyn Function>);
 
         Delegate { functions }
+    }
+
+    pub fn add(&mut self, fn_name: &str, fn_handler: Arc<dyn Function>) {
+        self.functions
+            .insert(fn_name.to_string(), fn_handler.clone());
     }
 
     pub fn build(&self, expression: &impl Input, format: Format) -> Result<Rule, RuleError> {
