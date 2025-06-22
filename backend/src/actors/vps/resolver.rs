@@ -74,7 +74,7 @@ fn resolve_watching_vps_board(
             };
 
             // Build rule
-            let mut rule = if let Some(fuzzy) = task.jsfuzzy() {
+            let rule = if let Some(fuzzy) = task.jsfuzzy() {
                 match Delegate::new()
                     .build(&fuzzy, Format::Json)
                     .map_err(|e| VpsError {
