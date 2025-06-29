@@ -1,3 +1,4 @@
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
 mod analytics;
@@ -14,6 +15,7 @@ fn core(_: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<datastore::Datastore>()?;
 
     m.add_function(wrap_pyfunction!(analytics::filter, m)?)?;
+    m.add_function(wrap_pyfunction!(market::heatmap, m)?)?;
     m.add_function(wrap_pyfunction!(market::order, m)?)?;
     m.add_function(wrap_pyfunction!(market::profile, m)?)?;
     m.add_function(wrap_pyfunction!(market::history, m)?)?;
@@ -25,5 +27,17 @@ fn core(_: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(market::vn100, m)?)?;
     m.add_function(wrap_pyfunction!(market::sectors, m)?)?;
     m.add_function(wrap_pyfunction!(market::industry, m)?)?;
+    m.add_function(wrap_pyfunction!(configure, m)?)?;
     Ok(())
+}
+
+#[pyfunction]
+fn configure(table: String, key: String, value: String) -> PyResult<()> {
+    match table.as_str() {
+        "PROFILE_RESOLUTION" => market::configure_profile_resolution(&key, &value),
+        _ => Err(PyRuntimeError::new_err(format!(
+            "Not support table {}",
+            table
+        ))),
+    }
 }
