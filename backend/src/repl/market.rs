@@ -1,5 +1,6 @@
 use chrono::{NaiveDate, NaiveDateTime, Utc};
 use lazy_static::lazy_static;
+use numpy::{PyArray2, ToPyArray};
 use polars::prelude::*;
 
 use pyo3::exceptions::PyRuntimeError;
@@ -41,6 +42,21 @@ lazy_static! {
         m.insert("information technology", "9500");
         m
     };
+    static ref PROFILE_RESOLUTION: Mutex<HashMap<String, String>> = {
+        let mut m = HashMap::new();
+        m.insert("1D".to_string(), "1H".to_string());
+        m.insert("1W".to_string(), "4H".to_string());
+        Mutex::new(m)
+    };
+}
+
+pub fn configure_profile_resolution(key: &String, value: &String) -> PyResult<()> {
+    let mut mapping = PROFILE_RESOLUTION.lock().map_err(|e| {
+        PyRuntimeError::new_err(format!("lock PROFILE_RESOLUTION got error: {:?}", e))
+    })?;
+
+    mapping.insert(key.to_string(), value.to_string());
+    Ok(())
 }
 
 #[pyfunction]
@@ -343,23 +359,95 @@ pub fn price(
     Ok(PyDataFrame(
         DataFrame::new(vec![
             Series::new(
-                "t",
+                "Date",
                 datapoints
                     .iter()
                     .map(|it| NaiveDateTime::from_timestamp(it.t.into(), 0))
                     .collect::<Vec<_>>(),
             ),
-            Series::new("o", datapoints.iter().map(|it| it.o).collect::<Vec<_>>()),
-            Series::new("h", datapoints.iter().map(|it| it.h).collect::<Vec<_>>()),
-            Series::new("c", datapoints.iter().map(|it| it.c).collect::<Vec<_>>()),
-            Series::new("l", datapoints.iter().map(|it| it.l).collect::<Vec<_>>()),
+            Series::new("Open", datapoints.iter().map(|it| it.o).collect::<Vec<_>>()),
+            Series::new("High", datapoints.iter().map(|it| it.h).collect::<Vec<_>>()),
             Series::new(
-                "v",
+                "Close",
+                datapoints.iter().map(|it| it.c).collect::<Vec<_>>(),
+            ),
+            Series::new("Low", datapoints.iter().map(|it| it.l).collect::<Vec<_>>()),
+            Series::new(
+                "Volume",
                 datapoints.iter().map(|it| it.v as f64).collect::<Vec<_>>(),
             ),
         ])
         .map_err(|e| PyRuntimeError::new_err(format!("Failed to create DataFrame: {:?}", e)))?,
     ))
+}
+
+#[pyfunction]
+pub fn heatmap(
+    symbol: String,
+    resolution: String,
+    lookback: i64,
+    overlap: usize,
+    number_of_levels: usize,
+) -> PyResult<(Py<PyArray2<f64>>, Vec<f64>)> {
+    let to = Utc::now().timestamp();
+    let from = match resolution.as_str() {
+        "1D" => Ok(to - 24 * 60 * 60 * lookback),
+        "1W" => Ok(to - 7 * 24 * 60 * 60 * lookback),
+        _ => Err(PyRuntimeError::new_err(format!(
+            "Not support resolution `{}`",
+            resolution
+        ))),
+    }?;
+
+    let profiles = actix_rt::Runtime::new().unwrap().block_on(async {
+        let mapping = PROFILE_RESOLUTION.lock().unwrap();
+        let actor = connect_to_dnse();
+
+        let candles = actor
+            .send(GetOHCLCommand {
+                resolution: match mapping.get(&resolution) {
+                    Some(resolution) => resolution.clone(),
+                    None => "1D".to_string(),
+                },
+                stock: symbol.clone(),
+                from,
+                to,
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        let (profiles, levels) = cumulate_volume_profile(&candles, number_of_levels, overlap);
+
+        if profiles.len() > 0 {
+            Some((profiles.clone(), levels))
+        } else {
+            None
+        }
+    });
+
+    if let Some((profiles, levels)) = profiles {
+        // Tạo mảng 2D từ profiles
+        let cols = profiles.len();
+        let rows = number_of_levels;
+        let mut data: Vec<Vec<f64>> = vec![vec![0.0; cols]; rows];
+
+        for (j, profile) in profiles.iter().enumerate() {
+            for i in 0..rows {
+                data[i][j] = *profile.get(i).unwrap();
+            }
+        }
+
+        Python::with_gil(|py| {
+            let ndarray = PyArray2::from_vec2(py, &data)?;
+            Ok((ndarray.to_owned(), levels))
+        })
+    } else {
+        Err(PyRuntimeError::new_err(format!(
+            "Cannot produce heatmap of {}",
+            symbol
+        )))
+    }
 }
 
 #[pyfunction]
@@ -369,7 +457,7 @@ pub fn profile(
     lookback: i64,
     number_of_levels: usize,
 ) -> PyResult<PyDataFrame> {
-    let mut columns = vec![Series::new("symbol", symbols.clone())];
+    let mut columns = Vec::new();
     let to = Utc::now().timestamp();
     let from = match resolution.as_str() {
         "1D" => Ok(to - 24 * 60 * 60 * lookback),
@@ -382,15 +470,16 @@ pub fn profile(
 
     let datapoints = symbols
         .iter()
-        .map(|symbol| {
+        .filter_map(|symbol| {
             actix_rt::Runtime::new().unwrap().block_on(async {
+                let mapping = PROFILE_RESOLUTION.lock().unwrap();
                 let actor = connect_to_dnse();
+
                 let candles = actor
                     .send(GetOHCLCommand {
-                        resolution: match resolution.as_str() {
-                            "1D" => "1H".to_string(),
-                            "1W" => "4H".to_string(),
-                            _ => "1D".to_string(),
+                        resolution: match mapping.get(&resolution) {
+                            Some(resolution) => resolution.clone(),
+                            None => "1D".to_string(),
                         },
                         stock: symbol.clone(),
                         from,
@@ -401,25 +490,38 @@ pub fn profile(
                     .unwrap();
                 let (profiles, levels) = cumulate_volume_profile(&candles, number_of_levels, 0);
 
-                (
-                    profiles[0].clone(),
-                    levels.first().cloned().unwrap_or(0.0),
-                    levels.last().cloned().unwrap_or(0.0),
-                )
+                if profiles.len() > 0 {
+                    Some((
+                        symbol,
+                        profiles[0].clone(),
+                        levels.first().cloned().unwrap_or(0.0),
+                        levels.last().cloned().unwrap_or(0.0),
+                    ))
+                } else {
+                    None
+                }
             })
         })
-        .collect::<Vec<(Vec<f64>, f64, f64)>>();
+        .collect::<Vec<(&String, Vec<f64>, f64, f64)>>();
 
     let profile_length = datapoints
         .get(0)
-        .map(|(profile, _, _)| profile.len())
+        .map(|(_, profile, _, _)| profile.len())
         .unwrap_or(0);
+
+    columns.push(Series::new(
+        "symbol",
+        datapoints
+            .iter()
+            .map(|(symbol, _, _, _)| (*symbol).clone())
+            .collect::<Vec<String>>(),
+    ));
 
     for i in 0..profile_length {
         let col_name = format!("level_{}", i);
         let values = datapoints
             .iter()
-            .map(|(profile, _, _)| profile.get(i).cloned().unwrap_or(0.0))
+            .map(|(_, profile, _, _)| profile.get(i).cloned().unwrap_or(0.0))
             .collect::<Vec<f64>>();
         columns.push(Series::new(&col_name, values));
     }
@@ -428,14 +530,14 @@ pub fn profile(
         "price_at_level_first",
         datapoints
             .iter()
-            .map(|(_, first, _)| *first)
+            .map(|(_, _, first, _)| *first)
             .collect::<Vec<f64>>(),
     ));
     columns.push(Series::new(
         "price_at_level_last",
         datapoints
             .iter()
-            .map(|(_, _, last)| *last)
+            .map(|(_, _, _, last)| *last)
             .collect::<Vec<f64>>(),
     ));
 
