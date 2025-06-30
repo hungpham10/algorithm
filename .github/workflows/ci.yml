@@ -65,9 +65,6 @@ jobs:
     name: Test (via Makefile) # Updated name
     runs-on: ubuntu-22.04
     needs: [] # Assuming it runs in parallel with lint
-    if: >
-      github.ref == 'refs/heads/main' ||
-      (github.event_name == 'pull_request' && github.base_ref == 'main')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
