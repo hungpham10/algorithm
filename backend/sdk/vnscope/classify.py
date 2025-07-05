@@ -6,7 +6,12 @@ import mplfinance as mpf
 
 
 class ClassifyVolumeProfile:
-    def __init__(self, resolution="1D", lookback=120, value_area_pct=0.7):
+    def __init__(self, now=-1, resolution="1D", lookback=120, value_area_pct=0.7):
+        from datetime import datetime, timezone
+
+        self.now = int(
+            datetime.now(timezone.utc).timestamp() + 24 * 60 * 60 if now < 0 else now
+        )
         self.resolution = resolution
         self.lookback = lookback
         self.value_area_pct = value_area_pct
@@ -232,16 +237,15 @@ class ClassifyVolumeProfile:
         return shapes_df
 
     def plot_heatmap_with_candlestick(self, symbol, number_of_levels, overlap_days):
-        from time import time as now
         from datetime import datetime, timedelta
         from matplotlib.colors import LinearSegmentedColormap
         from .core import heatmap, profile, price
 
         # Estimate time range
         from_time = datetime.fromtimestamp(
-            int(now()) - self.lookback * 24 * 60 * 60,
+            self.now - self.lookback * 24 * 60 * 60,
         ).strftime("%Y-%m-%d")
-        to_time = datetime.fromtimestamp(int(now())).strftime("%Y-%m-%d")
+        to_time = datetime.fromtimestamp(self.now).strftime("%Y-%m-%d")
 
         # Collect data
         candlesticks = price(
@@ -253,6 +257,7 @@ class ClassifyVolumeProfile:
         consolidated, levels = heatmap(
             symbol,
             self.resolution,
+            self.now,
             self.lookback,
             overlap_days,
             number_of_levels,
@@ -304,9 +309,7 @@ class ClassifyVolumeProfile:
             "Volume Profile Heatmap for {} ({})".format(symbol, self.resolution)
         )
         ax1.set_ylabel("Price Levels")
-        ax1.set_xticks(
-            range(0, len(heatmap_dates), max(1, len(heatmap_dates) // 10))
-        )  # Show fewer labels if too many
+        ax1.set_xticks(range(0, len(heatmap_dates), max(1, len(heatmap_dates) // 10)))
         ax1.set_xticklabels(
             heatmap_dates[:: max(1, len(heatmap_dates) // 10)],
             rotation=45,

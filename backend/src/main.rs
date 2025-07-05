@@ -75,6 +75,16 @@ async fn lock(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
 async fn health(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
     let current = Utc::now().timestamp();
 
+    let max_inflight = std::env::var("MAX_INFLIGHT")
+        .unwrap_or_else(|_| "2".to_string())
+        .parse::<_>()
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid MAX_INFLIGHT"))?;
+
+    let max_updated_time = std::env::var("MAX_UPDATED_TIME")
+        .unwrap_or_else(|_| "2".to_string())
+        .parse::<_>()
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid MAX_UPDATED_TIME"))?;
+
     match appstate.crontime.lock() {
         Ok(crontime) => {
             let running = appstate.running.load(Ordering::SeqCst);
@@ -82,8 +92,8 @@ async fn health(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
             let inflight = running.saturating_sub(done);
             let last_ok = crontime
                 .back()
-                .map_or(true, |updated| current - updated <= 120)
-                && inflight <= 2;
+                .map_or(true, |updated| current - updated <= max_updated_time)
+                && inflight <= max_inflight;
             let builder = if last_ok {
                 HttpResponse::Ok
             } else {
@@ -322,7 +332,7 @@ async fn main() -> std::io::Result<()> {
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid APPSTATE_TIMEFRAME"))?,
 
         // @NOTE:
-        locked: Arc::new(Mutex::new(false)),
+        locked: Arc::new(Mutex::new(true)),
 
         // @NOTE:
         portal: portal.clone(),

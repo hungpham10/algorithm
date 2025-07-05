@@ -385,11 +385,12 @@ pub fn price(
 pub fn heatmap(
     symbol: String,
     resolution: String,
+    now: i64,
     lookback: i64,
     overlap: usize,
     number_of_levels: usize,
 ) -> PyResult<(Py<PyArray2<f64>>, Vec<f64>)> {
-    let to = Utc::now().timestamp();
+    let to = now;
     let from = match resolution.as_str() {
         "1D" => Ok(to - 24 * 60 * 60 * lookback),
         "1W" => Ok(to - 7 * 24 * 60 * 60 * lookback),
@@ -454,6 +455,7 @@ pub fn heatmap(
 pub fn profile(
     symbols: Vec<String>,
     resolution: String,
+    now: i64,
     lookback: i64,
     number_of_levels: usize,
 ) -> PyResult<PyDataFrame> {
