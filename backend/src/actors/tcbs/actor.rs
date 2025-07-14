@@ -694,7 +694,11 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
 
         Box::pin(async move {
             let mut updated = 0;
-            let mut vars = variables.lock().unwrap();
+            let mut vars = variables.lock().map_err(|e| {
+                Err(TcbsError {
+                    message: format!("Fail to lock variables: {}", e),
+                })
+            })?;
 
             #[cfg(not(feature = "python"))]
             let counter = msg.counter.clone();
