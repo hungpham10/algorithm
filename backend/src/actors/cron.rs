@@ -220,7 +220,15 @@ impl Handler<TickCommand> for CronActor {
 
             let plus_1 = Utc.timestamp_opt(clock_now.timestamp() + 1, 0).unwrap();
             let target = wrapped.unwrap().clone();
-            if tick_now != target.timer {
+            let mut target_timer = target.timer;
+
+            if tick_now > target.timer {
+                if let Ok(time_next) = cron_parser::parse(&target.interval, &plus_1) {
+                    target_timer = tick_now + (time_next.timestamp() - clock_now.timestamp()) - 1;
+                }
+            }
+
+            if tick_now != target_timer {
                 debug!("tick_now({}) != target.timer({})", tick_now, target.timer);
                 continue;
             }
