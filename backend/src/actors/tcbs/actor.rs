@@ -20,7 +20,9 @@ use actix::prelude::*;
 use actix::Addr;
 
 use crate::actors::list_futures;
-use crate::actors::{ActorError, GetVariableCommand, HealthCommand, UpdateStocksCommand};
+use crate::actors::{
+    ActorError, FlushVariablesCommand, GetVariableCommand, HealthCommand, UpdateStocksCommand,
+};
 use crate::algorithm::fuzzy::Variables;
 
 #[cfg(not(feature = "python"))]
@@ -154,6 +156,36 @@ impl Handler<UpdateStocksCommand> for TcbsActor {
 
         self.stocks = msg.stocks.clone();
         Box::pin(async move { true })
+    }
+}
+
+impl Handler<FlushVariablesCommand> for TcbsActor {
+    type Result = ResponseFuture<bool>;
+
+    fn handle(&mut self, _: FlushVariablesCommand, _: &mut Self::Context) -> Self::Result {
+        let variables = self.variables.clone();
+        let stocks = self.stocks.clone();
+
+        Box::pin(async move {
+            match variables.lock() {
+                Ok(mut vars) => {
+                    let mut status = true;
+
+                    for sym in stocks {
+                        if let Err(_) = vars.flush(sym.as_str()).await {
+                            status = false;
+                        }
+
+                        if !status {
+                            break;
+                        }
+                    }
+
+                    status
+                }
+                Err(_) => false,
+            }
+        })
     }
 }
 
@@ -694,103 +726,107 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
 
         Box::pin(async move {
             let mut updated = 0;
-            let mut vars = variables.lock().unwrap();
+            match variables.lock() {
+                Ok(mut vars) => {
+                    #[cfg(not(feature = "python"))]
+                    let counter = msg.counter.clone();
 
-            #[cfg(not(feature = "python"))]
-            let counter = msg.counter.clone();
+                    let vars_to_create = Self::list_of_variables(&msg.symbol);
 
-            let vars_to_create = Self::list_of_variables(&msg.symbol);
+                    for order in msg.orders {
+                        let (hour, min, sec) = if let Ok(parts) = order
+                            .t
+                            .split(':')
+                            .map(|s| s.parse::<i64>())
+                            .collect::<Result<Vec<_>, _>>()
+                        {
+                            if parts.len() == 3 {
+                                (parts[0], parts[1], parts[2])
+                            } else {
+                                (0, 0, 0) // Default values for invalid format
+                            }
+                        } else {
+                            (0, 0, 0) // Default values for parse errors
+                        };
+                        let time = (hour * 3600 + min * 60 + sec) as f64;
+                        let last = vars.last(vars_to_create[5].as_str()).unwrap_or(0.0);
 
-            for order in msg.orders {
-                let (hour, min, sec) = if let Ok(parts) = order
-                    .t
-                    .split(':')
-                    .map(|s| s.parse::<i64>())
-                    .collect::<Result<Vec<_>, _>>()
-                {
-                    if parts.len() == 3 {
-                        (parts[0], parts[1], parts[2])
-                    } else {
-                        (0, 0, 0) // Default values for invalid format
+                        if time <= last {
+                            break;
+                        }
+
+                        #[cfg(not(feature = "python"))]
+                        monitor_order_flow(&msg.symbol.to_string(), &order, counter.clone());
+
+                        if let Err(e) = vars
+                            .update(&msg.symbol, &vars_to_create[0].to_string(), order.p)
+                            .await
+                        {
+                            error!("Failed to update variable {}: {}", vars_to_create[0], e);
+                        }
+
+                        if let Err(e) = vars
+                            .update(&msg.symbol, &vars_to_create[1].to_string(), order.v as f64)
+                            .await
+                        {
+                            error!("Failed to update variable {}: {}", vars_to_create[1], e);
+                        }
+
+                        if let Err(e) = vars
+                            .update(
+                                &msg.symbol,
+                                &vars_to_create[2].to_string(),
+                                match order.a.as_str() {
+                                    "BU" => 1.0,
+                                    "SD" => 0.0,
+                                    _ => 0.5,
+                                },
+                            )
+                            .await
+                        {
+                            error!("Failed to update variable {}: {}", vars_to_create[2], e);
+                        }
+
+                        if let Err(e) = vars
+                            .update(&msg.symbol, &vars_to_create[3].to_string(), order.ba)
+                            .await
+                        {
+                            error!("Failed to update variable {}: {}", vars_to_create[3], e);
+                        }
+
+                        if let Err(e) = vars
+                            .update(&msg.symbol, &vars_to_create[4].to_string(), order.sa)
+                            .await
+                        {
+                            error!("Failed to update variable {}: {}", vars_to_create[4], e);
+                        }
+
+                        if let Err(e) = vars
+                            .update(&msg.symbol, &vars_to_create[5].to_string(), order.cp)
+                            .await
+                        {
+                            error!("Failed to update variable {}: {}", vars_to_create[5], e);
+                        }
+
+                        if let Err(e) = vars
+                            .update(
+                                &msg.symbol,
+                                &vars_to_create[6].to_string(),
+                                (hour * 3600 + min * 60 + sec) as f64,
+                            )
+                            .await
+                        {
+                            error!("Failed to update variable {}: {}", vars_to_create[6], e);
+                        }
+
+                        updated += 1;
                     }
-                } else {
-                    (0, 0, 0) // Default values for parse errors
-                };
-                let time = (hour * 3600 + min * 60 + sec) as f64;
-                let last = vars.last(vars_to_create[5].as_str()).unwrap_or(0.0);
-
-                if time <= last {
-                    break;
+                    Ok(updated)
                 }
-
-                #[cfg(not(feature = "python"))]
-                monitor_order_flow(&msg.symbol.to_string(), &order, counter.clone());
-
-                if let Err(e) = vars
-                    .update(&msg.symbol, &vars_to_create[0].to_string(), order.p)
-                    .await
-                {
-                    error!("Failed to update variable {}: {}", vars_to_create[0], e);
-                    panic!("Failed to update variable");
-                }
-
-                if let Err(e) = vars
-                    .update(&msg.symbol, &vars_to_create[1].to_string(), order.v as f64)
-                    .await
-                {
-                    error!("Failed to update variable {}: {}", vars_to_create[1], e);
-                }
-
-                if let Err(e) = vars
-                    .update(
-                        &msg.symbol,
-                        &vars_to_create[2].to_string(),
-                        match order.a.as_str() {
-                            "BU" => 1.0,
-                            "SD" => 0.0,
-                            _ => 0.5,
-                        },
-                    )
-                    .await
-                {
-                    error!("Failed to update variable {}: {}", vars_to_create[2], e);
-                }
-
-                if let Err(e) = vars
-                    .update(&msg.symbol, &vars_to_create[3].to_string(), order.ba)
-                    .await
-                {
-                    error!("Failed to update variable {}: {}", vars_to_create[3], e);
-                }
-
-                if let Err(e) = vars
-                    .update(&msg.symbol, &vars_to_create[4].to_string(), order.sa)
-                    .await
-                {
-                    error!("Failed to update variable {}: {}", vars_to_create[4], e);
-                }
-
-                if let Err(e) = vars
-                    .update(&msg.symbol, &vars_to_create[5].to_string(), order.cp)
-                    .await
-                {
-                    error!("Failed to update variable {}: {}", vars_to_create[5], e);
-                }
-
-                if let Err(e) = vars
-                    .update(
-                        &msg.symbol,
-                        &vars_to_create[6].to_string(),
-                        (hour * 3600 + min * 60 + sec) as f64,
-                    )
-                    .await
-                {
-                    error!("Failed to update variable {}: {}", vars_to_create[6], e);
-                }
-
-                updated += 1;
+                Err(err) => Err(TcbsError {
+                    message: format!("Fail to lock variables: {}", err),
+                }),
             }
-            Ok(updated)
         })
     }
 }

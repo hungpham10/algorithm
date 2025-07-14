@@ -17,7 +17,9 @@ use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use actix::prelude::*;
 use actix::Addr;
 
-use crate::actors::{ActorError, GetVariableCommand, HealthCommand, UpdateStocksCommand};
+use crate::actors::{
+    ActorError, FlushVariablesCommand, GetVariableCommand, HealthCommand, UpdateStocksCommand,
+};
 use crate::algorithm::fuzzy::Variables;
 
 #[allow(non_snake_case)]
@@ -126,6 +128,27 @@ impl VpsActor {
         }
     }
 
+    async fn flush_variables(variables: Arc<Mutex<Variables>>, stocks: &[String]) -> bool {
+        match variables.lock() {
+            Ok(mut vars) => {
+                let mut status = true;
+
+                for sym in stocks {
+                    if let Err(_) = vars.flush(sym).await {
+                        status = false;
+                    }
+
+                    if !status {
+                        break;
+                    }
+                }
+
+                status
+            }
+            Err(_) => false,
+        }
+    }
+
     fn prepare_variables(variables: Arc<Mutex<Variables>>, stocks: &[String]) -> bool {
         match variables.lock() {
             Ok(mut vars) => {
@@ -200,6 +223,17 @@ impl Handler<UpdateStocksCommand> for VpsActor {
 
         self.stocks = msg.stocks.clone();
         Box::pin(async move { status })
+    }
+}
+
+impl Handler<FlushVariablesCommand> for VpsActor {
+    type Result = ResponseFuture<bool>;
+
+    fn handle(&mut self, _: FlushVariablesCommand, _: &mut Self::Context) -> Self::Result {
+        let variables = self.variables.clone();
+        let stocks = self.stocks.clone();
+
+        Box::pin(async move { Self::flush_variables(variables, &stocks).await })
     }
 }
 

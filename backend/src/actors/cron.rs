@@ -9,6 +9,8 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use log::debug;
+
 use chrono::{TimeZone, Utc};
 use futures::future::join_all;
 
@@ -212,13 +214,17 @@ impl Handler<TickCommand> for CronActor {
             let wrapped = self.timekeeper.get_mut();
 
             if wrapped.is_none() {
+                debug!("timekeeper is null");
                 break;
             }
 
             let plus_1 = Utc.timestamp_opt(clock_now.timestamp() + 1, 0).unwrap();
             let target = wrapped.unwrap().clone();
-            if tick_now != target.timer {
-                break;
+            let mut target_timer = target.timer;
+
+            if tick_now < target_timer {
+                debug!("tick_now({}) != target.timer({})", tick_now, target_timer);
+                continue;
             }
 
             if let Ok(time_next) = cron_parser::parse(&target.interval, &plus_1) {
@@ -232,6 +238,8 @@ impl Handler<TickCommand> for CronActor {
                 tasks.push(target);
             }
         }
+
+        debug!("Number of tasks to resolve {}", tasks.len());
 
         self.clock = clock_now.timestamp();
 
