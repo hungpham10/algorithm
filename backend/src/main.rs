@@ -372,7 +372,9 @@ async fn main() -> std::io::Result<()> {
                         }).await {
                             Ok(Ok(cnt)) => {
                                 cron_on_updated = cnt > 0;
-                                debug!("Success trigger {} jobs", cnt)
+                                if cnt > 0 {
+                                    debug!("Success trigger {} jobs", cnt)
+                                }
                             },
                             Ok(Err(err)) => error!("Tick command failed: {:?}", err),
                             Err(error) => panic!("Panic: Fail to send command: {:?}", error),
