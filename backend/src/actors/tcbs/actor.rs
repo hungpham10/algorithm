@@ -20,7 +20,9 @@ use actix::prelude::*;
 use actix::Addr;
 
 use crate::actors::list_futures;
-use crate::actors::{ActorError, GetVariableCommand, HealthCommand, UpdateStocksCommand};
+use crate::actors::{
+    ActorError, FlushVariablesCommand, GetVariableCommand, HealthCommand, UpdateStocksCommand,
+};
 use crate::algorithm::fuzzy::Variables;
 
 #[cfg(not(feature = "python"))]
@@ -154,6 +156,36 @@ impl Handler<UpdateStocksCommand> for TcbsActor {
 
         self.stocks = msg.stocks.clone();
         Box::pin(async move { true })
+    }
+}
+
+impl Handler<FlushVariablesCommand> for TcbsActor {
+    type Result = ResponseFuture<bool>;
+
+    fn handle(&mut self, _: FlushVariablesCommand, _: &mut Self::Context) -> Self::Result {
+        let variables = self.variables.clone();
+        let stocks = self.stocks.clone();
+
+        Box::pin(async move {
+            match variables.lock() {
+                Ok(mut vars) => {
+                    let mut status = true;
+
+                    for sym in stocks {
+                        if let Err(_) = vars.flush(sym.as_str()).await {
+                            status = false;
+                        }
+
+                        if !status {
+                            break;
+                        }
+                    }
+
+                    status
+                }
+                Err(_) => false,
+            }
+        })
     }
 }
 
@@ -731,7 +763,6 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                             .await
                         {
                             error!("Failed to update variable {}: {}", vars_to_create[0], e);
-                            panic!("Failed to update variable");
                         }
 
                         if let Err(e) = vars

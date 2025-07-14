@@ -35,6 +35,10 @@ pub struct UpdateStocksCommand {
     pub stocks: Vec<String>,
 }
 
+#[derive(Message, Debug)]
+#[rtype(result = "bool")]
+pub struct FlushVariablesCommand;
+
 #[derive(Message)]
 #[rtype(result = "Result<f64, ActorError>")]
 pub struct GetVariableCommand {

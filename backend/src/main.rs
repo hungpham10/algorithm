@@ -22,7 +22,7 @@ use vnscope::actors::cron::{
 };
 use vnscope::actors::tcbs::{resolve_tcbs_routes, TcbsActor};
 use vnscope::actors::vps::{resolve_vps_routes, VpsActor};
-use vnscope::actors::UpdateStocksCommand;
+use vnscope::actors::{FlushVariablesCommand, UpdateStocksCommand};
 use vnscope::algorithm::fuzzy::Variables;
 use vnscope::schemas::{Portal, CRONJOB, WATCHLIST};
 
@@ -153,6 +153,19 @@ async fn synchronize(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
     })
     .await
     .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?;
+    Ok(HttpResponse::Ok().body("ok"))
+}
+
+async fn flush(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
+    let tcbs = appstate.tcbs.clone();
+    let vps = appstate.vps.clone();
+
+    tcbs.send(FlushVariablesCommand)
+        .await
+        .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?;
+    vps.send(FlushVariablesCommand)
+        .await
+        .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?;
     Ok(HttpResponse::Ok().body("ok"))
 }
 
@@ -411,6 +424,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(prometheus.clone())
             .wrap(Logger::default())
             .route("/health", get().to(health))
+            .route("/api/v1/variables/flush", put().to(flush))
             .route("/api/v1/config/synchronize", put().to(synchronize))
             .route("/api/v1/config/lock", put().to(lock))
             .route("/api/v1/config/unlock", put().to(unlock))
