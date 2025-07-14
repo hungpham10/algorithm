@@ -229,7 +229,7 @@ impl Handler<TickCommand> for CronActor {
             }
 
             if tick_now != target_timer {
-                debug!("tick_now({}) != target.timer({})", tick_now, target.timer);
+                debug!("tick_now({}) != target.timer({})", tick_now, target_timer);
                 continue;
             }
 
