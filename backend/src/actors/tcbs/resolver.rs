@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use actix::prelude::*;
-#[cfg(not(feature = "python"))]
-use actix_web_prometheus::PrometheusMetrics;
-
 use log::error;
 use prometheus::{opts, IntCounterVec};
+
+#[cfg(not(feature = "python"))]
+use actix_web_prometheus::PrometheusMetrics;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -14,8 +14,11 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 use pyo3::types::{PyList, PyTuple};
 
+#[cfg(feature = "python")]
+use crate::actors::FUZZY_TRIGGER_THRESHOLD;
+
 use crate::actors::cron::CronResolver;
-use crate::actors::{GetVariableCommand, FUZZY_TRIGGER_THRESHOLD};
+use crate::actors::GetVariableCommand;
 use crate::algorithm::fuzzy::{Delegate, Format, Variables};
 
 use super::{GetOrderCommand, TcbsActor, TcbsError, UpdateVariablesCommand};
@@ -176,8 +179,7 @@ fn resolve_watching_tcbs_bid_ask_flow(
                                 Ok(val) => {
                                     inputs.insert(label.to_string(), val);
                                 }
-                                Err(e) => {
-                                    error!("Failed to get variable: {}", e);
+                                Err(_) => {
                                     status_counter.with_label_values(&["fail"]).inc();
                                     return;
                                 }
@@ -195,31 +197,27 @@ fn resolve_watching_tcbs_bid_ask_flow(
                     // Handle result and callback
                     match result {
                         Ok(result) => {
+                            #[cfg(feature = "python")]
                             if result == FUZZY_TRIGGER_THRESHOLD {
-                                #[cfg(feature = "python")]
-                                {
-                                    let orders = &response.data;
+                                let orders = &response.data;
 
-                                    Python::with_gil(|py| {
-                                        if let Some(callback) = task.pycallback() {
-                                            let args: Py<PyList> = PyList::new(
-                                                py,
-                                                orders
-                                                    .iter()
-                                                    .map(|order| {
-                                                        PyTuple::new(py, order.to_pytuple(py))
-                                                    })
-                                                    .collect::<Vec<_>>(),
-                                            )
-                                            .into();
+                                Python::with_gil(|py| {
+                                    if let Some(callback) = task.pycallback() {
+                                        let args: Py<PyList> = PyList::new(
+                                            py,
+                                            orders
+                                                .iter()
+                                                .map(|order| PyTuple::new(py, order.to_pytuple(py)))
+                                                .collect::<Vec<_>>(),
+                                        )
+                                        .into();
 
-                                            // Call Python callback
-                                            if let Err(e) = callback.call1(py, (args,)) {
-                                                e.print_and_set_sys_last_vars(py);
-                                            }
+                                        // Call Python callback
+                                        if let Err(e) = callback.call1(py, (args,)) {
+                                            e.print_and_set_sys_last_vars(py);
                                         }
-                                    });
-                                }
+                                    }
+                                });
                             }
                         }
                         Err(e) => {

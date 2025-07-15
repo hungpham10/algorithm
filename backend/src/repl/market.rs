@@ -10,6 +10,8 @@ use pyo3_polars::PyDataFrame;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use rayon::prelude::*;
+
 use crate::actors::dnse::{connect_to_dnse, GetOHCLCommand};
 use crate::actors::tcbs::{connect_to_tcbs, GetOrderCommand};
 use crate::actors::vps::{connect_to_vps, GetPriceCommand, Price};
@@ -471,7 +473,7 @@ pub fn profile(
     }?;
 
     let datapoints = symbols
-        .iter()
+        .par_iter()
         .filter_map(|symbol| {
             actix_rt::Runtime::new().unwrap().block_on(async {
                 let mapping = PROFILE_RESOLUTION.lock().unwrap();
