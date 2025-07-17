@@ -527,6 +527,116 @@ class ClassifyVolumeProfile:
             return None  # or raise a custom exception, e.g., raise ValueError("No high volume data found")
         return filtered_df.item()
 
+    def calculate_buy_sell_points(
+        self,
+        symbol,
+        shape,
+        current_price,
+        vah,
+        val,
+        poc_price,
+        divergence,
+        atr,
+        price_df,
+        trend_window=5,
+        use_divergence=False,
+    ):
+        """Calculate buy and sell price points for a given symbol."""
+        # Price range for fallback adjustment
+        price_range = (
+            vah - val if vah is not None and val is not None and vah > val else 1e-6
+        )
+        default_adjustment = 0.01 * price_range  # 1% of price range if ATR is too small
+
+        # Use ATR or default adjustment
+        atr_adjustment = atr if atr > 0 else default_adjustment
+        buy_adjustment = atr_adjustment * 0.5
+        sell_adjustment = atr_adjustment * 0.5
+
+        # Divergence adjustments
+        is_bullish_divergence = (use_divergence is False) or (
+            divergence is not None and "Bullish" in divergence
+        )
+        is_bearish_divergence = (use_divergence is False) or (
+            divergence is not None and "Bearish" in divergence
+        )
+
+        # @TODO: improve by calculate potential adjustment for each stock
+        if is_bullish_divergence:
+            buy_adjustment += (
+                atr_adjustment * 0.2
+            )  # Lower buy point for bullish divergence
+        if is_bearish_divergence:
+            sell_adjustment += (
+                atr_adjustment * 0.2
+            )  # Raise sell point for bearish divergence
+
+        # Trend direction
+        trend_strength = 0
+        if (
+            not price_df.is_empty()
+            and len(price_df) >= trend_window
+            and "Close" in price_df.columns
+        ):
+            recent_prices = price_df["Close"].tail(trend_window)
+            price_slope = (recent_prices[-1] - recent_prices[0]) / trend_window
+            trend_strength = price_slope / atr if atr > 0 else 0
+
+        buy_point = None
+        sell_point = None
+
+        if shape == "P-Shaped":
+            buy_point = val - buy_adjustment if val is not None else None
+            sell_point = (
+                vah + sell_adjustment
+                if is_bearish_divergence
+                else poc_price + sell_adjustment
+                if poc_price is not None
+                else None
+            )
+
+        elif shape == "b-Shaped":
+            buy_point = (
+                val - buy_adjustment
+                if is_bullish_divergence and val is not None
+                else None
+            )
+            sell_point = vah + sell_adjustment if vah is not None else None
+
+        elif shape == "D-Shaped":
+            buy_point = val - atr_adjustment * 0.3 if val is not None else None
+            sell_point = vah + atr_adjustment * 0.3 if vah is not None else None
+
+        elif shape == "B-Shaped":
+            buy_point = (
+                val - buy_adjustment
+                if is_bullish_divergence and val is not None
+                else None
+            )
+            sell_point = (
+                vah + sell_adjustment
+                if is_bearish_divergence and vah is not None
+                else None
+            )
+
+        elif shape == "I-Shaped":
+            buy_point = (
+                val - buy_adjustment if trend_strength > 0 and val is not None else None
+            )
+            sell_point = (
+                vah + sell_adjustment
+                if trend_strength < 0 and vah is not None
+                else None
+            )
+
+        # Ensure points are positive and reasonable
+        if buy_point is not None and buy_point <= 0:
+            buy_point = None
+        if sell_point is not None and sell_point <= 0:
+            sell_point = None
+
+        return {"buy_point": buy_point, "sell_point": sell_point}
+
     def analyze(
         self,
         symbols,
@@ -536,6 +646,7 @@ class ClassifyVolumeProfile:
         atr_period=1,
         volume_std_multiplier=1.5,
         trend_window=5,
+        use_divergence=False,
     ):
         """Run the full volume profile analysis pipeline with price_df aggregation.
 
@@ -616,33 +727,81 @@ class ClassifyVolumeProfile:
         # Create divergence DataFrame
         divergence_df = pl.DataFrame(divergence_results)
 
-        return (
+        # Calculate ATR for each symbol
+        atr_dict = {}
+        for symbol in symbols:
+            price_data = price_df.filter(pl.col("symbol") == symbol)
+            if not price_data.is_empty() and all(
+                col in price_data.columns for col in ["High", "Low", "Close"]
+            ):
+                atr_series = calculate_atr(price_data, atr_period)
+                if not atr_series.is_empty() and atr_series.null_count() < len(
+                    atr_series
+                ):
+                    last_atr = atr_series[-1]
+                    atr_dict[symbol] = last_atr if last_atr is not None else 0.01
+                else:
+                    atr_dict[symbol] = 0.01
+            else:
+                atr_dict[symbol] = 0.01
+
+        # Join all data
+        result_df = (
             shapes_df.join(
-                self.join_with_current_market(
-                    full_profile_df,
-                    market(symbols).select(["symbol", "price"]),
-                ),
+                self.join_with_current_market(full_profile_df, market_df),
                 on="symbol",
             )
-            .join(
-                poc_va_df,
-                on="symbol",
-            )
+            .join(poc_va_df, on="symbol")
             .join(divergence_df, on="symbol", how="left")
-            .select(
+        )
+
+        # Add buy_point and sell_point columns
+        result_df = result_df.with_columns(
+            pl.struct(
                 [
                     "symbol",
-                    "level",
+                    "shape",
                     "current_price",
                     "vah",
                     "val",
-                    "shape",
-                    "max_deviation_timestamp",
+                    "poc_price",
                     "divergence",
                 ]
             )
-            .rename({"level": "curent_price_at_level"})
+            .map_elements(
+                lambda row: self.calculate_buy_sell_points(
+                    symbol=row["symbol"],
+                    shape=row["shape"],
+                    current_price=row["current_price"],
+                    vah=row["vah"],
+                    val=row["val"],
+                    poc_price=row["poc_price"],
+                    divergence=row["divergence"],
+                    atr=atr_dict.get(row["symbol"], 0.01),
+                    price_df=price_df.filter(pl.col("symbol") == row["symbol"]),
+                    trend_window=trend_window,
+                    use_divergence=use_divergence,
+                ),
+                return_dtype=pl.Struct(
+                    {"buy_point": pl.Float64, "sell_point": pl.Float64}
+                ),
+            )
+            .struct.unnest()
         )
+
+        return result_df.select(
+            [
+                "symbol",
+                "level",
+                "current_price",
+                "vah",
+                "val",
+                "max_deviation_timestamp",
+                "shape",
+                "buy_point",
+                "sell_point",
+            ]
+        ).rename({"level": "current_price_at_level"})
 
     def plot_heatmap_with_candlestick(
         self, symbol, number_of_levels, overlap_days, excessive=1.1
