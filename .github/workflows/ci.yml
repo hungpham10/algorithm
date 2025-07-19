@@ -293,23 +293,26 @@ jobs:
       packages: write
     env:
       REGISTRY: ghcr.io
+      USERNAME: ${{ github.actor }}
+      PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       IMAGE_NAME: ${{ github.repository }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker with Colima
-        run: |
-          brew install colima docker
-          colima start --cpu 4 --memory 8
-          docker context use colima
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3.7.1
+        with:
+          install: true
+          driver-opts: |
+            image=moby/buildkit:master
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3.3.0
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ env.USERNAME }}
+          password: ${{ env.PASSWORD }}
 
       - name: Check Dockerfile existence
         run: |
@@ -324,9 +327,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=semver,pattern={{version}} # e.g., 0.1.0 or v0.1.0
+            type=semver,pattern={{major}}.{{minor}} # e.g., 0.1
+            type=raw,value=latest # Always tag as latest for releases
           labels: |
             org.opencontainers.image.title=Vietnamese Stock Data Mining
             org.opencontainers.image.description=Mining and analyzing Vietnamese stock data
@@ -334,13 +337,13 @@ jobs:
             org.opencontainers.image.version=${{ github.ref_name }}
 
       - name: Build and push Docker image
-        run: |
-          docker buildx create --use
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --tag ${{ steps.meta.outputs.tags }} \
-            --label ${{ steps.meta.outputs.labels }} \
-            --push \
-            --cache-from=type=gha,scope=${{ github.workflow }}-${{ github.job }} \
-            --cache-to=type=gha,mode=max,scope=${{ github.workflow }}-${{ github.job }} \
-            .
+        uses: docker/build-push-action@v6.9.0
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ github.workflow }}-${{ github.job }}
+          cache-to: type=gha,mode=max,scope=${{ github.workflow }}-${{ github.job }}
