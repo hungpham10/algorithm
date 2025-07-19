@@ -370,8 +370,6 @@ impl Variables {
         })?;
         let folder = Utc::now().format("%Y-%m-%d");
 
-        info!("{}", buffer.len());
-
         client
             .put_object()
             .bucket(bucket)
