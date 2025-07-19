@@ -71,9 +71,6 @@ impl Variables {
         );
     }
 
-    /// Creates a new time series variable with the specified name.
-    ///
-    /// Returns an error if the variable already exists. If S3 buffering is enabled, creation is only allowed before any updates have occurred and when the number of variables matches the number of buffers. Initializes both the time series and, if applicable, the buffer for the new variable.
     pub fn create(&mut self, name: &String) -> Result<(), RuleError> {
         if self.variables.contains_key(name) {
             return Err(RuleError {
@@ -161,9 +158,6 @@ impl Variables {
         Ok(ret)
     }
 
-    /// Retrieves a value from a variable's time series using an expression of the form `"variable[index]"`.
-    ///
-    /// Returns an error if the expression format is invalid, the variable does not exist, or the index is out of bounds.
     pub fn get_by_expr(&self, expr: &str) -> Result<f64, RuleError> {
         // Parse expression like "variable[index]"
         let parts: Vec<&str> = expr.split('[').collect();
@@ -188,9 +182,6 @@ impl Variables {
         })
     }
 
-    /// Retrieves the value at the specified index for a given variable.
-    ///
-    /// Returns an error if the variable does not exist or the index is out of bounds.
     pub fn get_by_index(&self, name: &str, index: usize) -> Result<f64, RuleError> {
         let buffer = self.variables.get(name).ok_or_else(|| RuleError {
             message: format!("Variable {} not found", name),
@@ -219,9 +210,6 @@ impl Variables {
         self.variables.keys().collect()
     }
 
-    /// Removes all stored values for the specified variable.
-    ///
-    /// Returns an error if the variable does not exist.
     pub fn clear(&mut self, name: &str) -> Result<(), RuleError> {
         let buffer = self.variables.get_mut(name).ok_or_else(|| RuleError {
             message: format!("Variable {} not found", name),
@@ -276,10 +264,10 @@ impl Variables {
         let scopes: Vec<String> = self.mapping.keys().map(|s| s.to_string()).collect();
 
         for scope in &scopes {
-            self.flush(scope).await?;
+            self.flush(scope).await?
         }
         if scopes.len() == 0 {
-            self.flush(DEFAULT_SCOPE).await?;
+            self.flush(DEFAULT_SCOPE).await?
         }
         Ok(())
     }
@@ -290,13 +278,9 @@ impl Variables {
         }
 
         let buffer = self.prepare_flushing(&scope.to_string())?;
-
         self.do_flushing(buffer, &scope.to_string()).await
     }
 
-    /// Updates the buffer for the specified variable at the current counter index with a new value.
-    ///
-    /// Returns an error if the buffer for the given variable does not exist. Increments the global update counter after the update.
     fn update_buffer(&mut self, name: &str, value: f64) -> Result<(), RuleError> {
         let buffer = self.buffers.get_mut(name).ok_or_else(|| RuleError {
             message: format!("Buffer {} not found", name),
@@ -306,9 +290,6 @@ impl Variables {
         Ok(())
     }
 
-    /// Inserts a new value at the front of the specified variable's time series, removing the oldest value if the series is full.
-    ///
-    /// Returns the updated length of the variable's time series. Returns an error if the variable does not exist.
     fn update_variable(&mut self, name: &str, value: f64) -> Result<usize, RuleError> {
         let variable = self.variables.get_mut(name).ok_or_else(|| RuleError {
             message: format!("Variable {} not found", name),
@@ -324,15 +305,6 @@ impl Variables {
         Ok(variable.len())
     }
 
-    /// Serializes buffered variable data to Parquet format and uploads it to the configured S3 bucket.
-    ///
-    /// Converts all variable buffers into an Apache Arrow `RecordBatch`, writes the batch to an in-memory Parquet file,
-    /// and uploads the file to S3 using a timestamped key. Resets the update counter after a successful upload.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the S3 client, bucket, or variable name is not configured, or if any step in batch creation,
-    /// Parquet writing, or S3 upload fails.
     fn prepare_flushing(&mut self, scope: &String) -> Result<Vec<u8>, RuleError> {
         let scope = self.get_scope_columns(scope);
 
@@ -397,6 +369,8 @@ impl Variables {
             message: "Bucket name not set".to_string(),
         })?;
         let folder = Utc::now().format("%Y-%m-%d");
+
+        info!("{}", buffer.len());
 
         client
             .put_object()

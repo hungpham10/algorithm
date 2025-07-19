@@ -128,24 +128,35 @@ impl VpsActor {
         }
     }
 
-    async fn flush_variables(variables: Arc<Mutex<Variables>>, stocks: &[String]) -> bool {
+    async fn flush_variables(
+        variables: Arc<Mutex<Variables>>,
+        stocks: &[String],
+    ) -> Result<(), ActorError> {
         match variables.lock() {
             Ok(mut vars) => {
-                let mut status = true;
+                let mut error = None;
 
                 for sym in stocks {
-                    if let Err(_) = vars.flush(sym).await {
-                        status = false;
+                    if let Err(error_while_flush) = vars.flush(sym).await {
+                        error = Some(ActorError {
+                            message: error_while_flush.message,
+                        });
                     }
 
-                    if !status {
+                    if error.is_some() {
                         break;
                     }
                 }
 
-                status
+                if let Some(error) = error {
+                    Err(error)
+                } else {
+                    Ok(())
+                }
             }
-            Err(_) => false,
+            Err(error) => Err(ActorError {
+                message: format!("{}", error),
+            }),
         }
     }
 
@@ -227,7 +238,7 @@ impl Handler<UpdateStocksCommand> for VpsActor {
 }
 
 impl Handler<FlushVariablesCommand> for VpsActor {
-    type Result = ResponseFuture<bool>;
+    type Result = ResponseFuture<Result<(), ActorError>>;
 
     fn handle(&mut self, _: FlushVariablesCommand, _: &mut Self::Context) -> Self::Result {
         let variables = self.variables.clone();

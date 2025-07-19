@@ -36,7 +36,7 @@ pub struct UpdateStocksCommand {
 }
 
 #[derive(Message, Debug)]
-#[rtype(result = "bool")]
+#[rtype(result = "Result<(), ActorError>")]
 pub struct FlushVariablesCommand;
 
 #[derive(Message)]
