@@ -160,13 +160,15 @@ async fn flush(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
     let tcbs = appstate.tcbs.clone();
     let vps = appstate.vps.clone();
 
-    tcbs.send(FlushVariablesCommand)
-        .await
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?;
-    vps.send(FlushVariablesCommand)
-        .await
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?;
-    Ok(HttpResponse::Ok().body("ok"))
+    match tcbs.send(FlushVariablesCommand).await {
+        Ok(Ok(_)) => match vps.send(FlushVariablesCommand).await {
+            Ok(Ok(_)) => Ok(HttpResponse::Ok().body("ok")),
+            Ok(Err(error)) => Ok(HttpResponse::BadRequest().body(format!("{}", error))),
+            Err(error) => Ok(HttpResponse::BadRequest().body(format!("{}", error))),
+        },
+        Ok(Err(error)) => Ok(HttpResponse::BadRequest().body(format!("{}", error))),
+        Err(error) => Ok(HttpResponse::BadRequest().body(format!("{}", error))),
+    }
 }
 
 #[actix_rt::main]

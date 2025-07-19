@@ -160,7 +160,7 @@ impl Handler<UpdateStocksCommand> for TcbsActor {
 }
 
 impl Handler<FlushVariablesCommand> for TcbsActor {
-    type Result = ResponseFuture<bool>;
+    type Result = ResponseFuture<Result<(), ActorError>>;
 
     fn handle(&mut self, _: FlushVariablesCommand, _: &mut Self::Context) -> Self::Result {
         let variables = self.variables.clone();
@@ -169,21 +169,29 @@ impl Handler<FlushVariablesCommand> for TcbsActor {
         Box::pin(async move {
             match variables.lock() {
                 Ok(mut vars) => {
-                    let mut status = true;
+                    let mut error = None;
 
                     for sym in stocks {
-                        if let Err(_) = vars.flush(sym.as_str()).await {
-                            status = false;
+                        if let Err(error_while_flush) = vars.flush(sym.as_str()).await {
+                            error = Some(ActorError {
+                                message: error_while_flush.message,
+                            });
                         }
 
-                        if !status {
+                        if error.is_some() {
                             break;
                         }
                     }
 
-                    status
+                    if let Some(error) = error {
+                        Err(error)
+                    } else {
+                        Ok(())
+                    }
                 }
-                Err(_) => false,
+                Err(error) => Err(ActorError {
+                    message: format!("{}", error),
+                }),
             }
         })
     }
