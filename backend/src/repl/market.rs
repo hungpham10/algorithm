@@ -50,6 +50,16 @@ lazy_static! {
         m.insert("1W".to_string(), "4H".to_string());
         Mutex::new(m)
     };
+    static ref PRICE_PROVIDER: Mutex<String> = { Mutex::new("ssi".to_string()) };
+}
+
+pub fn configure_price_provider(provider: &String) -> PyResult<()> {
+    let mut guard = PRICE_PROVIDER
+        .lock()
+        .map_err(|e| PyRuntimeError::new_err(format!("lock PRICE_PROVIDER got error: {:?}", e)))?;
+
+    *guard = provider.clone();
+    Ok(())
 }
 
 pub fn configure_profile_resolution(key: &String, value: &String) -> PyResult<()> {
@@ -344,7 +354,8 @@ pub fn price(
     let datapoints = actix_rt::Runtime::new()
         .unwrap()
         .block_on(async {
-            let actor = connect_to_price();
+            let provider = PRICE_PROVIDER.lock().unwrap();
+            let actor = connect_to_price(&provider);
 
             actor
                 .send(GetOHCLCommand {
@@ -403,8 +414,9 @@ pub fn heatmap(
     }?;
 
     let profiles = actix_rt::Runtime::new().unwrap().block_on(async {
+        let provider = PRICE_PROVIDER.lock().unwrap();
         let mapping = PROFILE_RESOLUTION.lock().unwrap();
-        let actor = connect_to_price();
+        let actor = connect_to_price(&provider);
 
         let candles = actor
             .send(GetOHCLCommand {
@@ -476,8 +488,9 @@ pub fn profile(
         .par_iter()
         .filter_map(|symbol| {
             actix_rt::Runtime::new().unwrap().block_on(async {
+                let provider = PRICE_PROVIDER.lock().unwrap();
                 let mapping = PROFILE_RESOLUTION.lock().unwrap();
-                let actor = connect_to_price();
+                let actor = connect_to_price(&provider);
 
                 let candles = actor
                     .send(GetOHCLCommand {
@@ -566,7 +579,8 @@ pub fn history(symbols: Vec<String>, resolution: String, lookback: i64) -> PyRes
         .iter()
         .map(|symbol| {
             actix_rt::Runtime::new().unwrap().block_on(async {
-                let actor = connect_to_price();
+                let provider = PRICE_PROVIDER.lock().unwrap();
+                let actor = connect_to_price(&provider);
 
                 actor
                     .send(GetOHCLCommand {

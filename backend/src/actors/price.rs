@@ -323,6 +323,6 @@ pub fn list_of_resolution() -> Vec<String> {
     vec!["1D".to_string(), "1M".to_string(), "1W".to_string()]
 }
 
-pub fn connect_to_price() -> Addr<PriceActor> {
-    PriceActor::new("ssi").start()
+pub fn connect_to_price(provider: &str) -> Addr<PriceActor> {
+    PriceActor::new(provider).start()
 }
