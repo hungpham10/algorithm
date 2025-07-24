@@ -90,6 +90,62 @@ impl Variables {
         ))
     }
 
+    pub async fn list_from_s3(&self, scope: &str, date: &str) -> Result<Vec<i64>, RuleError> {
+        let client = self.s3_client.as_ref().ok_or_else(|| RuleError {
+            message: "S3 client not initialized".to_string(),
+        })?;
+        let bucket = self.s3_bucket.as_ref().ok_or_else(|| RuleError {
+            message: "Bucket name not set".to_string(),
+        })?;
+
+        let response = client
+            .list_objects_v2()
+            .bucket(bucket)
+            .prefix(date)
+            .send()
+            .await
+            .map_err(|e| RuleError {
+                message: format!("Failed to list S3 objects: {}", e),
+            })?;
+
+        if let Some(contents) = response.contents {
+            let timestamps = contents
+                .iter()
+                .filter_map(|obj| {
+                    obj.key.as_ref().and_then(|key| {
+                        let parts: Vec<&str> = key.split('/').collect();
+
+                        if parts.len() > 1 {
+                            let filename = parts.last()?;
+
+                            if filename.contains(scope) {
+                                let timestamp_str =
+                                    filename.split('-').last()?.split('.').next()?;
+                                timestamp_str.parse::<i64>().ok()
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            if timestamps.is_empty() {
+                Err(RuleError {
+                    message: format!("No valid timestamps found for scope '{}' in folder", scope),
+                })
+            } else {
+                Ok(timestamps)
+            }
+        } else {
+            Err(RuleError {
+                message: format!("Folder is empty or deleted"),
+            })
+        }
+    }
+
     pub async fn read_from_s3(
         &mut self,
         scope: &str,
