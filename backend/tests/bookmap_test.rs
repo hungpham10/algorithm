@@ -128,10 +128,16 @@ async fn test_function_map() {
         Some("https://k1x0.or1.idrivee2-72.com"),
     )
     .await;
-    for timestamp in vars.list_from_s3("BCM", "2025-07-23").await.unwrap() {
-        let (mut reader, num_of_rows) = vars.read_from_s3("BCM", timestamp).await.unwrap();
+    let symbol = "BCM".to_string();
 
-        let symbol = "BCM".to_string();
+    for timestamp in vars
+        .list_from_s3(symbol.as_str(), "2025-07-23")
+        .await
+        .unwrap()
+    {
+        let (mut reader, num_of_rows) =
+            vars.read_from_s3(symbol.as_str(), timestamp).await.unwrap();
+
         replay(&mut reader, num_of_rows, &symbol, &rule)
             .await
             .unwrap();
