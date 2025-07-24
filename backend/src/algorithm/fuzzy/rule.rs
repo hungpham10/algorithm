@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
+use log::{debug, error};
+
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
@@ -55,17 +57,17 @@ pub struct ExprTree {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "python", derive(FromPyObject))]
 pub struct Pin {
-    name: String,
-    value: Option<f64>,
-    nested: Option<Expression>,
-    threshold: Option<f64>,
+    pub name: String,
+    pub value: Option<f64>,
+    pub nested: Option<Expression>,
+    pub threshold: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "python", derive(FromPyObject))]
 pub struct Expression {
-    operator: String,
-    pins: Vec<Pin>,
+    pub operator: String,
+    pub pins: Vec<Pin>,
 }
 
 impl ExprTree {
@@ -128,26 +130,41 @@ impl ExprTree {
 
     fn update(&self, name: &String, value: f64) -> bool {
         if let Some(index) = self.mapping.get(name) {
-            let mut inode = 0;
+            let mut ivalue = 0;
 
             for (iarg, slot) in self.slots.iter().enumerate() {
-                if inode == *index && self.labels.get(iarg).unwrap() == name {
+                if iarg == *index && self.labels.get(iarg).unwrap() == name {
                     let mut values = self.values.borrow_mut();
 
-                    if *index < values.len() {
-                        values[*index] = value;
+                    if ivalue < values.len() {
+                        values[ivalue] = value;
                         return true;
+                    } else {
+                        error!(
+                            "Fail to setup {}, should smaller than {}",
+                            ivalue,
+                            values.len()
+                        );
                     }
-                    return false;
                 }
 
-                if *slot {
-                    inode += 1;
+                if !*slot {
+                    ivalue += 1;
                 }
             }
-        }
 
-        false
+            false
+        } else {
+            let mut ret = false;
+
+            for optree in &self.nodes {
+                if optree.update(name, value) {
+                    ret = true;
+                }
+            }
+
+            ret
+        }
     }
 }
 
@@ -213,6 +230,8 @@ impl Rule {
         for (label, value) in inputs {
             if self.optree.update(label, *value) {
                 cnt += 1;
+            } else {
+                error!("Reload {} with value {} failed", label, value);
             }
         }
 
@@ -250,8 +269,12 @@ impl Rule {
                         output.slots.push(true);
 
                         match Self::build_expression_nested_tree(functions, nested) {
-                            Ok(tree) => output.nodes.push(tree),
-                            Err(error) => return Err(error),
+                            Ok(tree) => {
+                                output.nodes.push(tree);
+                            }
+                            Err(error) => {
+                                return Err(error);
+                            }
                         }
                     }
                     None => {
@@ -277,7 +300,7 @@ impl Rule {
             Ok(output)
         } else {
             Err(RuleError {
-                message: "Not implemented".to_string(),
+                message: format!("Not implemented operator `{}`", expression.operator),
             })
         }
     }

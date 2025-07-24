@@ -34,13 +34,13 @@ RUN apt update 																	&& \
 RUN mkdir -p /etc/supervisor/conf.d
 
 # Copy supervisor configuration files
-COPY supervisord.conf /etc/supervisor/supervisord.conf
+COPY conf/supervisord.conf /etc/supervisor/supervisord.conf
 
 # Create directory for Grafana Agent configuration
 RUN mkdir -p /etc/grafana-agent
 
 # Copy Grafana Agent configuration
-COPY grafana-agent.yaml /etc/grafana-agent/config.yaml.shenv
+COPY conf/grafana-agent.yaml /etc/grafana-agent/config.yaml.shenv
 
 ENTRYPOINT ["/app/endpoint.sh", "/usr/bin/supervisord", "/sql"]
 EXPOSE 8000

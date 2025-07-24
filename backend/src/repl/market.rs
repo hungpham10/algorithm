@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 use rayon::prelude::*;
 
-use crate::actors::dnse::{connect_to_dnse, GetOHCLCommand};
+use crate::actors::price::{connect_to_price, GetOHCLCommand};
 use crate::actors::tcbs::{connect_to_tcbs, GetOrderCommand};
 use crate::actors::vps::{connect_to_vps, GetPriceCommand, Price};
 use crate::actors::{list_cw, list_futures, list_of_industry, list_of_vn100, list_of_vn30};
@@ -344,7 +344,7 @@ pub fn price(
     let datapoints = actix_rt::Runtime::new()
         .unwrap()
         .block_on(async {
-            let actor = connect_to_dnse();
+            let actor = connect_to_price();
 
             actor
                 .send(GetOHCLCommand {
@@ -404,7 +404,7 @@ pub fn heatmap(
 
     let profiles = actix_rt::Runtime::new().unwrap().block_on(async {
         let mapping = PROFILE_RESOLUTION.lock().unwrap();
-        let actor = connect_to_dnse();
+        let actor = connect_to_price();
 
         let candles = actor
             .send(GetOHCLCommand {
@@ -477,7 +477,7 @@ pub fn profile(
         .filter_map(|symbol| {
             actix_rt::Runtime::new().unwrap().block_on(async {
                 let mapping = PROFILE_RESOLUTION.lock().unwrap();
-                let actor = connect_to_dnse();
+                let actor = connect_to_price();
 
                 let candles = actor
                     .send(GetOHCLCommand {
@@ -566,7 +566,7 @@ pub fn history(symbols: Vec<String>, resolution: String, lookback: i64) -> PyRes
         .iter()
         .map(|symbol| {
             actix_rt::Runtime::new().unwrap().block_on(async {
-                let actor = connect_to_dnse();
+                let actor = connect_to_price();
 
                 actor
                     .send(GetOHCLCommand {

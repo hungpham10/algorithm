@@ -1,9 +1,13 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fs::File;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
+use parquet::arrow::arrow_reader::ParquetRecordBatchReader;
+use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::ArrowWriter;
 use parquet::basic::{Compression, ZstdLevel};
 use parquet::file::properties::{WriterProperties, WriterVersion};
@@ -64,6 +68,76 @@ impl Variables {
         vars
     }
 
+    pub async fn read_from_fs(
+        &mut self,
+        file_path: &str,
+    ) -> Result<(ParquetRecordBatchReader, i64), RuleError> {
+        let file = File::open(&file_path).map_err(|e| RuleError {
+            message: format!("Failed to open file {}: {}", file_path, e),
+        })?;
+
+        let builder = ParquetRecordBatchReaderBuilder::try_new(file).map_err(|e| RuleError {
+            message: format!("Failed to create builder: {}", e),
+        })?;
+
+        let num_of_rows = builder.metadata().file_metadata().num_rows();
+
+        Ok((
+            builder.build().map_err(|e| RuleError {
+                message: format!("Failed to create reader: {}", e),
+            })?,
+            num_of_rows,
+        ))
+    }
+
+    pub async fn read_from_s3(
+        &mut self,
+        scope: &str,
+        timestamp_millis: i64,
+    ) -> Result<(ParquetRecordBatchReader, i64), RuleError> {
+        let client = self.s3_client.as_ref().ok_or_else(|| RuleError {
+            message: "S3 client not initialized".to_string(),
+        })?;
+        let bucket = self.s3_bucket.as_ref().ok_or_else(|| RuleError {
+            message: "Bucket name not set".to_string(),
+        })?;
+        let folder = DateTime::<Utc>::from_timestamp(timestamp_millis / 1000, 0)
+            .unwrap()
+            .format("%Y-%m-%d")
+            .to_string();
+
+        let scope = scope.to_string();
+        let response = client
+            .get_object()
+            .bucket(bucket)
+            .key(&self.name_of_parquet(&folder, &scope, timestamp_millis)?)
+            .send()
+            .await
+            .map_err(|e| RuleError {
+                message: format!("Failed to get from S3: {}", e),
+            })?;
+
+        let bytes = response
+            .body
+            .collect()
+            .await
+            .map_err(|e| RuleError {
+                message: format!("Failed to collect S3 object to bytes: {}", e),
+            })?
+            .into_bytes();
+        let builder = ParquetRecordBatchReaderBuilder::try_new(bytes).map_err(|e| RuleError {
+            message: format!("Failed to create builder: {}", e),
+        })?;
+        let num_of_rows = builder.metadata().file_metadata().num_rows();
+
+        Ok((
+            builder.build().map_err(|e| RuleError {
+                message: format!("Failed to create reader: {}", e),
+            })?,
+            num_of_rows,
+        ))
+    }
+
     pub fn scope(&mut self, name: &str, columns: &[String]) {
         self.mapping.insert(
             name.to_string(),
@@ -117,9 +191,20 @@ impl Variables {
         name: &String,
         value: f64,
     ) -> Result<usize, RuleError> {
+        self.update_with_controlled_flushing(scope, name, value, true)
+            .await
+    }
+
+    async fn update_with_controlled_flushing(
+        &mut self,
+        scope: &String,
+        name: &String,
+        value: f64,
+        use_s3_flushing: bool,
+    ) -> Result<usize, RuleError> {
         let ret = self.update_variable(name, value).map_err(|e| e)?;
 
-        if !self.s3_client.is_none() {
+        if use_s3_flushing && !self.s3_client.is_none() {
             let mut count_row_of_buffer: Option<i32> = None;
             let mut is_full_fill = true;
 
@@ -295,12 +380,10 @@ impl Variables {
             message: format!("Variable {} not found", name),
         })?;
 
-        // Remove oldest value if variable is full
         if variable.len() >= self.variables_size {
             variable.pop_back();
         }
 
-        // Add new value at front (most recent)
         variable.push_front(value);
         Ok(variable.len())
     }
@@ -358,28 +441,35 @@ impl Variables {
         Ok(buffer)
     }
 
+    fn name_of_parquet(
+        &self,
+        folder: &String,
+        scope: &String,
+        timestamp_millis: i64,
+    ) -> Result<String, RuleError> {
+        let name = self.s3_name.as_ref().ok_or_else(|| RuleError {
+            message: "Variable name not set".to_string(),
+        })?;
+
+        Ok(format!(
+            "{}/{}-{}-{}.parquet",
+            folder, name, scope, timestamp_millis,
+        ))
+    }
+
     async fn do_flushing(&mut self, buffer: Vec<u8>, scope: &String) -> Result<(), RuleError> {
         let client = self.s3_client.as_ref().ok_or_else(|| RuleError {
             message: "S3 client not initialized".to_string(),
         })?;
-        let name = self.s3_name.as_ref().ok_or_else(|| RuleError {
-            message: "Variable name not set".to_string(),
-        })?;
         let bucket = self.s3_bucket.as_ref().ok_or_else(|| RuleError {
             message: "Bucket name not set".to_string(),
         })?;
-        let folder = Utc::now().format("%Y-%m-%d");
+        let folder = Utc::now().format("%Y-%m-%d").to_string();
 
         client
             .put_object()
             .bucket(bucket)
-            .key(&format!(
-                "{}/{}-{}-{}.parquet",
-                folder,
-                name,
-                scope,
-                Utc::now().timestamp_millis()
-            ))
+            .key(&self.name_of_parquet(&folder, scope, Utc::now().timestamp_millis())?)
             .body(buffer.into())
             .send()
             .await

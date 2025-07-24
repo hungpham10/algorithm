@@ -68,3 +68,7 @@ log = "0.4.22"
 dotenvy = "0.15.7"
 env_logger = "0.8.2"
 actix-web = "4.3.1"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+tokio = { version = "1.26.0", features = ["full", "test-util"] } # Thêm test-util cho test

@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use std::error::Error;
-use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -98,18 +96,6 @@ impl Price {
         ]
     }
 }
-#[derive(Debug, Clone)]
-pub struct VpsError {
-    pub message: String,
-}
-
-impl fmt::Display for VpsError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl Error for VpsError {}
 
 pub struct VpsActor {
     variables: Arc<Mutex<Variables>>,
@@ -249,11 +235,11 @@ impl Handler<FlushVariablesCommand> for VpsActor {
 }
 
 #[derive(Message, Debug)]
-#[rtype(result = "Result<Vec<Price>, VpsError>")]
+#[rtype(result = "Result<Vec<Price>, ActorError>")]
 pub struct GetPriceCommand;
 
 impl Handler<GetPriceCommand> for VpsActor {
-    type Result = ResponseFuture<Result<Vec<Price>, VpsError>>;
+    type Result = ResponseFuture<Result<Vec<Price>, ActorError>>;
 
     fn handle(&mut self, _msg: GetPriceCommand, _: &mut Self::Context) -> Self::Result {
         let stocks = self.stocks.clone();
@@ -263,7 +249,7 @@ impl Handler<GetPriceCommand> for VpsActor {
     }
 }
 
-async fn fetch_price_depth(stocks: &Vec<String>, timeout: u64) -> Result<Vec<Price>, VpsError> {
+async fn fetch_price_depth(stocks: &Vec<String>, timeout: u64) -> Result<Vec<Price>, ActorError> {
     let retry_policy = ExponentialBackoff::builder().build_with_max_retries(5);
     let client = Arc::new(
         ClientBuilder::new(reqwest::Client::new())
@@ -281,7 +267,7 @@ async fn fetch_price_depth(stocks: &Vec<String>, timeout: u64) -> Result<Vec<Pri
             .map(move |block| fetch_price_depth_per_block(client.clone(), block, timeout)),
     )
     .await
-    .map_err(|e| VpsError {
+    .map_err(|e| ActorError {
         message: format!("{:?}", e),
     })?
     .into_iter()
@@ -293,7 +279,7 @@ async fn fetch_price_depth_per_block(
     client: Arc<HttpClient>,
     block: &Vec<String>,
     timeout: u64,
-) -> Result<Vec<Price>, VpsError> {
+) -> Result<Vec<Price>, ActorError> {
     let resp = client
         .get(format!(
             "https://bgapidatafeed.vps.com.vn/getliststockdata/{}",
@@ -306,24 +292,24 @@ async fn fetch_price_depth_per_block(
     match resp {
         Ok(resp) => match resp.json::<Vec<Price>>().await {
             Ok(resp) => Ok(resp),
-            Err(error) => Err(VpsError {
+            Err(error) => Err(ActorError {
                 message: format!("{:?}", error),
             }),
         },
-        Err(error) => Err(VpsError {
+        Err(error) => Err(ActorError {
             message: format!("{:?}", error),
         }),
     }
 }
 
 #[derive(Message)]
-#[rtype(result = "Result<HashMap<String, usize>, VpsError>")]
+#[rtype(result = "Result<HashMap<String, usize>, ActorError>")]
 pub struct UpdateVariablesCommand {
     pub prices: Vec<Price>,
 }
 
 impl Handler<UpdateVariablesCommand> for VpsActor {
-    type Result = ResponseFuture<Result<HashMap<String, usize>, VpsError>>;
+    type Result = ResponseFuture<Result<HashMap<String, usize>, ActorError>>;
 
     fn handle(&mut self, msg: UpdateVariablesCommand, _: &mut Self::Context) -> Self::Result {
         let variables = self.variables.clone();
