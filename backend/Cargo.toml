@@ -13,7 +13,7 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-python = ["pyo3", "pyo3-asyncio", "pyo3-polars", "polars", "numpy"]
+python = ["pyo3", "pyo3-asyncio", "pyo3-polars", "polars", "numpy", "env_logger"]
 
 [dependencies]
 # Data modeling
@@ -67,6 +67,7 @@ log = "0.4.22"
 # Web application
 dotenvy = "0.15.7"
 actix-web = "4.3.1"
+env_logger = { version = "0.8.2", optional = true }
 tracing-subscriber = { version = "0.3.16", features = ["json"] }
 
 [dev-dependencies]
