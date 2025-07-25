@@ -174,7 +174,7 @@ async fn flush(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
-    env_logger::init();
+    tracing_subscriber::fmt().json().init();
 
     // @NOTE: server configuration
     let host = std::env::var("SERVER_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());

@@ -61,12 +61,7 @@ impl Function for Bookmap {
 async fn test_function_map() {
     dotenvy::dotenv().ok();
 
-    let _ = env_logger::builder()
-        .is_test(true) // Configure logger for test environment
-        .try_init(); // Initialize the logger
-
     let bookmap = Arc::new(Bookmap::new());
-
     let rule = Delegate::new()
         .add("bookmap", bookmap.clone() as Arc<dyn Function>)
         .build(
