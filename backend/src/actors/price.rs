@@ -254,9 +254,13 @@ pub async fn fetch_ohcl_by_stock(
                             },
                         })
                     }
-                }
 
-                Ok(candles)
+                    Ok(candles)
+                } else {
+                    Err(ActorError {
+                        message: format!("cannot fetch any data from provider"),
+                    })
+                }
             }
             Err(error) => Err(ActorError {
                 message: format!("{}", error),
@@ -308,9 +312,13 @@ pub async fn fetch_ohcl_by_stock(
                             },
                         })
                     }
-                }
 
-                Ok(candles)
+                    Ok(candles)
+                } else {
+                    Err(ActorError {
+                        message: format!("cannot fetch any data from provider"),
+                    })
+                }
             }
             Err(error) => Err(ActorError {
                 message: format!("{}", error),

@@ -66,8 +66,8 @@ log = "0.4.22"
 
 # Web application
 dotenvy = "0.15.7"
-env_logger = "0.8.2"
 actix-web = "4.3.1"
+tracing-subscriber = { version = "0.3.16", features = ["json"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
