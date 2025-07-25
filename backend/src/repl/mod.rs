@@ -35,6 +35,7 @@ fn core(_: Python, m: &PyModule) -> PyResult<()> {
 fn configure(table: String, key: String, value: String) -> PyResult<()> {
     match table.as_str() {
         "PROFILE_RESOLUTION" => market::configure_profile_resolution(&key, &value),
+        "PRICE_PROVIDER" => market::configure_price_provider(&key),
         _ => Err(PyRuntimeError::new_err(format!(
             "Not support table {}",
             table

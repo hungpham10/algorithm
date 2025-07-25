@@ -1,6 +1,4 @@
 use std::collections::HashSet;
-use std::error::Error;
-use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -27,22 +25,6 @@ use crate::algorithm::fuzzy::Variables;
 
 #[cfg(not(feature = "python"))]
 use super::monitor::monitor_order_flow;
-
-#[derive(Debug, Clone)]
-pub struct TcbsError {
-    pub message: String,
-}
-
-impl fmt::Display for TcbsError {
-    /// Formats the error message for display.
-    ///
-    /// This method writes the contained error message to the given formatter.
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl Error for TcbsError {}
 
 pub struct TcbsActor {
     stocks: Vec<String>,
@@ -295,7 +277,7 @@ async fn fetch_order_per_stock(
     timeout: u64,
     page: usize,
     page_size: usize,
-) -> Result<OrderResponse, TcbsError> {
+) -> Result<OrderResponse, ActorError> {
     let kind = if futures.contains(stock) {
         "futures"
     } else {
@@ -325,11 +307,11 @@ async fn fetch_order_per_stock(
                 data: resp.data.iter().rev().map(|d| d.clone()).collect(),
                 d: resp.d,
             }),
-            Err(err) => Err(TcbsError {
+            Err(err) => Err(ActorError {
                 message: format!("{:?}", err),
             }),
         },
-        Err(err) => Err(TcbsError {
+        Err(err) => Err(ActorError {
             message: format!("{:?}", err),
         }),
     }
@@ -408,7 +390,7 @@ async fn fetch_balance_sheet_per_stock(
     client: Arc<HttpClient>,
     stock: &String,
     timeout: u64,
-) -> Result<Vec<BalanceSheet>, TcbsError> {
+) -> Result<Vec<BalanceSheet>, ActorError> {
     let resp = client.get(format!(
             "https://apipubaws.tcbs.com.vn/tcanalysis/v1/finance/{}/balancesheet?yearly=0&isAll=true",
             stock,
@@ -420,11 +402,11 @@ async fn fetch_balance_sheet_per_stock(
     match resp {
         Ok(resp) => match resp.json::<Vec<BalanceSheet>>().await {
             Ok(resp) => Ok(resp),
-            Err(err) => Err(TcbsError {
+            Err(err) => Err(ActorError {
                 message: format!("{:?}", err),
             }),
         },
-        Err(err) => Err(TcbsError {
+        Err(err) => Err(ActorError {
             message: format!("{:?}", err),
         }),
     }
@@ -490,7 +472,7 @@ async fn fetch_income_statement_per_stock(
     client: Arc<HttpClient>,
     stock: &String,
     timeout: u64,
-) -> Result<Vec<IncomeStatement>, TcbsError> {
+) -> Result<Vec<IncomeStatement>, ActorError> {
     let resp = client.get(format!(
             "https://apipubaws.tcbs.com.vn/tcanalysis/v1/finance/{}/incomestatement?yearly=0&isAll=true",
             stock,
@@ -502,11 +484,11 @@ async fn fetch_income_statement_per_stock(
     match resp {
         Ok(resp) => match resp.json::<Vec<IncomeStatement>>().await {
             Ok(resp) => Ok(resp),
-            Err(err) => Err(TcbsError {
+            Err(err) => Err(ActorError {
                 message: format!("{:?}", err),
             }),
         },
-        Err(err) => Err(TcbsError {
+        Err(err) => Err(ActorError {
             message: format!("{:?}", err),
         }),
     }
@@ -555,7 +537,7 @@ async fn fetch_cash_flow_per_stock(
     client: Arc<HttpClient>,
     stock: &String,
     timeout: u64,
-) -> Result<Vec<CashFlow>, TcbsError> {
+) -> Result<Vec<CashFlow>, ActorError> {
     let resp = client
         .get(format!(
             "https://apipubaws.tcbs.com.vn/tcanalysis/v1/finance/{}/cashflow?yearly=0&isAll=true",
@@ -568,25 +550,25 @@ async fn fetch_cash_flow_per_stock(
     match resp {
         Ok(resp) => match resp.json::<Vec<CashFlow>>().await {
             Ok(resp) => Ok(resp),
-            Err(err) => Err(TcbsError {
+            Err(err) => Err(ActorError {
                 message: format!("{:?}", err),
             }),
         },
-        Err(err) => Err(TcbsError {
+        Err(err) => Err(ActorError {
             message: format!("{:?}", err),
         }),
     }
 }
 
 #[derive(Message, Debug)]
-#[rtype(result = "Result<bool, TcbsError>")]
+#[rtype(result = "Result<bool, ActorError>")]
 pub struct SetAlertCommand {
     stock: String,
     price: f64,
 }
 
 impl Handler<SetAlertCommand> for TcbsActor {
-    type Result = ResponseFuture<Result<bool, TcbsError>>;
+    type Result = ResponseFuture<Result<bool, ActorError>>;
 
     fn handle(&mut self, msg: SetAlertCommand, _: &mut Self::Context) -> Self::Result {
         let stock = msg.stock.clone();
@@ -653,7 +635,7 @@ async fn set_alert(
     token: &String,
     price: f64,
     timeout: u64,
-) -> Result<bool, TcbsError> {
+) -> Result<bool, ActorError> {
     let resp = client
         .post("https://apiextaws.tcbs.com.vn/ligo/v1/warning")
         .timeout(Duration::from_secs(timeout))
@@ -684,16 +666,16 @@ async fn set_alert(
                 if resp.status == 200 {
                     Ok(resp.data.enable)
                 } else {
-                    Err(TcbsError {
+                    Err(ActorError {
                         message: format!("code {}: {:?}", resp.status, resp.message),
                     })
                 }
             }
-            Err(err) => Err(TcbsError {
+            Err(err) => Err(ActorError {
                 message: format!("{:?}", err),
             }),
         },
-        Err(err) => Err(TcbsError {
+        Err(err) => Err(ActorError {
             message: format!("{:?}", err),
         }),
     }
@@ -719,7 +701,7 @@ impl Handler<GetVariableCommand> for TcbsActor {
 }
 
 #[derive(Message)]
-#[rtype(result = "Result<usize, TcbsError>")]
+#[rtype(result = "Result<usize, ActorError>")]
 pub struct UpdateVariablesCommand {
     pub orders: Vec<Order>,
     pub symbol: String,
@@ -727,7 +709,7 @@ pub struct UpdateVariablesCommand {
 }
 
 impl Handler<UpdateVariablesCommand> for TcbsActor {
-    type Result = ResponseFuture<Result<usize, TcbsError>>;
+    type Result = ResponseFuture<Result<usize, ActorError>>;
 
     fn handle(&mut self, msg: UpdateVariablesCommand, _: &mut Self::Context) -> Self::Result {
         let variables = self.variables.clone();
@@ -831,7 +813,7 @@ impl Handler<UpdateVariablesCommand> for TcbsActor {
                     }
                     Ok(updated)
                 }
-                Err(err) => Err(TcbsError {
+                Err(err) => Err(ActorError {
                     message: format!("Fail to lock variables: {}", err),
                 }),
             }

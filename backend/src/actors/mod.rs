@@ -5,8 +5,8 @@ use std::error::Error;
 use std::fmt;
 
 pub mod cron;
-pub mod dnse;
 pub mod fireant;
+pub mod price;
 pub mod tcbs;
 pub mod vps;
 

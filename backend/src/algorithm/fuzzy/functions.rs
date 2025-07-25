@@ -9,19 +9,61 @@ impl Function for Noop {
     }
 }
 
+pub struct Negative {}
+
+impl Function for Negative {
+    fn evaluate(&self, _: &Rule, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
+        if pins.len() < 1 {
+            Err(RuleError {
+                message: "Chain function requires at least 1 arguments".to_string(),
+            })
+        } else {
+            Ok(-pins[0].1)
+        }
+    }
+}
+
+pub struct Chain {}
+
+impl Function for Chain {
+    fn evaluate(&self, _: &Rule, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
+        if pins.len() < 1 {
+            Err(RuleError {
+                message: "Chain function requires at least 1 arguments".to_string(),
+            })
+        } else {
+            Ok(pins.iter().map(|p| p.1).sum())
+        }
+    }
+}
+
+pub struct As {}
+
+impl Function for As {
+    fn evaluate(&self, _: &Rule, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
+        if pins.len() < 1 {
+            Err(RuleError {
+                message: "As function requires at least 1 arguments".to_string(),
+            })
+        } else {
+            Ok(pins[0].1)
+        }
+    }
+}
+
 pub struct Assign {}
 
 impl Function for Assign {
     fn evaluate(&self, rule: &Rule, pins: Vec<(String, f64)>) -> Result<f64, RuleError> {
-        if pins.len() < 2 {
+        if pins.len() < 1 {
             Err(RuleError {
-                message: "Assign function requires at least 2 arguments".to_string(),
+                message: "Assign function requires at least 1 arguments".to_string(),
             })
         } else {
-            let mapping = HashMap::from([(pins[0].0.clone(), pins[1].1)]);
+            let mapping = HashMap::from([(pins[0].0.clone(), pins[0].1)]);
 
             if rule.reload(&mapping) == mapping.len() {
-                Ok(pins[1].1)
+                Ok(pins[0].1)
             } else {
                 Err(RuleError {
                     message: format!("Fail to assign {}", pins[0].0),

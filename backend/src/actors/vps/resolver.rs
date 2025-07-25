@@ -3,10 +3,11 @@ use std::sync::{Arc, Mutex};
 
 use actix::prelude::*;
 use actix::Actor;
-#[cfg(not(feature = "python"))]
-use actix_web_prometheus::PrometheusMetrics;
 
 use prometheus::{opts, IntCounterVec};
+
+#[cfg(not(feature = "python"))]
+use actix_web_prometheus::PrometheusMetrics;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -15,10 +16,10 @@ use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
 use crate::actors::cron::CronResolver;
-use crate::actors::{GetVariableCommand, FUZZY_TRIGGER_THRESHOLD};
+use crate::actors::{ActorError, GetVariableCommand, FUZZY_TRIGGER_THRESHOLD};
 use crate::algorithm::fuzzy::{Delegate, Format, Variables};
 
-use super::{GetPriceCommand, UpdateVariablesCommand, VpsActor, VpsError};
+use super::{GetPriceCommand, UpdateVariablesCommand, VpsActor};
 
 pub fn resolve_vps_routes(
     #[cfg(not(feature = "python"))] prometheus: &PrometheusMetrics,
@@ -59,7 +60,7 @@ fn resolve_watching_vps_board(
 
         async move {
             // Get price data
-            let datapoints = match actor.send(GetPriceCommand).await.map_err(|e| VpsError {
+            let datapoints = match actor.send(GetPriceCommand).await.map_err(|e| ActorError {
                 message: e.to_string(),
             }) {
                 Ok(Ok(datapoints)) => datapoints,
@@ -77,7 +78,7 @@ fn resolve_watching_vps_board(
             let rule = if let Some(fuzzy) = task.jsfuzzy() {
                 match Delegate::new()
                     .build(&fuzzy, Format::Json)
-                    .map_err(|e| VpsError {
+                    .map_err(|e| ActorError {
                         message: e.to_string(),
                     }) {
                     Ok(rule) => rule,
@@ -87,11 +88,11 @@ fn resolve_watching_vps_board(
                 #[cfg(feature = "python")]
                 {
                     if let Some(fuzzy) = task.pyfuzzy() {
-                        match Delegate::new()
-                            .build(&*fuzzy, Format::Python)
-                            .map_err(|e| VpsError {
+                        match Delegate::new().build(&*fuzzy, Format::Python).map_err(|e| {
+                            ActorError {
                                 message: e.to_string(),
-                            }) {
+                            }
+                        }) {
                             Ok(rule) => rule,
                             Err(_) => Delegate::new().default(),
                         }
@@ -145,7 +146,7 @@ fn resolve_watching_vps_board(
                 rule.reload(&inputs);
 
                 // Evaluate rule
-                let result = rule.evaluate().map_err(|e| VpsError {
+                let result = rule.evaluate().map_err(|e| ActorError {
                     message: e.to_string(),
                 });
 

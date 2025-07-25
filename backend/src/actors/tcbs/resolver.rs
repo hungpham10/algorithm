@@ -18,10 +18,10 @@ use pyo3::types::{PyList, PyTuple};
 use crate::actors::FUZZY_TRIGGER_THRESHOLD;
 
 use crate::actors::cron::CronResolver;
-use crate::actors::GetVariableCommand;
+use crate::actors::{ActorError, GetVariableCommand};
 use crate::algorithm::fuzzy::{Delegate, Format, Variables};
 
-use super::{GetOrderCommand, TcbsActor, TcbsError, UpdateVariablesCommand};
+use super::{GetOrderCommand, TcbsActor, UpdateVariablesCommand};
 
 pub async fn resolve_tcbs_routes(
     #[cfg(not(feature = "python"))] prometheus: &PrometheusMetrics,
@@ -94,7 +94,7 @@ fn resolve_watching_tcbs_bid_ask_flow(
                     match actor
                         .send(GetOrderCommand { page: i })
                         .await
-                        .map_err(|e| TcbsError {
+                        .map_err(|e| ActorError {
                             message: e.to_string(),
                         }) {
                         Ok(datapoints) => datapoints,
@@ -108,7 +108,7 @@ fn resolve_watching_tcbs_bid_ask_flow(
                 let rule = if let Some(fuzzy) = task.jsfuzzy() {
                     match Delegate::new()
                         .build(&fuzzy, Format::Json)
-                        .map_err(|e| TcbsError {
+                        .map_err(|e| ActorError {
                             message: e.to_string(),
                         }) {
                         Ok(rule) => rule,
@@ -119,7 +119,7 @@ fn resolve_watching_tcbs_bid_ask_flow(
                     {
                         if let Some(fuzzy) = task.pyfuzzy() {
                             match Delegate::new().build(&*fuzzy, Format::Python).map_err(|e| {
-                                TcbsError {
+                                ActorError {
                                     message: e.to_string(),
                                 }
                             }) {
@@ -190,15 +190,15 @@ fn resolve_watching_tcbs_bid_ask_flow(
                     rule.reload(&inputs);
 
                     // Evaluate rule
-                    let result = rule.evaluate().map_err(|e| TcbsError {
+                    let result = rule.evaluate().map_err(|e| ActorError {
                         message: e.to_string(),
                     });
 
                     // Handle result and callback
                     match result {
-                        Ok(result) => {
+                        Ok(_result) => {
                             #[cfg(feature = "python")]
-                            if result == FUZZY_TRIGGER_THRESHOLD {
+                            if _result == FUZZY_TRIGGER_THRESHOLD {
                                 let orders = &response.data;
 
                                 Python::with_gil(|py| {

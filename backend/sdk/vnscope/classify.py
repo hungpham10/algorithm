@@ -660,7 +660,11 @@ class ClassifyVolumeProfile:
             trend_window (int): Window for price trend analysis.
 
         Returns:
-            pl.DataFrame: DataFrame with [symbol, shape, current_price, vah, val, curent_price_at_level, max_deviation_timestamp, divergence, atr].
+            pl.DataFrame: DataFrame with [
+                    symbol, shape, current_price, vah, val,
+                    curent_price_at_level, max_deviation_timestamp, divergence,
+                    atr
+                ]
         """
         from .core import profile, market, price
         from datetime import datetime
@@ -804,7 +808,12 @@ class ClassifyVolumeProfile:
         ).rename({"level": "current_price_at_level"})
 
     def plot_heatmap_with_candlestick(
-        self, symbol, number_of_levels, overlap_days, excessive=1.1
+        self,
+        symbol,
+        number_of_levels,
+        overlap_days,
+        excessive=1.1,
+        percent=20.0,
     ):
         from datetime import datetime, timedelta
         import pandas as pd
@@ -926,7 +935,11 @@ class ClassifyVolumeProfile:
         ax1.set_xticks(range(0, len(heatmap_dates), max(1, len(heatmap_dates) // 10)))
         ax1.set_xticklabels([])
 
-        # Prepare Bollinger Bands data for plotting
+        # Find the most recent peak (highest "High" price)
+        recent_peak = price_df["High"].max()
+        peak_bellow_with_percent = recent_peak * (1.0 + 0.01 * percent)  # -5%
+
+        # Add horizontal lines for +5% and -5% from the peak
         apds = [
             mpf.make_addplot(
                 price_df["SMA"], color="blue", width=1, label="SMA", ax=ax2
@@ -959,9 +972,17 @@ class ClassifyVolumeProfile:
                 label="Max Volume Deviation",
                 ax=ax2,
             ),
+            mpf.make_addplot(
+                pd.Series(peak_bellow_with_percent, index=price_df.index),
+                color="orange",
+                linestyle="--",
+                width=1,
+                label=f"{percent}% from Peak",
+                ax=ax2,
+            ),
         ]
 
-        # Plot candlestick with Bollinger Bands on the second subplot
+        # Plot candlestick with Bollinger Bands and horizontal lines on the second subplot
         mpf.plot(
             price_df,
             type="candle",
@@ -969,7 +990,7 @@ class ClassifyVolumeProfile:
             volume=ax3,
             style="charles",
             show_nontrading=False,
-            addplot=apds,  # Add Bollinger Bands
+            addplot=apds,  # Add Bollinger Bands and horizontal lines
         )
         ax2.set_title(
             "Candlestick and Volume Chart for {} ({})".format(symbol, self.resolution)
@@ -981,7 +1002,7 @@ class ClassifyVolumeProfile:
         )  # Show fewer labels if too many
         ax2.set_xticklabels([])
 
-        # Add legend for Bollinger Bands
+        # Add legend for Bollinger Bands and horizontal lines
         ax2.legend()
 
         # Adjust layout to prevent overlap

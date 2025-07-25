@@ -64,7 +64,10 @@ jobs:
   test:
     name: Test (via Makefile) # Updated name
     runs-on: ubuntu-22.04
-    needs: [] # Assuming it runs in parallel with lint
+    needs: [] # Assuming it runs in parallel with linA
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
