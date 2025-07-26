@@ -432,10 +432,11 @@ class ClassifyVolumeProfile:
                     extrema.append((i, "low", data[i]))
                 elif is_high:
                     extrema.append((i, "high", data[i]))
+
             extrema.append(
                 (
                     len(data) - 1,
-                    "low" if data[-1] < extrema[-1][2] else "high",
+                    "low" if len(extrema) > 0 and data[-1] < extrema[-1][2] else "high",
                     data[-1],
                 )
             )

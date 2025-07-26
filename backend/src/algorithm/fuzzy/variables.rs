@@ -388,8 +388,8 @@ impl Variables {
         let config = aws_config::defaults(BehaviorVersion::latest())
             .timeout_config(
                 TimeoutConfig::builder()
-                    .operation_timeout(Duration::from_secs(5))
-                    .operation_attempt_timeout(Duration::from_millis(1500))
+                    .operation_timeout(Duration::from_secs(30))
+                    .operation_attempt_timeout(Duration::from_millis(10000))
                     .build(),
             )
             .region(region_provider)
