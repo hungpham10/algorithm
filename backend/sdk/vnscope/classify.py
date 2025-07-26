@@ -90,7 +90,7 @@ class ClassifyVolumeProfile:
             id_vars=["symbol", "prices", "price_at_level_first", "price_at_level_last"],
             value_vars=level_columns,
             variable_name="level",
-            value_name="olume",
+            value_name="volume",
         )
 
         # Extract the price for each level
