@@ -15,7 +15,9 @@ use rayon::prelude::*;
 use crate::actors::price::{connect_to_price, GetOHCLCommand};
 use crate::actors::tcbs::{connect_to_tcbs, GetOrderCommand};
 use crate::actors::vps::{connect_to_vps, GetPriceCommand, Price};
-use crate::actors::{list_cw, list_futures, list_of_industry, list_of_vn100, list_of_vn30};
+use crate::actors::{
+    list_cw, list_futures, list_of_hose, list_of_industry, list_of_vn100, list_of_vn30,
+};
 use crate::algorithm::cumulate_volume_profile;
 use crate::algorithm::fuzzy::Variables;
 use crate::schemas::CandleStick;
@@ -174,6 +176,13 @@ pub fn vn100() -> Vec<String> {
     actix_rt::Runtime::new()
         .unwrap()
         .block_on(async { list_of_vn100().await })
+}
+
+#[pyfunction]
+pub fn hose() -> Vec<String> {
+    actix_rt::Runtime::new()
+        .unwrap()
+        .block_on(async { list_of_hose().await })
 }
 
 #[pyfunction]

@@ -90,7 +90,7 @@ class ClassifyVolumeProfile:
             id_vars=["symbol", "prices", "price_at_level_first", "price_at_level_last"],
             value_vars=level_columns,
             variable_name="level",
-            value_name="volume",
+            value_name="olume",
         )
 
         # Extract the price for each level
@@ -432,10 +432,11 @@ class ClassifyVolumeProfile:
                     extrema.append((i, "low", data[i]))
                 elif is_high:
                     extrema.append((i, "high", data[i]))
+
             extrema.append(
                 (
                     len(data) - 1,
-                    "low" if data[-1] < extrema[-1][2] else "high",
+                    "low" if len(extrema) > 0 and data[-1] < extrema[-1][2] else "high",
                     data[-1],
                 )
             )

@@ -266,18 +266,19 @@ pub async fn fetch_ohcl_by_stock(
                 message: format!("{}", error),
             }),
         }
-    } else {
-        let resp = client.get(format!(
-            "https://services.entrade.com.vn/chart-api/v2/ohlcs/{}?from={}&to={}&symbol={}&resolution={}",
+    } else if provider.as_str() == "dnse" {
+        let resp = client
+            .get(format!(
+            "https://api.dnse.com.vn/chart-api/v2/ohlcs/{}?from={}&to={}&symbol={}&resolution={}",
             kind,
             from,
             to,
             (*stock),
             (*resolution),
         ))
-        .timeout(Duration::from_secs(timeout))
-        .send()
-        .await;
+            .timeout(Duration::from_secs(timeout))
+            .send()
+            .await;
 
         match resp {
             Ok(resp) => {
@@ -324,6 +325,10 @@ pub async fn fetch_ohcl_by_stock(
                 message: format!("{}", error),
             }),
         }
+    } else {
+        Err(ActorError {
+            message: format!("No support {}", provider),
+        })
     }
 }
 
