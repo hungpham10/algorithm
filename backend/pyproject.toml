@@ -4,11 +4,11 @@ build-backend = "maturin"
 
 [project]
 name = "vnscope"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
 ]
 dependencies = [
     "pyarrow>=7.0.0",
