@@ -154,3 +154,34 @@ pub async fn list_cw() -> Vec<CWInfo> {
 
     resp.data.unwrap_or_default()
 }
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CryptoInfo {
+    symbol: String,
+    status: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CryptoInfoResponse {
+    symbols: Vec<CryptoInfo>,
+}
+
+pub async fn list_crypto() -> Vec<String> {
+    let resp = reqwest::get("https://api.binance.com/api/v1/exchangeInfo")
+        .await
+        .expect("Fail to fetch list of crypto")
+        .json::<CryptoInfoResponse>()
+        .await
+        .expect("Fail to parse list of crypto");
+
+    resp.symbols
+        .iter()
+        .filter_map(|item| {
+            if item.status == "TRADING" {
+                Some(item.symbol.clone())
+            } else {
+                None
+            }
+        })
+        .collect()
+}

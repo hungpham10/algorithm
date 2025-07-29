@@ -1,0 +1,118 @@
+image:
+  - ubuntu2004
+  - ubuntu2204
+
+environment:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: nightly-2024-08-04
+  PYTHON_VERSION: 3.11
+
+# Cache Rust and Python dependencies to speed up builds
+cache:
+  - ~/.cargo/bin
+  - ~/.cargo/registry/index
+  - ~/.cargo/registry/cache
+  - ~/.cargo/git/db
+  - ~/.cache/pip
+  - ./backend/target
+  - ./target
+
+# Define build matrix (single OS for now, can expand if needed)
+build:
+  parallel: true
+
+# Trigger builds on pushes to main, feat/* branches, and tags
+for:
+  # Development builds for main branch
+  -
+    matrix:
+      only:
+        - branch: main
+    environment:
+      PUBLISH_ENV: dev
+      TWINE_USERNAME: __token__
+      TWINE_PASSWORD:
+        secure: TEST_PYPI_API_TOKEN # Secure variable set in AppVeyor UI
+    install:
+      - sh: |
+          # Install Rust
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain $RUST_VERSION
+          source $HOME/.cargo/env
+          rustup component add clippy rustfmt
+      - sh: |
+          # Install Python
+          sudo apt-get update
+          sudo apt-get install -y python3.11 python3.11-dev python3-pip
+          python3.11 -m pip install --upgrade pip
+      - sh: make setup # Installs maturin, twine, wheel via Makefile
+    build_script:
+      - sh: |
+          # Get base version from Cargo.toml
+          BASE_VERSION=$(grep -oP '^version = "\K[^"]+' backend/Cargo.toml)
+          echo "Base version from Cargo.toml: $BASE_VERSION"
+
+          # Get commit count for dev version
+          COMMIT_COUNT=$(git rev-list --count main)
+          DEV_VERSION="${BASE_VERSION}-dev${COMMIT_COUNT}"
+          echo "Updating backend/Cargo.toml version to: $DEV_VERSION"
+
+          # Update version in Cargo.toml
+          BASE_VERSION_ESCAPED=$(echo "${BASE_VERSION}" | sed 's/\./\\./g')
+          sed -i "s/^version = \"${BASE_VERSION_ESCAPED}\"/version = \"${DEV_VERSION}\"/" backend/Cargo.toml
+          echo "New version in Cargo.toml: $(grep '^version = ' backend/Cargo.toml)"
+
+          # Build wheel
+          make library
+    test_script:
+      - sh: echo "Skipping tests as they are handled in GitHub Actions"
+    deploy_script:
+      - sh: |
+          python3.11 -m twine upload --repository-url https://test.pypi.org/legacy/ --verbose dist/*.whl
+    on_success:
+      - sh: echo "Successfully published dev version to TestPyPI"
+
+  # Release builds for tags
+  -
+    matrix:
+      only:
+        - tag: /^[v]?[0-9]+\.[0-9]+\.[0-9]+$/
+    environment:
+      PUBLISH_ENV: release
+      TWINE_USERNAME: __token__
+      TWINE_PASSWORD:
+        secure: PYPI_API_TOKEN # Secure variable set in AppVeyor UI
+    install:
+      - sh: |
+          # Install Rust
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain $RUST_VERSION
+          source $HOME/.cargo/env
+      - sh: |
+          # Install Python
+          sudo apt-get update
+          sudo apt-get install -y python3.11 python3.11-dev python3-pip
+          python3.11 -m pip install --upgrade pip
+      - sh: make setup # Installs maturin, twine, wheel via Makefile
+    build_script:
+      - sh: |
+          # Verify Cargo.toml version matches tag
+          CARGO_VERSION=$(grep -oP '^version = "\K[^"]+' backend/Cargo.toml)
+          TAG_NAME="$APPVEYOR_REPO_TAG_NAME"
+          CLEANED_TAG_VERSION=${TAG_NAME#v}
+          echo "Cargo.toml version: $CARGO_VERSION"
+          echo "Tag version: $TAG_NAME"
+          echo "Cleaned tag version: $CLEANED_TAG_VERSION"
+
+          if [ "$CARGO_VERSION" != "$CLEANED_TAG_VERSION" ]; then
+            echo "Error: Cargo.toml version ($CARGO_VERSION) does not match tag ($CLEANED_TAG_VERSION)"
+            exit 1
+          fi
+
+          # Build wheel
+          make library
+    test_script:
+      - sh: echo "Skipping tests as they are handled in GitHub Actions"
+    deploy_script:
+      - sh: |
+          python3.11 -m twine upload --non-interactive --verbose dist/*.whl
+    on_success:
+      - sh: echo "Successfully published release version to PyPI"

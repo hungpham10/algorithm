@@ -16,10 +16,10 @@ use crate::actors::price::{connect_to_price, GetOHCLCommand};
 use crate::actors::tcbs::{connect_to_tcbs, GetOrderCommand};
 use crate::actors::vps::{connect_to_vps, GetPriceCommand, Price};
 use crate::actors::{
-    list_cw, list_futures, list_of_hose, list_of_industry, list_of_vn100, list_of_vn30,
+    list_crypto, list_cw, list_futures, list_of_hose, list_of_industry, list_of_vn100, list_of_vn30,
 };
-use crate::algorithm::cumulate_volume_profile;
 use crate::algorithm::fuzzy::Variables;
+use crate::algorithm::{cumulate_volume_profile, cumulate_volume_range};
 use crate::schemas::CandleStick;
 
 lazy_static! {
@@ -52,7 +52,7 @@ lazy_static! {
         m.insert("1W".to_string(), "4H".to_string());
         Mutex::new(m)
     };
-    static ref PRICE_PROVIDER: Mutex<String> = { Mutex::new("ssi".to_string()) };
+    static ref PRICE_PROVIDER: Mutex<String> = Mutex::new("ssi".to_string());
 }
 
 pub fn configure_price_provider(provider: &String) -> PyResult<()> {
@@ -71,6 +71,13 @@ pub fn configure_profile_resolution(key: &String, value: &String) -> PyResult<()
 
     mapping.insert(key.to_string(), value.to_string());
     Ok(())
+}
+
+#[pyfunction]
+pub fn crypto() -> Vec<String> {
+    actix_rt::Runtime::new()
+        .unwrap()
+        .block_on(async { list_crypto().await })
 }
 
 #[pyfunction]
@@ -411,7 +418,7 @@ pub fn heatmap(
     lookback: i64,
     overlap: usize,
     number_of_levels: usize,
-) -> PyResult<(Py<PyArray2<f64>>, Vec<f64>)> {
+) -> PyResult<(Py<PyArray2<f64>>, Vec<f64>, Vec<(usize, usize, usize)>)> {
     let to = now;
     let from = match resolution.as_str() {
         "1D" => Ok(to - 24 * 60 * 60 * lookback),
@@ -462,10 +469,15 @@ pub fn heatmap(
             }
         }
 
-        Python::with_gil(|py| {
-            let ndarray = PyArray2::from_vec2(py, &data)?;
-            Ok((ndarray.to_owned(), levels))
-        })
+        match cumulate_volume_range(&data) {
+            Ok(ranges) => Python::with_gil(|py| {
+                Ok((PyArray2::from_vec2(py, &data)?.to_owned(), levels, ranges))
+            }),
+            Err(error) => Err(PyRuntimeError::new_err(format!(
+                "Cannot produce ranges of {}: {}",
+                symbol, error,
+            ))),
+        }
     } else {
         Err(PyRuntimeError::new_err(format!(
             "Cannot produce heatmap of {}",

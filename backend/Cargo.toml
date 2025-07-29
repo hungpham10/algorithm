@@ -36,6 +36,7 @@ rand_distr = "0.4.3"
 statrs = "0.16.0"
 rand = "0.8.5"
 rayon = "1.10.0"
+itertools = "0.13"
 
 # feature order management
 airtable-api = "0.1"

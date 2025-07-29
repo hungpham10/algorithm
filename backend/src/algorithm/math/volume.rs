@@ -1,10 +1,80 @@
-use crate::schemas::CandleStick as OHCL;
-use std::collections::HashMap;
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, HashMap};
 
-// Hàm helper để chuyển timestamp thành ngày (số ngày từ epoch)
+use anyhow::{anyhow, Result};
+use itertools::Itertools;
+
+use crate::schemas::CandleStick as OHCL;
+
 #[inline]
 fn timestamp_to_day(t: i32) -> i32 {
-    t / (24 * 60 * 60) // Chuyển từ giây sang ngày
+    t / (24 * 60 * 60)
+}
+
+#[inline]
+pub fn cumulate_volume_range(heatmap: &Vec<Vec<f64>>) -> Result<Vec<(usize, usize, usize)>> {
+    let mut centers = BTreeMap::new();
+
+    let sorted = heatmap
+        .iter()
+        .map(|row| row.iter().sum())
+        .collect::<Vec<_>>()
+        .iter()
+        .enumerate()
+        .collect::<Vec<(_, &f64)>>()
+        .into_iter()
+        .sorted_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(Ordering::Greater))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+
+    for t in sorted {
+        let mut found = false;
+        let mut left = 0;
+        let mut right = 0;
+        let mut center = 0;
+        let mut weight = 0;
+
+        for (group, (begin, end, order)) in &centers {
+            left = *begin;
+            right = *end;
+            found = t + 1 == *begin || t - 1 == *end;
+
+            if t + 1 == *begin {
+                center = *group;
+                left = t;
+                weight = *order;
+                break;
+            }
+            if t - 1 == *end {
+                center = *group;
+                right = t;
+                weight = *order;
+                break;
+            }
+        }
+
+        if !found {
+            if centers.contains_key(&t) {
+                return Err(anyhow!("Center {} is not synchronized fully", t));
+            }
+
+            left = t;
+            right = t;
+            center = t;
+            weight = centers.len();
+        }
+
+        centers.insert(center, (left, right, weight));
+    }
+
+    Ok(centers
+        .iter()
+        .map(|(center, (begin, end, weight))| (*center, *begin, *end, weight))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .sorted_by(|a, b| a.3.partial_cmp(b.3).unwrap_or(Ordering::Greater))
+        .map(|(center, begin, end, _)| (center, begin, end))
+        .collect::<Vec<_>>())
 }
 
 #[inline]
