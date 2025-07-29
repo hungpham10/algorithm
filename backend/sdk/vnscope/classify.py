@@ -814,15 +814,15 @@ class ClassifyVolumeProfile:
         number_of_levels,
         overlap_days,
         excessive=1.1,
-        percent=20.0,
+        top_n=3,
     ):
         from datetime import datetime, timedelta
-        import pandas as pd
-        import numpy as np
-        import matplotlib.pyplot as plt
         from matplotlib.colors import LinearSegmentedColormap
-        import mplfinance as mpf
         from .core import heatmap, profile, price
+
+        import pandas as pd
+        import seaborn as sns
+        import mplfinance as mpf
 
         # Estimate time range
         from_time = datetime.fromtimestamp(
@@ -837,7 +837,7 @@ class ClassifyVolumeProfile:
             from_time,
             to_time,
         ).to_pandas()
-        consolidated, levels = heatmap(
+        consolidated, levels, ranges = heatmap(
             symbol,
             self.resolution,
             self.now,
@@ -936,9 +936,8 @@ class ClassifyVolumeProfile:
         ax1.set_xticks(range(0, len(heatmap_dates), max(1, len(heatmap_dates) // 10)))
         ax1.set_xticklabels([])
 
-        # Find the most recent peak (highest "High" price)
-        recent_peak = price_df["High"].max()
-        peak_bellow_with_percent = recent_peak * (1.0 + 0.01 * percent)  # -5%
+        # Create a colormap for price range lines
+        colors = sns.color_palette("husl", n_colors=top_n)
 
         # Add horizontal lines for +5% and -5% from the peak
         apds = [
@@ -973,15 +972,33 @@ class ClassifyVolumeProfile:
                 label="Max Volume Deviation",
                 ax=ax2,
             ),
-            mpf.make_addplot(
-                pd.Series(peak_bellow_with_percent, index=price_df.index),
-                color="orange",
-                linestyle="--",
-                width=1,
-                label=f"{percent}% from Peak",
-                ax=ax2,
-            ),
         ]
+
+        # Add price range lines (begin, center, end) with color gradient
+        for i, (_, begin, end) in enumerate(ranges):
+            if i >= top_n:
+                break
+            color = colors[i % len(colors)]  # Chọn màu từ palette
+            apds.extend(
+                [
+                    mpf.make_addplot(
+                        pd.Series(levels[begin], index=price_df.index),
+                        color=color,
+                        linestyle="--",
+                        width=0.5,
+                        label=f"Range {i+1} Begin",
+                        ax=ax2,
+                    ),
+                    mpf.make_addplot(
+                        pd.Series(levels[end], index=price_df.index),
+                        color=color,
+                        linestyle="--",
+                        width=0.5,
+                        label=f"Range {i+1} End",
+                        ax=ax2,
+                    ),
+                ]
+            )
 
         # Plot candlestick with Bollinger Bands and horizontal lines on the second subplot
         mpf.plot(
@@ -1005,9 +1022,6 @@ class ClassifyVolumeProfile:
 
         # Add legend for Bollinger Bands and horizontal lines
         ax2.legend()
-
-        # Adjust layout to prevent overlap
-        plt.tight_layout()
 
         # Show plot
         plt.show()

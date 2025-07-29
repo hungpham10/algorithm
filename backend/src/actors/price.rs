@@ -37,13 +37,29 @@ struct SsiOhclWrapper {
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct Ohcl {
-    pub t: Option<Vec<i32>>,
-    pub o: Option<Vec<f64>>,
-    pub c: Option<Vec<f64>>,
-    pub h: Option<Vec<f64>>,
-    pub l: Option<Vec<f64>>,
-    pub v: Option<Vec<i64>>,
-    pub nextTime: Option<i64>,
+    t: Option<Vec<i32>>,
+    o: Option<Vec<f64>>,
+    c: Option<Vec<f64>>,
+    h: Option<Vec<f64>>,
+    l: Option<Vec<f64>>,
+    v: Option<Vec<i64>>,
+    nextTime: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Kline {
+    timestamp: i64,
+    open: String,
+    high: String,
+    low: String,
+    close: String,
+    volume: String,
+    close_time: i64,
+    quote_volume: String,
+    trade_count: u64,
+    taker_buy_volume: String,
+    taker_buy_quote_volume: String,
+    _ignored: String,
 }
 
 impl Actor for PriceActor {
@@ -325,6 +341,68 @@ pub async fn fetch_ohcl_by_stock(
                 message: format!("{}", error),
             }),
         }
+    } else if provider == "binance" {
+        let mut candles = Vec::<CandleStick>::new();
+        let mut from = from * 1000;
+        let mut to = to * 1000;
+
+        for _ in 0..10 {
+            let resp = client.get(format!(
+                    "https://api.binance.com/api/v3/klines?startTime={}&endTime={}&symbol={}&interval={}&limit=1000",
+                    from,
+                    to,
+                    (*stock),
+                    (*resolution).to_lowercase(),
+                ))
+                .timeout(Duration::from_secs(timeout))
+                .send()
+                .await;
+
+            match resp {
+                Ok(resp) => {
+                    let klines = resp
+                        .json::<Vec<Kline>>()
+                        .await
+                        .map_err(|error| ActorError {
+                            message: format!("{}", error),
+                        })?;
+
+                    if klines[0].timestamp == klines.last().unwrap().timestamp {
+                        break;
+                    }
+
+                    for it in &klines {
+                        candles.push(CandleStick {
+                            t: (it.timestamp / 1000) as i32,
+                            o: it.open.parse().map_err(|error| ActorError {
+                                message: format!("{}", error),
+                            })?,
+                            h: it.high.parse().map_err(|error| ActorError {
+                                message: format!("{}", error),
+                            })?,
+                            c: it.close.parse().map_err(|error| ActorError {
+                                message: format!("{}", error),
+                            })?,
+                            l: it.low.parse().map_err(|error| ActorError {
+                                message: format!("{}", error),
+                            })?,
+                            v: it.volume.parse().map_err(|error| ActorError {
+                                message: format!("{}", error),
+                            })?,
+                        })
+                    }
+
+                    from = klines.last().unwrap().close_time;
+                }
+                Err(error) => {
+                    return Err(ActorError {
+                        message: format!("{}", error),
+                    });
+                }
+            }
+        }
+
+        Ok(candles)
     } else {
         Err(ActorError {
             message: format!("No support {}", provider),

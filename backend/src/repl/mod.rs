@@ -28,6 +28,7 @@ fn core(_: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(market::hose, m)?)?;
     m.add_function(wrap_pyfunction!(market::sectors, m)?)?;
     m.add_function(wrap_pyfunction!(market::industry, m)?)?;
+    m.add_function(wrap_pyfunction!(market::crypto, m)?)?;
     m.add_function(wrap_pyfunction!(configure, m)?)?;
     Ok(())
 }
