@@ -19,7 +19,6 @@ cache:
 
 # Set build mode to Script since no Visual Studio projects are used
 build: off
-build_script: none # Explicitly disable default build, rely on custom scripts below
 
 # Trigger builds on pushes to main, feat/* branches, and tags
 for:
