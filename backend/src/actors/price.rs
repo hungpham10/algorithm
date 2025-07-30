@@ -367,6 +367,9 @@ pub async fn fetch_ohcl_by_stock(
                             message: format!("{}", error),
                         })?;
 
+                    if klines.len() == 0 {
+                        break;
+                    }
                     if klines[0].timestamp == klines.last().unwrap().timestamp {
                         break;
                     }
