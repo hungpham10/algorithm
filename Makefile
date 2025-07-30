@@ -34,6 +34,7 @@ library:
 		maturin build --release --features python 				\
 			$(if $(RUST_TARGET),--target $(RUST_TARGET)) 			\
 			$(if $(ZIG),--zig) 						\
+			-i python$(PYTHON_VERSION)					\
 			--compatibility musllinux_1_2 					\
 			--out dist && 							\
 		cp dist/*.whl ../$(DIST_DIR)/; 						\

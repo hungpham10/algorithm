@@ -222,7 +222,7 @@ jobs:
         shell: bash
 
       - name: Build wheel via Makefile
-        run: make library RUST_TARGET=${{ env.RUST_TARGET }} ZIG=true
+        run: make library RUST_TARGET=${{ env.RUST_TARGET }} ZIG=true PYTHON_VERSION=${{ env.PYTHON_VERSION }}
 
       - name: Publish development version to TestPyPI
         env:
@@ -300,7 +300,7 @@ jobs:
         shell: bash
 
       - name: Build wheel via Makefile
-        run: make library RUST_TARGET=${{ env.RUST_TARGET }} ZIG=true
+        run: make library RUST_TARGET=${{ env.RUST_TARGET }} ZIG=true PYTHON_VERSION=${{ env.PYTHON_VERSION }}
 
       - name: Publish release version to PyPI
         env:
