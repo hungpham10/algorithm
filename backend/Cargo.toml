@@ -14,6 +14,7 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 python = ["pyo3", "pyo3-asyncio", "pyo3-polars", "polars", "numpy", "env_logger"]
+default = ["airtable-api"]
 
 [dependencies]
 # Data modeling
@@ -39,7 +40,7 @@ rayon = "1.10.0"
 itertools = "0.13"
 
 # feature order management
-airtable-api = "0.1"
+airtable-api = { version = "0.1", optional = true }
 
 # feature dashboard monitoring
 actix-web-prometheus = "0.1.2"
@@ -47,16 +48,15 @@ prometheus = "0.13.3"
 
 # Crawling data in background
 cron-parser = "0.8.1"
-reqwest = { version = "0.12.7", features = ["json", "blocking"] }
+reqwest = { version = "0.11.27", default-features = false, features = ["json", "blocking", "rustls"] }
 reqwest-retry = "0.6.1"
 reqwest-middleware = { version = "0.3.3", features = ["json"] }
 actix-rt = "2.10.0"
 actix = "0.13.5"
 awc = "3.5.1"
-libc = "0.2.171"
 tokio = { version = "1.26.0", features = ["full"] }
-aws-sdk-s3 = "1.90.0"
-aws-config = "1.6.3"
+aws-sdk-s3 = { version = "1.90.0", default-features = false, features = ["rustls"] }
+aws-config = { version = "1.6.3", default-features = false, features = ["rustls"] }
 
 # Common
 lazy_static = "1.5.0"
