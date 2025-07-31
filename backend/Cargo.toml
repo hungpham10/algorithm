@@ -48,15 +48,15 @@ prometheus = "0.13.3"
 
 # Crawling data in background
 cron-parser = "0.8.1"
-reqwest = { version = "0.11.27", default-features = false, features = ["json", "blocking", "rustls"] }
+reqwest = { version = "0.11.27", default-features = false, features = ["json", "blocking", "rustls-tls"] }
 reqwest-retry = "0.6.1"
 reqwest-middleware = { version = "0.3.3", features = ["json"] }
 actix-rt = "2.10.0"
 actix = "0.13.5"
 awc = "3.5.1"
 tokio = { version = "1.26.0", features = ["full"] }
-aws-sdk-s3 = { version = "1.90.0", default-features = false, features = ["rustls"] }
-aws-config = { version = "1.6.3", default-features = false, features = ["rustls"] }
+aws-sdk-s3 = { version = "1.90.0", default-features = false, features = ["rustls", "default-https-client", "rt-tokio"] }
+aws-config = { version = "1.6.3", default-features = false, features = ["rustls", "default-https-client", "rt-tokio"] }
 
 # Common
 lazy_static = "1.5.0"
