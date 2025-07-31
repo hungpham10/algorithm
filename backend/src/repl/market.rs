@@ -19,7 +19,7 @@ use crate::actors::{
     list_crypto, list_cw, list_futures, list_of_hose, list_of_industry, list_of_vn100, list_of_vn30,
 };
 use crate::algorithm::fuzzy::Variables;
-use crate::algorithm::{cumulate_volume_profile, cumulate_volume_range};
+use crate::algorithm::VolumeProfile;
 use crate::schemas::CandleStick;
 
 lazy_static! {
@@ -418,6 +418,7 @@ pub fn heatmap(
     lookback: i64,
     overlap: usize,
     number_of_levels: usize,
+    interval_in_hour: i32,
 ) -> PyResult<(Py<PyArray2<f64>>, Vec<f64>, Vec<(usize, usize, usize)>)> {
     let to = now;
     let from = match resolution.as_str() {
@@ -434,50 +435,47 @@ pub fn heatmap(
         let mapping = PROFILE_RESOLUTION.lock().unwrap();
         let actor = connect_to_price(&provider);
 
-        let candles = actor
-            .send(GetOHCLCommand {
-                resolution: match mapping.get(&resolution) {
-                    Some(resolution) => resolution.clone(),
-                    None => "1D".to_string(),
-                },
-                stock: symbol.clone(),
-                from,
-                to,
-            })
-            .await
-            .unwrap()
-            .unwrap();
-
-        let (profiles, levels) = cumulate_volume_profile(&candles, number_of_levels, overlap);
-
-        if profiles.len() > 0 {
-            Some((profiles.clone(), levels))
-        } else {
-            None
+        match VolumeProfile::new(
+            &(actor
+                .send(GetOHCLCommand {
+                    resolution: match mapping.get(&resolution) {
+                        Some(resolution) => resolution.clone(),
+                        None => "1D".to_string(),
+                    },
+                    stock: symbol.clone(),
+                    from,
+                    to,
+                })
+                .await
+                .unwrap()
+                .unwrap()),
+            number_of_levels,
+            overlap,
+            interval_in_hour,
+        ) {
+            Ok(vp) => Some(vp),
+            Err(_) => None,
         }
     });
 
-    if let Some((profiles, levels)) = profiles {
-        // Tạo mảng 2D từ profiles
-        let cols = profiles.len();
+    if let Some(vp) = profiles {
+        let cols = vp.heatmap().len();
         let rows = number_of_levels;
         let mut data: Vec<Vec<f64>> = vec![vec![0.0; cols]; rows];
 
-        for (j, profile) in profiles.iter().enumerate() {
+        for (j, profile) in vp.heatmap().iter().enumerate() {
             for i in 0..rows {
                 data[i][j] = *profile.get(i).unwrap();
             }
         }
 
-        match cumulate_volume_range(&data) {
-            Ok(ranges) => Python::with_gil(|py| {
-                Ok((PyArray2::from_vec2(py, &data)?.to_owned(), levels, ranges))
-            }),
-            Err(error) => Err(PyRuntimeError::new_err(format!(
-                "Cannot produce ranges of {}: {}",
-                symbol, error,
-            ))),
-        }
+        Python::with_gil(|py| {
+            Ok((
+                PyArray2::from_vec2(py, &data)?.to_owned(),
+                vp.levels().clone(),
+                vp.ranges().clone(),
+            ))
+        })
     } else {
         Err(PyRuntimeError::new_err(format!(
             "Cannot produce heatmap of {}",
@@ -513,30 +511,31 @@ pub fn profile(
                 let mapping = PROFILE_RESOLUTION.lock().unwrap();
                 let actor = connect_to_price(&provider);
 
-                let candles = actor
-                    .send(GetOHCLCommand {
-                        resolution: match mapping.get(&resolution) {
-                            Some(resolution) => resolution.clone(),
-                            None => "1D".to_string(),
-                        },
-                        stock: symbol.clone(),
-                        from,
-                        to,
-                    })
-                    .await
-                    .unwrap()
-                    .unwrap();
-                let (profiles, levels) = cumulate_volume_profile(&candles, number_of_levels, 0);
-
-                if profiles.len() > 0 {
-                    Some((
+                match VolumeProfile::new(
+                    &(actor
+                        .send(GetOHCLCommand {
+                            resolution: match mapping.get(&resolution) {
+                                Some(resolution) => resolution.clone(),
+                                None => "1D".to_string(),
+                            },
+                            stock: symbol.clone(),
+                            from,
+                            to,
+                        })
+                        .await
+                        .unwrap()
+                        .unwrap()),
+                    number_of_levels,
+                    0,
+                    24,
+                ) {
+                    Ok(vp) => Some((
                         symbol,
-                        profiles[0].clone(),
-                        levels.first().cloned().unwrap_or(0.0),
-                        levels.last().cloned().unwrap_or(0.0),
-                    ))
-                } else {
-                    None
+                        vp.heatmap()[0].clone(),
+                        vp.levels().first().cloned().unwrap_or(0.0),
+                        vp.levels().last().cloned().unwrap_or(0.0),
+                    )),
+                    Err(_) => None,
                 }
             })
         })

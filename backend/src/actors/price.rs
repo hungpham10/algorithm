@@ -344,7 +344,7 @@ pub async fn fetch_ohcl_by_stock(
     } else if provider == "binance" {
         let mut candles = Vec::<CandleStick>::new();
         let mut from = from * 1000;
-        let mut to = to * 1000;
+        let to = to * 1000;
 
         for _ in 0..10 {
             let resp = client.get(format!(

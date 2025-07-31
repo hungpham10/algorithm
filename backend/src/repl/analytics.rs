@@ -9,7 +9,6 @@ use pyo3_polars::PyDataFrame;
 use crate::actors::price::{connect_to_price, GetOHCLCommand};
 use crate::actors::vps::{connect_to_vps, GetPriceCommand, Price};
 use crate::actors::{list_cw, list_futures, list_of_industry, list_of_vn100, list_of_vn30};
-use crate::algorithm::cumulate_volume_profile;
 use crate::algorithm::fuzzy::{Delegate, Format, Rule, Variables};
 
 #[pyfunction]

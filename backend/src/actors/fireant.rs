@@ -4,7 +4,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use reqwest::header::AUTHORIZATION;
+use reqwest_middleware::reqwest::header::AUTHORIZATION;
 use reqwest_middleware::ClientWithMiddleware as HttpClient;
 use serde::{Deserialize, Serialize};
 

@@ -1,8 +1,10 @@
 use juniper::GraphQLObject;
 use serde::{Deserialize, Serialize};
 
+#[cfg(not(feature = "python"))]
 mod airtable;
 
+#[cfg(not(feature = "python"))]
 pub use airtable::*;
 
 #[repr(C)]

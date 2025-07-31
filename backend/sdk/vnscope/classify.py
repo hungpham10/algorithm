@@ -30,7 +30,14 @@ def calculate_atr(df_price, period=14):
 
 
 class ClassifyVolumeProfile:
-    def __init__(self, now=None, resolution="1D", lookback=120, value_area_pct=0.7):
+    def __init__(
+        self,
+        now=None,
+        resolution="1D",
+        lookback=120,
+        value_area_pct=0.7,
+        interval_in_hour=24,
+    ):
         from datetime import datetime, timezone, timedelta
 
         if now is None:
@@ -51,6 +58,7 @@ class ClassifyVolumeProfile:
         self.resolution = resolution
         self.lookback = lookback
         self.value_area_pct = value_area_pct
+        self.interval_in_hour = interval_in_hour
 
     def prepare_volume_profile(self, df_profile, number_of_levels):
         """Transform DataFrame into long format with price and volume per level.
@@ -815,6 +823,7 @@ class ClassifyVolumeProfile:
         overlap_days,
         excessive=1.1,
         top_n=3,
+        enable_heatmap=False,
     ):
         from datetime import datetime, timedelta
         from matplotlib.colors import LinearSegmentedColormap
@@ -844,6 +853,7 @@ class ClassifyVolumeProfile:
             self.lookback,
             overlap_days,
             number_of_levels,
+            self.interval_in_hour,
         )
 
         # Convert from_time and to_time to datetime for time axis
@@ -914,27 +924,36 @@ class ClassifyVolumeProfile:
                 price_df.loc[max_deviation_idx, "High"] * 1.02
             )  # Slightly higher for visibility
 
-        # Set up the plot with two subplots
-        fig, (ax1, ax2, ax3) = plt.subplots(
-            3, 1, figsize=(15, 10), gridspec_kw={"height_ratios": [1, 3, 1]}
-        )
+        if enable_heatmap:
+            # Set up the plot with two subplots
+            fig, (ax1, ax2) = plt.subplots(
+                2, 1, figsize=(15, 10), gridspec_kw={"height_ratios": [1, 3, 1]}
+            )
+        else:
+            # Set up the plot with two subplots
+            fig, (ax2) = plt.subplots(
+                1, 1, figsize=(15, 10), gridspec_kw={"height_ratios": [1]}
+            )
 
-        # Plot heatmap with imshow
-        im = ax1.imshow(
-            consolidated,
-            aspect="auto",
-            interpolation="nearest",
-            extent=[0, consolidated.shape[1] - 1, 0, len(levels) - 1],
-        )
-        ytick_indices = range(0, len(levels), 5)  # Show every 2nd label
-        ax1.set_yticks(ytick_indices)
-        ax1.set_yticklabels(np.round(levels, 5)[ytick_indices])
-        ax1.set_title(
-            "Volume Profile Heatmap for {} ({})".format(symbol, self.resolution)
-        )
-        ax1.set_ylabel("Price Levels")
-        ax1.set_xticks(range(0, len(heatmap_dates), max(1, len(heatmap_dates) // 10)))
-        ax1.set_xticklabels([])
+        if enable_heatmap:
+            # Plot heatmap with imshow
+            im = ax1.imshow(
+                consolidated,
+                aspect="auto",
+                interpolation="nearest",
+                extent=[0, consolidated.shape[1] - 1, 0, len(levels) - 1],
+            )
+            ytick_indices = range(0, len(levels), 5)  # Show every 2nd label
+            ax1.set_yticks(ytick_indices)
+            ax1.set_yticklabels(np.round(levels, 5)[ytick_indices])
+            ax1.set_title(
+                "Volume Profile Heatmap for {} ({})".format(symbol, self.resolution)
+            )
+            ax1.set_ylabel("Price Levels")
+            ax1.set_xticks(
+                range(0, len(heatmap_dates), max(1, len(heatmap_dates) // 10))
+            )
+            ax1.set_xticklabels([])
 
         # Create a colormap for price range lines
         colors = sns.color_palette("husl", n_colors=top_n)
@@ -975,7 +994,7 @@ class ClassifyVolumeProfile:
         ]
 
         # Add price range lines (begin, center, end) with color gradient
-        for i, (_, begin, end) in enumerate(ranges):
+        for i, (center, begin, end) in enumerate(ranges):
             if i >= top_n:
                 break
             color = colors[i % len(colors)]  # Chọn màu từ palette
@@ -987,6 +1006,14 @@ class ClassifyVolumeProfile:
                         linestyle="--",
                         width=0.5,
                         label=f"Range {i+1} Begin",
+                        ax=ax2,
+                    ),
+                    mpf.make_addplot(
+                        pd.Series(levels[center], index=price_df.index),
+                        color=color,
+                        linestyle="--",
+                        width=1.0,
+                        label=f"Range {i+1} Center",
                         ax=ax2,
                     ),
                     mpf.make_addplot(
@@ -1005,7 +1032,7 @@ class ClassifyVolumeProfile:
             price_df,
             type="candle",
             ax=ax2,
-            volume=ax3,
+            volume=False,
             style="charles",
             show_nontrading=False,
             addplot=apds,  # Add Bollinger Bands and horizontal lines
