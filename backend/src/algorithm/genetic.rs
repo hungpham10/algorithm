@@ -317,8 +317,9 @@ mod tests {
     }
 
     impl Player for TestPlayer {
-        fn initialize(&mut self) {
+        fn initialize(&mut self) -> Result<()> {
             self.genes = [1.0, 2.0, 3.0];
+            Ok(())
         }
 
         fn estimate(&self) -> f64 {
@@ -336,21 +337,16 @@ mod tests {
     struct TestModel {}
 
     impl Model<TestPlayer> for TestModel {
-        fn crossover(
-            &self,
-            p1: &TestPlayer,
-            _p1_idx: usize,
-            _p2: &TestPlayer,
-            _p2_idx: usize,
-            _session: i64,
-        ) -> TestPlayer {
-            p1.clone()
+        fn crossover(&self, p1: &TestPlayer, _p2: &TestPlayer) -> Result<TestPlayer> {
+            Ok(p1.clone())
         }
 
-        fn mutate(&self, _player: &mut TestPlayer, _args: &Vec<f64>, _idx: usize) {}
+        fn mutate(&self, _player: &mut TestPlayer, _args: &Vec<f64>, _idx: usize) -> Result<()> {
+            Ok(())
+        }
 
-        fn extinguish(&self, _individual: &Individual<TestPlayer>, _session: i64) -> bool {
-            false
+        fn extinguish(&self, _individual: &Individual<TestPlayer>) -> Result<bool> {
+            Ok(false)
         }
     }
 
@@ -496,7 +492,7 @@ mod tests {
         genetic.initialize(players).unwrap();
 
         let session = 1;
-        genetic.estimate();
+        genetic.estimate(session);
 
         let best = genetic.best_player(session);
         assert_eq!(best.fitness, 4.0, "Best player should have highest fitness");
