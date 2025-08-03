@@ -13,7 +13,15 @@ pub struct VolumeProfile {
 }
 
 impl VolumeProfile {
-    pub fn new(
+    pub fn new() -> Self {
+        Self {
+            heatmap: Vec::new(),
+            levels: Vec::new(),
+            ranges: Vec::new(),
+        }
+    }
+
+    pub fn new_from_candles(
         candles: &[OHCL],
         number_of_levels: usize,
         overlap: usize,
@@ -28,6 +36,22 @@ impl VolumeProfile {
             levels,
             ranges,
         })
+    }
+
+    pub fn calculate(
+        &mut self,
+        candles: &[OHCL],
+        number_of_levels: usize,
+        overlap: usize,
+        interval_in_hour: i32,
+    ) -> Result<()> {
+        let (heatmap, levels) =
+            Self::cumulate_volume_profile(candles, number_of_levels, overlap, interval_in_hour)?;
+
+        self.ranges = Self::cumulate_volume_range(&heatmap)?;
+        self.levels = levels;
+        self.heatmap = heatmap;
+        Ok(())
     }
 
     pub fn heatmap(&self) -> &Vec<Vec<f64>> {

@@ -4,8 +4,9 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use reqwest_middleware::reqwest::header::AUTHORIZATION;
-use reqwest_middleware::ClientWithMiddleware as HttpClient;
+use reqwest::header::AUTHORIZATION;
+use reqwest::Client;
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient};
 use serde::{Deserialize, Serialize};
 
 use actix::prelude::*;
@@ -113,7 +114,12 @@ impl Handler<ScrapePostsCommand> for FireantActor {
         let to = msg.to;
 
         Box::pin(async move {
-            let client = Arc::new(HttpClient::default());
+            let client = Arc::new(
+                ClientBuilder::new(Client::builder().build().map_err(|err| FireantError {
+                    message: format!("Failed to create client: {}", err),
+                })?)
+                .build(),
+            );
             let mut result = Vec::new();
             let mut offset: usize = 0;
 

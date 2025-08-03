@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
+use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 
@@ -252,9 +253,11 @@ impl Handler<GetPriceCommand> for VpsActor {
 async fn fetch_price_depth(stocks: &Vec<String>, timeout: u64) -> Result<Vec<Price>, ActorError> {
     let retry_policy = ExponentialBackoff::builder().build_with_max_retries(5);
     let client = Arc::new(
-        ClientBuilder::new(reqwest_middleware::reqwest::Client::new())
-            .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-            .build(),
+        ClientBuilder::new(Client::builder().build().map_err(|err| ActorError {
+            message: format!("Failed to create client: {}", err),
+        })?)
+        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+        .build(),
     );
     let blocks: Vec<Vec<String>> = (*stocks)
         .chunks(100)

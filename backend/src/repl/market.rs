@@ -435,7 +435,7 @@ pub fn heatmap(
         let mapping = PROFILE_RESOLUTION.lock().unwrap();
         let actor = connect_to_price(&provider);
 
-        match VolumeProfile::new(
+        match VolumeProfile::new_from_candles(
             &(actor
                 .send(GetOHCLCommand {
                     resolution: match mapping.get(&resolution) {
@@ -511,7 +511,7 @@ pub fn profile(
                 let mapping = PROFILE_RESOLUTION.lock().unwrap();
                 let actor = connect_to_price(&provider);
 
-                match VolumeProfile::new(
+                match VolumeProfile::new_from_candles(
                     &(actor
                         .send(GetOHCLCommand {
                             resolution: match mapping.get(&resolution) {

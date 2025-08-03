@@ -1,6 +1,5 @@
 mod binarysearch;
 mod math;
-mod optimize;
 
 pub mod ahocorasick;
 pub mod fuzzy;

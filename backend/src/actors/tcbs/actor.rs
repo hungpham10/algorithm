@@ -5,6 +5,7 @@ use std::time::Duration;
 use log::error;
 use prometheus::IntCounterVec;
 
+use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware as HttpClient};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 
@@ -256,7 +257,7 @@ async fn fetch_orders(
 ) -> Vec<OrderResponse> {
     let retry_policy = ExponentialBackoff::builder().build_with_max_retries(7);
     let client = Arc::new(
-        ClientBuilder::new(reqwest_middleware::reqwest::Client::new())
+        ClientBuilder::new(Client::builder().build().unwrap())
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build(),
     );
@@ -333,7 +334,7 @@ impl Handler<GetBalanceSheetCommand> for TcbsActor {
         Box::pin(async move {
             let retry_policy = ExponentialBackoff::builder().build_with_max_retries(100);
             let client = Arc::new(
-                ClientBuilder::new(reqwest_middleware::reqwest::Client::new())
+                ClientBuilder::new(Client::builder().build().unwrap())
                     .with(RetryTransientMiddleware::new_with_policy(retry_policy))
                     .build(),
             );
@@ -428,7 +429,7 @@ impl Handler<GetIncomeStatementCommand> for TcbsActor {
         Box::pin(async move {
             let retry_policy = ExponentialBackoff::builder().build_with_max_retries(100);
             let client = Arc::new(
-                ClientBuilder::new(reqwest_middleware::reqwest::Client::new())
+                ClientBuilder::new(Client::builder().build().unwrap())
                     .with(RetryTransientMiddleware::new_with_policy(retry_policy))
                     .build(),
             );
@@ -510,7 +511,7 @@ impl Handler<GetCashFlowCommand> for TcbsActor {
         Box::pin(async move {
             let retry_policy = ExponentialBackoff::builder().build_with_max_retries(100);
             let client = Arc::new(
-                ClientBuilder::new(reqwest_middleware::reqwest::Client::new())
+                ClientBuilder::new(Client::builder().build().unwrap())
                     .with(RetryTransientMiddleware::new_with_policy(retry_policy))
                     .build(),
             );
@@ -579,9 +580,11 @@ impl Handler<SetAlertCommand> for TcbsActor {
         Box::pin(async move {
             let retry_policy = ExponentialBackoff::builder().build_with_max_retries(100);
             let client = Arc::new(
-                ClientBuilder::new(reqwest_middleware::reqwest::Client::new())
-                    .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-                    .build(),
+                ClientBuilder::new(Client::builder().build().map_err(|err| ActorError {
+                    message: format!("Failed to create client: {}", err),
+                })?)
+                .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+                .build(),
             );
 
             set_alert(client, &token, &stock, price, timeout).await

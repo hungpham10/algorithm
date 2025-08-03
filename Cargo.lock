@@ -302,7 +302,7 @@ checksum = "2c2900e7e044868b63972977b381c1e8e9c8e2bc25aebd63213a3f2ccae73096"
 dependencies = [
  "anyhow",
  "chrono",
- "reqwest 0.11.27",
+ "reqwest",
  "reqwest-middleware 0.1.6",
  "reqwest-retry 0.1.5",
  "reqwest-tracing",
@@ -1139,9 +1139,9 @@ dependencies = [
  "rand 0.8.5",
  "rand_distr",
  "rayon",
- "reqwest 0.11.27",
- "reqwest-middleware 0.3.3",
- "reqwest-retry 0.6.1",
+ "reqwest",
+ "reqwest-middleware 0.2.5",
+ "reqwest-retry 0.4.0",
  "serde",
  "serde_json",
  "statrs",
@@ -4255,7 +4255,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
- "sync_wrapper 0.1.2",
+ "sync_wrapper",
  "system-configuration",
  "tokio",
  "tokio-native-tls",
@@ -4270,42 +4270,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "reqwest"
-version = "0.12.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d19c46a6fdd48bc4dab94b6103fccc55d34c67cc0ad04653aad4ea2a07cd7bbb"
-dependencies = [
- "base64 0.22.1",
- "bytes",
- "futures-core",
- "futures-util",
- "http 1.3.1",
- "http-body 1.0.1",
- "http-body-util",
- "hyper 1.6.0",
- "hyper-util",
- "ipnet",
- "js-sys",
- "log",
- "mime",
- "once_cell",
- "percent-encoding",
- "pin-project-lite",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "sync_wrapper 1.0.2",
- "tokio",
- "tower",
- "tower-service",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "windows-registry",
-]
-
-[[package]]
 name = "reqwest-middleware"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4315,7 +4279,7 @@ dependencies = [
  "async-trait",
  "futures",
  "http 0.2.12",
- "reqwest 0.11.27",
+ "reqwest",
  "serde",
  "task-local-extensions",
  "thiserror",
@@ -4323,17 +4287,17 @@ dependencies = [
 
 [[package]]
 name = "reqwest-middleware"
-version = "0.3.3"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "562ceb5a604d3f7c885a792d42c199fd8af239d0a51b2fa6a78aafa092452b04"
+checksum = "5a735987236a8e238bf0296c7e351b999c188ccc11477f311b82b55c93984216"
 dependencies = [
  "anyhow",
  "async-trait",
- "http 1.3.1",
- "reqwest 0.12.15",
+ "http 0.2.12",
+ "reqwest",
  "serde",
+ "task-local-extensions",
  "thiserror",
- "tower-service",
 ]
 
 [[package]]
@@ -4348,7 +4312,7 @@ dependencies = [
  "futures",
  "http 0.2.12",
  "hyper 0.14.32",
- "reqwest 0.11.27",
+ "reqwest",
  "reqwest-middleware 0.1.6",
  "retry-policies 0.1.2",
  "task-local-extensions",
@@ -4358,20 +4322,22 @@ dependencies = [
 
 [[package]]
 name = "reqwest-retry"
-version = "0.6.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a83df1aaec00176d0fabb65dea13f832d2a446ca99107afc17c5d2d4981221d0"
+checksum = "cadced6a67c5c2d1c819cc2d7e6ddf066f32b9b6a04f8866203ceeb44b79c37f"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "futures",
  "getrandom 0.2.16",
- "http 1.3.1",
- "hyper 1.6.0",
+ "http 0.2.12",
+ "hyper 0.14.32",
  "parking_lot 0.11.2",
- "reqwest 0.12.15",
- "reqwest-middleware 0.3.3",
- "retry-policies 0.4.0",
+ "reqwest",
+ "reqwest-middleware 0.2.5",
+ "retry-policies 0.3.0",
+ "task-local-extensions",
  "tokio",
  "tracing",
  "wasm-timer",
@@ -4385,7 +4351,7 @@ checksum = "55c2af6c0571bef48275098bebe17863764989276c49433dab1d52328f744f1d"
 dependencies = [
  "async-trait",
  "opentelemetry",
- "reqwest 0.11.27",
+ "reqwest",
  "reqwest-middleware 0.1.6",
  "task-local-extensions",
  "tokio",
@@ -4406,10 +4372,12 @@ dependencies = [
 
 [[package]]
 name = "retry-policies"
-version = "0.4.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5875471e6cab2871bc150ecb8c727db5113c9338cc3354dc5ee3425b6aa40a1c"
+checksum = "493b4243e32d6eedd29f9a398896e35c6943a123b55eec97dcaee98310d25810"
 dependencies = [
+ "anyhow",
+ "chrono",
  "rand 0.8.5",
 ]
 
@@ -4964,15 +4932,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2047c6ded9c721764247e62cd3b03c09ffc529b2ba5b10ec482ae507a4a70160"
 
 [[package]]
-name = "sync_wrapper"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0bf256ce5efdfa370213c1dabab5935a12e49f2c58d15e9eac2870d3b4f27263"
-dependencies = [
- "futures-core",
-]
-
-[[package]]
 name = "synstructure"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5240,11 +5199,6 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d039ad9159c98b70ecfd540b2573b97f7f52c3e8d9f8ad57a24b916a536975f9"
 dependencies = [
- "futures-core",
- "futures-util",
- "pin-project-lite",
- "sync_wrapper 1.0.2",
- "tokio",
  "tower-layer",
  "tower-service",
 ]
@@ -5714,7 +5668,7 @@ dependencies = [
  "windows-interface",
  "windows-link",
  "windows-result",
- "windows-strings 0.4.2",
+ "windows-strings",
 ]
 
 [[package]]
@@ -5746,30 +5700,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76840935b766e1b0a05c0066835fb9ec80071d4c09a16f6bd5f7e655e3c14c38"
 
 [[package]]
-name = "windows-registry"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4286ad90ddb45071efd1a66dfa43eb02dd0dfbae1545ad6cc3c51cf34d7e8ba3"
-dependencies = [
- "windows-result",
- "windows-strings 0.3.1",
- "windows-targets 0.53.0",
-]
-
-[[package]]
 name = "windows-result"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56f42bd332cc6c8eac5af113fc0c1fd6a8fd2aa08a0119358686e5160d0586c6"
-dependencies = [
- "windows-link",
-]
-
-[[package]]
-name = "windows-strings"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87fa48cc5d406560701792be122a10132491cff9d0aeb23583cc2dcafc847319"
 dependencies = [
  "windows-link",
 ]
