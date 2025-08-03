@@ -5,16 +5,12 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use actix::Addr;
-use actix_web::middleware::Logger;
-use actix_web::web::{get, put, Data};
-use actix_web::{App, HttpResponse, HttpServer, Result};
-use actix_web_prometheus::PrometheusMetricsBuilder;
-
-use tokio::signal::unix::{signal, SignalKind};
-use tokio::sync::oneshot;
+use actix_web::web::Data;
+use actix_web::{HttpResponse, Result as HttpResult};
+use actix_web_prometheus::{PrometheusMetrics, PrometheusMetricsBuilder};
 
 use chrono::Utc;
-use log::{debug, error, info};
+use log::{debug, error};
 use serde::{Deserialize, Serialize};
 
 use vnscope::actors::cron::{
@@ -26,12 +22,22 @@ use vnscope::actors::{FlushVariablesCommand, UpdateStocksCommand};
 use vnscope::algorithm::fuzzy::Variables;
 use vnscope::schemas::{Portal, CRONJOB, WATCHLIST};
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct Status {
+    crontime: Vec<i64>,
+    current: i64,
+    running: i64,
+    done: i64,
+    status: bool,
+}
+
 pub struct AppState {
     // @NOTE: monitoring
     crontime: Arc<Mutex<VecDeque<i64>>>,
     running: Arc<AtomicI64>,
     done: Arc<AtomicI64>,
     timeframe: usize,
+    prometheus: PrometheusMetrics,
 
     // @NOTE: state management
     locked: Arc<Mutex<bool>>,
@@ -178,6 +184,7 @@ impl AppState {
 
             // @NOTE:
             locked: Arc::new(Mutex::new(true)),
+            prometheus,
 
             // @NOTE:
             portal: portal.clone(),
@@ -191,7 +198,7 @@ impl AppState {
         })
     }
 
-    pub async fn init_scheduler_from_portal(&self) -> Result<()> {
+    pub async fn init_scheduler_from_portal(&self) -> AppStateResult<()> {
         let cronjob: Vec<ScheduleCommand> = self
             .portal
             .cronjob()
@@ -259,7 +266,7 @@ impl AppState {
         }
     }
 
-    pub async fn flush_all_variables(&self) -> Result<()> {
+    pub async fn flush_all_variables(&self) -> AppStateResult<()> {
         self.tcbs_vars
             .clone()
             .lock()
@@ -277,9 +284,13 @@ impl AppState {
             .map_err(|e| Error::new(ErrorKind::Other, e.message))?;
         Ok(())
     }
+
+    pub fn prometheus(&self) -> &PrometheusMetrics {
+        &self.prometheus
+    }
 }
 
-pub async fn unlock(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
+pub async fn unlock(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
     match appstate.locked.lock() {
         Ok(mut locked) => {
             *locked = false;
@@ -289,7 +300,7 @@ pub async fn unlock(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
     }
 }
 
-pub async fn lock(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
+pub async fn lock(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
     match appstate.locked.lock() {
         Ok(mut locked) => {
             *locked = true;
@@ -299,7 +310,7 @@ pub async fn lock(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
     }
 }
 
-pub async fn health(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
+pub async fn health(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
     let current = Utc::now().timestamp();
 
     let max_inflight = std::env::var("MAX_INFLIGHT")
@@ -345,7 +356,7 @@ pub async fn health(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
     }
 }
 
-async fn synchronize(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
+pub async fn synchronize(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
     let portal = appstate.portal.clone();
     let vps_symbols: Vec<String> = portal
         .watchlist()
@@ -383,7 +394,7 @@ async fn synchronize(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().body("ok"))
 }
 
-pub async fn flush(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
+pub async fn flush(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
     let tcbs = appstate.tcbs.clone();
     let vps = appstate.vps.clone();
 
