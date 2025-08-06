@@ -18,7 +18,7 @@ COPY sql ./sql
 COPY scripts/release.sh /app/endpoint.sh
 
 # Install runtime dependencies
-RUN apk add postgresql-client ca-certificates supervisor nginx
+RUN apk add ca-certificates supervisor nginx mysql-client
 
 # Create supervisor configuration directory
 RUN mkdir -p /etc/supervisor.d
