@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 ######################################################################
 # @author      : Hung Nguyen Xuan Pham (hung0913208@gmail.com)
@@ -21,17 +21,19 @@ function prepare() {
     return
   fi
 
-  for I in {0..30}; do
-    if ! pg_isready -d "$POSTGRES_DSN"; then
-      sleep 1
-    else
+  for i in {0..30}; do
+    if mysqladmin ping -h "$MYSQL_HOST" -u "$MYSQL_USER" -P "${MYSQL_PORT:-3306}" --password="$MYSQL_PASSWORD" --silent; then
       break
+    else
+      echo "Waiting for MySQL to be ready..."
+      sleep 1
     fi
   done
 
-  if ! pg_isready -d "$POSTGRES_DSN" &> /dev/null; then
-    pg_isready -d "$POSTGRES_DSN"
-    exit $?
+  if ! mysqladmin ping -h "$MYSQL_HOST" -u "$MYSQL_USER" -P "${MYSQL_PORT:-3306}" --password="$MYSQL_PASSWORD" --silent; then
+    echo "Error: MySQL is not ready" >&2
+    mysqladmin ping -h "$MYSQL_HOST" -u "$MYSQL_USER" -P "${MYSQL_PORT:-3306}" --password="$MYSQL_PASSWORD"
+    exit 1
   fi
 
   for script_path in "$1"/*; do
@@ -56,19 +58,32 @@ function localtonet() {
 function boot() {
   local cmd=$1
 
+  set -x
+  if [ "${VERBOSE}" = "true" ]; then
+    sleep 3650d
+  fi
+  if [ "${HTTP_PROTOCOL}" = "https" ]; then
+    sed -i "s/%%FORCE_SSL%%/on/g" /etc/nginx/http.d/default.conf
+  else
+    sed -i '/HTTPS/d' /etc/nginx/http.d/default.conf
+    sed -i '/HTTP_X_FORWARDED_PROTO/d' /etc/nginx/http.d/default.conf
+    sed -i '/HTTP_X_FORWARDED_PORT/d' /etc/nginx/http.d/default.conf
+    HTTP_PROTOCOL="http"
+  fi
+  sed -i "s/%%HTTP_SERVER%%/$HTTP_SERVER/g" /etc/nginx/http.d/default.conf
+  sed -i "s#%%WOOCOMMERCE_SERVER%%#$WOOCOMMERCE_SERVER#g" /etc/nginx/http.d/default.conf
+
   shift
   exec "$cmd" "$@"
+  set +x
 }
 
 CMD=$1
 SQL=$2
-PORT=$3
 
-shift
 shift
 shift
 
 prepare "$SQL"
-localtonet "$PORT"
 boot "$CMD" "$@"
 exit $?

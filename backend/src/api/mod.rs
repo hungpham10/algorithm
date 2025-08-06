@@ -22,6 +22,9 @@ use vnscope::actors::{FlushVariablesCommand, UpdateStocksCommand};
 use vnscope::algorithm::fuzzy::Variables;
 use vnscope::schemas::{Portal, CRONJOB, WATCHLIST};
 
+pub mod ecommerce;
+pub mod investing;
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct Status {
     crontime: Vec<i64>,

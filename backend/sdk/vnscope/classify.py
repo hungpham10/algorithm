@@ -824,6 +824,7 @@ class ClassifyVolumeProfile:
         excessive=1.1,
         top_n=3,
         enable_heatmap=False,
+        enable_inverst_ranges=False,
     ):
         from datetime import datetime, timedelta
         from matplotlib.colors import LinearSegmentedColormap
@@ -926,13 +927,13 @@ class ClassifyVolumeProfile:
 
         if enable_heatmap:
             # Set up the plot with two subplots
-            fig, (ax1, ax2) = plt.subplots(
-                2, 1, figsize=(15, 10), gridspec_kw={"height_ratios": [1, 3, 1]}
+            fig, (ax1, ax2, ax3) = plt.subplots(
+                3, 1, figsize=(15, 10), gridspec_kw={"height_ratios": [1, 3, 1]}
             )
         else:
             # Set up the plot with two subplots
-            fig, (ax2) = plt.subplots(
-                1, 1, figsize=(15, 10), gridspec_kw={"height_ratios": [1]}
+            fig, (ax2, ax3) = plt.subplots(
+                2, 1, figsize=(15, 10), gridspec_kw={"height_ratios": [3, 1]}
             )
 
         if enable_heatmap:
@@ -993,6 +994,9 @@ class ClassifyVolumeProfile:
             ),
         ]
 
+        if enable_inverst_ranges:
+            ranges.reverse()
+
         # Add price range lines (begin, center, end) with color gradient
         for i, (center, begin, end) in enumerate(ranges):
             if i >= top_n:
@@ -1032,7 +1036,7 @@ class ClassifyVolumeProfile:
             price_df,
             type="candle",
             ax=ax2,
-            volume=False,
+            volume=ax3,
             style="charles",
             show_nontrading=False,
             addplot=apds,  # Add Bollinger Bands and horizontal lines
