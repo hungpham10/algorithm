@@ -58,10 +58,12 @@ function localtonet() {
 function boot() {
   local cmd=$1
 
-  set -x
-  if [ "${VERBOSE}" = "true" ]; then
-    sleep 3650d
+  if [ "${USE_TAILSCALE}" = "true" ]; then
+    rm -fr /etc/supervisor.d/without-tailscale.ini
+  else
+    rm -fr /etc/supervisor.d/with-tailscale.ini
   fi
+
   if [ "${HTTP_PROTOCOL}" = "https" ]; then
     sed -i "s/%%FORCE_SSL%%/on/g" /etc/nginx/http.d/default.conf
   else
@@ -75,7 +77,6 @@ function boot() {
 
   shift
   exec "$cmd" "$@"
-  set +x
 }
 
 CMD=$1

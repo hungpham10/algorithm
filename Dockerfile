@@ -24,7 +24,7 @@ RUN apk add postgresql-client ca-certificates supervisor nginx
 RUN mkdir -p /etc/supervisor.d
 
 # Copy supervisor configuration files
-COPY conf/supervisord.ini /etc/supervisor.d/supervisord.ini
+COPY conf/supervisor/*.ini /etc/supervisor.d/
 
 # Copy Nginx configuration
 COPY conf/nginx/www.conf /etc/nginx/http.d/default.conf
