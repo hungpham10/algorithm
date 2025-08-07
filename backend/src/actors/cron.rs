@@ -220,7 +220,7 @@ impl Handler<TickCommand> for CronActor {
 
             let plus_1 = Utc.timestamp_opt(clock_now.timestamp() + 1, 0).unwrap();
             let target = wrapped.unwrap().clone();
-            let mut target_timer = target.timer;
+            let target_timer = target.timer;
 
             if tick_now < target_timer {
                 debug!("tick_now({}) != target.timer({})", tick_now, target_timer);

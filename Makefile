@@ -1,6 +1,7 @@
 .PHONY: setup lint build test publish clean all
 
 CARGO := cargo
+TRUNK := trunk
 PYTHON := python3
 PIP_CACHE := .pip-cache
 
@@ -15,6 +16,7 @@ setup:
 		echo "Installing Rust..."; 							\
 		curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; 	\
 		export PATH="$$HOME/.cargo/bin:$$PATH"; 					\
+		$(CARGO) install trunk;								\
 	fi
 
 lint:
@@ -46,6 +48,12 @@ server:
 	export PATH="$$HOME/.cargo/bin:$$PATH" &&					\
 	$(CARGO) build --release
 
+client:
+	@echo "Building release version $(VERSION)"
+	@mkdir -p $(DIST_DIR)
+	export PATH="$$HOME/.cargo/bin:$$PATH" &&					\
+	$(TRUNK) build --release
+
 ipython:
 	@cp -av target/debug/libvnscope.dylib target/debug/vnscope.so || 		\
 		cp -av target/release/libvnscope.dylib target/release/vnscope.so
@@ -58,7 +66,7 @@ test: library
 	$(PYTHON) -m pytest -xvs $(TEST_DIR)/
 	$(CARGO) test
 
-all: test
+all: test server client library
 
 publish: library
 	@echo "Publishing release version to PyPI"

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
-use log::{debug, error};
+use log::error;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

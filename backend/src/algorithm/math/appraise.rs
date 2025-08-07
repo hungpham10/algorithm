@@ -1,9 +1,6 @@
 use anyhow::Result;
 use statrs::distribution::{ContinuousCDF, Normal};
 
-use std::f64::consts::PI;
-use std::io;
-
 #[inline]
 /// Tính giá quyền chọn mua (Call Option) bằng công thức Black-Scholes.
 /// S: Giá tài sản cơ sở
