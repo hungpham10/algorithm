@@ -16,7 +16,8 @@ use crate::actors::price::{connect_to_price, GetOHCLCommand};
 use crate::actors::tcbs::{connect_to_tcbs, GetOrderCommand};
 use crate::actors::vps::{connect_to_vps, GetPriceCommand, Price};
 use crate::actors::{
-    list_crypto, list_cw, list_futures, list_of_hose, list_of_industry, list_of_vn100, list_of_vn30,
+    list_crypto, list_cw, list_futures, list_of_hose, list_of_industry, list_of_midcap,
+    list_of_penny, list_of_vn100, list_of_vn30,
 };
 use crate::algorithm::fuzzy::Variables;
 use crate::algorithm::VolumeProfile;
@@ -169,6 +170,20 @@ pub fn cw() -> PyResult<PyDataFrame> {
         ])
         .map_err(|e| PyRuntimeError::new_err(format!("Failed to create DataFrame: {:?}", e)))?,
     ))
+}
+
+#[pyfunction]
+pub fn midcap() -> Vec<String> {
+    actix_rt::Runtime::new()
+        .unwrap()
+        .block_on(async { list_of_midcap().await })
+}
+
+#[pyfunction]
+pub fn penny() -> Vec<String> {
+    actix_rt::Runtime::new()
+        .unwrap()
+        .block_on(async { list_of_penny().await })
 }
 
 #[pyfunction]
