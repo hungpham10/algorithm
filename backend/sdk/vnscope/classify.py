@@ -1001,6 +1001,7 @@ class ClassifyVolumeProfile:
         for i, (center, begin, end) in enumerate(ranges):
             if i >= top_n:
                 break
+            print(levels[begin], levels[center], levels[end])
             color = colors[i % len(colors)]  # Chọn màu từ palette
             apds.extend(
                 [

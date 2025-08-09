@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,11 +10,14 @@ use actix::prelude::*;
 use actix::Addr;
 
 use crate::actors::ActorError;
+use crate::algorithm::lru::LruCache;
 use crate::schemas::CandleStick;
 
 const INDEXES: [&str; 3] = ["VNINDEX", "HNXINDEX", "VN30"];
 
 pub struct PriceActor {
+    size_of_block_in_cache: i64,
+    caches: BTreeMap<String, LruCache<i64, Vec<CandleStick>>>,
     timeout: u64,
     provider: String,
 }
@@ -21,6 +25,8 @@ pub struct PriceActor {
 impl PriceActor {
     fn new(provider: &str) -> Self {
         Self {
+            size_of_block_in_cache: 24 * 60 * 60 * 7, // 1 week
+            caches: BTreeMap::new(),
             timeout: 60,
             provider: provider.to_string(),
         }
@@ -55,10 +61,10 @@ struct Kline {
     close: String,
     volume: String,
     close_time: i64,
-    quote_volume: String,
-    trade_count: u64,
-    taker_buy_volume: String,
-    taker_buy_quote_volume: String,
+    _quote_volume: String,
+    _trade_count: u64,
+    _taker_buy_volume: String,
+    _taker_buy_quote_volume: String,
     _ignored: String,
 }
 
@@ -86,86 +92,35 @@ impl Handler<super::HealthCommand> for PriceActor {
 }
 
 #[derive(Message, Debug)]
-#[rtype(result = "Result<Vec<(f64, f64)>, ActorError>")]
-pub struct GetVolumeProfileCommand {
-    pub resolution: String,
-    pub stock: String,
-    pub from: i64,
-    pub to: i64,
-    pub number_of_levels: i64,
+#[rtype(result = "Result<(), ActorError>")]
+pub struct UpdateProviderCommand {
+    provider: String,
 }
 
-impl Handler<GetVolumeProfileCommand> for PriceActor {
-    type Result = ResponseFuture<Result<Vec<(f64, f64)>, ActorError>>;
+impl Handler<UpdateProviderCommand> for PriceActor {
+    type Result = ResponseFuture<Result<(), ActorError>>;
 
-    fn handle(&mut self, msg: GetVolumeProfileCommand, _: &mut Self::Context) -> Self::Result {
-        let number_of_levels = msg.number_of_levels;
-        let resolution = msg.resolution.clone();
-        let provider = self.provider.clone();
-        let stock = msg.stock.clone();
-        let from = msg.from;
-        let to = msg.to;
-        let timeout = self.timeout;
+    fn handle(&mut self, msg: UpdateProviderCommand, _: &mut Self::Context) -> Self::Result {
+        let provider = match msg.provider.as_str() {
+            "binance" => Some(&msg.provider),
+            "dnse" => Some(&msg.provider),
+            "ssi" => Some(&msg.provider),
+            _ => None,
+        };
 
-        Box::pin(async move {
-            let mut volumes = vec![0.0; number_of_levels as usize];
-            let mut prices = vec![0.0; number_of_levels as usize];
+        if let Some(provider) = provider {
+            self.provider = provider.clone();
+        }
 
-            let client = Arc::new(HttpClient::default());
-            let candles = fetch_ohcl_by_stock(
-                client.clone(),
-                &provider,
-                &stock,
-                &resolution,
-                from,
-                to,
-                timeout,
-            )
-            .await;
-
-            match candles {
-                Ok(candles) => {
-                    let mut ret = Vec::new();
-                    let max_price = candles
-                        .iter()
-                        .map(|candle| candle.h)
-                        .fold(f64::MIN, f64::max);
-                    let min_price = candles
-                        .iter()
-                        .map(|candle| candle.l)
-                        .fold(f64::MAX, f64::min);
-                    let price_step = (max_price - min_price) / number_of_levels as f64;
-
-                    candles.iter().for_each(|candle| {
-                        let price_range = candle.h - candle.l;
-                        let volume_per_price = candle.v / price_range;
-
-                        for level in 0..number_of_levels {
-                            let price_level_low = min_price + (level as f64) * price_step;
-                            let price_level_high = min_price + ((level + 1) as f64) * price_step;
-
-                            let overlap_start = candle.l.max(price_level_low);
-                            let overlap_end = candle.h.min(price_level_high);
-
-                            if overlap_start < overlap_end {
-                                volumes[level as usize] +=
-                                    volume_per_price * (overlap_end - overlap_start);
-
-                                // @TODO: better calculation to estimate the price level center
-                                //        according to the volume, rather than using the average
-                                prices[level as usize] = (price_level_low + price_level_high) / 2.0;
-                            }
-                        }
-                    });
-
-                    for level in 0..number_of_levels {
-                        ret.push((prices[level as usize], volumes[level as usize]));
-                    }
-                    Ok(ret)
-                }
-                Err(error) => Err(error),
-            }
-        })
+        if let Some(_) = provider {
+            Box::pin(async move { Ok(()) })
+        } else {
+            Box::pin(async move {
+                Err(ActorError {
+                    message: format!("not support {}", msg.provider),
+                })
+            })
+        }
     }
 }
 
@@ -188,6 +143,34 @@ impl Handler<GetOHCLCommand> for PriceActor {
         let from = msg.from;
         let to = msg.to;
         let timeout = self.timeout;
+
+        if let Some(cache) = self.caches.get_mut(&stock) {
+            let mut result = Vec::new();
+            let mut keep = true;
+            let i_from = from / self.size_of_block_in_cache;
+            let i_to = to / self.size_of_block_in_cache;
+
+            for i in i_from..=i_to {
+                if let Some(candles) = cache.get(&i) {
+                    for candle in candles {
+                        if from <= (candle.t as i64) && (candle.t as i64) < to {
+                            result.push(candle.clone());
+                        }
+
+                        if candle.t as i64 >= to {
+                            break;
+                        }
+                    }
+                } else {
+                    keep = false;
+                    break;
+                }
+            }
+
+            if keep {
+                return Box::pin(async move { Ok(result) });
+            }
+        }
 
         Box::pin(async move {
             let client = Arc::new(HttpClient::default());

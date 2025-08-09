@@ -16,11 +16,14 @@ use serde::{Deserialize, Serialize};
 use vnscope::actors::cron::{
     connect_to_cron, CronActor, CronResolver, ScheduleCommand, TickCommand,
 };
+use vnscope::actors::price::{connect_to_price, PriceActor};
 use vnscope::actors::tcbs::{resolve_tcbs_routes, TcbsActor};
 use vnscope::actors::vps::{resolve_vps_routes, VpsActor};
 use vnscope::actors::{FlushVariablesCommand, UpdateStocksCommand};
 use vnscope::algorithm::fuzzy::Variables;
 use vnscope::schemas::{Portal, CRONJOB, WATCHLIST};
+
+pub mod investing;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct Status {
@@ -44,6 +47,7 @@ pub struct AppState {
 
     // @NOTE: shared components
     portal: Arc<Portal>,
+    price: Arc<Addr<PriceActor>>,
     tcbs: Arc<Addr<TcbsActor>>,
     vps: Arc<Addr<VpsActor>>,
     cron: Arc<Addr<CronActor>>,
@@ -126,6 +130,8 @@ impl AppState {
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid S3_REGION"))?;
         let s3_endpoint = std::env::var("S3_ENDPOINT")
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid S3_ENDPOINT"))?;
+        let investing_provider =
+            std::env::var("DEFAULT_INVESTING_PROVIDER").unwrap_or_else(|_| "ssi".to_string());
 
         let tcbs_vars = Arc::new(Mutex::new(
             Variables::new_with_s3(
@@ -170,10 +176,11 @@ impl AppState {
         )
         .await;
         let vps = resolve_vps_routes(&prometheus, &mut resolver, &vps_symbols, vps_vars.clone());
+        let price = Arc::new(connect_to_price(investing_provider.as_str()));
         let cron = Arc::new(connect_to_cron(Rc::new(resolver)));
 
         Ok(AppState {
-            // @NOTE
+            // @NOTE: shared paramters
             crontime: Arc::new(Mutex::new(VecDeque::new())),
             running: Arc::new(AtomicI64::new(0)),
             done: Arc::new(AtomicI64::new(0)),
@@ -182,17 +189,18 @@ impl AppState {
                 .parse::<usize>()
                 .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid APPSTATE_TIMEFRAME"))?,
 
-            // @NOTE:
+            // @NOTE: monitors
             locked: Arc::new(Mutex::new(true)),
             prometheus,
 
-            // @NOTE:
+            // @NOTE: shared actors
             portal: portal.clone(),
+            price: price.clone(),
             cron: cron.clone(),
             vps: vps.clone(),
             tcbs: tcbs.clone(),
 
-            // @NOTE:
+            // @NOTE: variables
             tcbs_vars,
             vps_vars,
         })

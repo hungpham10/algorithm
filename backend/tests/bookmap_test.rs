@@ -1,9 +1,8 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
-use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 
-use log::{debug, info};
+use log::info;
 
 use vnscope::algorithm::fuzzy::replay;
 use vnscope::algorithm::fuzzy::{

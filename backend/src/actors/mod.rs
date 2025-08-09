@@ -59,6 +59,24 @@ pub async fn list_of_hose() -> Vec<String> {
         .unwrap()
 }
 
+pub async fn list_of_midcap() -> Vec<String> {
+    reqwest::get("https://bgapidatafeed.vps.com.vn/getlistckindex/VNMID")
+        .await
+        .unwrap()
+        .json::<Vec<String>>()
+        .await
+        .unwrap()
+}
+
+pub async fn list_of_penny() -> Vec<String> {
+    reqwest::get("https://bgapidatafeed.vps.com.vn/getlistckindex/VNSML")
+        .await
+        .unwrap()
+        .json::<Vec<String>>()
+        .await
+        .unwrap()
+}
+
 pub async fn list_of_vn30() -> Vec<String> {
     reqwest::get("https://bgapidatafeed.vps.com.vn/getlistckindex/VN30")
         .await
