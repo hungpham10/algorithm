@@ -16,8 +16,12 @@ use crate::schemas::CandleStick;
 const INDEXES: [&str; 3] = ["VNINDEX", "HNXINDEX", "VN30"];
 
 pub struct PriceActor {
+    // @NOTE: caching
     size_of_block_in_cache: i64,
-    caches: BTreeMap<String, LruCache<i64, Vec<CandleStick>>>,
+    num_of_available_cache: usize,
+    caches: BTreeMap<String, BTreeMap<String, LruCache<i64, Vec<CandleStick>>>>,
+
+    // @NOTE: parameters
     timeout: u64,
     provider: String,
 }
@@ -26,6 +30,7 @@ impl PriceActor {
     fn new(provider: &str) -> Self {
         Self {
             size_of_block_in_cache: 24 * 60 * 60 * 7, // 1 week
+            num_of_available_cache: 70,
             caches: BTreeMap::new(),
             timeout: 60,
             provider: provider.to_string(),
@@ -125,7 +130,73 @@ impl Handler<UpdateProviderCommand> for PriceActor {
 }
 
 #[derive(Message, Debug)]
-#[rtype(result = "Result<Vec<CandleStick>, ActorError>")]
+#[rtype(result = "Result<(), ActorError>")]
+pub struct UpdateOHCLToCacheCommand {
+    pub candles: Vec<CandleStick>,
+    pub resolution: String,
+    pub stock: String,
+}
+
+impl Handler<UpdateOHCLToCacheCommand> for PriceActor {
+    type Result = ResponseFuture<Result<(), ActorError>>;
+
+    fn handle(&mut self, msg: UpdateOHCLToCacheCommand, _: &mut Self::Context) -> Self::Result {
+        if let Some(caches) = self.caches.get_mut(&msg.stock) {
+            if !caches.contains_key(&msg.resolution) {
+                caches.insert(
+                    msg.resolution.clone(),
+                    LruCache::new(self.num_of_available_cache),
+                );
+            }
+        } else {
+            self.caches.insert(msg.stock.clone(), BTreeMap::new());
+        }
+
+        if let Some(caches) = self.caches.get_mut(&msg.stock) {
+            if !caches.contains_key(&msg.resolution) {
+                caches.insert(
+                    msg.resolution.clone(),
+                    LruCache::new(self.num_of_available_cache),
+                );
+            }
+
+            if let Some(cache) = caches.get_mut(&msg.resolution) {
+                let mut block = Vec::new();
+                let mut id = 0;
+                let mut inited = false;
+
+                for candle in msg.candles {
+                    if (candle.t as i64) % self.size_of_block_in_cache == 0 {
+                        if block.len() > 0 {
+                            cache.put(id, block);
+                        }
+
+                        inited = true;
+                        block = Vec::new();
+                        id = (candle.t as i64) / self.size_of_block_in_cache;
+                    }
+
+                    if inited {
+                        block.push(candle);
+                    }
+                }
+
+                if !inited {
+                    return Box::pin(async move {
+                        Err(ActorError {
+                            message: format!("list of candles too short"),
+                        })
+                    });
+                }
+            }
+        }
+
+        Box::pin(async move { Ok(()) })
+    }
+}
+
+#[derive(Message, Debug)]
+#[rtype(result = "Result<(Vec<CandleStick>, bool), ActorError>")]
 pub struct GetOHCLCommand {
     pub resolution: String,
     pub stock: String,
@@ -134,7 +205,7 @@ pub struct GetOHCLCommand {
 }
 
 impl Handler<GetOHCLCommand> for PriceActor {
-    type Result = ResponseFuture<Result<Vec<CandleStick>, ActorError>>;
+    type Result = ResponseFuture<Result<(Vec<CandleStick>, bool), ActorError>>;
 
     fn handle(&mut self, msg: GetOHCLCommand, _: &mut Self::Context) -> Self::Result {
         let resolution = msg.resolution.clone();
@@ -144,47 +215,52 @@ impl Handler<GetOHCLCommand> for PriceActor {
         let to = msg.to;
         let timeout = self.timeout;
 
-        if let Some(cache) = self.caches.get_mut(&stock) {
-            let mut result = Vec::new();
-            let mut keep = true;
-            let i_from = from / self.size_of_block_in_cache;
-            let i_to = to / self.size_of_block_in_cache;
+        if let Some(caches) = self.caches.get_mut(&stock) {
+            if let Some(cache) = caches.get_mut(&resolution) {
+                let mut result = Vec::new();
+                let mut keep = true;
+                let i_from = from / self.size_of_block_in_cache;
+                let i_to = to / self.size_of_block_in_cache;
 
-            for i in i_from..=i_to {
-                if let Some(candles) = cache.get(&i) {
-                    for candle in candles {
-                        if from <= (candle.t as i64) && (candle.t as i64) < to {
-                            result.push(candle.clone());
-                        }
+                for i in i_from..=i_to {
+                    if let Some(candles) = cache.get(&i) {
+                        for candle in candles {
+                            if from <= (candle.t as i64) && (candle.t as i64) < to {
+                                result.push(candle.clone());
+                            }
 
-                        if candle.t as i64 >= to {
-                            break;
+                            if candle.t as i64 >= to {
+                                break;
+                            }
                         }
+                    } else {
+                        keep = false;
+                        break;
                     }
-                } else {
-                    keep = false;
-                    break;
                 }
-            }
 
-            if keep {
-                return Box::pin(async move { Ok(result) });
+                if keep {
+                    return Box::pin(async move { Ok((result, false)) });
+                }
             }
         }
 
         Box::pin(async move {
             let client = Arc::new(HttpClient::default());
 
-            fetch_ohcl_by_stock(
-                client.clone(),
-                &provider,
-                &stock,
-                &resolution,
-                from,
-                to,
-                timeout,
-            )
-            .await
+            Ok((
+                fetch_ohcl_by_stock(
+                    client.clone(),
+                    &provider,
+                    &stock,
+                    &resolution,
+                    from,
+                    to,
+                    timeout,
+                )
+                .await?,
+                true,
+            ))
         })
     }
 }

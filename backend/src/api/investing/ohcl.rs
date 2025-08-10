@@ -6,7 +6,7 @@ use actix_web::{HttpResponse, Result};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 
-use vnscope::actors::price::GetOHCLCommand;
+use vnscope::actors::price::{GetOHCLCommand, UpdateOHCLToCacheCommand};
 use vnscope::schemas::CandleStick;
 
 use crate::api::AppState;
@@ -25,6 +25,47 @@ pub struct OhclResponse {
     ohcl: Option<Vec<CandleStick>>,
 }
 
+async fn update_ohcl_cache_and_return(
+    appstate: &Data<Arc<AppState>>,
+    args: &Query<OhclRequest>,
+    candles: &Vec<CandleStick>,
+) -> Result<HttpResponse> {
+    match appstate
+        .price
+        .send(UpdateOHCLToCacheCommand {
+            resolution: args.resolution.clone(),
+            stock: args.symbol.clone(),
+            candles: candles.clone(),
+        })
+        .await
+    {
+        Err(error) => {
+            error!("Fail to update OHCL to cache: {}", error);
+
+            Ok(HttpResponse::InternalServerError().json(OhclResponse {
+                ohcl: None,
+                error: Some(format!("Failed to update OHCL to cache: {}", error)),
+            }))
+        }
+        Ok(Ok(_)) => {
+            debug!("Update caching to optimize performance successfully");
+
+            Ok(HttpResponse::Ok().json(OhclResponse {
+                ohcl: Some(candles.clone()),
+                error: None,
+            }))
+        }
+        Ok(Err(error)) => {
+            error!("Fail to update OHCL to cache: {}", error);
+
+            Ok(HttpResponse::ServiceUnavailable().json(OhclResponse {
+                ohcl: None,
+                error: Some(error.message),
+            }))
+        }
+    }
+}
+
 pub async fn ohcl(appstate: Data<Arc<AppState>>, args: Query<OhclRequest>) -> Result<HttpResponse> {
     match appstate
         .price
@@ -36,13 +77,17 @@ pub async fn ohcl(appstate: Data<Arc<AppState>>, args: Query<OhclRequest>) -> Re
         })
         .await
     {
-        Ok(Ok(ohcl)) => {
+        Ok(Ok((candles, is_from_source))) => {
             debug!("Successful return OHCL to client");
 
-            Ok(HttpResponse::Ok().json(OhclResponse {
-                ohcl: Some(ohcl.clone()),
-                error: None,
-            }))
+            if is_from_source {
+                update_ohcl_cache_and_return(&appstate, &args, &candles).await
+            } else {
+                Ok(HttpResponse::Ok().json(OhclResponse {
+                    ohcl: Some(candles.clone()),
+                    error: None,
+                }))
+            }
         }
         Ok(Err(error)) => {
             error!("Fail to query OHCL: {}", error);

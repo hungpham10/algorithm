@@ -1,6 +1,5 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::hash::Hash;
 
 struct Node<K, V> {
     key: K,
@@ -10,7 +9,7 @@ struct Node<K, V> {
 }
 
 pub struct LruCache<K, V> {
-    mapping: HashMap<K, usize>,
+    mapping: BTreeMap<K, usize>,
     caching: Vec<Node<K, V>>,
     capacity: usize,
     first: usize,
@@ -22,14 +21,14 @@ pub struct LruCache<K, V> {
     on_inserting: Option<Box<dyn Fn(K, V)>>,
 }
 
-impl<K: Clone + Hash + Eq + Debug, V: Debug + Clone> LruCache<K, V> {
+impl<K: Clone + Eq + Ord + Debug, V: Debug + Clone> LruCache<K, V> {
     pub fn new(capacity: usize) -> Self {
         Self {
-            mapping: HashMap::new(),
+            mapping: BTreeMap::new(),
             caching: Vec::new(),
-            capacity,
             first: 0,
             last: 0,
+            capacity,
 
             // @NOTE: callbacks
             on_removing: None,

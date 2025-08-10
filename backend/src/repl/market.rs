@@ -398,7 +398,8 @@ pub fn price(
                 .await
                 .unwrap()
         })
-        .map_err(|e| PyRuntimeError::new_err(format!("{:?}", e)))?;
+        .map_err(|e| PyRuntimeError::new_err(format!("{:?}", e)))?
+        .0;
 
     Ok(PyDataFrame(
         DataFrame::new(vec![
@@ -463,7 +464,8 @@ pub fn heatmap(
                 })
                 .await
                 .unwrap()
-                .unwrap()),
+                .unwrap()
+                .0),
             number_of_levels,
             overlap,
             interval_in_hour,
@@ -539,7 +541,8 @@ pub fn profile(
                         })
                         .await
                         .unwrap()
-                        .unwrap()),
+                        .unwrap()
+                        .0),
                     number_of_levels,
                     0,
                     24,
@@ -627,6 +630,7 @@ pub fn history(symbols: Vec<String>, resolution: String, lookback: i64) -> PyRes
                     .await
                     .unwrap()
                     .unwrap()
+                    .0
             })
         })
         .collect::<Vec<_>>();
