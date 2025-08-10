@@ -15,7 +15,7 @@ crate-type = ["cdylib", "rlib"]
 [features]
 landing-page = ["sycamore", "default"]
 python = ["pyo3", "pyo3-asyncio", "pyo3-polars", "polars", "numpy", "env_logger"]
-default = ["airtable-api", "redis", "actix-web", "tracing-subscriber", "actix-web-prometheus", "prometheus"]
+default = ["airtable-api", "redis", "actix-web", "tracing-subscriber", "actix-web-prometheus"]
 
 [dependencies]
 # Landing page rendering
@@ -48,7 +48,7 @@ airtable-api = { version = "0.1", optional = true }
 
 # feature dashboard monitoring
 actix-web-prometheus = { version = "0.1.2", optional = true }
-prometheus = { version = "0.13.3", optional = true }
+prometheus = "0.13.3"
 
 # Crawling data in background
 reqwest = { version = "0.11.27", default-features = false, features = ["json", "blocking", "rustls-tls"] }
