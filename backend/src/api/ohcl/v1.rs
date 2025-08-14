@@ -14,7 +14,6 @@ use crate::api::AppState;
 #[derive(Deserialize, Debug)]
 pub struct OhclRequest {
     resolution: String,
-    symbol: String,
     from: i64,
     to: i64,
     limit: usize,
@@ -28,6 +27,7 @@ pub struct OhclResponse {
 
 async fn update_ohcl_cache_and_return(
     appstate: &Data<Arc<AppState>>,
+    symbol: &String,
     args: &Query<OhclRequest>,
     candles: &Vec<CandleStick>,
 ) -> Result<HttpResponse> {
@@ -35,7 +35,7 @@ async fn update_ohcl_cache_and_return(
         .price
         .send(UpdateOHCLToCacheCommand {
             resolution: args.resolution.clone(),
-            stock: args.symbol.clone(),
+            stock: symbol.clone(),
             candles: candles.clone(),
         })
         .await
@@ -77,18 +77,18 @@ async fn update_ohcl_cache_and_return(
     }
 }
 
-pub async fn ohcl(
+pub async fn get_ohcl_from_broker(
     appstate: Data<Arc<AppState>>,
-    path: Path<(String,)>,
+    path: Path<(String, String)>,
     args: Query<OhclRequest>,
 ) -> Result<HttpResponse> {
-    let broker = path.into_inner().0; // Extract broker from path tuple
+    let (broker, symbol) = path.into_inner();
 
     match appstate
         .price
         .send(GetOHCLCommand {
             resolution: args.resolution.clone(),
-            stock: args.symbol.clone(),
+            stock: symbol.clone(),
             from: args.from,
             to: args.to,
             broker: broker,
@@ -100,7 +100,7 @@ pub async fn ohcl(
             debug!("Successful return OHCL to client");
 
             if is_from_source {
-                update_ohcl_cache_and_return(&appstate, &args, &candles).await
+                update_ohcl_cache_and_return(&appstate, &symbol, &args, &candles).await
             } else {
                 let mut result = Vec::new();
 

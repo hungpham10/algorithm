@@ -23,7 +23,7 @@ use vnscope::actors::{FlushVariablesCommand, UpdateStocksCommand};
 use vnscope::algorithm::fuzzy::Variables;
 use vnscope::schemas::{Portal, CRONJOB, WATCHLIST};
 
-pub mod investing;
+pub mod ohcl;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct Status {
@@ -413,8 +413,4 @@ pub async fn flush(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
         Ok(Err(error)) => Ok(HttpResponse::BadRequest().body(format!("{}", error))),
         Err(error) => Ok(HttpResponse::BadRequest().body(format!("{}", error))),
     }
-}
-
-pub async fn echo() -> HttpResult<HttpResponse> {
-    Ok(HttpResponse::BadRequest().body("ok"))
 }

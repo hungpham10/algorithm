@@ -13,8 +13,7 @@ use log::{error, info};
 
 mod api;
 
-use crate::api::investing::ohcl;
-use crate::api::{echo, flush, health, lock, synchronize, unlock, AppState};
+use crate::api::{flush, health, lock, synchronize, unlock, AppState};
 
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
@@ -24,7 +23,7 @@ async fn main() -> std::io::Result<()> {
     // @NOTE: server configuration
     let host = std::env::var("SERVER_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port = std::env::var("SERVER_PORT")
-        .unwrap_or_else(|_| "8000".to_string())
+        .unwrap_or_else(|_| "8080".to_string())
         .parse::<u16>()
         .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid SERVER_PORT"))?;
 
@@ -74,11 +73,14 @@ async fn main() -> std::io::Result<()> {
             .wrap(appstate_for_control.prometheus().clone())
             .wrap(Logger::default())
             .route("/health", get().to(health))
-            .route("/api/v1/variables/flush", put().to(flush))
-            .route("/api/v1/config/synchronize", put().to(synchronize))
-            .route("/api/v1/config/lock", put().to(lock))
-            .route("/api/v1/config/unlock", put().to(unlock))
-            .route("/api/investing/v1/ohcl/{broker}", get().to(ohcl))
+            .route("/api/config/v1/variables/flush", put().to(flush))
+            .route("/api/config/v1/synchronize", put().to(synchronize))
+            .route("/api/config/v1/lock", put().to(lock))
+            .route("/api/config/v1/unlock", put().to(unlock))
+            .route(
+                "/api/investing/v1/ohcl/{broker}/{symbol}",
+                get().to(crate::api::ohcl::v1::get_ohcl_from_broker),
+            )
             .app_data(Data::new(appstate_for_control.clone()))
     })
     .bind((host.as_str(), port))
