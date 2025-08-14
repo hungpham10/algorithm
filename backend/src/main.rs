@@ -19,9 +19,7 @@ use crate::api::{echo, flush, health, lock, synchronize, unlock, AppState};
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
-    env_logger::init();
-
-    //tracing_subscriber::fmt().json().init();
+    tracing_subscriber::fmt().json().init();
 
     // @NOTE: server configuration
     let host = std::env::var("SERVER_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
