@@ -23,7 +23,7 @@ async fn main() -> std::io::Result<()> {
     // @NOTE: server configuration
     let host = std::env::var("SERVER_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port = std::env::var("SERVER_PORT")
-        .unwrap_or_else(|_| "8080".to_string())
+        .unwrap_or_else(|_| "8000".to_string())
         .parse::<u16>()
         .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid SERVER_PORT"))?;
 
