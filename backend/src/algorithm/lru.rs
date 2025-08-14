@@ -178,43 +178,43 @@ mod tests {
         cache.put(1, 10);
         cache.put(2, 20);
 
-        assert_eq!(cache.get(&1), Some(&10)); // Access 1, making it most recent
-        assert_eq!(cache.get(&2), Some(&20));
+        assert_eq!(cache.get(&1), Some(10)); // Access 1, making it most recent
+        assert_eq!(cache.get(&2), Some(20));
 
         cache.put(3, 30); // Cache full, evicts 1 (LRU)
 
         assert_eq!(cache.get(&1), None);
-        assert_eq!(cache.get(&2), Some(&20)); // Access 2
-        assert_eq!(cache.get(&3), Some(&30));
+        assert_eq!(cache.get(&2), Some(20)); // Access 2
+        assert_eq!(cache.get(&3), Some(30));
 
         cache.put(4, 40);
 
         assert_eq!(cache.get(&1), None);
         assert_eq!(cache.get(&2), None); // 2 is evicted
-        assert_eq!(cache.get(&3), Some(&30)); // Access 3
-        assert_eq!(cache.get(&4), Some(&40));
+        assert_eq!(cache.get(&3), Some(30)); // Access 3
+        assert_eq!(cache.get(&4), Some(40));
 
         cache.put(2, 20); // put 2 again, 3 is evicted
 
         assert_eq!(cache.get(&1), None);
         assert_eq!(cache.get(&3), None); // Access 3 fails
-        assert_eq!(cache.get(&4), Some(&40));
-        assert_eq!(cache.get(&2), Some(&20)); // Access 2
+        assert_eq!(cache.get(&4), Some(40));
+        assert_eq!(cache.get(&2), Some(20)); // Access 2
 
         cache.put(5, 50); // Cache is full, should evict 3 because it's LRU after 4 and 2
 
         assert_eq!(cache.get(&1), None);
         assert_eq!(cache.get(&3), None); // 3 is evicted
         assert_eq!(cache.get(&4), None); // 4 is evicted
-        assert_eq!(cache.get(&2), Some(&20));
-        assert_eq!(cache.get(&5), Some(&50));
+        assert_eq!(cache.get(&2), Some(20));
+        assert_eq!(cache.get(&5), Some(50));
 
         cache.put(1, 10); // Cache full, will evict 2
         assert_eq!(cache.get(&4), None); // 4 gets evicted.
 
-        assert_eq!(cache.get(&1), Some(&10));
+        assert_eq!(cache.get(&1), Some(10));
         assert_eq!(cache.get(&2), None); // 2 is evicted
-        assert_eq!(cache.get(&5), Some(&50));
+        assert_eq!(cache.get(&5), Some(50));
     }
 
     #[test]
@@ -229,7 +229,7 @@ mod tests {
         let mut cache = LruCache::new(2);
         cache.put(1, 10);
         cache.put(1, 20);
-        assert_eq!(cache.get(&1), Some(&20));
-        assert_eq!(cache.mapping.len(), 1); // Check that we still only have one entry for key 1
+        assert_eq!(cache.get(&1), Some(20));
+        assert_eq!(cache.mapping.read().unwrap().len(), 1); // Check that we still only have one entry for key 1
     }
 }
