@@ -16,7 +16,8 @@ use crate::actors::price::{connect_to_price, GetOHCLCommand};
 use crate::actors::tcbs::{connect_to_tcbs, GetOrderCommand};
 use crate::actors::vps::{connect_to_vps, GetPriceCommand, Price};
 use crate::actors::{
-    list_crypto, list_cw, list_futures, list_of_hose, list_of_industry, list_of_vn100, list_of_vn30,
+    list_crypto, list_cw, list_futures, list_of_hose, list_of_industry, list_of_midcap,
+    list_of_penny, list_of_vn100, list_of_vn30,
 };
 use crate::algorithm::fuzzy::Variables;
 use crate::algorithm::VolumeProfile;
@@ -169,6 +170,20 @@ pub fn cw() -> PyResult<PyDataFrame> {
         ])
         .map_err(|e| PyRuntimeError::new_err(format!("Failed to create DataFrame: {:?}", e)))?,
     ))
+}
+
+#[pyfunction]
+pub fn midcap() -> Vec<String> {
+    actix_rt::Runtime::new()
+        .unwrap()
+        .block_on(async { list_of_midcap().await })
+}
+
+#[pyfunction]
+pub fn penny() -> Vec<String> {
+    actix_rt::Runtime::new()
+        .unwrap()
+        .block_on(async { list_of_penny().await })
 }
 
 #[pyfunction]
@@ -367,23 +382,33 @@ pub fn price(
         .ok_or_else(|| PyRuntimeError::new_err("Invalid time component for `to` date"))?
         .and_utc()
         .timestamp();
-    let datapoints = actix_rt::Runtime::new()
-        .unwrap()
-        .block_on(async {
-            let provider = PRICE_PROVIDER.lock().unwrap();
-            let actor = connect_to_price(&provider);
+    let datapoints = actix_rt::Runtime::new().unwrap().block_on(async {
+        let broker = PRICE_PROVIDER.lock().unwrap();
+        let actor = connect_to_price();
 
-            actor
-                .send(GetOHCLCommand {
-                    resolution: resolution.clone(),
-                    stock: symbol.clone(),
-                    from,
-                    to,
-                })
-                .await
-                .unwrap()
-        })
-        .map_err(|e| PyRuntimeError::new_err(format!("{:?}", e)))?;
+        actor
+            .send(GetOHCLCommand {
+                resolution: resolution.clone(),
+                stock: symbol.clone(),
+                broker: broker.to_string(),
+                from,
+                to,
+                limit: 0,
+            })
+            .await
+            .unwrap()
+            .unwrap()
+            .0
+            .iter()
+            .filter_map(|candle| {
+                if candle.t >= from as i32 && candle.t <= to as i32 {
+                    Some(candle.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+    });
 
     Ok(PyDataFrame(
         DataFrame::new(vec![
@@ -431,12 +456,12 @@ pub fn heatmap(
     }?;
 
     let profiles = actix_rt::Runtime::new().unwrap().block_on(async {
-        let provider = PRICE_PROVIDER.lock().unwrap();
+        let broker = PRICE_PROVIDER.lock().unwrap();
         let mapping = PROFILE_RESOLUTION.lock().unwrap();
-        let actor = connect_to_price(&provider);
+        let actor = connect_to_price();
 
         match VolumeProfile::new_from_candles(
-            &(actor
+            actor
                 .send(GetOHCLCommand {
                     resolution: match mapping.get(&resolution) {
                         Some(resolution) => resolution.clone(),
@@ -445,10 +470,23 @@ pub fn heatmap(
                     stock: symbol.clone(),
                     from,
                     to,
+                    broker: broker.to_string(),
+                    limit: 0,
                 })
                 .await
                 .unwrap()
-                .unwrap()),
+                .unwrap()
+                .0
+                .iter()
+                .filter_map(|candle| {
+                    if candle.t >= from as i32 && candle.t <= to as i32 {
+                        Some(candle.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .as_slice(),
             number_of_levels,
             overlap,
             interval_in_hour,
@@ -507,12 +545,12 @@ pub fn profile(
         .par_iter()
         .filter_map(|symbol| {
             actix_rt::Runtime::new().unwrap().block_on(async {
-                let provider = PRICE_PROVIDER.lock().unwrap();
+                let broker = PRICE_PROVIDER.lock().unwrap();
                 let mapping = PROFILE_RESOLUTION.lock().unwrap();
-                let actor = connect_to_price(&provider);
+                let actor = connect_to_price();
 
                 match VolumeProfile::new_from_candles(
-                    &(actor
+                    actor
                         .send(GetOHCLCommand {
                             resolution: match mapping.get(&resolution) {
                                 Some(resolution) => resolution.clone(),
@@ -521,10 +559,23 @@ pub fn profile(
                             stock: symbol.clone(),
                             from,
                             to,
+                            broker: broker.to_string(),
+                            limit: 0,
                         })
                         .await
                         .unwrap()
-                        .unwrap()),
+                        .unwrap()
+                        .0
+                        .iter()
+                        .filter_map(|candle| {
+                            if candle.t >= from as i32 && candle.t <= to as i32 {
+                                Some(candle.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .as_slice(),
                     number_of_levels,
                     0,
                     24,
@@ -599,19 +650,31 @@ pub fn history(symbols: Vec<String>, resolution: String, lookback: i64) -> PyRes
         .iter()
         .map(|symbol| {
             actix_rt::Runtime::new().unwrap().block_on(async {
-                let provider = PRICE_PROVIDER.lock().unwrap();
-                let actor = connect_to_price(&provider);
+                let broker = PRICE_PROVIDER.lock().unwrap();
+                let actor = connect_to_price();
 
                 actor
                     .send(GetOHCLCommand {
                         resolution: resolution.clone(),
                         stock: symbol.clone(),
+                        broker: broker.to_string(),
                         from,
                         to,
+                        limit: 0,
                     })
                     .await
                     .unwrap()
                     .unwrap()
+                    .0
+                    .iter()
+                    .filter_map(|candle| {
+                        if candle.t >= from as i32 && candle.t <= to as i32 {
+                            Some(candle.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
             })
         })
         .collect::<Vec<_>>();

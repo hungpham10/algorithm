@@ -18,4 +18,3 @@ repos:
     rev: master
     hooks:
       - id: gitleaks
-      - id: gitleaks-docker

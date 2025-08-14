@@ -13,10 +13,15 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-python = ["pyo3", "pyo3-asyncio", "pyo3-polars", "polars", "numpy", "env_logger"]
-default = ["airtable-api"]
+landing-page = ["sycamore", "default"]
+python = ["pyo3", "pyo3-asyncio", "pyo3-polars", "polars", "numpy"]
+bff = ["default"]
+default = ["airtable-api", "redis", "actix-web", "tracing-subscriber", "actix-web-prometheus"]
 
 [dependencies]
+# Landing page rendering
+sycamore = { version = "0.9.1", optional = true }
+
 # Data modeling
 juniper = "0.16"
 serde = "1.0.123"
@@ -32,7 +37,7 @@ pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
 pyo3-asyncio = { version = "0.20.0", optional = true }
 pyo3-polars = { version = "0.10.0", optional = true }
 
-# algorithm
+# Algorithm for generic
 rand_distr = "0.4.3"
 statrs = "0.16.0"
 rand = "0.8.5"
@@ -43,14 +48,14 @@ itertools = "0.13"
 airtable-api = { version = "0.1", optional = true }
 
 # feature dashboard monitoring
-actix-web-prometheus = "0.1.2"
+actix-web-prometheus = { version = "0.1.2", optional = true }
 prometheus = "0.13.3"
 
 # Crawling data in background
-cron-parser = "0.8.1"
 reqwest = { version = "0.11.27", default-features = false, features = ["json", "blocking", "rustls-tls"] }
 reqwest-retry = "0.4.0"
 reqwest-middleware = { version = "0.2.5" }
+cron-parser = "0.8.1"
 actix-rt = "2.10.0"
 actix = "0.13.5"
 awc = "3.5.1"
@@ -67,10 +72,14 @@ log = "0.4.22"
 
 # Web application
 dotenvy = "0.15.7"
-actix-web = "4.3.1"
-env_logger = { version = "0.8.2", optional = true }
-tracing-subscriber = { version = "0.3.16", features = ["json"] }
+actix-web = { version = "4.3.1", optional = true }
+redis = { version = "0.25", optional = true }
+env_logger = { version = "0.8.2" }
+tracing-subscriber = { version = "0.3.16", optional = true, features = ["json"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
-tokio = { version = "1.26.0", features = ["full", "test-util"] } # Thêm test-util cho test
+tokio = { version = "1.26.0", features = ["full", "test-util"] }
+
+[profile.release]
+debug = true
