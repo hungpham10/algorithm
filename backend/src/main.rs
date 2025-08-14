@@ -14,12 +14,14 @@ use log::{error, info};
 mod api;
 
 use crate::api::investing::ohcl;
-use crate::api::{flush, health, lock, synchronize, unlock, AppState};
+use crate::api::{echo, flush, health, lock, synchronize, unlock, AppState};
 
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
-    tracing_subscriber::fmt().json().init();
+    env_logger::init();
+
+    //tracing_subscriber::fmt().json().init();
 
     // @NOTE: server configuration
     let host = std::env::var("SERVER_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
@@ -78,7 +80,7 @@ async fn main() -> std::io::Result<()> {
             .route("/api/v1/config/synchronize", put().to(synchronize))
             .route("/api/v1/config/lock", put().to(lock))
             .route("/api/v1/config/unlock", put().to(unlock))
-            .route("/api/investing/v1/ohcl", get().to(ohcl))
+            .route("/api/investing/v1/ohcl/{broker}", get().to(ohcl))
             .app_data(Data::new(appstate_for_control.clone()))
     })
     .bind((host.as_str(), port))
@@ -128,6 +130,7 @@ async fn main() -> std::io::Result<()> {
         result = server => result,
     };
 
+    #[cfg(not(feature = "bff"))]
     tokio::select! {
         _ = rxserver => {
             info!("Server is downed gracefully...");
@@ -137,4 +140,7 @@ async fn main() -> std::io::Result<()> {
             ok
         }
     }
+
+    #[cfg(feature = "bff")]
+    ok
 }

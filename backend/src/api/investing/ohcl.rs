@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use actix_web::web::{Data, Query};
+use actix_web::web::{Data, Path, Query};
 use actix_web::{HttpResponse, Result};
 
 use log::{debug, error};
@@ -17,6 +17,7 @@ pub struct OhclRequest {
     symbol: String,
     from: i64,
     to: i64,
+    limit: usize,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -49,9 +50,19 @@ async fn update_ohcl_cache_and_return(
         }
         Ok(Ok(_)) => {
             debug!("Update caching to optimize performance successfully");
+            let mut result = Vec::new();
+
+            for candle in candles {
+                if candle.t >= args.from as i32 && candle.t <= args.to as i32 {
+                    result.push(candle.clone());
+                }
+                if args.limit > 0 && result.len() > args.limit {
+                    break;
+                }
+            }
 
             Ok(HttpResponse::Ok().json(OhclResponse {
-                ohcl: Some(candles.clone()),
+                ohcl: Some(result),
                 error: None,
             }))
         }
@@ -66,7 +77,13 @@ async fn update_ohcl_cache_and_return(
     }
 }
 
-pub async fn ohcl(appstate: Data<Arc<AppState>>, args: Query<OhclRequest>) -> Result<HttpResponse> {
+pub async fn ohcl(
+    appstate: Data<Arc<AppState>>,
+    path: Path<(String,)>,
+    args: Query<OhclRequest>,
+) -> Result<HttpResponse> {
+    let broker = path.into_inner().0; // Extract broker from path tuple
+
     match appstate
         .price
         .send(GetOHCLCommand {
@@ -74,6 +91,8 @@ pub async fn ohcl(appstate: Data<Arc<AppState>>, args: Query<OhclRequest>) -> Re
             stock: args.symbol.clone(),
             from: args.from,
             to: args.to,
+            broker: broker,
+            limit: args.limit,
         })
         .await
     {
@@ -83,8 +102,19 @@ pub async fn ohcl(appstate: Data<Arc<AppState>>, args: Query<OhclRequest>) -> Re
             if is_from_source {
                 update_ohcl_cache_and_return(&appstate, &args, &candles).await
             } else {
+                let mut result = Vec::new();
+
+                for candle in candles {
+                    if candle.t >= args.from as i32 && candle.t <= args.to as i32 {
+                        result.push(candle.clone());
+                    }
+                    if args.limit > 0 && result.len() > args.limit {
+                        break;
+                    }
+                }
+
                 Ok(HttpResponse::Ok().json(OhclResponse {
-                    ohcl: Some(candles.clone()),
+                    ohcl: Some(result),
                     error: None,
                 }))
             }

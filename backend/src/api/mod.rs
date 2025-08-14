@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::io::{Error, ErrorKind, Result as AppStateResult};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -415,4 +415,8 @@ pub async fn flush(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
         Ok(Err(error)) => Ok(HttpResponse::BadRequest().body(format!("{}", error))),
         Err(error) => Ok(HttpResponse::BadRequest().body(format!("{}", error))),
     }
+}
+
+pub async fn echo() -> HttpResult<HttpResponse> {
+    Ok(HttpResponse::BadRequest().body("ok"))
 }

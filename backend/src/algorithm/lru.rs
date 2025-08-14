@@ -1,5 +1,9 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::fmt::Debug;
+use std::hash::Hash;
+use std::sync::{Arc, RwLock};
+
+use log::debug;
 
 struct Node<K, V> {
     key: K,
@@ -9,123 +13,120 @@ struct Node<K, V> {
 }
 
 pub struct LruCache<K, V> {
-    mapping: BTreeMap<K, usize>,
-    caching: Vec<Node<K, V>>,
+    mapping: Arc<RwLock<HashMap<K, usize>>>,
+    caching: Arc<RwLock<Vec<Node<K, V>>>>,
     capacity: usize,
-    first: usize,
-    last: usize,
-
-    // @NOTE: callbacks
-    on_removing: Option<Box<dyn Fn(K, V)>>,
-    on_updating: Option<Box<dyn Fn(K, V)>>,
-    on_inserting: Option<Box<dyn Fn(K, V)>>,
+    first: Arc<RwLock<usize>>,
+    last: Arc<RwLock<usize>>,
+    on_removing: Option<Arc<dyn Fn(K, V) + Send + Sync>>,
+    on_updating: Option<Arc<dyn Fn(K, V) + Send + Sync>>,
+    on_inserting: Option<Arc<dyn Fn(K, V) + Send + Sync>>,
 }
 
-impl<K: Clone + Eq + Ord + Debug, V: Debug + Clone> LruCache<K, V> {
+impl<K: Clone + Hash + Eq + Ord + Debug + Send + Sync, V: Debug + Clone + Send + Sync>
+    LruCache<K, V>
+{
     pub fn new(capacity: usize) -> Self {
         Self {
-            mapping: BTreeMap::new(),
-            caching: Vec::new(),
-            first: 0,
-            last: 0,
+            mapping: Arc::new(RwLock::new(HashMap::new())),
+            caching: Arc::new(RwLock::new(Vec::new())),
+            first: Arc::new(RwLock::new(0)),
+            last: Arc::new(RwLock::new(0)),
             capacity,
-
-            // @NOTE: callbacks
             on_removing: None,
             on_updating: None,
             on_inserting: None,
         }
     }
 
-    pub fn put(&mut self, key: K, value: V) -> bool {
-        if let Some(&index) = self.mapping.get(&key) {
+    pub fn put(&self, key: K, value: V) -> bool {
+        let mapping_read = self.mapping.read().unwrap();
+        if let Some(&index) = mapping_read.get(&key) {
+            drop(mapping_read); // Release read lock early
             if let Some(callback) = &self.on_updating {
                 let key = key.clone();
                 let value = value.clone();
-
                 callback(key, value);
             }
-            self.caching[index].value = value;
-
+            self.caching.write().unwrap()[index].value = value;
             self.move_to_front(index);
         } else {
+            drop(mapping_read); // Release read lock
             if self.capacity == 0 {
                 return false;
             }
 
-            if self.caching.len() >= self.capacity {
-                let first = self.first;
+            let mut caching = self.caching.write().unwrap();
+            if caching.len() >= self.capacity {
+                debug!(
+                    "Flush least used item duo to caching({}) > capacity({})",
+                    caching.len(),
+                    self.capacity
+                );
 
+                let first = *self.first.read().unwrap();
                 if let Some(callback) = &self.on_removing {
-                    let key = self.caching[first].key.clone();
-                    let value = self.caching[first].value.clone();
-
+                    let key = caching[first].key.clone();
+                    let value = caching[first].value.clone();
                     callback(key, value);
                 }
 
-                // @NOTE: remove first node will lead to update mapping and
-                //         relink nodes
-                for (_, value) in self.mapping.iter_mut() {
+                let mut mapping = self.mapping.write().unwrap();
+                for (_, value) in mapping.iter_mut() {
                     if *value > first {
                         let origin = *value;
-                        let prev = self.caching[origin].prev;
-                        let next = self.caching[origin].next;
-
-                        // @NOTE: reupdate links
+                        let prev = caching[origin].prev;
+                        let next = caching[origin].next;
                         *value -= 1;
 
-                        // @NOTE: update new last
-                        if self.last == origin {
-                            self.last = *value;
+                        if *self.last.read().unwrap() == origin {
+                            *self.last.write().unwrap() = *value;
                         }
 
-                        // @NOTE: relink nodes
-                        self.caching[prev].next = *value;
-                        self.caching[next].prev = *value;
+                        caching[prev].next = *value;
+                        caching[next].prev = *value;
                     }
                 }
 
-                self.first = self.caching[first].next;
-                self.mapping.remove(&self.caching[first].key);
-                self.caching.remove(first);
+                *self.first.write().unwrap() = caching[first].next;
+                mapping.remove(&caching[first].key);
+                caching.remove(first);
             }
 
-            let index = self.caching.len();
-            let last = self.last;
+            let index = caching.len();
+            let last = *self.last.read().unwrap();
             let mut next = 0;
 
-            if self.caching.is_empty() {
-                self.first = index;
-                self.last = index;
+            if caching.is_empty() {
+                *self.first.write().unwrap() = index;
+                *self.last.write().unwrap() = index;
                 next = index;
             } else {
-                self.caching[last].next = index;
-                self.last = index;
+                caching[last].next = index;
+                *self.last.write().unwrap() = index;
             }
 
             if let Some(callback) = &self.on_inserting {
                 let key = key.clone();
                 let value = value.clone();
-
                 callback(key, value);
             }
 
-            self.caching.push(Node {
+            caching.push(Node {
                 key: key.clone(),
                 prev: last,
                 value,
                 next,
             });
-            self.mapping.insert(key, index);
+            self.mapping.write().unwrap().insert(key, index);
         }
-
         true
     }
 
-    pub fn get(&mut self, key: &K) -> Option<&V> {
-        if let Some(&index) = self.mapping.get(key) {
+    pub fn get(&self, key: &K) -> Option<V> {
+        if let Some(&index) = self.mapping.read().unwrap().get(key) {
             self.move_to_front(index);
-            Some(&self.caching[index].value)
+            Some(self.caching.read().unwrap()[index].value.clone())
         } else {
             None
         }
@@ -133,36 +134,36 @@ impl<K: Clone + Eq + Ord + Debug, V: Debug + Clone> LruCache<K, V> {
 
     pub fn set_on_removing_callback<F>(&mut self, callback: F)
     where
-        F: Fn(K, V) + 'static,
+        F: Fn(K, V) + Send + Sync + 'static,
     {
-        self.on_removing = Some(Box::new(callback));
+        self.on_removing = Some(Arc::new(callback));
     }
 
     pub fn set_on_inserting_callback<F>(&mut self, callback: F)
     where
-        F: Fn(K, V) + 'static,
+        F: Fn(K, V) + Send + Sync + 'static,
     {
-        self.on_inserting = Some(Box::new(callback));
+        self.on_inserting = Some(Arc::new(callback));
     }
 
     pub fn set_on_updating_callback<F>(&mut self, callback: F)
     where
-        F: Fn(K, V) + 'static,
+        F: Fn(K, V) + Send + Sync + 'static,
     {
-        self.on_updating = Some(Box::new(callback));
+        self.on_updating = Some(Arc::new(callback));
     }
 
-    fn move_to_front(&mut self, index: usize) {
-        let next = self.caching[index].next;
-        let prev = self.caching[index].prev;
+    fn move_to_front(&self, index: usize) {
+        let mut caching = self.caching.write().unwrap();
+        let next = caching[index].next;
+        let prev = caching[index].prev;
 
-        // @NOTE: remove node at `index`
-        self.caching[next].prev = prev;
-        self.caching[prev].next = next;
+        caching[next].prev = prev;
+        caching[prev].next = next;
 
-        // @NOTE: put node currently at `index` to `last`
-        self.caching[index].prev = self.last;
-        self.caching[self.last].next = index;
+        caching[index].prev = *self.last.read().unwrap();
+        caching[*self.last.read().unwrap()].next = index;
+        *self.last.write().unwrap() = index;
     }
 }
 

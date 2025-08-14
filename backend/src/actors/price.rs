@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
+use log::debug;
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 
@@ -19,21 +20,19 @@ pub struct PriceActor {
     // @NOTE: caching
     size_of_block_in_cache: i64,
     num_of_available_cache: usize,
-    caches: BTreeMap<String, BTreeMap<String, LruCache<i64, Vec<CandleStick>>>>,
+    caches: Arc<RwLock<BTreeMap<String, BTreeMap<String, LruCache<i64, Vec<CandleStick>>>>>>,
 
     // @NOTE: parameters
     timeout: u64,
-    provider: String,
 }
 
 impl PriceActor {
-    fn new(provider: &str) -> Self {
+    fn new() -> Self {
         Self {
             size_of_block_in_cache: 24 * 60 * 60 * 7, // 1 week
             num_of_available_cache: 70,
-            caches: BTreeMap::new(),
+            caches: Arc::new(RwLock::new(BTreeMap::new())),
             timeout: 60,
-            provider: provider.to_string(),
         }
     }
 }
@@ -98,39 +97,6 @@ impl Handler<super::HealthCommand> for PriceActor {
 
 #[derive(Message, Debug)]
 #[rtype(result = "Result<(), ActorError>")]
-pub struct UpdateProviderCommand {
-    provider: String,
-}
-
-impl Handler<UpdateProviderCommand> for PriceActor {
-    type Result = ResponseFuture<Result<(), ActorError>>;
-
-    fn handle(&mut self, msg: UpdateProviderCommand, _: &mut Self::Context) -> Self::Result {
-        let provider = match msg.provider.as_str() {
-            "binance" => Some(&msg.provider),
-            "dnse" => Some(&msg.provider),
-            "ssi" => Some(&msg.provider),
-            _ => None,
-        };
-
-        if let Some(provider) = provider {
-            self.provider = provider.clone();
-        }
-
-        if let Some(_) = provider {
-            Box::pin(async move { Ok(()) })
-        } else {
-            Box::pin(async move {
-                Err(ActorError {
-                    message: format!("not support {}", msg.provider),
-                })
-            })
-        }
-    }
-}
-
-#[derive(Message, Debug)]
-#[rtype(result = "Result<(), ActorError>")]
 pub struct UpdateOHCLToCacheCommand {
     pub candles: Vec<CandleStick>,
     pub resolution: String,
@@ -141,57 +107,64 @@ impl Handler<UpdateOHCLToCacheCommand> for PriceActor {
     type Result = ResponseFuture<Result<(), ActorError>>;
 
     fn handle(&mut self, msg: UpdateOHCLToCacheCommand, _: &mut Self::Context) -> Self::Result {
-        if let Some(caches) = self.caches.get_mut(&msg.stock) {
-            if !caches.contains_key(&msg.resolution) {
-                caches.insert(
-                    msg.resolution.clone(),
-                    LruCache::new(self.num_of_available_cache),
-                );
+        let caches = self.caches.clone(); // Clone Arc để dùng trong future
+        let size_of_block = self.size_of_block_in_cache;
+        let capacity = self.num_of_available_cache;
+        let stock = msg.stock.clone();
+        let resolution = msg.resolution.clone();
+        let candles = msg.candles;
+
+        debug!(
+            "{} -> {}",
+            candles.first().unwrap().t,
+            candles.last().unwrap().t
+        );
+        Box::pin(async move {
+            if candles.is_empty() {
+                return Err(ActorError {
+                    message: "Empty candle list provided".to_string(),
+                });
             }
-        } else {
-            self.caches.insert(msg.stock.clone(), BTreeMap::new());
-        }
 
-        if let Some(caches) = self.caches.get_mut(&msg.stock) {
-            if !caches.contains_key(&msg.resolution) {
-                caches.insert(
-                    msg.resolution.clone(),
-                    LruCache::new(self.num_of_available_cache),
-                );
+            // Group candles vào blocks
+            let mut block_map: BTreeMap<i64, Vec<CandleStick>> = BTreeMap::new();
+            for candle in candles {
+                let block_id = (candle.t as i64) / size_of_block;
+                block_map
+                    .entry(block_id)
+                    .or_insert_with(Vec::new)
+                    .push(candle);
             }
 
-            if let Some(cache) = caches.get_mut(&msg.resolution) {
-                let mut block = Vec::new();
-                let mut id = 0;
-                let mut inited = false;
-
-                for candle in msg.candles {
-                    if (candle.t as i64) % self.size_of_block_in_cache == 0 {
-                        if block.len() > 0 {
-                            cache.put(id, block);
-                        }
-
-                        inited = true;
-                        block = Vec::new();
-                        id = (candle.t as i64) / self.size_of_block_in_cache;
-                    }
-
-                    if inited {
-                        block.push(candle);
-                    }
-                }
-
-                if !inited {
-                    return Box::pin(async move {
-                        Err(ActorError {
-                            message: format!("list of candles too short"),
-                        })
-                    });
-                }
+            if block_map.is_empty() {
+                return Err(ActorError {
+                    message: "No valid blocks created from candles".to_string(),
+                });
             }
-        }
 
-        Box::pin(async move { Ok(()) })
+            // Write lock để update cache
+            let mut caches_write = caches.write().map_err(|error| ActorError {
+                message: format!("Fail to access cache: {}", error),
+            })?;
+
+            // Tạo nested BTreeMap nếu chưa có
+            let stock_caches = caches_write
+                .entry(stock.clone())
+                .or_insert_with(BTreeMap::new);
+
+            // Tạo LRU cache nếu chưa có
+            let cache = stock_caches
+                .entry(resolution.clone())
+                .or_insert_with(|| LruCache::new(capacity));
+
+            // Insert blocks vào LRU cache
+            for (block_id, block_candles) in block_map {
+                debug!("Update block {}", block_id);
+                cache.put(block_id, block_candles);
+            }
+
+            Ok(())
+        })
     }
 }
 
@@ -202,65 +175,89 @@ pub struct GetOHCLCommand {
     pub stock: String,
     pub from: i64,
     pub to: i64,
+    pub broker: String,
+    pub limit: usize,
 }
 
 impl Handler<GetOHCLCommand> for PriceActor {
     type Result = ResponseFuture<Result<(Vec<CandleStick>, bool), ActorError>>;
 
     fn handle(&mut self, msg: GetOHCLCommand, _: &mut Self::Context) -> Self::Result {
-        let resolution = msg.resolution.clone();
-        let provider = self.provider.clone();
-        let stock = msg.stock.clone();
-        let from = msg.from;
+        let mut from = msg.from;
         let to = msg.to;
+        let broker = msg.broker.clone();
+        let resolution = msg.resolution.clone();
+        let stock = msg.stock.clone();
+        let limit = msg.limit;
         let timeout = self.timeout;
-
-        if let Some(caches) = self.caches.get_mut(&stock) {
-            if let Some(cache) = caches.get_mut(&resolution) {
-                let mut result = Vec::new();
-                let mut keep = true;
-                let i_from = from / self.size_of_block_in_cache;
-                let i_to = to / self.size_of_block_in_cache;
-
-                for i in i_from..=i_to {
-                    if let Some(candles) = cache.get(&i) {
-                        for candle in candles {
-                            if from <= (candle.t as i64) && (candle.t as i64) < to {
-                                result.push(candle.clone());
-                            }
-
-                            if candle.t as i64 >= to {
-                                break;
-                            }
-                        }
-                    } else {
-                        keep = false;
-                        break;
-                    }
-                }
-
-                if keep {
-                    return Box::pin(async move { Ok((result, false)) });
-                }
-            }
-        }
+        let size_of_block = self.size_of_block_in_cache;
+        let caches = self.caches.clone(); // Clone Arc để share vào future
 
         Box::pin(async move {
-            let client = Arc::new(HttpClient::default());
+            // Read lock để check cache (non-blocking)
+            let caches_read = caches.read().map_err(|error| ActorError {
+                message: format!("Fail to read cache: {}", error),
+            })?;
+
+            if let Some(stock_caches) = caches_read.get(&stock) {
+                if let Some(cache) = stock_caches.get(&resolution) {
+                    let mut result = Vec::new();
+                    let mut keep = true;
+                    let i_from = from / size_of_block;
+                    let i_to = to / size_of_block;
+
+                    for i in i_from..=i_to {
+                        if let Some(candles) = cache.get(&i) {
+                            // Filter candles trong range (tối ưu: nếu sorted, dùng binary search)
+                            for candle in candles {
+                                let candle_time = candle.t as i64;
+                                if from <= candle_time && candle_time < to {
+                                    result.push(candle.clone());
+                                }
+                                if candle_time >= to
+                                    || (limit > 0 && (i * size_of_block) as usize > limit)
+                                {
+                                    break;
+                                }
+                            }
+                        } else {
+                            debug!(
+                                "Cannot find block {}, timestamp at {}",
+                                i,
+                                i * size_of_block
+                            );
+
+                            from = (i - 1) * size_of_block;
+                            keep = false;
+                            break;
+                        }
+                    }
+
+                    if keep {
+                        return Ok((result, false)); // Cache hit full
+                    }
+                } else {
+                    from = (from / size_of_block - 1) * size_of_block;
+                }
+            } else {
+                from = (from / size_of_block - 1) * size_of_block;
+            }
+            drop(caches_read); // Release read lock sớm
 
             Ok((
                 fetch_ohcl_by_stock(
-                    client.clone(),
-                    &provider,
+                    Arc::new(HttpClient::default()),
+                    &broker,
                     &stock,
                     &resolution,
                     from,
                     to,
+                    limit + (size_of_block as usize) * 2,
                     timeout,
                 )
                 .await?,
                 true,
-            ))
+            )) // Return fetched data, đánh dấu là fresh
         })
     }
 }
@@ -272,6 +269,7 @@ pub async fn fetch_ohcl_by_stock(
     resolution: &String,
     from: i64,
     to: i64,
+    limit: usize,
     timeout: u64,
 ) -> Result<Vec<CandleStick>, ActorError> {
     let mut kind = "stock";
@@ -305,6 +303,10 @@ pub async fn fetch_ohcl_by_stock(
 
                 if let Some(t) = ohcl.t {
                     for i in 0..t.len() {
+                        if limit > 0 && i >= limit {
+                            break;
+                        }
+
                         candles.push(CandleStick {
                             t: t[i],
                             o: match ohcl.o.as_ref() {
@@ -364,6 +366,10 @@ pub async fn fetch_ohcl_by_stock(
 
                 if let Some(t) = ohcl.t {
                     for i in 0..t.len() {
+                        if limit > 0 && i >= limit {
+                            break;
+                        }
+
                         candles.push(CandleStick {
                             t: t[i],
                             o: match ohcl.o.as_ref() {
@@ -404,14 +410,16 @@ pub async fn fetch_ohcl_by_stock(
         let mut candles = Vec::<CandleStick>::new();
         let mut from = from * 1000;
         let to = to * 1000;
+        let limit = if limit == 0 { 1000 } else { limit };
 
         for _ in 0..10 {
             let resp = client.get(format!(
-                    "https://api.binance.com/api/v3/klines?startTime={}&endTime={}&symbol={}&interval={}&limit=1000",
+                    "https://api.binance.com/api/v3/klines?startTime={}&endTime={}&symbol={}&interval={}&limit={}",
                     from,
                     to,
                     (*stock),
                     (*resolution).to_lowercase(),
+                    limit,
                 ))
                 .timeout(Duration::from_secs(timeout))
                 .send()
@@ -476,6 +484,6 @@ pub fn list_of_resolution() -> Vec<String> {
     vec!["1D".to_string(), "1M".to_string(), "1W".to_string()]
 }
 
-pub fn connect_to_price(provider: &str) -> Addr<PriceActor> {
-    PriceActor::new(provider).start()
+pub fn connect_to_price() -> Addr<PriceActor> {
+    PriceActor::new().start()
 }
