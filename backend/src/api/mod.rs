@@ -130,8 +130,6 @@ impl AppState {
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid S3_REGION"))?;
         let s3_endpoint = std::env::var("S3_ENDPOINT")
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid S3_ENDPOINT"))?;
-        let investing_provider =
-            std::env::var("DEFAULT_INVESTING_PROVIDER").unwrap_or_else(|_| "ssi".to_string());
 
         let tcbs_vars = Arc::new(Mutex::new(
             Variables::new_with_s3(
@@ -176,7 +174,7 @@ impl AppState {
         )
         .await;
         let vps = resolve_vps_routes(&prometheus, &mut resolver, &vps_symbols, vps_vars.clone());
-        let price = Arc::new(connect_to_price(investing_provider.as_str()));
+        let price = Arc::new(connect_to_price());
         let cron = Arc::new(connect_to_cron(Rc::new(resolver)));
 
         Ok(AppState {
