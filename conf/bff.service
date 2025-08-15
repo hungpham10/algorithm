@@ -1,0 +1,13 @@
+[Unit]
+Description=The BFF mono-service which are standing as service for everything
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/bff
+Restart=always
+User=nobody
+Group=nogroup
+Environment=PATH=/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target
