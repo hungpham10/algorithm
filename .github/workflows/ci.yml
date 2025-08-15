@@ -292,6 +292,51 @@ jobs:
         run: |
           python -m twine upload --non-interactive --verbose dist/*.whl # Updated path
 
+  build_deb:
+    name: Build .deb Package
+    runs-on: ubuntu-22.04
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            backend/target/
+          key: ${{ runner.os }}-cargo-deb-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-deb-
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb
+
+      - name: Build .deb package
+        working-directory: ./backend
+        run: |
+          cargo build --release
+          cargo deb
+
+      - name: Verify .deb package contents
+        run: |
+          dpkg -c backend/target/debian/*.deb
+
+      - name: Upload .deb as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          path: backend/target/debian/*.deb
+
   build_docker_image:
     name: Build and Push Docker Image
     runs-on: ubuntu-22.04
