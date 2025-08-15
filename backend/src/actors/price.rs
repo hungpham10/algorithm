@@ -57,6 +57,12 @@ struct Ohcl {
 }
 
 #[derive(Debug, Deserialize)]
+struct BinanceError {
+    code: i64,
+    msg: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct Kline {
     timestamp: i64,
     open: String,
@@ -427,12 +433,23 @@ pub async fn fetch_ohcl_by_stock(
 
             match resp {
                 Ok(resp) => {
-                    let klines = resp
-                        .json::<Vec<Kline>>()
-                        .await
-                        .map_err(|error| ActorError {
-                            message: format!("{}", error),
-                        })?;
+                    let json_value: Value = resp.json().await.map_err(|error| ActorError {
+                        message: format!("Failed to parse JSON: {}", error),
+                    })?;
+
+                    let klines = serde_json::from_value::<Vec<Kline>>(json_value.clone()).map_err(
+                        |error| match serde_json::from_value::<BinanceError>(json_value) {
+                            Ok(error) => Err(ActorError {
+                                message: format!(
+                                    "API error: code={}, reason={}",
+                                    error.code, error.msg
+                                ),
+                            }),
+                            Err(_) => Err(ActorError {
+                                message: format!("Failed to parse Error message: {}", error),
+                            }),
+                        },
+                    )?;
 
                     if klines.len() == 0 {
                         break;
