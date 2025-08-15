@@ -329,13 +329,13 @@ jobs:
 
       - name: Verify .deb package contents
         run: |
-          dpkg -c backend/target/debian/*.deb
+          dpkg -c target/debian/*.deb
 
       - name: Upload .deb as artifact
         uses: actions/upload-artifact@v4
         with:
           name: deb-package
-          path: backend/target/debian/*.deb
+          path: target/debian/*.deb
 
   build_docker_image:
     name: Build and Push Docker Image

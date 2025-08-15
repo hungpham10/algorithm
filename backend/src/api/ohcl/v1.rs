@@ -137,3 +137,27 @@ pub async fn get_ohcl_from_broker(
         }
     }
 }
+
+pub async fn get_list_of_resolutions(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
+    Ok(HttpResponse::InternalServerError().json(OhclResponse {
+        ohcl: None,
+        error: Some(format!("Not implemented")),
+    }))
+}
+
+pub async fn get_list_of_brokers(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
+    Ok(HttpResponse::InternalServerError().json(OhclResponse {
+        ohcl: None,
+        error: Some(format!("Not implemented")),
+    }))
+}
+
+pub async fn get_list_of_symbols(
+    appstate: Data<Arc<AppState>>,
+    path: Path<(String,)>,
+) -> Result<HttpResponse> {
+    Ok(HttpResponse::InternalServerError().json(OhclResponse {
+        ohcl: None,
+        error: Some(format!("Not implemented")),
+    }))
+}

@@ -81,6 +81,18 @@ async fn main() -> std::io::Result<()> {
                 "/api/investing/v1/ohcl/{broker}/{symbol}",
                 get().to(crate::api::ohcl::v1::get_ohcl_from_broker),
             )
+            .route(
+                "/api/investing/v1/ohcl/resolutions",
+                get().to(crate::api::ohcl::v1::get_list_of_resolutions),
+            )
+            .route(
+                "/api/investing/v1/ohcl/brokers",
+                get().to(crate::api::ohcl::v1::get_list_of_brokers),
+            )
+            .route(
+                "/api/investing/v1/ohcl/{broker}/symbols",
+                get().to(crate::api::ohcl::v1::get_list_of_symbols),
+            )
             .app_data(Data::new(appstate_for_control.clone()))
     })
     .bind((host.as_str(), port))

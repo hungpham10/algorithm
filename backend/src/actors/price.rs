@@ -6,6 +6,7 @@ use std::time::Duration;
 use log::debug;
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use actix::prelude::*;
 use actix::Addr;
@@ -439,15 +440,15 @@ pub async fn fetch_ohcl_by_stock(
 
                     let klines = serde_json::from_value::<Vec<Kline>>(json_value.clone()).map_err(
                         |error| match serde_json::from_value::<BinanceError>(json_value) {
-                            Ok(error) => Err(ActorError {
+                            Ok(error) => ActorError {
                                 message: format!(
                                     "API error: code={}, reason={}",
                                     error.code, error.msg
                                 ),
-                            }),
-                            Err(_) => Err(ActorError {
+                            },
+                            Err(_) => ActorError {
                                 message: format!("Failed to parse Error message: {}", error),
-                            }),
+                            },
                         },
                     )?;
 
