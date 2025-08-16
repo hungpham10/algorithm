@@ -11,6 +11,7 @@ use actix_web_prometheus::{PrometheusMetrics, PrometheusMetricsBuilder};
 
 use chrono::Utc;
 use log::{debug, error};
+use redis::{Client as RedisClient, Commands};
 use serde::{Deserialize, Serialize};
 
 use vnscope::actors::cron::{
@@ -40,6 +41,7 @@ pub struct AppState {
     running: Arc<AtomicI64>,
     done: Arc<AtomicI64>,
     timeframe: usize,
+    redis: Option<RedisClient>,
     prometheus: PrometheusMetrics,
 
     // @NOTE: state management
@@ -131,6 +133,16 @@ impl AppState {
         let s3_endpoint = std::env::var("S3_ENDPOINT")
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid S3_ENDPOINT"))?;
 
+        let redis = match std::env::var("REDIS_DSN") {
+            Ok(dsn) => Some(RedisClient::open(dsn).map_err(|error| {
+                Error::new(
+                    ErrorKind::InvalidInput,
+                    format!("Failed to connect redis: {}", error),
+                )
+            })?),
+            Err(_) => None,
+        };
+
         let tcbs_vars = Arc::new(Mutex::new(
             Variables::new_with_s3(
                 tcbs_timeseries,
@@ -189,6 +201,7 @@ impl AppState {
 
             // @NOTE: monitors
             locked: Arc::new(Mutex::new(true)),
+            redis,
             prometheus,
 
             // @NOTE: shared actors
@@ -294,6 +307,23 @@ impl AppState {
     pub fn prometheus(&self) -> &PrometheusMetrics {
         &self.prometheus
     }
+
+    pub fn ping(&self) -> bool {
+        match &self.redis {
+            Some(client) => {
+                if let Ok(mut conn) = client.get_connection() {
+                    if let Ok(resp) = conn.ping::<String>() {
+                        resp == "PONG"
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            None => true,
+        }
+    }
 }
 
 pub async fn unlock(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
@@ -329,36 +359,46 @@ pub async fn health(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
         .parse::<_>()
         .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid MAX_UPDATED_TIME"))?;
 
-    match appstate.crontime.lock() {
-        Ok(crontime) => {
-            let running = appstate.running.load(Ordering::SeqCst);
-            let done = appstate.done.load(Ordering::SeqCst);
-            let inflight = running.saturating_sub(done);
-            let last_ok = crontime
-                .back()
-                .map_or(true, |updated| current - updated <= max_updated_time)
-                && inflight <= max_inflight;
-            let builder = if last_ok {
-                HttpResponse::Ok
-            } else {
-                HttpResponse::GatewayTimeout
-            };
+    if appstate.ping() {
+        match appstate.crontime.lock() {
+            Ok(crontime) => {
+                let running = appstate.running.load(Ordering::SeqCst);
+                let done = appstate.done.load(Ordering::SeqCst);
+                let inflight = running.saturating_sub(done);
+                let last_ok = crontime
+                    .back()
+                    .map_or(true, |updated| current - updated <= max_updated_time)
+                    && inflight <= max_inflight;
+                let builder = if last_ok {
+                    HttpResponse::Ok
+                } else {
+                    HttpResponse::GatewayTimeout
+                };
 
-            Ok(builder().json(Status {
-                crontime: crontime.iter().cloned().collect(),
-                status: last_ok,
-                running,
-                done,
+                Ok(builder().json(Status {
+                    crontime: crontime.iter().cloned().collect(),
+                    status: last_ok,
+                    running,
+                    done,
+                    current,
+                }))
+            }
+            Err(_) => Ok(HttpResponse::InternalServerError().json(Status {
+                crontime: Vec::new(),
+                status: false,
+                running: 0,
+                done: 0,
                 current,
-            }))
+            })),
         }
-        Err(_) => Ok(HttpResponse::InternalServerError().json(Status {
+    } else {
+        Ok(HttpResponse::InternalServerError().json(Status {
             crontime: Vec::new(),
             status: false,
             running: 0,
             done: 0,
             current,
-        })),
+        }))
     }
 }
 

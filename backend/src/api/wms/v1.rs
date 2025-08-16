@@ -79,6 +79,7 @@ pub struct ApiResponse<T> {
     status: String,
     data: Option<T>,
     message: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     total: Option<i32>,
 }

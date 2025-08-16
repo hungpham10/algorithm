@@ -16,7 +16,7 @@ crate-type = ["cdylib", "rlib"]
 landing-page = ["sycamore", "default"]
 python = ["pyo3", "pyo3-asyncio", "pyo3-polars", "polars", "numpy"]
 bff = ["default"]
-default = ["airtable-api", "redis", "actix-web", "tracing-subscriber", "actix-web-prometheus"]
+default = ["airtable-api", "redis", "actix-web", "tracing-subscriber", "actix-web-prometheus", "sea-orm"]
 
 [dependencies]
 # Landing page rendering
@@ -54,7 +54,7 @@ prometheus = "0.13.3"
 # Crawling data in background
 reqwest = { version = "0.11.27", default-features = false, features = ["json", "blocking", "rustls-tls"] }
 reqwest-retry = "0.4.0"
-reqwest-middleware = { version = "0.2.5" }
+reqwest-middleware = "0.2.5"
 cron-parser = "0.8.1"
 actix-rt = "2.10.0"
 actix = "0.13.5"
@@ -62,6 +62,7 @@ awc = "3.5.1"
 tokio = { version = "1.26.0", features = ["full"] }
 aws-sdk-s3 = { version = "1.90.0", default-features = false, features = ["rustls", "default-https-client", "rt-tokio"] }
 aws-config = { version = "1.6.3", default-features = false, features = ["rustls", "default-https-client", "rt-tokio"] }
+sea-orm = { version = "1.1.14", optional = true, features = ["debug-print", "runtime-async-std-native-tls", "sqlx-mysql"] }
 
 # Common
 lazy_static = "1.5.0"
@@ -73,7 +74,7 @@ log = "0.4.22"
 # Web application
 dotenvy = "0.15.7"
 actix-web = { version = "4.3.1", optional = true }
-redis = { version = "0.25", optional = true }
+redis = { version = "0.32.5", optional = true }
 env_logger = { version = "0.8.2" }
 tracing-subscriber = { version = "0.3.16", optional = true, features = ["json"] }
 

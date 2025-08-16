@@ -11,18 +11,22 @@ use vnscope::schemas::CandleStick;
 
 use crate::api::AppState;
 
-#[derive(Deserialize, Debug)]
-pub struct OhclRequest {
-    resolution: String,
-    from: i64,
-    to: i64,
-    limit: usize,
-}
-
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct OhclResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     ohcl: Option<Vec<CandleStick>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resolutions: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    brokers: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    symbols: Option<Vec<String>>,
 }
 
 async fn update_ohcl_cache_and_return(
@@ -45,6 +49,9 @@ async fn update_ohcl_cache_and_return(
 
             Ok(HttpResponse::InternalServerError().json(OhclResponse {
                 ohcl: None,
+                brokers: None,
+                symbols: None,
+                resolutions: None,
                 error: Some(format!("Failed to update OHCL to cache: {}", error)),
             }))
         }
@@ -63,6 +70,9 @@ async fn update_ohcl_cache_and_return(
 
             Ok(HttpResponse::Ok().json(OhclResponse {
                 ohcl: Some(result),
+                brokers: None,
+                symbols: None,
+                resolutions: None,
                 error: None,
             }))
         }
@@ -71,10 +81,21 @@ async fn update_ohcl_cache_and_return(
 
             Ok(HttpResponse::ServiceUnavailable().json(OhclResponse {
                 ohcl: None,
+                brokers: None,
+                symbols: None,
+                resolutions: None,
                 error: Some(error.message),
             }))
         }
     }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct OhclRequest {
+    resolution: String,
+    from: i64,
+    to: i64,
+    limit: usize,
 }
 
 pub async fn get_ohcl_from_broker(
@@ -115,6 +136,9 @@ pub async fn get_ohcl_from_broker(
 
                 Ok(HttpResponse::Ok().json(OhclResponse {
                     ohcl: Some(result),
+                    brokers: None,
+                    symbols: None,
+                    resolutions: None,
                     error: None,
                 }))
             }
@@ -124,6 +148,9 @@ pub async fn get_ohcl_from_broker(
 
             Ok(HttpResponse::ServiceUnavailable().json(OhclResponse {
                 ohcl: None,
+                brokers: None,
+                symbols: None,
+                resolutions: None,
                 error: Some(error.message),
             }))
         }
@@ -132,6 +159,9 @@ pub async fn get_ohcl_from_broker(
 
             Ok(HttpResponse::InternalServerError().json(OhclResponse {
                 ohcl: None,
+                brokers: None,
+                symbols: None,
+                resolutions: None,
                 error: Some(format!("Failed to query OHCL: {}", error)),
             }))
         }
@@ -141,6 +171,9 @@ pub async fn get_ohcl_from_broker(
 pub async fn get_list_of_resolutions(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
     Ok(HttpResponse::InternalServerError().json(OhclResponse {
         ohcl: None,
+        brokers: None,
+        symbols: None,
+        resolutions: None,
         error: Some(format!("Not implemented")),
     }))
 }
@@ -148,16 +181,28 @@ pub async fn get_list_of_resolutions(appstate: Data<Arc<AppState>>) -> Result<Ht
 pub async fn get_list_of_brokers(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
     Ok(HttpResponse::InternalServerError().json(OhclResponse {
         ohcl: None,
+        brokers: None,
+        symbols: None,
+        resolutions: None,
         error: Some(format!("Not implemented")),
     }))
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SymbolResquest {
+    group: Option<String>,
 }
 
 pub async fn get_list_of_symbols(
     appstate: Data<Arc<AppState>>,
     path: Path<(String,)>,
+    args: Query<SymbolResquest>,
 ) -> Result<HttpResponse> {
     Ok(HttpResponse::InternalServerError().json(OhclResponse {
         ohcl: None,
+        brokers: None,
+        symbols: None,
+        resolutions: None,
         error: Some(format!("Not implemented")),
     }))
 }

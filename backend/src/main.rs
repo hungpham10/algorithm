@@ -12,7 +12,6 @@ use chrono::Utc;
 use log::{error, info};
 
 mod api;
-
 use crate::api::{flush, health, lock, synchronize, unlock, AppState};
 
 #[actix_rt::main]
