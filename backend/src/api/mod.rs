@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::io::{Error, ErrorKind, Result as AppStateResult};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -11,7 +11,8 @@ use actix_web_prometheus::{PrometheusMetrics, PrometheusMetricsBuilder};
 
 use chrono::Utc;
 use log::{debug, error};
-use redis::{Client as RedisClient, Commands};
+use redis::{AsyncCommands, Client as RedisClient};
+use sea_orm::{Database, DatabaseConnection};
 use serde::{Deserialize, Serialize};
 
 use vnscope::actors::cron::{
@@ -41,6 +42,7 @@ pub struct AppState {
     running: Arc<AtomicI64>,
     done: Arc<AtomicI64>,
     timeframe: usize,
+    db: Option<DatabaseConnection>,
     redis: Option<RedisClient>,
     prometheus: PrometheusMetrics,
 
@@ -143,6 +145,16 @@ impl AppState {
             Err(_) => None,
         };
 
+        let db = match std::env::var("MYSQL_DSN") {
+            Ok(dsn) => Some(Database::connect(dsn).await.map_err(|error| {
+                Error::new(
+                    ErrorKind::InvalidInput,
+                    format!("Failed to connect database: {}", error),
+                )
+            })?),
+            Err(_) => None,
+        };
+
         let tcbs_vars = Arc::new(Mutex::new(
             Variables::new_with_s3(
                 tcbs_timeseries,
@@ -201,6 +213,7 @@ impl AppState {
 
             // @NOTE: monitors
             locked: Arc::new(Mutex::new(true)),
+            db,
             redis,
             prometheus,
 
@@ -308,11 +321,11 @@ impl AppState {
         &self.prometheus
     }
 
-    pub fn ping(&self) -> bool {
-        match &self.redis {
+    pub async fn ping(&self) -> bool {
+        let redis_ok = match &self.redis {
             Some(client) => {
-                if let Ok(mut conn) = client.get_connection() {
-                    if let Ok(resp) = conn.ping::<String>() {
+                if let Ok(mut conn) = client.get_multiplexed_tokio_connection().await {
+                    if let Ok(resp) = conn.ping::<String>().await {
                         resp == "PONG"
                     } else {
                         false
@@ -322,7 +335,13 @@ impl AppState {
                 }
             }
             None => true,
-        }
+        };
+        let db_ok = match &self.db {
+            Some(client) => client.ping().await.is_ok(),
+            None => true,
+        };
+
+        redis_ok && db_ok
     }
 }
 
@@ -359,7 +378,7 @@ pub async fn health(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
         .parse::<_>()
         .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid MAX_UPDATED_TIME"))?;
 
-    if appstate.ping() {
+    if appstate.ping().await {
         match appstate.crontime.lock() {
             Ok(crontime) => {
                 let running = appstate.running.load(Ordering::SeqCst);
