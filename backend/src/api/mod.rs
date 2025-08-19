@@ -25,7 +25,10 @@ use vnscope::actors::{FlushVariablesCommand, UpdateStocksCommand};
 use vnscope::algorithm::fuzzy::Variables;
 use vnscope::schemas::{Portal, CRONJOB, WATCHLIST};
 
+use crate::entities;
+
 pub mod ohcl;
+pub mod wms;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct Status {
@@ -42,12 +45,15 @@ pub struct AppState {
     running: Arc<AtomicI64>,
     done: Arc<AtomicI64>,
     timeframe: usize,
-    db: Option<DatabaseConnection>,
+    db: Option<Arc<DatabaseConnection>>,
     redis: Option<RedisClient>,
     prometheus: PrometheusMetrics,
 
     // @NOTE: state management
     locked: Arc<Mutex<bool>>,
+
+    // @NOTE: database models
+    ohcl_entity: Option<entities::ohcl::Ohcl>,
 
     // @NOTE: shared components
     portal: Arc<Portal>,
@@ -146,13 +152,18 @@ impl AppState {
         };
 
         let db = match std::env::var("MYSQL_DSN") {
-            Ok(dsn) => Some(Database::connect(dsn).await.map_err(|error| {
+            Ok(dsn) => Some(Arc::new(Database::connect(dsn).await.map_err(|error| {
                 Error::new(
                     ErrorKind::InvalidInput,
                     format!("Failed to connect database: {}", error),
                 )
-            })?),
+            })?)),
             Err(_) => None,
+        };
+
+        let ohcl_entity = match db {
+            Some(ref db) => Some(entities::ohcl::Ohcl::new(db.clone())),
+            None => None,
         };
 
         let tcbs_vars = Arc::new(Mutex::new(
@@ -210,6 +221,9 @@ impl AppState {
                 .unwrap_or_else(|_| "4".to_string())
                 .parse::<usize>()
                 .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid APPSTATE_TIMEFRAME"))?,
+
+            // @NOTE: database entities
+            ohcl_entity,
 
             // @NOTE: monitors
             locked: Arc::new(Mutex::new(true)),
@@ -319,6 +333,10 @@ impl AppState {
 
     pub fn prometheus(&self) -> &PrometheusMetrics {
         &self.prometheus
+    }
+
+    pub fn ohcl_entity(&self) -> &Option<entities::ohcl::Ohcl> {
+        &self.ohcl_entity
     }
 
     pub async fn ping(&self) -> bool {

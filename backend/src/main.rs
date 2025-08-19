@@ -2,7 +2,7 @@ use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 
 use actix_web::middleware::Logger;
-use actix_web::web::{get, put, Data};
+use actix_web::web::{get, post, put, scope, Data};
 use actix_web::{App, HttpServer};
 
 use tokio::signal::unix::{signal, SignalKind};
@@ -12,6 +12,8 @@ use chrono::Utc;
 use log::{error, info};
 
 mod api;
+mod entities;
+
 use crate::api::{flush, health, lock, synchronize, unlock, AppState};
 
 #[actix_rt::main]
@@ -71,27 +73,88 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(appstate_for_control.prometheus().clone())
             .wrap(Logger::default())
+            // @NOTE: health-check
             .route("/health", get().to(health))
-            .route("/api/config/v1/variables/flush", put().to(flush))
-            .route("/api/config/v1/synchronize", put().to(synchronize))
-            .route("/api/config/v1/lock", put().to(lock))
-            .route("/api/config/v1/unlock", put().to(unlock))
-            .route(
-                "/api/investing/v1/ohcl/{broker}/{symbol}",
-                get().to(crate::api::ohcl::v1::get_ohcl_from_broker),
+            // @NOTE: APIs for background configuration
+            .service(
+                scope("/api/config")
+                    .route("/v1/variables/flush", put().to(flush))
+                    .route("/v1/synchronize", put().to(synchronize))
+                    .route("/v1/lock", put().to(lock))
+                    .route("/v1/unlock", put().to(unlock)),
             )
-            .route(
-                "/api/investing/v1/ohcl/resolutions",
-                get().to(crate::api::ohcl::v1::get_list_of_resolutions),
+            // @NOTE: APIs of OHCL
+            .service(
+                scope("/api/investing")
+                    .route(
+                        "/v1/ohcl/{broker}/{symbol}",
+                        get().to(crate::api::ohcl::v1::get_ohcl_from_broker),
+                    )
+                    .route(
+                        "/v1/ohcl/resolutions",
+                        get().to(crate::api::ohcl::v1::get_list_of_resolutions),
+                    )
+                    .route(
+                        "/v1/ohcl/brokers",
+                        get().to(crate::api::ohcl::v1::get_list_of_brokers),
+                    )
+                    .route(
+                        "/v1/ohcl/{broker}/{product}/symbols",
+                        get().to(crate::api::ohcl::v1::get_list_of_symbols),
+                    ),
             )
-            .route(
-                "/api/investing/v1/ohcl/brokers",
-                get().to(crate::api::ohcl::v1::get_list_of_brokers),
+            // @NOTE: APIs of WMS
+            .service(
+                scope("/api/ecommerce")
+                    .route("/v1/wms/stock", get().to(crate::api::wms::v1::get_stocks))
+                    .route(
+                        "/v1/wms/stock",
+                        post().to(crate::api::wms::v1::create_stock),
+                    )
+                    .route(
+                        "/v1/wms/stock/{id}",
+                        get().to(crate::api::wms::v1::get_stock),
+                    )
+                    .route(
+                        "/v1/wms/stocks/{stock_id}/lots",
+                        get().to(crate::api::wms::v1::get_lots),
+                    )
+                    .route(
+                        "/v1/wms/stocks/{stock_id}/lots",
+                        post().to(crate::api::wms::v1::create_lot),
+                    )
+                    .route(
+                        "/v1/wms/shelves",
+                        get().to(crate::api::wms::v1::get_shelves),
+                    )
+                    .route(
+                        "/v1/wms/shelves",
+                        post().to(crate::api::wms::v1::create_shelf),
+                    )
+                    .route(
+                        "/v1/wms/stock_shelves",
+                        post().to(crate::api::wms::v1::assign_stock_shelf),
+                    )
+                    .route("/v1/wms/sale", post().to(crate::api::wms::v1::process_sale))
+                    .route(
+                        "/v1/wms/stock/barcode/{barcode}",
+                        get().to(crate::api::wms::v1::get_stock_by_barcode),
+                    )
+                    .route("/v1/wms/sync", post().to(crate::api::wms::v1::sync_data))
+                    .route(
+                        "/v1/wms/stock/near-expiry",
+                        get().to(crate::api::wms::v1::get_near_expiry),
+                    )
+                    .route(
+                        "/v1/wms/stock/outdated",
+                        get().to(crate::api::wms::v1::get_outdated),
+                    )
+                    .route(
+                        "/v1/wms/stock/high-turnover",
+                        get().to(crate::api::wms::v1::get_high_turnover),
+                    ),
             )
-            .route(
-                "/api/investing/v1/ohcl/{broker}/symbols",
-                get().to(crate::api::ohcl::v1::get_list_of_symbols),
-            )
+            // @NOTE: AppState
             .app_data(Data::new(appstate_for_control.clone()))
     })
     .bind((host.as_str(), port))

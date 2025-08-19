@@ -285,7 +285,7 @@ pub async fn fetch_ohcl_by_stock(
         kind = "index";
     }
 
-    if provider.as_str() == "ssi" {
+    if provider == "ssi" {
         let resp = client.get(format!(
             "https://iboard-api.ssi.com.vn/statistics/charts/history?from={}&to={}&symbol={}&resolution={}",
             from,
@@ -350,7 +350,7 @@ pub async fn fetch_ohcl_by_stock(
                 message: format!("{}", error),
             }),
         }
-    } else if provider.as_str() == "dnse" {
+    } else if provider == "dnse" || provider == "stock" {
         let resp = client
             .get(format!(
             "https://api.dnse.com.vn/chart-api/v2/ohlcs/{}?from={}&to={}&symbol={}&resolution={}",
@@ -413,7 +413,7 @@ pub async fn fetch_ohcl_by_stock(
                 message: format!("{}", error),
             }),
         }
-    } else if provider == "binance" {
+    } else if provider == "binance" || provider == "crypto" {
         let mut candles = Vec::<CandleStick>::new();
         let mut from = from * 1000;
         let to = to * 1000;

@@ -16,14 +16,24 @@ crate-type = ["cdylib", "rlib"]
 landing-page = ["sycamore", "default"]
 python = ["pyo3", "pyo3-asyncio", "pyo3-polars", "polars", "numpy"]
 bff = ["default"]
-default = ["airtable-api", "redis", "actix-web", "tracing-subscriber", "actix-web-prometheus", "sea-orm"]
+default = [
+	"airtable-api",
+	"redis",
+	"actix-web",
+	"tracing-subscriber",
+	"async-graphql",
+	"async-graphql-actix-web",
+	"actix-web-prometheus",
+	"sea-orm",
+]
 
 [dependencies]
 # Landing page rendering
 sycamore = { version = "0.9.1", optional = true }
 
 # Data modeling
-juniper = "0.16"
+async-graphql = { version = "7", optional = true }
+async-graphql-actix-web = { version = "7", optional = true }
 serde = "1.0.123"
 serde_json = "1.0.44"
 parquet = "53"
@@ -62,7 +72,7 @@ awc = "3.5.1"
 tokio = { version = "1.26.0", features = ["full"] }
 aws-sdk-s3 = { version = "1.90.0", default-features = false, features = ["rustls", "default-https-client", "rt-tokio"] }
 aws-config = { version = "1.6.3", default-features = false, features = ["rustls", "default-https-client", "rt-tokio"] }
-sea-orm = { version = "1.1.14", optional = true, features = ["debug-print", "runtime-async-std-native-tls", "sqlx-mysql"] }
+sea-orm = { version = "1.1.14", optional = true, features = ["debug-print", "runtime-tokio-rustls", "sqlx-mysql"] }
 
 # Common
 lazy_static = "1.5.0"

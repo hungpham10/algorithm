@@ -7,6 +7,9 @@ use log::{debug, error};
 use serde::{Deserialize, Serialize};
 
 use vnscope::actors::price::{GetOHCLCommand, UpdateOHCLToCacheCommand};
+use vnscope::actors::{
+    list_crypto, list_futures, list_of_midcap, list_of_penny, list_of_vn100, list_of_vn30,
+};
 use vnscope::schemas::CandleStick;
 
 use crate::api::AppState;
@@ -27,6 +30,9 @@ pub struct OhclResponse {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     symbols: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next: Option<i32>,
 }
 
 async fn update_ohcl_cache_and_return(
@@ -52,6 +58,7 @@ async fn update_ohcl_cache_and_return(
                 brokers: None,
                 symbols: None,
                 resolutions: None,
+                next: None,
                 error: Some(format!("Failed to update OHCL to cache: {}", error)),
             }))
         }
@@ -73,6 +80,7 @@ async fn update_ohcl_cache_and_return(
                 brokers: None,
                 symbols: None,
                 resolutions: None,
+                next: None,
                 error: None,
             }))
         }
@@ -84,6 +92,7 @@ async fn update_ohcl_cache_and_return(
                 brokers: None,
                 symbols: None,
                 resolutions: None,
+                next: None,
                 error: Some(error.message),
             }))
         }
@@ -139,6 +148,7 @@ pub async fn get_ohcl_from_broker(
                     brokers: None,
                     symbols: None,
                     resolutions: None,
+                    next: None,
                     error: None,
                 }))
             }
@@ -151,6 +161,7 @@ pub async fn get_ohcl_from_broker(
                 brokers: None,
                 symbols: None,
                 resolutions: None,
+                next: None,
                 error: Some(error.message),
             }))
         }
@@ -162,6 +173,7 @@ pub async fn get_ohcl_from_broker(
                 brokers: None,
                 symbols: None,
                 resolutions: None,
+                next: None,
                 error: Some(format!("Failed to query OHCL: {}", error)),
             }))
         }
@@ -174,16 +186,43 @@ pub async fn get_list_of_resolutions(appstate: Data<Arc<AppState>>) -> Result<Ht
         brokers: None,
         symbols: None,
         resolutions: None,
+        next: None,
         error: Some(format!("Not implemented")),
     }))
 }
 
-pub async fn get_list_of_brokers(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ListBrokersRequest {
+    after: Option<i32>,
+    limit: Option<u64>,
+}
+
+pub async fn get_list_of_brokers(
+    appstate: Data<Arc<AppState>>,
+    args: Query<ListBrokersRequest>,
+) -> Result<HttpResponse> {
+    let limit = args.limit.unwrap_or_else(|| 10);
+    let after = args.after.unwrap_or_else(|| 0);
+
+    if let Some(entity) = appstate.ohcl_entity() {
+        if let Ok((brokers, next)) = entity.list_brokers(after, limit).await {
+            return Ok(HttpResponse::Ok().json(OhclResponse {
+                ohcl: None,
+                brokers: Some(brokers),
+                symbols: None,
+                resolutions: None,
+                next: if next > 0 { Some(next) } else { None },
+                error: Some(format!("Not implemented")),
+            }));
+        }
+    }
+
     Ok(HttpResponse::InternalServerError().json(OhclResponse {
         ohcl: None,
         brokers: None,
         symbols: None,
         resolutions: None,
+        next: None,
         error: Some(format!("Not implemented")),
     }))
 }
@@ -191,18 +230,133 @@ pub async fn get_list_of_brokers(appstate: Data<Arc<AppState>>) -> Result<HttpRe
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SymbolResquest {
     group: Option<String>,
+    offset: Option<i32>,
+    limit: Option<u64>,
 }
 
 pub async fn get_list_of_symbols(
     appstate: Data<Arc<AppState>>,
-    path: Path<(String,)>,
+    path: Path<(String, String)>,
     args: Query<SymbolResquest>,
 ) -> Result<HttpResponse> {
+    let (broker, product) = path.into_inner();
+    let limit = args.limit.unwrap_or_else(|| 10);
+    let offset = args.offset.unwrap_or_else(|| 0);
+
+    if let Some(entity) = appstate.ohcl_entity() {
+        if let Ok(ok) = entity.is_product_enabled(&broker, &product).await {
+            if ok {
+                // @TODO: replace with another solution to show brokers from out tables
+
+                return match broker.as_str() {
+                    "stock" => match product.as_str() {
+                        "cw" => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+                            ohcl: None,
+                            brokers: None,
+                            symbols: None,
+                            resolutions: None,
+                            next: None,
+                            error: Some(format!("Not implemented")),
+                        })),
+                        "vn30" => Ok(HttpResponse::Ok().json(OhclResponse {
+                            ohcl: None,
+                            brokers: None,
+                            symbols: Some(list_of_vn30().await),
+                            resolutions: None,
+                            next: None,
+                            error: None,
+                        })),
+                        "vn100" => Ok(HttpResponse::Ok().json(OhclResponse {
+                            ohcl: None,
+                            brokers: None,
+                            symbols: Some(list_of_vn100().await),
+                            resolutions: None,
+                            next: None,
+                            error: None,
+                        })),
+                        "midcap" => Ok(HttpResponse::Ok().json(OhclResponse {
+                            ohcl: None,
+                            brokers: None,
+                            symbols: Some(list_of_midcap().await),
+                            resolutions: None,
+                            next: None,
+                            error: None,
+                        })),
+                        "penny" => Ok(HttpResponse::Ok().json(OhclResponse {
+                            ohcl: None,
+                            brokers: None,
+                            symbols: Some(list_of_penny().await),
+                            resolutions: None,
+                            next: None,
+                            error: None,
+                        })),
+                        "future" => Ok(HttpResponse::Ok().json(OhclResponse {
+                            ohcl: None,
+                            brokers: None,
+                            symbols: Some(list_futures().await),
+                            resolutions: None,
+                            next: None,
+                            error: None,
+                        })),
+                        &_ => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+                            ohcl: None,
+                            brokers: None,
+                            symbols: None,
+                            resolutions: None,
+                            next: None,
+                            error: Some(format!("Product {} is not exist", product)),
+                        })),
+                    },
+                    "crypto" => match product.as_str() {
+                        "spot" => Ok(HttpResponse::Ok().json(OhclResponse {
+                            ohcl: None,
+                            brokers: None,
+                            symbols: Some(list_crypto().await),
+                            resolutions: None,
+                            next: None,
+                            error: None,
+                        })),
+                        "future" => Ok(HttpResponse::Ok().json(OhclResponse {
+                            ohcl: None,
+                            brokers: None,
+                            symbols: None,
+                            resolutions: None,
+                            next: None,
+                            error: Some(format!("Not implemented")),
+                        })),
+                        &_ => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+                            ohcl: None,
+                            brokers: None,
+                            symbols: None,
+                            resolutions: None,
+                            next: None,
+                            error: Some(format!("Product {} is not exist", product)),
+                        })),
+                    },
+                    &_ => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+                        ohcl: None,
+                        brokers: None,
+                        symbols: None,
+                        resolutions: None,
+                        next: None,
+                        error: Some(format!("Broker {} is not exist", broker)),
+                    })),
+                };
+            }
+        } else {
+            // @TODO: report error about database
+        }
+    }
+
     Ok(HttpResponse::InternalServerError().json(OhclResponse {
         ohcl: None,
         brokers: None,
         symbols: None,
         resolutions: None,
-        error: Some(format!("Not implemented")),
+        next: None,
+        error: Some(format!(
+            "Product {} of {} has been blocked",
+            product, broker
+        )),
     }))
 }
