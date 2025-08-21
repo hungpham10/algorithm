@@ -22,6 +22,7 @@ pub struct Ohcl {
     cache_resolutions: Mutex<Option<Vec<String>>>,
     cache_broker_resolution: Mutex<BTreeMap<(String, String), String>>,
     cache_products: Mutex<BTreeMap<(String, String), bool>>,
+    cache_broker_products: Mutex<BTreeMap<String, Vec<String>>>,
 }
 
 impl Ohcl {
@@ -32,6 +33,7 @@ impl Ohcl {
             cache_resolutions: Mutex::new(None),
             cache_broker_resolution: Mutex::new(BTreeMap::new()),
             cache_products: Mutex::new(BTreeMap::new()),
+            cache_broker_products: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -128,6 +130,30 @@ impl Ohcl {
             items.iter().map(|it| it.name.clone()).collect::<Vec<_>>(),
             items.last().map(|it| it.id).unwrap_or(0),
         ))
+    }
+
+    pub async fn list_products(&self, broker: &String) -> Result<Vec<String>, DbErr> {
+        let cache = self.cache_broker_products.lock().unwrap();
+        if cache.contains_key(broker) {
+            return Ok(cache[broker].clone());
+        }
+        drop(cache);
+
+        let res = Products::find()
+            .join_rev(
+                JoinType::InnerJoin,
+                brokers::Entity::belongs_to(Products)
+                    .from(brokers::Column::Id)
+                    .to(products::Column::BrokerId)
+                    .into(),
+            )
+            .filter(Condition::all().add(brokers::Column::Name.eq(broker)))
+            .column(products::Column::Name)
+            .into_tuple::<String>()
+            .all(&*self.db)
+            .await?;
+
+        Ok(res)
     }
 
     pub async fn is_broker_enabled(&self, broker: &String) -> Result<bool, DbErr> {

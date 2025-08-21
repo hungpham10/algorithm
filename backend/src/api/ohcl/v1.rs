@@ -30,6 +30,9 @@ pub struct OhclResponse {
     brokers: Option<Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    products: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     symbols: Option<Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -58,6 +61,7 @@ async fn update_ohcl_cache_and_return(
                 ohcl: None,
                 brokers: None,
                 symbols: None,
+                products: None,
                 resolutions: None,
                 next: None,
                 error: Some(format!("Failed to update OHCL to cache: {}", error)),
@@ -81,6 +85,7 @@ async fn update_ohcl_cache_and_return(
                 brokers: None,
                 symbols: None,
                 resolutions: None,
+                products: None,
                 next: None,
                 error: None,
             }))
@@ -93,6 +98,7 @@ async fn update_ohcl_cache_and_return(
                 brokers: None,
                 symbols: None,
                 resolutions: None,
+                products: None,
                 next: None,
                 error: Some(error.message),
             }))
@@ -155,6 +161,7 @@ pub async fn get_ohcl_from_broker(
                             symbols: None,
                             resolutions: None,
                             next: None,
+                            products: None,
                             error: None,
                         }))
                     }
@@ -167,6 +174,7 @@ pub async fn get_ohcl_from_broker(
                         brokers: None,
                         symbols: None,
                         resolutions: None,
+                        products: None,
                         next: None,
                         error: Some(error.message),
                     }))
@@ -178,6 +186,7 @@ pub async fn get_ohcl_from_broker(
                         ohcl: None,
                         brokers: None,
                         symbols: None,
+                        products: None,
                         resolutions: None,
                         next: None,
                         error: Some(format!("Failed to query OHCL: {}", error)),
@@ -188,6 +197,7 @@ pub async fn get_ohcl_from_broker(
                 ohcl: None,
                 brokers: None,
                 symbols: None,
+                products: None,
                 resolutions: None,
                 next: None,
                 error: Some(format!("Fail to query database: {}", error)),
@@ -198,6 +208,7 @@ pub async fn get_ohcl_from_broker(
             ohcl: None,
             brokers: None,
             symbols: None,
+            products: None,
             resolutions: None,
             next: None,
             error: Some(format!("Not implemented")),
@@ -212,6 +223,7 @@ pub async fn get_list_of_resolutions(appstate: Data<Arc<AppState>>) -> Result<Ht
                 ohcl: None,
                 brokers: None,
                 symbols: None,
+                products: None,
                 resolutions: Some(resolutions),
                 next: None,
                 error: None,
@@ -220,6 +232,7 @@ pub async fn get_list_of_resolutions(appstate: Data<Arc<AppState>>) -> Result<Ht
                 ohcl: None,
                 brokers: None,
                 symbols: None,
+                products: None,
                 resolutions: None,
                 next: None,
                 error: Some(format!("Fail to query database: {}", error)),
@@ -230,6 +243,7 @@ pub async fn get_list_of_resolutions(appstate: Data<Arc<AppState>>) -> Result<Ht
             ohcl: None,
             brokers: None,
             symbols: None,
+            products: None,
             resolutions: None,
             next: None,
             error: Some(format!("Not implemented")),
@@ -256,6 +270,7 @@ pub async fn get_list_of_brokers(
                 ohcl: None,
                 brokers: Some(brokers.clone()),
                 symbols: None,
+                products: None,
                 resolutions: None,
                 next: if next > 0 && brokers.len() == limit as usize {
                     Some(next)
@@ -271,6 +286,7 @@ pub async fn get_list_of_brokers(
         ohcl: None,
         brokers: None,
         symbols: None,
+        products: None,
         resolutions: None,
         next: None,
         error: Some(format!("Not implemented")),
@@ -293,6 +309,7 @@ pub async fn get_list_of_symbols(
                             symbols: Some(list_of_hose().await),
                             resolutions: None,
                             next: None,
+                            products: None,
                             error: Some(format!("Not implemented")),
                         })),
                         "crypto" => Ok(HttpResponse::InternalServerError().json(OhclResponse {
@@ -300,6 +317,7 @@ pub async fn get_list_of_symbols(
                             brokers: None,
                             symbols: Some(list_crypto().await),
                             resolutions: None,
+                            products: None,
                             next: None,
                             error: Some(format!("Not implemented")),
                         })),
@@ -308,6 +326,7 @@ pub async fn get_list_of_symbols(
                             brokers: None,
                             symbols: None,
                             resolutions: None,
+                            products: None,
                             next: None,
                             error: Some(format!("Broker {} is not exist", broker)),
                         })),
@@ -324,10 +343,51 @@ pub async fn get_list_of_symbols(
         ohcl: None,
         brokers: None,
         symbols: None,
+        products: None,
         resolutions: None,
         next: None,
         error: Some(format!("Broker {} has been blocked", broker)),
     }))
+}
+
+pub async fn get_list_of_product_by_broker(
+    appstate: Data<Arc<AppState>>,
+    path: Path<(String,)>,
+) -> Result<HttpResponse> {
+    let (broker,) = path.into_inner();
+
+    if let Some(entity) = appstate.ohcl_entity() {
+        match entity.list_products(&broker).await {
+            Ok(products) => Ok(HttpResponse::Ok().json(OhclResponse {
+                ohcl: None,
+                brokers: None,
+                symbols: None,
+                products: Some(products),
+                resolutions: None,
+                next: None,
+                error: None,
+            })),
+            Err(error) => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+                ohcl: None,
+                brokers: None,
+                symbols: None,
+                resolutions: None,
+                next: None,
+                products: None,
+                error: Some(format!("Failed to get list of products: {}", error)),
+            })),
+        }
+    } else {
+        Ok(HttpResponse::InternalServerError().json(OhclResponse {
+            ohcl: None,
+            brokers: None,
+            symbols: None,
+            resolutions: None,
+            next: None,
+            products: None,
+            error: Some(format!("Not implemented")),
+        }))
+    }
 }
 
 pub async fn get_list_of_symbols_by_product(
@@ -350,6 +410,7 @@ pub async fn get_list_of_symbols_by_product(
                                 symbols: None,
                                 resolutions: None,
                                 next: None,
+                                products: None,
                                 error: Some(format!("Not implemented")),
                             })),
                             "vn30" => Ok(HttpResponse::Ok().json(OhclResponse {
@@ -358,6 +419,7 @@ pub async fn get_list_of_symbols_by_product(
                                 symbols: Some(list_of_vn30().await),
                                 resolutions: None,
                                 next: None,
+                                products: None,
                                 error: None,
                             })),
                             "vn100" => Ok(HttpResponse::Ok().json(OhclResponse {
@@ -366,6 +428,7 @@ pub async fn get_list_of_symbols_by_product(
                                 symbols: Some(list_of_vn100().await),
                                 resolutions: None,
                                 next: None,
+                                products: None,
                                 error: None,
                             })),
                             "midcap" => Ok(HttpResponse::Ok().json(OhclResponse {
@@ -374,6 +437,7 @@ pub async fn get_list_of_symbols_by_product(
                                 symbols: Some(list_of_midcap().await),
                                 resolutions: None,
                                 next: None,
+                                products: None,
                                 error: None,
                             })),
                             "penny" => Ok(HttpResponse::Ok().json(OhclResponse {
@@ -382,6 +446,7 @@ pub async fn get_list_of_symbols_by_product(
                                 symbols: Some(list_of_penny().await),
                                 resolutions: None,
                                 next: None,
+                                products: None,
                                 error: None,
                             })),
                             "future" => Ok(HttpResponse::Ok().json(OhclResponse {
@@ -389,6 +454,7 @@ pub async fn get_list_of_symbols_by_product(
                                 brokers: None,
                                 symbols: Some(list_futures().await),
                                 resolutions: None,
+                                products: None,
                                 next: None,
                                 error: None,
                             })),
@@ -396,6 +462,7 @@ pub async fn get_list_of_symbols_by_product(
                                 ohcl: None,
                                 brokers: None,
                                 symbols: None,
+                                products: None,
                                 resolutions: None,
                                 next: None,
                                 error: Some(format!("Product {} is not exist", product)),
@@ -406,6 +473,7 @@ pub async fn get_list_of_symbols_by_product(
                                 ohcl: None,
                                 brokers: None,
                                 symbols: Some(list_crypto().await),
+                                products: None,
                                 resolutions: None,
                                 next: None,
                                 error: None,
@@ -414,6 +482,7 @@ pub async fn get_list_of_symbols_by_product(
                                 ohcl: None,
                                 brokers: None,
                                 symbols: None,
+                                products: None,
                                 resolutions: None,
                                 next: None,
                                 error: Some(format!("Not implemented")),
@@ -422,6 +491,7 @@ pub async fn get_list_of_symbols_by_product(
                                 ohcl: None,
                                 brokers: None,
                                 symbols: None,
+                                products: None,
                                 resolutions: None,
                                 next: None,
                                 error: Some(format!("Product {} is not exist", product)),
@@ -432,6 +502,7 @@ pub async fn get_list_of_symbols_by_product(
                             brokers: None,
                             symbols: None,
                             resolutions: None,
+                            products: None,
                             next: None,
                             error: Some(format!("Broker {} is not exist", broker)),
                         })),
@@ -450,6 +521,7 @@ pub async fn get_list_of_symbols_by_product(
         symbols: None,
         resolutions: None,
         next: None,
+        products: None,
         error: Some(format!(
             "Product {} of {} has been blocked",
             product, broker
