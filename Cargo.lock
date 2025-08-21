@@ -1300,6 +1300,7 @@ dependencies = [
  "statrs",
  "sycamore",
  "tokio",
+ "tracing",
  "tracing-subscriber",
 ]
 

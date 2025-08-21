@@ -100,6 +100,10 @@ async fn main() -> std::io::Result<()> {
                     )
                     .route(
                         "/v1/ohcl/{broker}/{product}/symbols",
+                        get().to(crate::api::ohcl::v1::get_list_of_symbols_by_product),
+                    )
+                    .route(
+                        "/v1/ohcl/{broker}/symbols",
                         get().to(crate::api::ohcl::v1::get_list_of_symbols),
                     ),
             )

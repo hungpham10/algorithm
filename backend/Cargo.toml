@@ -20,6 +20,7 @@ default = [
 	"airtable-api",
 	"redis",
 	"actix-web",
+	"tracing",
 	"tracing-subscriber",
 	"async-graphql",
 	"async-graphql-actix-web",
@@ -86,7 +87,8 @@ dotenvy = "0.15.7"
 actix-web = { version = "4.3.1", optional = true }
 redis = { version = "0.32.5", optional = true, features = ["aio", "tokio-comp"] }
 env_logger = { version = "0.8.2" }
-tracing-subscriber = { version = "0.3.16", optional = true, features = ["json"] }
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3.16", optional = true, features = ["fmt", "json"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

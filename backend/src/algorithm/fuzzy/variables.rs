@@ -382,8 +382,8 @@ impl Variables {
             .map(|r| r.to_string())
             .unwrap_or(DEFAULT_REGION.to_string());
         let endpoint_value = endpoint.unwrap_or(DEFAULT_ENDPOINT);
-        let region_provider =
-            RegionProviderChain::default_provider().or_else(Region::new(region_value));
+        let region_provider = RegionProviderChain::first_try(Region::new(region_value.to_string()))
+            .or_default_provider();
         let config = aws_config::defaults(BehaviorVersion::latest())
             .timeout_config(
                 TimeoutConfig::builder()
