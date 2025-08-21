@@ -94,9 +94,6 @@ tracing-subscriber = { version = "0.3.16", optional = true, features = ["fmt", "
 criterion = { version = "0.5", features = ["html_reports"] }
 tokio = { version = "1.26.0", features = ["full", "test-util"] }
 
-[profile.release]
-debug = true
-
 [package.metadata.deb]
 maintainer = "Hung Pham <hung0913208@gmail.com>"
 priority = "optional"
@@ -106,3 +103,10 @@ assets = [
     ["../conf/bff.service", "lib/systemd/system/", "644"]
 ]
 maintainer-scripts = "debian/"
+
+[profile.release]
+opt-level = 3          # tối ưu tốc độ (O3)
+lto = "fat"            # link-time optimization đầy đủ
+codegen-units = 1      # compile 1 unit -> tối ưu tốt hơn
+panic = "abort"        # không cần stack unwinding, giảm size
+strip = true           # bỏ debug symbols (Rust >= 1.73)

@@ -8,7 +8,8 @@ use mapping_broker_resolution::Entity as MappingBrokerResolution;
 use products::Entity as Products;
 use resolutions::Entity as Resolutions;
 
-use std::sync::Arc;
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, JoinType, QueryFilter,
@@ -17,11 +18,21 @@ use sea_orm::{
 
 pub struct Ohcl {
     db: Arc<DatabaseConnection>,
+    cache_brokers: Mutex<BTreeMap<i32, String>>,
+    cache_resolutions: Mutex<Option<Vec<String>>>,
+    cache_broker_resolution: Mutex<BTreeMap<(String, String), String>>,
+    cache_products: Mutex<BTreeMap<(String, String), bool>>,
 }
 
 impl Ohcl {
     pub fn new(db: Arc<DatabaseConnection>) -> Self {
-        Self { db }
+        Self {
+            db,
+            cache_brokers: Mutex::new(BTreeMap::new()),
+            cache_resolutions: Mutex::new(None),
+            cache_broker_resolution: Mutex::new(BTreeMap::new()),
+            cache_products: Mutex::new(BTreeMap::new()),
+        }
     }
 
     pub async fn convert_to_broker_resolution(
@@ -29,6 +40,17 @@ impl Ohcl {
         broker: &String,
         resolution: &String,
     ) -> Result<String, DbErr> {
+        // Check cache trước
+        if let Some(res) = self
+            .cache_broker_resolution
+            .lock()
+            .unwrap()
+            .get(&(broker.clone(), resolution.clone()))
+        {
+            return Ok(res.clone());
+        }
+
+        // Query DB nếu chưa có cache
         let res: Option<String> = MappingBrokerResolution::find()
             .join_rev(
                 JoinType::InnerJoin,
@@ -53,7 +75,13 @@ impl Ohcl {
             .await?;
 
         match res {
-            Some(res) => Ok(res),
+            Some(res) => {
+                self.cache_broker_resolution
+                    .lock()
+                    .unwrap()
+                    .insert((broker.clone(), resolution.clone()), res.clone());
+                Ok(res)
+            }
             None => Err(DbErr::Query(RuntimeErr::Internal(format!(
                 "Resolution {} is not supported for {}",
                 resolution, broker
@@ -62,31 +90,54 @@ impl Ohcl {
     }
 
     pub async fn list_resolutions(&self) -> Result<Vec<String>, DbErr> {
-        Ok(Resolutions::find()
+        // Nếu cache có thì dùng
+        if let Some(cache) = self.cache_resolutions.lock().unwrap().clone() {
+            return Ok(cache);
+        }
+
+        // Query DB
+        let res = Resolutions::find()
             .select_only()
             .column(resolutions::Column::Resolution)
             .into_tuple::<String>()
             .all(&*self.db)
-            .await?)
+            .await?;
+
+        // Cache
+        *self.cache_resolutions.lock().unwrap() = Some(res.clone());
+
+        Ok(res)
     }
 
     pub async fn list_brokers(&self, after: i32, limit: u64) -> Result<(Vec<String>, i32), DbErr> {
+        // cache broker theo id → name
         let items = Brokers::find()
             .filter(brokers::Column::Id.gt(after))
             .limit(limit)
             .all(&*self.db)
             .await?;
 
+        {
+            let mut cache = self.cache_brokers.lock().unwrap();
+            for it in &items {
+                cache.insert(it.id, it.name.clone());
+            }
+        }
+
         Ok((
             items.iter().map(|it| it.name.clone()).collect::<Vec<_>>(),
-            match items.last() {
-                Some(item) => item.id,
-                None => 0,
-            },
+            items.last().map(|it| it.id).unwrap_or(0),
         ))
     }
 
     pub async fn is_broker_enabled(&self, broker: &String) -> Result<bool, DbErr> {
+        // check cache nhanh theo name
+        let cache = self.cache_brokers.lock().unwrap();
+        if cache.values().any(|b| b == broker) {
+            return Ok(true);
+        }
+        drop(cache);
+
         Ok(Brokers::find()
             .filter(brokers::Column::Name.eq(broker))
             .one(&*self.db)
@@ -99,6 +150,12 @@ impl Ohcl {
         product: &String,
         broker: &String,
     ) -> Result<bool, DbErr> {
+        let key = (product.clone(), broker.clone());
+
+        if let Some(val) = self.cache_products.lock().unwrap().get(&key) {
+            return Ok(*val);
+        }
+
         let res = Products::find()
             .join_rev(
                 JoinType::InnerJoin,
@@ -116,6 +173,9 @@ impl Ohcl {
             .one(&*self.db)
             .await?;
 
-        Ok(res.is_some())
+        let enabled = res.is_some();
+        self.cache_products.lock().unwrap().insert(key, enabled);
+
+        Ok(enabled)
     }
 }
