@@ -27,6 +27,10 @@ async fn main() -> std::io::Result<()> {
         .unwrap_or_else(|_| "8000".to_string())
         .parse::<u16>()
         .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid SERVER_PORT"))?;
+    let concurrent = std::env::var("SERVER_CONCURRENT")
+        .unwrap_or_else(|_| "1".to_string())
+        .parse::<usize>()
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid SERVER_CONCURRENT"))?;
 
     // @NOTE: control cron
     let (txstop, mut rxstop) = oneshot::channel::<()>();
@@ -161,6 +165,7 @@ async fn main() -> std::io::Result<()> {
             // @NOTE: AppState
             .app_data(Data::new(appstate_for_control.clone()))
     })
+    .workers(concurrent)
     .bind((host.as_str(), port))
     .map_err(|e| {
         Error::new(
