@@ -254,10 +254,14 @@ pub async fn get_list_of_brokers(
         if let Ok((brokers, next)) = entity.list_brokers(after, limit).await {
             return Ok(HttpResponse::Ok().json(OhclResponse {
                 ohcl: None,
-                brokers: Some(brokers),
+                brokers: Some(brokers.clone()),
                 symbols: None,
                 resolutions: None,
-                next: if next > 0 { Some(next) } else { None },
+                next: if next > 0 && brokers.len() == limit as usize {
+                    Some(next)
+                } else {
+                    None
+                },
                 error: None,
             }));
         }
@@ -333,7 +337,7 @@ pub async fn get_list_of_symbols_by_product(
     let (broker, product) = path.into_inner();
 
     if let Some(entity) = appstate.ohcl_entity() {
-        match entity.is_product_enabled(&broker, &product).await {
+        match entity.is_product_enabled(&product, &broker).await {
             Ok(ok) => {
                 if ok {
                     // @TODO: replace with another solution to show brokers from out tables

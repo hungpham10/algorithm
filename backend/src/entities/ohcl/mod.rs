@@ -32,16 +32,16 @@ impl Ohcl {
         let res: Option<String> = MappingBrokerResolution::find()
             .join_rev(
                 JoinType::InnerJoin,
-                mapping_broker_resolution::Entity::belongs_to(Brokers)
-                    .from(mapping_broker_resolution::Column::BrokerId)
-                    .to(brokers::Column::Id)
+                brokers::Entity::belongs_to(MappingBrokerResolution)
+                    .from(brokers::Column::Id)
+                    .to(mapping_broker_resolution::Column::BrokerId)
                     .into(),
             )
             .join_rev(
                 JoinType::InnerJoin,
-                mapping_broker_resolution::Entity::belongs_to(Resolutions)
-                    .from(mapping_broker_resolution::Column::ResolutionId)
-                    .to(resolutions::Column::Id)
+                resolutions::Entity::belongs_to(MappingBrokerResolution)
+                    .from(resolutions::Column::Id)
+                    .to(mapping_broker_resolution::Column::ResolutionId)
                     .into(),
             )
             .filter(brokers::Column::Name.eq(broker))
@@ -102,16 +102,16 @@ impl Ohcl {
         let res = Products::find()
             .join_rev(
                 JoinType::InnerJoin,
-                products::Entity::belongs_to(Brokers)
-                    .from(products::Column::BrokerId)
-                    .to(brokers::Column::Id)
+                brokers::Entity::belongs_to(Products)
+                    .from(brokers::Column::Id)
+                    .to(products::Column::BrokerId)
                     .into(),
             )
             .filter(
                 Condition::all()
                     .add(products::Column::Name.eq(product))
                     .add(brokers::Column::Name.eq(broker))
-                    .add(products::Column::Enabled.eq(true)),
+                    .add(products::Column::Enabled.eq(1)),
             )
             .one(&*self.db)
             .await?;
