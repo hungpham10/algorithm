@@ -133,11 +133,10 @@ impl Ohcl {
     }
 
     pub async fn list_products(&self, broker: &String) -> Result<Vec<String>, DbErr> {
-        let cache = self.cache_broker_products.lock().unwrap();
+        let mut cache = self.cache_broker_products.lock().unwrap();
         if cache.contains_key(broker) {
             return Ok(cache[broker].clone());
         }
-        drop(cache);
 
         let res = Products::find()
             .join_rev(
@@ -148,21 +147,22 @@ impl Ohcl {
                     .into(),
             )
             .filter(Condition::all().add(brokers::Column::Name.eq(broker)))
+            .select_only()
             .column(products::Column::Name)
             .into_tuple::<String>()
             .all(&*self.db)
             .await?;
 
+        cache.insert(broker.clone(), res.clone());
         Ok(res)
     }
 
     pub async fn is_broker_enabled(&self, broker: &String) -> Result<bool, DbErr> {
         // check cache nhanh theo name
-        let cache = self.cache_brokers.lock().unwrap();
+        let mut cache = self.cache_brokers.lock().unwrap();
         if cache.values().any(|b| b == broker) {
             return Ok(true);
         }
-        drop(cache);
 
         Ok(Brokers::find()
             .filter(brokers::Column::Name.eq(broker))

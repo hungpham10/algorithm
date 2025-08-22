@@ -91,6 +91,10 @@ async fn main() -> std::io::Result<()> {
             .service(
                 scope("/api/investing")
                     .route(
+                        "/v1/ohcl/products/{broker}",
+                        get().to(crate::api::ohcl::v1::get_list_of_product_by_broker),
+                    )
+                    .route(
                         "/v1/ohcl/{broker}/{symbol}",
                         get().to(crate::api::ohcl::v1::get_ohcl_from_broker),
                     )
@@ -103,11 +107,7 @@ async fn main() -> std::io::Result<()> {
                         get().to(crate::api::ohcl::v1::get_list_of_brokers),
                     )
                     .route(
-                        "/v1/ohcl/{broker}/products",
-                        get().to(crate::api::ohcl::v1::get_list_of_product_by_broker),
-                    )
-                    .route(
-                        "/v1/ohcl/{broker}/{product}/symbols",
+                        "/v1/ohcl/symbols/{broker}/{product}",
                         get().to(crate::api::ohcl::v1::get_list_of_symbols_by_product),
                     )
                     .route(
