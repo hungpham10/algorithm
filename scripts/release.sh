@@ -74,6 +74,7 @@ function boot() {
   fi
   sed -i "s/%%HTTP_SERVER%%/$HTTP_SERVER/g" /etc/nginx/http.d/default.conf
   sed -i "s/%%HTTP_PORT%%/$HTTP_PORT/g" /etc/nginx/http.d/default.conf
+  sed -i "s/%%SERVER_PORT%%/$SERVER_PORT/g" /etc/nginx/http.d/default.conf
   sed -i "s#%%WOOCOMMERCE_SERVER%%#$WOOCOMMERCE_SERVER#g" /etc/nginx/http.d/default.conf
 
   shift

@@ -491,3 +491,11 @@ pub async fn flush(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
         Err(error) => Ok(HttpResponse::BadRequest().body(format!("{}", error))),
     }
 }
+
+pub async fn robots(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
+    Ok(HttpResponse::Ok().body("ok"))
+}
+
+pub async fn sitemap(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
+    Ok(HttpResponse::Ok().body("ok"))
+}

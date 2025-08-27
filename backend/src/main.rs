@@ -14,7 +14,7 @@ use log::{error, info};
 mod api;
 mod entities;
 
-use crate::api::{flush, health, lock, synchronize, unlock, AppState};
+use crate::api::{flush, health, lock, robots, sitemap, synchronize, unlock, AppState};
 
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
@@ -85,7 +85,9 @@ async fn main() -> std::io::Result<()> {
                     .route("/v1/variables/flush", put().to(flush))
                     .route("/v1/synchronize", put().to(synchronize))
                     .route("/v1/lock", put().to(lock))
-                    .route("/v1/unlock", put().to(unlock)),
+                    .route("/v1/unlock", put().to(unlock))
+                    .route("/v1/seo/sitemap", get().to(sitemap))
+                    .route("/v1/seo/robots", get().to(robots)),
             )
             // @NOTE: APIs of OHCL
             .service(

@@ -93,6 +93,11 @@ tracing-subscriber = { version = "0.3.16", optional = true, features = ["fmt", "
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 tokio = { version = "1.26.0", features = ["full", "test-util"] }
+candle-core = { version = "0.9.1" }
+candle-nn = { version = "0.9.1" }
+candle-transformers = { version = "0.9.1" }
+hf-hub = { version = "0.3" }
+tokenizers = { version = "0.21.4" }
 
 [package.metadata.deb]
 maintainer = "Hung Pham <hung0913208@gmail.com>"

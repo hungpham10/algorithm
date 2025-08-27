@@ -12,50 +12,54 @@ BACKEND_DIR := backend
 setup:
 	$(PYTHON) -m pip install --upgrade pip
 	$(PYTHON) -m pip install maturin twine pytest pyarrow patchelf --cache-dir $(PIP_CACHE)
-	@if ! command -v rustc > /dev/null; then 						\
-		echo "Installing Rust..."; 							\
-		curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; 	\
-		export PATH="$$HOME/.cargo/bin:$$PATH"; 					\
-		$(CARGO) install trunk;								\
+	@if ! command -v rustc > /dev/null; then 													\
+		echo "Installing Rust..."; 														\
+		curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; 								\
+		export PATH="$$HOME/.cargo/bin:$$PATH"; 												\
+		$(CARGO) install trunk;															\
 	fi
-
+	@if [ -n "$(LIBTORCH_VERSION)" ]; then 														\
+		curl -L https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-${LIBTORCH_VERSION}%2Bcpu.zip -o libtorch.zip 	\
+    			&& unzip libtorch.zip -d /usr/local 												\
+    			&& rm libtorch.zip;														\
+	fi
 lint:
-	export PATH="$$HOME/.cargo/bin:$$PATH"  && 						\
-	cd $(BACKEND_DIR) 			&& 						\
-	rustup component add clippy rustfmt 	&& 						\
-	$(CARGO) clippy --features python --lib	&& 						\
-	$(CARGO) clippy 			&& 						\
+	export PATH="$$HOME/.cargo/bin:$$PATH"  && 													\
+	cd $(BACKEND_DIR) 			&& 													\
+	rustup component add clippy rustfmt 	&& 													\
+	$(CARGO) clippy --features python --lib	&& 													\
+	$(CARGO) clippy 			&& 													\
 	$(CARGO) fmt --all -- --check
 
 library:
 	@echo "Building release version $(VERSION)"
 	@mkdir -p $(DIST_DIR)
-	export PATH="$$HOME/.cargo/bin:$$PATH" &&						\
-	cd $(BACKEND_DIR) && 									\
-	if grep -q "^version" Cargo.toml; then 							\
-		maturin build --release --features python --no-default-features 		\
-		--out dist && 									\
-		cp dist/*.whl ../$(DIST_DIR)/; 							\
-	else 											\
-		echo "Missing version in Cargo.toml"; 						\
-		exit 1; 									\
+	export PATH="$$HOME/.cargo/bin:$$PATH" &&													\
+	cd $(BACKEND_DIR) && 																\
+	if grep -q "^version" Cargo.toml; then 														\
+		maturin build --release --features python --no-default-features 									\
+		--out dist && 																\
+		cp dist/*.whl ../$(DIST_DIR)/; 														\
+	else 																		\
+		echo "Missing version in Cargo.toml"; 													\
+		exit 1; 																\
 	fi
 	@echo "Release wheel built in $(DIST_DIR)/"
 
 server:
 	@echo "Building release version $(VERSION)"
 	@mkdir -p $(DIST_DIR)
-	export PATH="$$HOME/.cargo/bin:$$PATH" &&						\
+	export PATH="$$HOME/.cargo/bin:$$PATH" &&													\
 	$(CARGO) build --release
 
 client:
 	@echo "Building release version $(VERSION)"
 	@mkdir -p $(DIST_DIR)
-	export PATH="$$HOME/.cargo/bin:$$PATH" &&						\
+	export PATH="$$HOME/.cargo/bin:$$PATH" &&													\
 	$(TRUNK) build --release
 
 ipython:
-	@cp -av target/debug/libvnscope.dylib target/debug/vnscope.so || 			\
+	@cp -av target/debug/libvnscope.dylib target/debug/vnscope.so || 										\
 		cp -av target/release/libvnscope.dylib target/release/vnscope.so
 
 install: library
