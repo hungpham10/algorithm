@@ -156,10 +156,12 @@ impl Variables {
         let bucket = self.s3_bucket.as_ref().ok_or_else(|| RuleError {
             message: "Bucket name not set".to_string(),
         })?;
-        let folder = DateTime::<Utc>::from_timestamp(timestamp_millis / 1000, 0)
-            .unwrap()
-            .format("%Y-%m-%d")
-            .to_string();
+        let folder = format!(
+            "investing/{}",
+            DateTime::<Utc>::from_timestamp(timestamp_millis / 1000, 0)
+                .unwrap()
+                .format("%Y-%m-%d")
+        );
 
         let scope = scope.to_string();
         let response = client
@@ -519,7 +521,7 @@ impl Variables {
         let bucket = self.s3_bucket.as_ref().ok_or_else(|| RuleError {
             message: "Bucket name not set".to_string(),
         })?;
-        let folder = Utc::now().format("%Y-%m-%d").to_string();
+        let folder = format!("investing/{}", Utc::now().format("%Y-%m-%d"));
 
         client
             .put_object()
