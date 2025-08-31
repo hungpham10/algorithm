@@ -13,7 +13,6 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-landing-page = ["sycamore", "default"]
 python = ["pyo3", "pyo3-asyncio", "pyo3-polars", "polars", "numpy"]
 bff = ["default"]
 default = [
@@ -29,9 +28,6 @@ default = [
 ]
 
 [dependencies]
-# Landing page rendering
-sycamore = { version = "0.9.1", optional = true }
-
 # Data modeling
 async-graphql = { version = "7", optional = true }
 async-graphql-actix-web = { version = "7", optional = true }
@@ -84,6 +80,7 @@ log = "0.4.22"
 
 # Web application
 dotenvy = "0.15.7"
+futures-util = "0.3"
 actix-web = { version = "4.3.1", optional = true }
 redis = { version = "0.32.5", optional = true, features = ["aio", "tokio-comp"] }
 env_logger = { version = "0.8.2" }

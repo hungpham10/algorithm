@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS  `wms_lots` (
   `quantity` integer NOT NULL DEFAULT 0,
   `supplier` varchar(255),
   `entry_date` timestamp NOT NULL DEFAULT (now()),
-  `cost_price` decimal(10,2),
+  `cost_price` DOUBLE,
   `status` varchar(50) DEFAULT 'available',
   `created_at` timestamp DEFAULT (now()),
   `updated_at` timestamp DEFAULT (now())

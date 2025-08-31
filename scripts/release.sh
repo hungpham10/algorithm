@@ -72,9 +72,18 @@ function boot() {
     sed -i '/HTTP_X_FORWARDED_PORT/d' /etc/nginx/http.d/default.conf
     HTTP_PROTOCOL="http"
   fi
+  # Setup S3 backend
+  sed -i "s#%%CDN_ENDPOINT%%#$CDN_ENDPOINT#g" /etc/nginx/http.d/default.conf
+  sed -i "s#%%CDN_BUCKET%%#$CDN_BUCKET#g" /etc/nginx/http.d/default.conf
+  sed -i "s#%%AWS_ACCESS_KEY_ID%%#$AWS_ACCESS_KEY_ID#g" /etc/nginx/http.d/default.conf
+  sed -i "s#%%AWS_SECRET_ACCESS_KEY%%#$AWS_SECRET_ACCESS_KEY#g" /etc/nginx/http.d/default.conf
+
+  # Setup Rest backend
+  sed -i "s/%%SERVER_PORT%%/$SERVER_PORT/g" /etc/nginx/http.d/default.conf
+
+  # Setup woocommerce backend
   sed -i "s/%%HTTP_SERVER%%/$HTTP_SERVER/g" /etc/nginx/http.d/default.conf
   sed -i "s/%%HTTP_PORT%%/$HTTP_PORT/g" /etc/nginx/http.d/default.conf
-  sed -i "s/%%SERVER_PORT%%/$SERVER_PORT/g" /etc/nginx/http.d/default.conf
   sed -i "s#%%WOOCOMMERCE_SERVER%%#$WOOCOMMERCE_SERVER#g" /etc/nginx/http.d/default.conf
 
   shift

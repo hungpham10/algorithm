@@ -14,7 +14,7 @@ use log::{error, info};
 mod api;
 mod entities;
 
-use crate::api::{flush, health, lock, robots, sitemap, synchronize, unlock, AppState};
+use crate::api::{file, flush, health, lock, robots, sitemap, synchronize, unlock, AppState};
 
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
@@ -79,13 +79,14 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             // @NOTE: health-check
             .route("/health", get().to(health))
-            // @NOTE: APIs for background configuration
+            // @NOTE: APIs for configuration
             .service(
                 scope("/api/config")
                     .route("/v1/variables/flush", put().to(flush))
-                    .route("/v1/synchronize", put().to(synchronize))
-                    .route("/v1/lock", put().to(lock))
-                    .route("/v1/unlock", put().to(unlock))
+                    .route("/v1/cronjobs/synchronize", put().to(synchronize))
+                    .route("/v1/cronjobs/lock", put().to(lock))
+                    .route("/v1/cronjobs/unlock", put().to(unlock))
+                    .route("/v1/files/{kind}/{id}", get().to(file))
                     .route("/v1/seo/sitemap", get().to(sitemap))
                     .route("/v1/seo/robots", get().to(robots)),
             )
@@ -120,18 +121,22 @@ async fn main() -> std::io::Result<()> {
             // @NOTE: APIs of WMS
             .service(
                 scope("/api/ecommerce")
-                    .route("/v1/wms/stock", get().to(crate::api::wms::v1::get_stocks))
+                    .route("/v1/wms/stock", get().to(crate::api::wms::v1::list_stocks))
                     .route(
-                        "/v1/wms/stock",
+                        "/v1/wms/stocks",
                         post().to(crate::api::wms::v1::create_stock),
                     )
                     .route(
-                        "/v1/wms/stock/{id}",
+                        "/v1/wms/stocks/{stock_id}",
                         get().to(crate::api::wms::v1::get_stock),
                     )
                     .route(
+                        "/v1/wms/lots/{lot_id}",
+                        get().to(crate::api::wms::v1::get_lot),
+                    )
+                    .route(
                         "/v1/wms/stocks/{stock_id}/lots",
-                        get().to(crate::api::wms::v1::get_lots),
+                        get().to(crate::api::wms::v1::list_lots),
                     )
                     .route(
                         "/v1/wms/stocks/{stock_id}/lots",
@@ -140,6 +145,10 @@ async fn main() -> std::io::Result<()> {
                     .route(
                         "/v1/wms/shelves",
                         get().to(crate::api::wms::v1::get_shelves),
+                    )
+                    .route(
+                        "/v1/wms/shelves/{shelve_id}",
+                        get().to(crate::api::wms::v1::get_stock_in_shelve),
                     )
                     .route(
                         "/v1/wms/shelves",
