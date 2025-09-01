@@ -7,6 +7,7 @@ use actix_web::{HttpResponse, Result};
 
 use aws_sdk_s3::primitives::ByteStream;
 
+use super::SeoHeaders;
 use crate::api::AppState;
 
 struct Stream(ByteStream);
@@ -25,15 +26,19 @@ impl actix::prelude::Stream for Stream {
     }
 }
 
-pub async fn robots(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
+pub async fn robots(appstate: Data<Arc<AppState>>, headers: SeoHeaders) -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().body("ok"))
 }
 
-pub async fn sitemap(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
+pub async fn sitemap(appstate: Data<Arc<AppState>>, headers: SeoHeaders) -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().body("ok"))
 }
 
-pub async fn file(appstate: Data<Arc<AppState>>, path: Path<String>) -> Result<HttpResponse> {
+pub async fn file(
+    appstate: Data<Arc<AppState>>,
+    path: Path<String>,
+    headers: SeoHeaders,
+) -> Result<HttpResponse> {
     // Extract kind and id from the path
     let path_in_str = path.into_inner();
 

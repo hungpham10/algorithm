@@ -10,7 +10,7 @@ pub fn Header(orientation: Signal<Option<OrientationType>>) -> View {
     view! {
         header(class="header") {
             nav(class="navbar navbar-expand-lg bg-light sticky-top border-bottom") {
-                div(class="container-fluid d-flex align-items-center gap-5 px-5 px-md-5") {
+                div(class="container-fluid d-flex align-items-center gap-5 px-page") {
                     Logo()
                     Search(orientation=orientation)
                     Menu(orientation=orientation)
