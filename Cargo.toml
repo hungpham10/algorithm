@@ -1,3 +1,3 @@
 [workspace]
 resolver = "2"
-members = ["pkgs/backend"]
+members = ["pkgs/backend", "pkgs/frontend"]
