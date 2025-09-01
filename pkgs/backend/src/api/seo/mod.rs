@@ -57,7 +57,7 @@ impl FromRequest for SeoHeaders {
                 return ready(Err(ErrorBadRequest("Missing X-User-Type header")));
             }
         };
-        let device_type = match headers.get("X-Devide-Type") {
+        let device_type = match headers.get("X-Device-Type") {
             Some(value) => match value.to_str() {
                 Ok(str_val) => str_val.to_string(),
                 Err(_) => {
