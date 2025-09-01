@@ -20,7 +20,7 @@ impl FromRequest for SeoHeaders {
     fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
         let headers = req.headers();
 
-        let user_agent = match headers.get("user-agent") {
+        let user_agent = match headers.get("User-Agent") {
             Some(value) => match value.to_str() {
                 Ok(str_val) => str_val.to_string(),
                 Err(_) => {
@@ -33,7 +33,7 @@ impl FromRequest for SeoHeaders {
                 return ready(Err(ErrorBadRequest("Missing User-Agent header")));
             }
         };
-        let host = match headers.get("host") {
+        let host = match headers.get("Host") {
             Some(value) => match value.to_str() {
                 Ok(str_val) => str_val.to_string(),
                 Err(_) => {
@@ -44,7 +44,7 @@ impl FromRequest for SeoHeaders {
                 return ready(Err(ErrorBadRequest("Missing User-Agent header")));
             }
         };
-        let user_type = match headers.get("x-user-type") {
+        let user_type = match headers.get("X-User-Type") {
             Some(value) => match value.to_str() {
                 Ok(str_val) => str_val.to_string(),
                 Err(_) => {
@@ -57,7 +57,7 @@ impl FromRequest for SeoHeaders {
                 return ready(Err(ErrorBadRequest("Missing User-Agent header")));
             }
         };
-        let device_type = match headers.get("x-devide-type") {
+        let device_type = match headers.get("X-Devide-Type") {
             Some(value) => match value.to_str() {
                 Ok(str_val) => str_val.to_string(),
                 Err(_) => {
