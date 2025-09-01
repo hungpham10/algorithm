@@ -41,7 +41,7 @@ impl FromRequest for SeoHeaders {
                 }
             },
             None => {
-                return ready(Err(ErrorBadRequest("Missing User-Agent header")));
+                return ready(Err(ErrorBadRequest("Missing Host header")));
             }
         };
         let user_type = match headers.get("X-User-Type") {
@@ -54,7 +54,7 @@ impl FromRequest for SeoHeaders {
                 }
             },
             None => {
-                return ready(Err(ErrorBadRequest("Missing User-Agent header")));
+                return ready(Err(ErrorBadRequest("Missing X-User-Type header")));
             }
         };
         let device_type = match headers.get("X-Devide-Type") {
@@ -67,7 +67,7 @@ impl FromRequest for SeoHeaders {
                 }
             },
             None => {
-                return ready(Err(ErrorBadRequest("Missing User-Agent header")));
+                return ready(Err(ErrorBadRequest("Missing X-Device-Type header")));
             }
         };
 
