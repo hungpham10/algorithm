@@ -15,8 +15,21 @@
     </script>
     <style>
       .px-page {
-        padding-left: 180px;
-        padding-right: 180px;
+        padding-left: 45px;
+        padding-right: 45px;
+      }
+
+      .line-gradient {
+        height: 1px; /* Điều chỉnh chiều cao theo ý muốn */
+        background: linear-gradient(to right, #f5e8c7, #8b5e3c, #d9c2a7); /* Gradient màu giống hình */
+      }
+
+      .header-shadow-div {
+        transition: box-shadow 0.3s ease; /* Tạo hiệu ứng mượt mà khi thay đổi bóng */
+      }
+
+      .header-shadow-div:hover {
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Đổ bóng khi hover */
       }
 
       .dropdown-button {

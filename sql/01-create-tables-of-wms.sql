@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS `wms_stocks`   (
 CREATE TABLE IF NOT EXISTS  `wms_lots` (
   `id` integer PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` integer NOT NULL,
-  `stock_id` integer NOT NULL,
   `lot_number` varchar(255) NOT NULL,
   `quantity` integer NOT NULL DEFAULT 0,
   `supplier` varchar(255),
@@ -35,6 +34,7 @@ CREATE TABLE IF NOT EXISTS  `wms_shelves` (
   `id` integer PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` integer,
   `name` varchar(255) UNIQUE NOT NULL,
+  `publish` BOOLEAN DEFAULT FALSE,
   `description` varchar(255),
   `created_at` timestamp DEFAULT (now()),
   `updated_at` timestamp DEFAULT (now())
@@ -56,20 +56,20 @@ CREATE TABLE IF NOT EXISTS  `wms_sales` (
   `tenant_id` integer,
   `order_id` integer,
   `item_id` integer,
-  `cost_price` decimal(10,2) NOT NULL,
+  `cost_price` DOUBLE NOT NULL,
   `created_at` timestamp DEFAULT (now()),
   `updated_at` timestamp DEFAULT (now())
 );
 
 CREATE TABLE IF NOT EXISTS  `wms_items` (
   `id` integer PRIMARY KEY AUTO_INCREMENT,
-  `tenant_id` integer,
-  `stock_id` integer,
-  `lot_id` integer,
+  `tenant_id` integer NOT NULL,
+  `stock_id` integer NOT NULL,
+  `lot_id` integer NOT NULL,
   `sale_id` integer,
   `expired_at` timestamp DEFAULT (now()),
   `created_at` timestamp DEFAULT (now()),
   `updated_at` timestamp DEFAULT (now()),
-  `cost_price` decimal(10,2) NOT NULL,
+  `cost_price` DOUBLE NOT NULL,
   `barcode` varchar(255)
 );

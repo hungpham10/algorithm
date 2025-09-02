@@ -86,6 +86,13 @@ function boot() {
   sed -i "s/%%HTTP_PORT%%/$HTTP_PORT/g" /etc/nginx/http.d/default.conf
   sed -i "s#%%WOOCOMMERCE_SERVER%%#$WOOCOMMERCE_SERVER#g" /etc/nginx/http.d/default.conf
 
+  # Setup command for the backend
+  if [ "${USE_TAILSCALE}" = "true" ]; then
+    sed -i "s/%%COMMAND%%/$COMMAND/g" /etc/supervisor.d/with-tailscale.ini
+  else
+    sed -i "s/%%COMMAND%%/$COMMAND/g" /etc/supervisor.d/without-tailscale.ini
+  fi
+
   shift
   exec "$cmd" "$@"
 }

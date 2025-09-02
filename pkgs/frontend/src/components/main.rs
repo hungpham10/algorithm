@@ -1,7 +1,12 @@
-use sycamore::prelude::*;
-use web_sys::OrientationType;
+use leptos::prelude::*;
 
-#[component(inline_props)]
-pub fn Main(orientation: Signal<Option<OrientationType>>) -> View {
-    view! {}
+use super::Features;
+
+#[component]
+pub fn Main(features: ReadSignal<Features>) -> impl IntoView {
+    view! {
+        <main class=move ||{ format!("main pt-1 {}", features.get().padding.page) }>
+
+        </main>
+    }
 }

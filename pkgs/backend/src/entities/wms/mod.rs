@@ -20,9 +20,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use sea_orm::entity::prelude::Expr;
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, JoinType, QueryFilter, QueryOrder,
-    QuerySelect, RuntimeErr,
+    ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, JoinType, QueryFilter,
+    QueryOrder, QuerySelect, RuntimeErr, Set, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 
@@ -43,6 +44,9 @@ pub struct Stock {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quantity: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_price: Option<f64>,
 
     pub name: String,
     pub unit: String,
@@ -69,15 +73,312 @@ pub struct Lot {
     pub quantity: i32,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Shelf {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Item {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expired_at: Option<DateTime<Utc>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shelf: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lot_number: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lot_id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stock_id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub barcode: Option<String>,
+
+    pub cost_price: f64,
+    pub status: String,
+}
+
 impl Wms {
     pub fn new(db: Arc<DatabaseConnection>) -> Self {
         Self { db }
     }
 
-    pub async fn create_stock(&self, tenant_id: i32, stock: &Stock) -> Result<i32, DbErr> {
-        Err(DbErr::Query(RuntimeErr::Internal(format!(
-            "Not implemented"
-        ))))
+    pub async fn create_stocks(&self, tenant_id: i32, stocks: &[Stock]) -> Result<Vec<i32>, DbErr> {
+        if stocks.is_empty() {
+            return Ok(vec![]);
+        }
+
+        stocks::Entity::insert_many(
+            stocks
+                .iter()
+                .map(|stock| stocks::ActiveModel {
+                    tenant_id: Set(tenant_id),
+                    name: Set(stock.name.clone()),
+                    unit: Set(stock.unit.clone()),
+                    quantity: Set(0),
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>(),
+        )
+        .exec(&*self.db)
+        .await?;
+
+        Ok(stocks::Entity::find()
+            .select_only()
+            .column(stocks::Column::Id)
+            .filter(stocks::Column::TenantId.eq(tenant_id))
+            .filter(
+                stocks::Column::Name.is_in(
+                    stocks
+                        .iter()
+                        .map(|stock| stock.name.clone())
+                        .collect::<Vec<_>>(),
+                ),
+            )
+            .all(self.db.as_ref())
+            .await?
+            .into_iter()
+            .map(|m| m.id)
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn create_shelves(
+        &self,
+        tenant_id: i32,
+        shelves: &[Shelf],
+    ) -> Result<Vec<i32>, DbErr> {
+        if shelves.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Insert batch
+        shelves::Entity::insert_many(
+            shelves
+                .iter()
+                .map(|shelf| shelves::ActiveModel {
+                    tenant_id: Set(tenant_id),
+                    name: Set(shelf.name.clone().unwrap_or_default()),
+                    description: Set(shelf.description.clone()),
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>(),
+        )
+        .exec(&*self.db)
+        .await?;
+
+        Ok(shelves::Entity::find()
+            .select_only()
+            .column(shelves::Column::Id)
+            .filter(shelves::Column::TenantId.eq(tenant_id))
+            .filter(
+                shelves::Column::Name.is_in(
+                    shelves
+                        .iter()
+                        .filter_map(|s| s.name.clone())
+                        .collect::<Vec<_>>(),
+                ),
+            )
+            .all(self.db.as_ref())
+            .await?
+            .into_iter()
+            .map(|m| m.id)
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn create_lots(&self, tenant_id: i32, lots: &[Lot]) -> Result<Vec<i32>, DbErr> {
+        if lots.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let models: Vec<lots::ActiveModel> = lots
+            .iter()
+            .map(|l| lots::ActiveModel {
+                tenant_id: Set(tenant_id),
+                lot_number: Set(l.lot_number.clone()),
+                quantity: Set(l.quantity),
+                supplier: Set(l.supplier.clone()),
+                entry_date: Set(l.entry_date.unwrap_or_else(chrono::Utc::now)),
+                cost_price: Set(l.cost_price),
+                status: Set(l.status.clone()),
+                ..Default::default()
+            })
+            .collect();
+
+        lots::Entity::insert_many(models)
+            .exec(self.db.as_ref())
+            .await?;
+
+        let lot_numbers: Vec<String> = lots.iter().map(|l| l.lot_number.clone()).collect();
+
+        let inserted: Vec<i32> = lots::Entity::find()
+            .select_only()
+            .column(lots::Column::Id)
+            .filter(lots::Column::TenantId.eq(tenant_id))
+            .filter(lots::Column::LotNumber.is_in(lot_numbers))
+            .all(self.db.as_ref())
+            .await?
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+
+        Ok(inserted)
+    }
+
+    pub async fn create_planing_items(
+        &self,
+        tenant_id: i32,
+        items: &[Item],
+    ) -> Result<Vec<i32>, DbErr> {
+        let mut created_item_ids = Vec::new();
+
+        let txn = (*self.db).begin().await?;
+        let stock_ids = items
+            .iter()
+            .filter_map(|item| item.stock_id)
+            .collect::<HashSet<_>>();
+        let lot_ids = items
+            .iter()
+            .filter_map(|item| item.lot_id)
+            .collect::<HashSet<_>>();
+
+        let valid_stocks = stocks::Entity::find()
+            .filter(stocks::Column::Id.is_in(stock_ids.clone()))
+            .filter(stocks::Column::TenantId.eq(tenant_id))
+            .all(&txn)
+            .await?
+            .into_iter()
+            .map(|stock| stock.id)
+            .collect::<HashSet<i32>>();
+
+        if valid_stocks.len() != stock_ids.len() {
+            let invalid_ids: Vec<i32> = stock_ids.difference(&valid_stocks).copied().collect();
+            return Err(DbErr::Custom(format!(
+                "Invalid stock IDs: {:?}",
+                invalid_ids
+            )));
+        }
+
+        let valid_lots = lots::Entity::find()
+            .filter(lots::Column::Id.is_in(lot_ids.clone()))
+            .filter(lots::Column::TenantId.eq(tenant_id))
+            .all(&txn)
+            .await?
+            .into_iter()
+            .map(|lot| lot.id)
+            .collect::<HashSet<i32>>();
+
+        if valid_lots.len() != lot_ids.len() {
+            return Err(DbErr::Custom(format!(
+                "Invalid lot IDs: {:?}",
+                lot_ids.difference(&valid_lots).copied().collect::<Vec<_>>(),
+            )));
+        }
+
+        let inserted_items =
+            items::Entity::insert_many(items.iter().map(|item| items::ActiveModel {
+                tenant_id: Set(tenant_id),
+                stock_id: Set(item.stock_id.unwrap_or(0)),
+                lot_id: Set(item.lot_id.unwrap_or(0)),
+                expired_at: Set(item.expired_at),
+                cost_price: Set(item.cost_price),
+                barcode: Set(item.barcode.clone()),
+                ..Default::default()
+            }))
+            .exec(&txn)
+            .await?;
+
+        created_item_ids.extend(inserted_items.last_insert_id as i32..);
+        txn.commit().await?;
+
+        Ok(created_item_ids)
+    }
+
+    pub async fn import_real_items(
+        &self,
+        tenant_id: i32,
+        lot_id: i32,
+        items: &[Item],
+    ) -> Result<Vec<Item>, DbErr> {
+        let mut ret = Vec::new();
+        let txn = (*self.db).begin().await?;
+        let valid_items = items::Entity::find()
+            .filter(items::Column::TenantId.eq(tenant_id))
+            .filter(items::Column::LotId.eq(lot_id))
+            .filter(
+                items::Column::Id.is_in(
+                    items
+                        .iter()
+                        .filter_map(|item| item.id)
+                        .collect::<HashSet<_>>(),
+                ),
+            )
+            .all(&txn)
+            .await?
+            .into_iter()
+            .map(|item| item.id)
+            .collect::<HashSet<_>>();
+
+        for item in items {
+            let item_id = item
+                .id
+                .ok_or_else(|| DbErr::Custom(format!("Item ID is missing")))?;
+
+            if valid_items.contains(&item_id) {
+                let mut update_query =
+                    items::Entity::update_many().filter(items::Column::Id.eq(item_id));
+
+                if let Some(barcode) = &item.barcode {
+                    update_query =
+                        update_query.col_expr(items::Column::Barcode, Expr::value(barcode.clone()));
+                }
+
+                if let Some(expired_at) = item.expired_at {
+                    update_query =
+                        update_query.col_expr(items::Column::ExpiredAt, Expr::value(expired_at));
+                }
+
+                update_query
+                    .col_expr(items::Column::UpdatedAt, Expr::value(chrono::Utc::now()))
+                    .exec(&txn)
+                    .await?;
+
+                items::Entity::find_by_id(item_id)
+                    .one(&txn)
+                    .await?
+                    .ok_or_else(|| {
+                        DbErr::Custom(format!("Item with id {} not found after update", item_id))
+                    })?;
+
+                ret.push(Item {
+                    id: item.id,
+                    expired_at: item.expired_at.clone(),
+                    shelf: item.shelf.clone(),
+                    lot_number: item.lot_number.clone(),
+                    lot_id: item.lot_id,
+                    stock_id: item.stock_id,
+                    barcode: item.barcode.clone(),
+                    cost_price: item.cost_price,
+                    status: item.status.clone(),
+                });
+            }
+        }
+
+        txn.commit().await?;
+        Ok(ret)
     }
 
     pub async fn get_stock(&self, tenant_id: i32, stock_id: i32) -> Result<Stock, DbErr> {
@@ -93,6 +394,7 @@ impl Wms {
                 quantity: Some(result.quantity),
                 name: result.name.clone(),
                 unit: result.unit.clone(),
+                cost_price: None,
                 lots: None,
                 shelves: None,
             })
@@ -184,6 +486,7 @@ impl Wms {
                     quantity: Some(item.quantity),
                     shelves: Some(Vec::new()),
                     lots: Some(Vec::new()),
+                    cost_price: None,
                     name: item.name,
                     unit: item.unit,
                 });
@@ -250,6 +553,7 @@ impl Wms {
                     quantity: Some(it.quantity),
                     name: it.name.clone(),
                     unit: it.unit.clone(),
+                    cost_price: None,
                     lots: None,
                     shelves: None,
                 })
@@ -290,23 +594,214 @@ impl Wms {
         limit: u64,
     ) -> Result<Vec<Lot>, DbErr> {
         Ok(Lots::find()
-            .filter(lots::Column::TenantId.eq(tenant_id))
-            .filter(lots::Column::StockId.eq(stock_id))
+            .select_only()
+            .column(lots::Column::Id)
+            .column(lots::Column::LotNumber)
+            .column(lots::Column::Supplier)
+            .column(lots::Column::EntryDate)
+            .column(lots::Column::CostPrice)
+            .column(lots::Column::Status)
+            .column_as(Expr::col(items::Column::Id).count(), "quantity")
+            .join_rev(
+                JoinType::InnerJoin,
+                items::Entity::belongs_to(Stocks)
+                    .from(items::Column::StockId)
+                    .to(stocks::Column::Id)
+                    .into(),
+            )
+            .filter(
+                Condition::all()
+                    .add(lots::Column::TenantId.eq(tenant_id))
+                    .add(items::Column::StockId.eq(stock_id)),
+            )
             .filter(lots::Column::Id.gt(after))
+            .limit(limit)
+            .group_by(lots::Column::Id)
+            .group_by(lots::Column::TenantId)
+            .group_by(lots::Column::LotNumber)
+            .group_by(lots::Column::Supplier)
+            .group_by(lots::Column::EntryDate)
+            .group_by(lots::Column::CostPrice)
+            .group_by(lots::Column::Status)
             .order_by_asc(lots::Column::Id)
+            .into_tuple::<(
+                i32,
+                String,
+                Option<String>,
+                DateTime<Utc>,
+                f64,
+                Option<String>,
+                i32,
+            )>()
+            .all(&*self.db)
+            .await?
+            .into_iter()
+            .map(
+                |(id, lot_number, supplier, entry_date, cost_price, status, quantity)| Lot {
+                    id: Some(id),
+                    entry_date: Some(entry_date),
+                    cost_price: Some(cost_price),
+                    status: status,
+                    supplier: supplier,
+                    lot_number: lot_number,
+                    quantity: quantity,
+                },
+            )
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn list_paginated_stocks_of_shelf(
+        &self,
+        tenant_id: i32,
+        shelf_id: i32,
+        after: i32,
+        limit: u64,
+    ) -> Result<Vec<Stock>, DbErr> {
+        Ok(Stocks::find()
+            .filter(
+                Condition::all()
+                    .add(stock_shelves::Column::TenantId.eq(tenant_id))
+                    .add(stock_shelves::Column::ShelfId.eq(shelf_id))
+                    .add(stocks::Column::Id.gt(after)),
+            )
+            .limit(limit)
+            .join_rev(
+                JoinType::InnerJoin,
+                items::Entity::belongs_to(Stocks)
+                    .from(items::Column::StockId)
+                    .to(stocks::Column::Id)
+                    .into(),
+            )
+            .join_rev(
+                JoinType::InnerJoin,
+                stock_shelves::Entity::belongs_to(Items)
+                    .from(stock_shelves::Column::ItemId)
+                    .to(items::Column::Id)
+                    .into(),
+            )
+            .select_only()
+            .column(stocks::Column::Id)
+            .column(stocks::Column::Name)
+            .column(stocks::Column::Unit)
+            .expr_as(Expr::col(items::Column::Id).count(), "quantity")
+            .group_by(stocks::Column::Id)
+            .group_by(stocks::Column::Name)
+            .group_by(stocks::Column::Unit)
+            .order_by_asc(stocks::Column::Id)
+            .into_tuple::<(i32, String, String, i64)>()
+            .all(&*self.db)
+            .await?
+            .into_iter()
+            .map(|(id, name, unit, quantity)| Stock {
+                id: Some(id),
+                lots: None,
+                shelves: None,
+                quantity: Some(quantity as i32),
+                cost_price: None,
+                name,
+                unit,
+            })
+            .collect())
+    }
+
+    pub async fn list_paginated_shelves(
+        &self,
+        tenant_id: i32,
+        after: i32,
+        limit: u64,
+    ) -> Result<Vec<Shelf>, DbErr> {
+        Ok(Shelves::find()
+            .filter(shelves::Column::TenantId.eq(tenant_id))
+            .filter(shelves::Column::Id.gt(after))
+            .order_by_asc(shelves::Column::Id)
             .limit(limit)
             .all(&*self.db)
             .await?
             .iter()
-            .map(|it| Lot {
+            .map(|it| Shelf {
                 id: Some(it.id),
-                entry_date: Some(it.entry_date),
-                lot_number: it.lot_number.to_string(),
-                quantity: it.quantity,
-                cost_price: it.cost_price,
-                supplier: it.supplier.clone(),
-                status: it.status.clone(),
+                name: Some(it.name.clone()),
+                description: it.description.clone(),
             })
             .collect::<Vec<_>>())
+    }
+
+    pub async fn get_item_by_barcode(
+        &self,
+        tenant_id: i32,
+        barcode: &String,
+    ) -> Result<Item, DbErr> {
+        let ret = Items::find()
+            .filter(items::Column::TenantId.eq(tenant_id))
+            .filter(items::Column::Barcode.eq(barcode))
+            .join_rev(
+                JoinType::InnerJoin,
+                lots::Entity::belongs_to(Items)
+                    .from(lots::Column::Id)
+                    .to(items::Column::LotId)
+                    .into(),
+            )
+            .join_rev(
+                JoinType::InnerJoin,
+                stock_shelves::Entity::belongs_to(Items)
+                    .from(stock_shelves::Column::ItemId)
+                    .to(items::Column::Id)
+                    .into(),
+            )
+            .join_rev(
+                JoinType::InnerJoin,
+                shelves::Entity::belongs_to(StockShelves)
+                    .from(shelves::Column::Id)
+                    .to(stock_shelves::Column::ShelfId)
+                    .into(),
+            )
+            .select_only()
+            .column(items::Column::Id)
+            .column(items::Column::LotId)
+            .column(items::Column::SaleId)
+            .column(items::Column::StockId)
+            .column(items::Column::ExpiredAt)
+            .column(items::Column::CostPrice)
+            .column(lots::Column::LotNumber)
+            .column(shelves::Column::Name)
+            .into_tuple::<(
+                i32,
+                Option<i32>,
+                Option<i32>,
+                Option<i32>,
+                Option<DateTime<Utc>>,
+                f64,
+                Option<String>,
+                Option<String>,
+            )>()
+            .one(&*self.db)
+            .await?;
+
+        if let Some((id, lot_id, sale_id, stock_id, expired_at, cost_price, lot_number, shelf)) =
+            ret
+        {
+            Ok(Item {
+                lot_id,
+                stock_id,
+                expired_at,
+                shelf,
+                lot_number,
+                cost_price,
+
+                id: Some(id),
+                barcode: Some(barcode.clone()),
+                status: (if sale_id.is_none() {
+                    "in-stock"
+                } else {
+                    "sold-out"
+                })
+                .to_string(),
+            })
+        } else {
+            Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Not found barcode {}",
+                barcode
+            ))))
+        }
     }
 }

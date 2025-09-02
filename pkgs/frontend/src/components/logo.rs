@@ -1,12 +1,15 @@
-use sycamore::prelude::*;
+use leptos::prelude::*;
+
+use super::Features;
 
 #[component]
-pub fn Logo() -> View {
+pub fn Logo(features: ReadSignal<Features>) -> impl IntoView {
     view! {
-        div {
-            a(class="navbar-brand", href="#") {
-                "Branch"
-            }
-        }
+        <div>
+            <img
+                class="navbar-brand"
+                src=move|| { features.get().logo }
+            />
+        </div>
     }
 }

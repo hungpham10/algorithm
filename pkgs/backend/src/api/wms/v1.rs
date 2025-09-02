@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::api::AppState;
-use crate::entities::wms::{Lot, Stock};
+use crate::entities::wms::{Item, Lot, Shelf, Stock};
 
 use super::WmsHeaders;
 
@@ -33,6 +33,22 @@ pub struct ListLotsResponse {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+pub struct ListShelvesResponse {
+    data: Vec<Shelf>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_after: Option<i32>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ListItemsResponse {
+    data: Vec<Item>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_after: Option<i32>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct WmsResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     stocks: Option<ListStocksResponse>,
@@ -47,31 +63,22 @@ pub struct WmsResponse {
     lot: Option<Lot>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    shelves: Option<ListShelvesResponse>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shelf: Option<Shelf>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    items: Option<ListItemsResponse>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    item: Option<Item>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
 
 //-------
-#[derive(Serialize, Deserialize, Clone)]
-pub struct ShelfInput {
-    name: String,
-    description: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct ShelfResponse {
-    id: i32,
-    name: String,
-    description: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct StockShelfInput {
-    stock_id: i32,
-    lot_id: i32,
-    shelf_id: i32,
-    quantity: i32,
-}
-
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SaleInput {
     item_id: i32,
@@ -88,14 +95,6 @@ pub struct SaleResponse {
     quantity_sold: i32,
     total_price: f32,
     remaining_quantity: i32,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct SyncInput {
-    stocks: Option<Vec<Stock>>,
-    lots: Option<Vec<Lot>>,
-    sales: Option<Vec<SaleInput>>,
-    stock_shelves: Option<Vec<StockShelfInput>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -157,6 +156,10 @@ pub async fn list_stocks(
                         stock: None,
                         lots: None,
                         lot: None,
+                        shelves: None,
+                        shelf: None,
+                        items: None,
+                        item: None,
                         error: None,
                     }))
                 }
@@ -165,6 +168,10 @@ pub async fn list_stocks(
                     stock: None,
                     lots: None,
                     lot: None,
+                    shelves: None,
+                    shelf: None,
+                    items: None,
+                    item: None,
                     error: Some(format!("Failed to get list of stocks: {}", error)),
                 })),
             }
@@ -175,39 +182,48 @@ pub async fn list_stocks(
             stock: None,
             lots: None,
             lot: None,
+            shelves: None,
+            shelf: None,
+            items: None,
+            item: None,
             error: Some(format!("Not implemented")),
         }))
     }
 }
 
-pub async fn create_stock(
+pub async fn create_stocks(
     appstate: Data<AppState>,
-    stock: Json<Stock>,
+    stocks: Json<Vec<Stock>>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
     if let Some(entity) = appstate.wms_entity() {
-        let stock = Stock {
-            id: None,
-            quantity: None,
-            shelves: None,
-            lots: None,
-            name: stock.name.clone(),
-            unit: stock.unit.clone(),
-        };
+        let stocks = stocks.into_inner();
 
-        match entity.create_stock(headers.tenant_id, &stock).await {
-            Ok(id) => Ok(HttpResponse::Ok().json(WmsResponse {
-                stocks: None,
-                stock: Some(Stock {
-                    id: Some(id),
-                    quantity: None,
-                    shelves: None,
-                    lots: None,
-                    name: stock.name.clone(),
-                    unit: stock.unit.clone(),
+        match entity.create_stocks(headers.tenant_id, &stocks).await {
+            Ok(ids) => Ok(HttpResponse::Ok().json(WmsResponse {
+                stocks: Some(ListStocksResponse {
+                    data: ids
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &id)| Stock {
+                            id: Some(id),
+                            shelves: None,
+                            lots: None,
+                            quantity: None,
+                            cost_price: stocks[i].cost_price,
+                            name: stocks[i].name.clone(),
+                            unit: stocks[i].unit.clone(),
+                        })
+                        .collect::<Vec<_>>(),
+                    next_after: None,
                 }),
+                stock: None,
                 lots: None,
                 lot: None,
+                shelves: None,
+                shelf: None,
+                items: None,
+                item: None,
                 error: None,
             })),
             Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
@@ -215,6 +231,10 @@ pub async fn create_stock(
                 stock: None,
                 lots: None,
                 lot: None,
+                shelves: None,
+                shelf: None,
+                items: None,
+                item: None,
                 error: Some(format!("Failed to create stock: {}", error)),
             })),
         }
@@ -224,6 +244,10 @@ pub async fn create_stock(
             stock: None,
             lots: None,
             lot: None,
+            shelves: None,
+            shelf: None,
+            items: None,
+            item: None,
             error: Some(format!("Not implemented")),
         }))
     }
@@ -243,6 +267,10 @@ pub async fn get_stock(
                 stock: Some(data),
                 lots: None,
                 lot: None,
+                shelves: None,
+                shelf: None,
+                items: None,
+                item: None,
                 error: None,
             })),
             Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
@@ -250,6 +278,10 @@ pub async fn get_stock(
                 stock: None,
                 lots: None,
                 lot: None,
+                shelves: None,
+                shelf: None,
+                items: None,
+                item: None,
                 error: Some(format!("Failed to get list of stocks: {}", error)),
             })),
         }
@@ -259,6 +291,10 @@ pub async fn get_stock(
             stock: None,
             lots: None,
             lot: None,
+            shelves: None,
+            shelf: None,
+            items: None,
+            item: None,
             error: Some(format!("Not implemented")),
         }))
     }
@@ -282,6 +318,10 @@ pub async fn list_lots(
                 stock: None,
                 lots: None,
                 lot: None,
+                shelves: None,
+                shelf: None,
+                items: None,
+                item: None,
                 error: Some(format!(
                     "Maximum item per page does not exceed 100, currently is {}",
                     limit
@@ -304,6 +344,10 @@ pub async fn list_lots(
                         stock: None,
                         lots: Some(ListLotsResponse { data, next_after }),
                         lot: None,
+                        shelves: None,
+                        shelf: None,
+                        items: None,
+                        item: None,
                         error: None,
                     }))
                 }
@@ -312,6 +356,10 @@ pub async fn list_lots(
                     stock: None,
                     lots: None,
                     lot: None,
+                    shelves: None,
+                    shelf: None,
+                    items: None,
+                    item: None,
                     error: Some(format!("Failed to get list of stocks: {}", error)),
                 })),
             }
@@ -322,17 +370,75 @@ pub async fn list_lots(
             stock: None,
             lots: None,
             lot: None,
+            shelves: None,
+            shelf: None,
+            items: None,
+            item: None,
             error: Some(format!("Not implemented")),
         }))
     }
 }
 
-pub async fn create_lot(
+pub async fn create_lots(
     appstate: Data<AppState>,
-    path: Path<i32>,
-    lot: Json<Lot>,
+    lots: Json<Vec<Lot>>,
+    headers: WmsHeaders,
 ) -> Result<HttpResponse> {
-    Ok(HttpResponse::InternalServerError().body("not implemented"))
+    if let Some(entity) = appstate.wms_entity() {
+        let lots = lots.into_inner();
+
+        match entity.create_lots(headers.tenant_id, &lots).await {
+            Ok(ids) => Ok(HttpResponse::Ok().json(WmsResponse {
+                stocks: None,
+                stock: None,
+                lots: Some(ListLotsResponse {
+                    data: ids
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &id)| Lot {
+                            id: Some(id),
+                            entry_date: lots[i].entry_date.clone(),
+                            cost_price: lots[i].cost_price.clone(),
+                            status: lots[i].status.clone(),
+                            supplier: lots[i].supplier.clone(),
+                            lot_number: lots[i].lot_number.clone(),
+                            quantity: lots[i].quantity,
+                        })
+                        .collect::<Vec<_>>(),
+                    next_after: None,
+                }),
+                lot: None,
+                shelves: None,
+                shelf: None,
+                items: None,
+                item: None,
+                error: None,
+            })),
+            Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+                stocks: None,
+                stock: None,
+                lots: None,
+                lot: None,
+                shelves: None,
+                shelf: None,
+                items: None,
+                item: None,
+                error: Some(format!("Failed to create stock: {}", error)),
+            })),
+        }
+    } else {
+        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            stocks: None,
+            stock: None,
+            lots: None,
+            lot: None,
+            shelves: None,
+            shelf: None,
+            items: None,
+            item: None,
+            error: Some(format!("Not implemented")),
+        }))
+    }
 }
 
 pub async fn get_lot(
@@ -349,6 +455,10 @@ pub async fn get_lot(
                 stock: None,
                 lots: None,
                 lot: Some(data),
+                shelves: None,
+                shelf: None,
+                items: None,
+                item: None,
                 error: None,
             })),
             Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
@@ -356,6 +466,10 @@ pub async fn get_lot(
                 stock: None,
                 lots: None,
                 lot: None,
+                shelves: None,
+                shelf: None,
+                items: None,
+                item: None,
                 error: Some(format!("Failed to get list of stocks: {}", error)),
             })),
         }
@@ -365,34 +479,399 @@ pub async fn get_lot(
             stock: None,
             lots: None,
             lot: None,
+            shelves: None,
+            shelf: None,
+            items: None,
+            item: None,
             error: Some(format!("Not implemented")),
         }))
     }
 }
 
-pub async fn get_shelves(appstate: Data<AppState>, headers: WmsHeaders) -> Result<HttpResponse> {
-    if headers.is_guess {
+pub async fn list_shelves(
+    appstate: Data<AppState>,
+    query: Query<QueryPagingInput>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    if let Some(entity) = appstate.wms_entity() {
+        let after = query.after.unwrap_or(0);
+        let limit = query.limit.unwrap_or(10);
+
+        if limit > 100 {
+            Ok(HttpResponse::InternalServerError().json(WmsResponse {
+                stocks: None,
+                stock: None,
+                lots: None,
+                lot: None,
+                shelves: None,
+                shelf: None,
+                items: None,
+                item: None,
+                error: Some(format!(
+                    "Maximum item per page does not exceed 100, currently is {}",
+                    limit
+                )),
+            }))
+        } else {
+            match entity
+                .list_paginated_shelves(headers.tenant_id, after, limit)
+                .await
+            {
+                Ok(data) => {
+                    let next_after = if data.len() == limit as usize {
+                        data.last().unwrap().id
+                    } else {
+                        None
+                    };
+
+                    Ok(HttpResponse::Ok().json(WmsResponse {
+                        stocks: None,
+                        stock: None,
+                        lots: None,
+                        lot: None,
+                        shelves: Some(ListShelvesResponse {
+                            data: data,
+                            next_after,
+                        }),
+                        shelf: None,
+                        items: None,
+                        item: None,
+                        error: None,
+                    }))
+                }
+                Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+                    stocks: None,
+                    stock: None,
+                    lots: None,
+                    lot: None,
+                    shelves: None,
+                    shelf: None,
+                    items: None,
+                    item: None,
+                    error: Some(format!("Failed to get list of shelves: {}", error)),
+                })),
+            }
+        }
     } else {
+        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            stocks: None,
+            stock: None,
+            lots: None,
+            lot: None,
+            shelves: None,
+            shelf: None,
+            items: None,
+            item: None,
+            error: Some(format!("Not implemented")),
+        }))
+    }
+}
+
+pub async fn list_stocks_in_shelf(
+    appstate: Data<AppState>,
+    query: Query<QueryPagingInput>,
+    path: Path<(i32,)>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    let (shelf_id,) = path.into_inner();
+    if headers.is_guess {}
+
+    if let Some(entity) = appstate.wms_entity() {
+        let after = query.after.unwrap_or(0);
+        let limit = query.limit.unwrap_or(10);
+
+        if limit > 100 {
+            Ok(HttpResponse::InternalServerError().body("not implemented"))
+        } else {
+            match entity
+                .list_paginated_stocks_of_shelf(headers.tenant_id, shelf_id, after, limit)
+                .await
+            {
+                Ok(data) => {
+                    let next_after = if data.len() == limit as usize {
+                        data.last().unwrap().id
+                    } else {
+                        None
+                    };
+
+                    Ok(HttpResponse::Ok().json(WmsResponse {
+                        stocks: Some(ListStocksResponse { data, next_after }),
+                        stock: None,
+                        lots: None,
+                        lot: None,
+                        shelves: None,
+                        shelf: None,
+                        items: None,
+                        item: None,
+                        error: None,
+                    }))
+                }
+                Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+                    stocks: None,
+                    stock: None,
+                    lots: None,
+                    lot: None,
+                    shelves: None,
+                    shelf: None,
+                    items: None,
+                    item: None,
+                    error: Some(format!("Failed to get list of stocks: {}", error)),
+                })),
+            }
+        }
+    } else {
+        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            stocks: None,
+            stock: None,
+            lots: None,
+            lot: None,
+            shelves: None,
+            shelf: None,
+            items: None,
+            item: None,
+            error: Some(format!("Not implemented")),
+        }))
+    }
+}
+
+pub async fn create_shelves(
+    appstate: Data<AppState>,
+    shelves: Json<Vec<Shelf>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    if let Some(entity) = appstate.wms_entity() {
+        let shelves = shelves.into_inner();
+
+        match entity.create_shelves(headers.tenant_id, &shelves).await {
+            Ok(ids) => Ok(HttpResponse::Ok().json(WmsResponse {
+                stocks: None,
+                stock: None,
+                lots: None,
+                lot: None,
+                shelves: Some(ListShelvesResponse {
+                    data: ids
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &id)| Shelf {
+                            id: Some(id),
+                            name: shelves[i].name.clone(),
+                            description: shelves[i].description.clone(),
+                        })
+                        .collect::<Vec<_>>(),
+                    next_after: None,
+                }),
+                shelf: None,
+                items: None,
+                item: None,
+                error: None,
+            })),
+            Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+                stocks: None,
+                stock: None,
+                lots: None,
+                lot: None,
+                shelves: None,
+                shelf: None,
+                items: None,
+                item: None,
+                error: Some(format!("Failed to create shelves: {}", error)),
+            })),
+        }
+    } else {
+        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            stocks: None,
+            stock: None,
+            lots: None,
+            lot: None,
+            shelves: None,
+            shelf: None,
+            items: None,
+            item: None,
+            error: Some(format!("Not implemented")),
+        }))
+    }
+}
+
+pub async fn plan_item_for_new_lot(
+    appstate: Data<AppState>,
+    plan: Json<Vec<Stock>>,
+    path: Path<i32>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    let lot_id = path.into_inner();
+
+    if plan.len() > 100 {
+        return Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            stocks: None,
+            stock: None,
+            lots: None,
+            lot: None,
+            shelves: None,
+            shelf: None,
+            items: None,
+            item: None,
+            error: Some(format!(
+                "Maximum stock per plan does not exceed 100, currently is {}",
+                plan.len(),
+            )),
+        }));
     }
 
-    Ok(HttpResponse::InternalServerError().body("not implemented"))
+    if let Some(entity) = appstate.wms_entity() {
+        let items = plan
+            .iter()
+            .filter_map(|it| {
+                if let Some(quantity) = it.quantity {
+                    Some(
+                        (0..quantity)
+                            .map(|_| Item {
+                                id: None,
+                                shelf: None,
+                                expired_at: None,
+                                lot_number: None,
+                                stock_id: it.id,
+                                lot_id: Some(lot_id),
+                                cost_price: it.cost_price.unwrap_or(0.0),
+                                status: "plan".to_string(),
+                                barcode: None,
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+
+        match entity.create_planing_items(headers.tenant_id, &items).await {
+            Ok(ids) => Ok(HttpResponse::Ok().json(WmsResponse {
+                stocks: None,
+                stock: None,
+                lots: None,
+                lot: None,
+                shelves: None,
+                shelf: None,
+                items: Some(ListItemsResponse {
+                    data: ids
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &id)| Item {
+                            id: Some(id),
+                            shelf: items[i].shelf.clone(),
+                            expired_at: items[i].expired_at,
+                            lot_number: items[i].lot_number.clone(),
+                            stock_id: items[i].stock_id,
+                            lot_id: items[i].lot_id,
+                            cost_price: items[i].cost_price,
+                            status: items[i].status.clone(),
+                            barcode: items[i].barcode.clone(),
+                        })
+                        .collect::<Vec<_>>(),
+                    next_after: None,
+                }),
+                item: None,
+                error: None,
+            })),
+            Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+                stocks: None,
+                stock: None,
+                lots: None,
+                lot: None,
+                shelves: None,
+                shelf: None,
+                items: None,
+                item: None,
+                error: Some(format!("Failed to create shelves: {}", error)),
+            })),
+        }
+    } else {
+        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            stocks: None,
+            stock: None,
+            lots: None,
+            lot: None,
+            shelves: None,
+            shelf: None,
+            items: None,
+            item: None,
+            error: Some(format!("Not implemented")),
+        }))
+    }
 }
 
-pub async fn get_stock_in_shelve(appstate: Data<AppState>) -> Result<HttpResponse> {
-    Ok(HttpResponse::InternalServerError().body("not implemented"))
-}
-
-pub async fn create_shelf(
+pub async fn import_item_to_warehouse(
     appstate: Data<AppState>,
-    shelf: Json<ShelfInput>,
+    items: Json<Vec<Item>>,
+    path: Path<i32>,
+    headers: WmsHeaders,
 ) -> Result<HttpResponse> {
-    Ok(HttpResponse::InternalServerError().body("not implemented"))
+    let lot_id = path.into_inner();
+
+    if items.len() > 100 {
+        return Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            stocks: None,
+            stock: None,
+            lots: None,
+            lot: None,
+            shelves: None,
+            shelf: None,
+            items: None,
+            item: None,
+            error: Some(format!(
+                "Maximum item per batch does not exceed 100, currently is {}",
+                items.len(),
+            )),
+        }));
+    }
+
+    if let Some(entity) = appstate.wms_entity() {
+        match entity
+            .import_real_items(headers.tenant_id, lot_id, &items)
+            .await
+        {
+            Ok(items) => Ok(HttpResponse::Ok().json(WmsResponse {
+                stocks: None,
+                stock: None,
+                lots: None,
+                lot: None,
+                shelves: None,
+                shelf: None,
+                items: Some(ListItemsResponse {
+                    data: items,
+                    next_after: None,
+                }),
+                item: None,
+                error: None,
+            })),
+            Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+                stocks: None,
+                stock: None,
+                lots: None,
+                lot: None,
+                shelves: None,
+                shelf: None,
+                items: None,
+                item: None,
+                error: Some(format!("Failed to create shelves: {}", error)),
+            })),
+        }
+    } else {
+        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            stocks: None,
+            stock: None,
+            lots: None,
+            lot: None,
+            shelves: None,
+            shelf: None,
+            items: None,
+            item: None,
+            error: Some(format!("Not implemented")),
+        }))
+    }
 }
 
-pub async fn assign_stock_shelf(
-    appstate: Data<AppState>,
-    detail: Json<StockShelfInput>,
-) -> Result<HttpResponse> {
+pub async fn assign_item_to_shelf(appstate: Data<AppState>) -> Result<HttpResponse> {
     Ok(HttpResponse::InternalServerError().body("not implemented"))
 }
 
@@ -400,14 +879,57 @@ pub async fn process_sale(appstate: Data<AppState>, sale: Json<SaleInput>) -> Re
     Ok(HttpResponse::InternalServerError().body("not implemented"))
 }
 
-pub async fn get_stock_by_barcode(
+pub async fn get_item_by_barcode(
     path: Path<String>,
-    state: Data<AppState>,
+    appstate: Data<AppState>,
+    headers: WmsHeaders,
 ) -> Result<HttpResponse> {
-    Ok(HttpResponse::InternalServerError().body("not implemented"))
+    let barcode = path.into_inner();
+
+    if let Some(entity) = appstate.wms_entity() {
+        match entity
+            .get_item_by_barcode(headers.tenant_id, &barcode)
+            .await
+        {
+            Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
+                stocks: None,
+                stock: None,
+                lots: None,
+                lot: None,
+                shelves: None,
+                shelf: None,
+                items: None,
+                item: Some(data),
+                error: None,
+            })),
+            Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+                stocks: None,
+                stock: None,
+                lots: None,
+                lot: None,
+                shelves: None,
+                shelf: None,
+                items: None,
+                item: None,
+                error: Some(format!("Failed to get list of stocks: {}", error)),
+            })),
+        }
+    } else {
+        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            stocks: None,
+            stock: None,
+            lots: None,
+            lot: None,
+            shelves: None,
+            shelf: None,
+            items: None,
+            item: None,
+            error: Some(format!("Not implemented")),
+        }))
+    }
 }
 
-pub async fn sync_data(appstate: Data<AppState>, sync: Json<SyncInput>) -> Result<HttpResponse> {
+pub async fn sync_data(appstate: Data<AppState>) -> Result<HttpResponse> {
     Ok(HttpResponse::InternalServerError().body("not implemented"))
 }
 

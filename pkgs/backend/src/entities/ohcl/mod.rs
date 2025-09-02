@@ -159,7 +159,7 @@ impl Ohcl {
 
     pub async fn is_broker_enabled(&self, broker: &String) -> Result<bool, DbErr> {
         // check cache nhanh theo name
-        let mut cache = self.cache_brokers.lock().unwrap();
+        let cache = self.cache_brokers.lock().unwrap();
         if cache.values().any(|b| b == broker) {
             return Ok(true);
         }

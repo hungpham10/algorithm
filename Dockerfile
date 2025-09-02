@@ -13,7 +13,7 @@ RUN make server
 FROM tailscale/tailscale:latest
 
 WORKDIR /app
-COPY --from=build /app/target/release/algorithm ./server
+COPY --from=build /app/target/release/algorithm ./aio
 COPY sql ./sql
 COPY scripts/release.sh /app/endpoint.sh
 

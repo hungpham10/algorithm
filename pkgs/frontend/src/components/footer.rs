@@ -1,6 +1,6 @@
-use sycamore::prelude::*;
+use leptos::prelude::*;
 
 #[component]
-pub fn Footer() -> View {
+pub fn Footer() -> impl IntoView {
     view! {}
 }

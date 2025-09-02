@@ -1,11 +1,12 @@
 use anyhow::{anyhow, Result};
-use sycamore::prelude::*;
+use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
-use web_sys::{window, Event, OrientationType};
+use web_sys::{window, OrientationType};
 
 use super::footer::Footer;
 use super::header::Header;
 use super::main::Main;
+use super::{Features, Padding};
 
 fn get_orientation() -> Result<OrientationType> {
     Ok(window()
@@ -18,35 +19,42 @@ fn get_orientation() -> Result<OrientationType> {
 }
 
 #[component]
-pub fn Application() -> View {
-    let orientation = create_signal(None::<OrientationType>);
+pub fn Application() -> impl IntoView {
+    let (orientation, set_orientation) =
+        signal(get_orientation().unwrap_or(OrientationType::LandscapePrimary));
 
-    create_effect(move || {
-        if let Some(window) = window() {
-            let update = Closure::wrap(Box::new(move |_: Event| {
-                if let Ok(orient) = get_orientation() {
-                    orientation.set(Some(orient));
-                }
-            }) as Box<dyn FnMut(_)>);
+    let (features, _) = signal(Features {
+        searchable: false,
+        menu: vec![],
+        logo: "https://via.placeholder.com/150".to_string(),
+        contents: vec!["Bán chạy", "Tất cả sản phẩm", "Về chúng mình"]
+            .iter()
+            .map(|it| it.to_string())
+            .collect::<Vec<_>>(),
+        padding: Padding {
+            page: "px-page".to_string(),
+        },
+    });
 
-            if let Ok(value) = get_orientation() {
-                orientation.set(Some(value));
-            }
+    Effect::new(move |_| {
+        if let Some(window) = web_sys::window() {
+            let closure = Closure::wrap(Box::new(move || {
+                set_orientation.set(get_orientation().unwrap_or(OrientationType::LandscapePrimary));
+            }) as Box<dyn FnMut()>);
 
             window
                 .add_event_listener_with_callback(
                     "orientationchange",
-                    update.as_ref().unchecked_ref(),
+                    closure.as_ref().unchecked_ref(),
                 )
-                .expect("failed to add orientationchange listener");
-
-            update.forget();
+                .expect("Failed to add orientationchange listener");
+            closure.forget();
         }
     });
 
     view! {
-        Header(orientation=orientation)
-        Main(orientation=orientation)
-        Footer()
+        <Header orientation=orientation features=features/>
+        <Main features=features/>
+        <Footer/>
     }
 }

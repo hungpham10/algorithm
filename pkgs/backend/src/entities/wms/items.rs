@@ -2,20 +2,20 @@
 
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "wms_items")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    pub tenant_id: Option<i32>,
-    pub stock_id: Option<i32>,
-    pub lot_id: Option<i32>,
+    pub tenant_id: i32,
+    pub stock_id: i32,
+    pub lot_id: i32,
     pub sale_id: Option<i32>,
     pub expired_at: Option<DateTimeUtc>,
     pub created_at: Option<DateTimeUtc>,
     pub updated_at: Option<DateTimeUtc>,
-    #[sea_orm(column_type = "Decimal(Some((10, 2)))")]
-    pub cost_price: Decimal,
+    #[sea_orm(column_type = "Double", nullable)]
+    pub cost_price: f64,
     pub barcode: Option<String>,
 }
 
