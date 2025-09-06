@@ -150,13 +150,28 @@ impl AppState {
         let s3_endpoint = std::env::var("S3_ENDPOINT")
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid S3_ENDPOINT"))?;
 
-        let redis = match std::env::var("REDIS_DSN") {
-            Ok(dsn) => Some(RedisClient::open(dsn).map_err(|error| {
-                Error::new(
-                    ErrorKind::InvalidInput,
-                    format!("Failed to connect redis: {}", error),
-                )
-            })?),
+        let redis_host = match std::env::var("REDIS_HOST") {
+            Ok(redis_host) => redis_host,
+            Err(_) => "".to_string(),
+        };
+        let redis_port = match std::env::var("REDIS_PORT") {
+            Ok(redis_port) => redis_port,
+            Err(_) => "".to_string(),
+        };
+        let redis_password = match std::env::var("REDIS_PASSWORD") {
+            Ok(redis_password) => redis_password,
+            Err(_) => "".to_string(),
+        };
+        let redis_username = match std::env::var("REDIS_USERNAME") {
+            Ok(redis_password) => redis_password,
+            Err(_) => "".to_string(),
+        };
+
+        let redis = match RedisClient::open(format!(
+            "redis://{}:{}@{}:{}",
+            redis_username, redis_password, redis_host, redis_port
+        )) {
+            Ok(redis) => Some(redis),
             Err(_) => None,
         };
 
