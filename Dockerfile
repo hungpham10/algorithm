@@ -64,6 +64,10 @@ RUN if git clone https://github.com/ledgetech/lua-resty-http.git /tmp/http &> /d
     cp -av /tmp/http/lib/resty/* /usr/lib/nginx/lualib/resty/;						\
     rm -fr /tmp/http;											\
   fi
+RUN if git clone https://github.com/hamishforbes/lua-ffi-zlib.git /tmp/ffi-zlib &> /dev/null; then	\
+    cp -av /tmp/ffi-zlib/lib/resty/* /usr/lib/nginx/lualib/resty/;					\
+    rm -fr /tmp/ffi-zlib;										\
+  fi
 
 ENTRYPOINT ["/app/endpoint.sh", "/usr/bin/supervisord", "/sql", "-n"]
 EXPOSE 8080
