@@ -26,10 +26,6 @@ impl actix::prelude::Stream for Stream {
     }
 }
 
-pub async fn robots(appstate: Data<Arc<AppState>>, headers: SeoHeaders) -> Result<HttpResponse> {
-    Ok(HttpResponse::Ok().body("ok"))
-}
-
 pub async fn sitemap(appstate: Data<Arc<AppState>>, headers: SeoHeaders) -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().body("ok"))
 }
@@ -40,7 +36,7 @@ pub async fn file(
     headers: SeoHeaders,
 ) -> Result<HttpResponse> {
     // Extract kind and id from the path
-    let path_in_str = path.into_inner();
+    let path_in_str = format!("{}/{}", headers.host, path.into_inner());
 
     // @TODO: to support A/B testing, must design muxing here to do that
 
