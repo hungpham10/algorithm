@@ -27,7 +27,7 @@ enum Commands {
 async fn main() -> std::io::Result<()> {
     // Khởi tạo logging
     dotenvy::dotenv().ok();
-    tracing_subscriber::fmt().json().init();
+    env_logger::init();
 
     // Phân tích subcommand
     let cli = Cli::parse();
