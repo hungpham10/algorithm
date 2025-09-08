@@ -1,7 +1,12 @@
+use std::io::Cursor;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
+use quick_xml::Writer;
+
+use actix_web::error::ErrorInternalServerError;
 use actix_web::web::{Data, Path};
 use actix_web::{HttpResponse, Result};
 
@@ -27,7 +32,98 @@ impl actix::prelude::Stream for Stream {
 }
 
 pub async fn sitemap(appstate: Data<Arc<AppState>>, headers: SeoHeaders) -> Result<HttpResponse> {
-    Ok(HttpResponse::Ok().body("ok"))
+    if let Some(entity) = appstate.seo_entity() {
+        match entity.list_sites(&headers.host).await {
+            Ok(sites) => {
+                let mut buffer = Cursor::new(Vec::new());
+                let mut writer = Writer::new(&mut buffer);
+
+                // XML header
+                writer
+                    .write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None)))
+                    .map_err(|e| ErrorInternalServerError(e))?;
+
+                // <urlset>
+                let mut urlset = BytesStart::new("urlset");
+                urlset.push_attribute(("xmlns", "http://www.sitemaps.org/schemas/sitemap/0.9"));
+                writer
+                    .write_event(Event::Start(urlset))
+                    .map_err(|e| ErrorInternalServerError(e))?;
+
+                for site in sites {
+                    writer
+                        .write_event(Event::Start(BytesStart::new("url")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+
+                    // <loc>
+                    writer
+                        .write_event(Event::Start(BytesStart::new("loc")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::Text(BytesText::new(site.loc.as_str())))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::End(BytesEnd::new("loc")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+
+                    // <lastmod>
+                    writer
+                        .write_event(Event::Start(BytesStart::new("lastmod")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::Text(BytesText::new(
+                            site.lastmod.format("%Y-%m-%d").to_string().as_str(),
+                        )))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::End(BytesEnd::new("lastmod")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+
+                    // <changefreq>
+                    writer
+                        .write_event(Event::Start(BytesStart::new("changefreq")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::Text(BytesText::new(site.freq.as_str())))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::End(BytesEnd::new("changefreq")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+
+                    // <priority>
+                    writer
+                        .write_event(Event::Start(BytesStart::new("priority")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::Text(BytesText::new(
+                            site.priority.to_string().as_str(),
+                        )))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::End(BytesEnd::new("priority")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+
+                    writer
+                        .write_event(Event::End(BytesEnd::new("url")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                }
+
+                // </urlset>
+                writer
+                    .write_event(Event::End(BytesEnd::new("urlset")))
+                    .map_err(|e| ErrorInternalServerError(e))?;
+
+                Ok(HttpResponse::Ok().content_type("application/xml").body(
+                    String::from_utf8(buffer.into_inner())
+                        .map_err(|e| ErrorInternalServerError(e))?,
+                ))
+            }
+            Err(error) => Ok(HttpResponse::InternalServerError()
+                .body(format!("Failed to get list of stocks: {}", error))),
+        }
+    } else {
+        Ok(HttpResponse::InternalServerError().body(format!("Not implemented")))
+    }
 }
 
 pub async fn file(

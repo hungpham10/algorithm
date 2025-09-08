@@ -127,6 +127,10 @@ pub async fn run() -> std::io::Result<()> {
                         get().to(crate::api::wms::v1::get_stock),
                     )
                     .route(
+                        "/v1/wms/stocks/{stock_id}/flashsale",
+                        get().to(crate::api::wms::v1::process_flash_sale),
+                    )
+                    .route(
                         "/v1/wms/stocks/{stock_id}/lots",
                         get().to(crate::api::wms::v1::list_lots),
                     )
@@ -159,7 +163,10 @@ pub async fn run() -> std::io::Result<()> {
                         "/v1/wms/shelves",
                         post().to(crate::api::wms::v1::create_shelves),
                     )
-                    .route("/v1/wms/sale", post().to(crate::api::wms::v1::process_sale))
+                    .route(
+                        "/v1/wms/sale",
+                        post().to(crate::api::wms::v1::process_normal_sale),
+                    )
                     .route(
                         "/v1/wms/stock/barcode/{barcode}",
                         get().to(crate::api::wms::v1::get_item_by_barcode),

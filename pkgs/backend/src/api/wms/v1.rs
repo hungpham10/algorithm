@@ -875,7 +875,17 @@ pub async fn assign_item_to_shelf(appstate: Data<AppState>) -> Result<HttpRespon
     Ok(HttpResponse::InternalServerError().body("not implemented"))
 }
 
-pub async fn process_sale(appstate: Data<AppState>, sale: Json<SaleInput>) -> Result<HttpResponse> {
+pub async fn process_normal_sale(
+    appstate: Data<AppState>,
+    sale: Json<SaleInput>,
+) -> Result<HttpResponse> {
+    Ok(HttpResponse::InternalServerError().body("not implemented"))
+}
+
+pub async fn process_flash_sale(
+    appstate: Data<AppState>,
+    sale: Json<SaleInput>,
+) -> Result<HttpResponse> {
     Ok(HttpResponse::InternalServerError().body("not implemented"))
 }
 

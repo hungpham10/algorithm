@@ -26,6 +26,7 @@ default = [
 	"async-graphql-actix-web",
 	"actix-web-prometheus",
 	"sea-orm",
+	"quick-xml",
 	"clap",
 	"clap_derive",
 ]
@@ -87,6 +88,7 @@ clap_derive = { version = "4.0.0-rc.1", optional = true }
 # Web application
 dotenvy = "0.15.7"
 futures-util = "0.3"
+quick-xml = { version = "0.31", optional = true }
 actix-web = { version = "4.3.1", optional = true }
 redis = { version = "0.32.5", optional = true, features = ["aio", "tokio-comp"] }
 env_logger = { version = "0.8.2" }

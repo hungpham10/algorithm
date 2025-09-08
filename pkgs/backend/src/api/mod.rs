@@ -63,6 +63,7 @@ pub struct AppState {
     // @NOTE: database models
     ohcl_entity: Option<entities::ohcl::Ohcl>,
     wms_entity: Option<entities::wms::Wms>,
+    seo_entity: Option<entities::seo::Seo>,
 
     // @NOTE: shared components
     portal: Arc<Portal>,
@@ -212,6 +213,11 @@ impl AppState {
             None => None,
         };
 
+        let seo_entity = match db {
+            Some(ref db) => Some(entities::seo::Seo::new(db.clone())),
+            None => None,
+        };
+
         let tcbs_vars = Arc::new(Mutex::new(
             Variables::new_with_s3(
                 tcbs_timeseries,
@@ -271,6 +277,7 @@ impl AppState {
             // @NOTE: database entities
             ohcl_entity,
             wms_entity,
+            seo_entity,
 
             // @NOTE: monitors
             locked: Arc::new(Mutex::new(true)),
@@ -389,6 +396,10 @@ impl AppState {
 
     pub fn ohcl_entity(&self) -> &Option<entities::ohcl::Ohcl> {
         &self.ohcl_entity
+    }
+
+    pub fn seo_entity(&self) -> &Option<entities::seo::Seo> {
+        &self.seo_entity
     }
 
     pub async fn ping(&self) -> bool {
