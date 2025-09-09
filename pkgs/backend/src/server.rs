@@ -80,6 +80,10 @@ pub async fn run() -> std::io::Result<()> {
                     .route("/v1/cronjobs/lock", put().to(lock))
                     .route("/v1/cronjobs/unlock", put().to(unlock))
                     .route("/v1/seo/files/{path:.*}", get().to(crate::api::seo::file))
+                    .route(
+                        "/v1/seo/tenant/{host}/id",
+                        get().to(crate::api::seo::tenant_id),
+                    )
                     .route("/v1/seo/sitemap", get().to(crate::api::seo::sitemap)),
             )
             // @NOTE: APIs of OHCL

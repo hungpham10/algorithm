@@ -31,9 +31,23 @@ impl actix::prelude::Stream for Stream {
     }
 }
 
+pub async fn tenant_id(appstate: Data<Arc<AppState>>, path: Path<String>) -> Result<HttpResponse> {
+    let host = path.into_inner();
+
+    if let Some(entity) = appstate.seo_entity() {
+        match entity.get_tenant_id(&host).await {
+            Ok(id) => Ok(HttpResponse::Ok().body(format!("{}", id))),
+            Err(error) => Ok(HttpResponse::InternalServerError()
+                .body(format!("Failed resolve tenant id: {}", error))),
+        }
+    } else {
+        Ok(HttpResponse::InternalServerError().body(format!("Not implemented")))
+    }
+}
+
 pub async fn sitemap(appstate: Data<Arc<AppState>>, headers: SeoHeaders) -> Result<HttpResponse> {
     if let Some(entity) = appstate.seo_entity() {
-        match entity.list_sites(&headers.host).await {
+        match entity.list_sites(headers.tenant_id).await {
             Ok(sites) => {
                 let mut buffer = Cursor::new(Vec::new());
                 let mut writer = Writer::new(&mut buffer);

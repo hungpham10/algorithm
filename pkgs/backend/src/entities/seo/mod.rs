@@ -1,16 +1,18 @@
 mod sitemap;
+mod tenant;
 
 pub use sitemap::Entity as Sitemap;
+pub use tenant::Entity as Tenant;
 
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, JoinType, QueryFilter,
-    QueryOrder, QuerySelect, RuntimeErr, Set, TransactionTrait,
+    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QuerySelect, RuntimeErr,
 };
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+
 pub struct Seo {
     db: Arc<DatabaseConnection>,
 }
@@ -28,9 +30,26 @@ impl Seo {
         Self { db }
     }
 
-    pub async fn list_sites(&self, host: &String) -> Result<Vec<Site>, DbErr> {
+    pub async fn get_tenant_id(&self, host: &String) -> Result<i32, DbErr> {
+        match Tenant::find()
+            .filter(tenant::Column::Host.eq(host))
+            .select_only()
+            .column(tenant::Column::Id)
+            .into_tuple::<(i32)>()
+            .one(&*self.db)
+            .await?
+        {
+            Some(id) => Ok(id),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Not found host {}",
+                host,
+            )))),
+        }
+    }
+
+    pub async fn list_sites(&self, tenant_id: i32) -> Result<Vec<Site>, DbErr> {
         Ok(Sitemap::find()
-            .filter(sitemap::Column::Host.eq(host))
+            .filter(sitemap::Column::TenantId.eq(tenant_id))
             .select_only()
             .column(sitemap::Column::Loc)
             .column(sitemap::Column::Freq)
