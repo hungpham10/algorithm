@@ -7,13 +7,14 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    pub tenant_id: Option<i32>,
-    pub lot_id: Option<i32>,
-    pub item_id: Option<i32>,
-    pub shelf_id: Option<i32>,
+    pub tenant_id: i32,
+    pub lot_id: i32,
+    #[sea_orm(unique)]
+    pub item_id: i32,
+    pub shelf_id: i32,
     pub assigned_at: Option<DateTimeUtc>,
-    pub created_at: Option<DateTimeUtc>,
-    pub updated_at: Option<DateTimeUtc>,
+    pub created_at: DateTimeUtc,
+    pub updated_at: DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

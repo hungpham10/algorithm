@@ -10,8 +10,6 @@ pub struct SeoHeaders {
     host: String,
     tenant_id: i32,
     user_agent: String,
-    user_type: String,
-    device_type: String,
 }
 
 impl FromRequest for SeoHeaders {
@@ -45,32 +43,6 @@ impl FromRequest for SeoHeaders {
                 return ready(Err(ErrorBadRequest("Missing Host header")));
             }
         };
-        let user_type = match headers.get("X-User-Type") {
-            Some(value) => match value.to_str() {
-                Ok(str_val) => str_val.to_string(),
-                Err(_) => {
-                    return ready(Err(ErrorBadRequest(
-                        "Invalid x-user-type: must be a valid string",
-                    )));
-                }
-            },
-            None => {
-                return ready(Err(ErrorBadRequest("Missing X-User-Type header")));
-            }
-        };
-        let device_type = match headers.get("X-Device-Type") {
-            Some(value) => match value.to_str() {
-                Ok(str_val) => str_val.to_string(),
-                Err(_) => {
-                    return ready(Err(ErrorBadRequest(
-                        "Invalid x-device-type: must be a valid string",
-                    )));
-                }
-            },
-            None => {
-                return ready(Err(ErrorBadRequest("Missing X-Device-Type header")));
-            }
-        };
         let tenant_id = match headers.get("X-Tenant-Id") {
             Some(value) => match value.to_str() {
                 Ok(str_val) => match str_val.parse::<i32>() {
@@ -94,8 +66,6 @@ impl FromRequest for SeoHeaders {
             host,
             tenant_id,
             user_agent,
-            user_type,
-            device_type,
         }))
     }
 }

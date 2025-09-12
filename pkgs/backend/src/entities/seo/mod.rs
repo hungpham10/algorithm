@@ -35,7 +35,7 @@ impl Seo {
             .filter(tenant::Column::Host.eq(host))
             .select_only()
             .column(tenant::Column::Id)
-            .into_tuple::<(i32)>()
+            .into_tuple::<i32>()
             .one(&*self.db)
             .await?
         {

@@ -10,11 +10,12 @@ pub struct Model {
     pub tenant_id: i32,
     pub stock_id: i32,
     pub lot_id: i32,
-    pub sale_id: Option<i32>,
+    pub order_id: Option<i32>,
     pub expired_at: Option<DateTimeUtc>,
-    pub created_at: Option<DateTimeUtc>,
-    pub updated_at: Option<DateTimeUtc>,
-    #[sea_orm(column_type = "Double", nullable)]
+    pub created_at: DateTimeUtc,
+    pub updated_at: DateTimeUtc,
+    pub status: i32,
+    #[sea_orm(column_type = "Double")]
     pub cost_price: f64,
     pub barcode: Option<String>,
 }

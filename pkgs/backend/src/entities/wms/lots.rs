@@ -8,7 +8,6 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
     pub tenant_id: i32,
-    pub stock_id: i32,
     pub lot_number: String,
     pub quantity: i32,
     pub supplier: Option<String>,
@@ -16,8 +15,8 @@ pub struct Model {
     #[sea_orm(column_type = "Double", nullable)]
     pub cost_price: Option<f64>,
     pub status: Option<String>,
-    pub created_at: Option<DateTimeUtc>,
-    pub updated_at: Option<DateTimeUtc>,
+    pub created_at: DateTimeUtc,
+    pub updated_at: DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

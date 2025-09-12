@@ -10,10 +10,10 @@ pub struct Model {
     pub tenant_id: i32,
     #[sea_orm(unique)]
     pub name: String,
-    pub publish: bool,
+    pub publish: Option<i8>,
     pub description: Option<String>,
-    pub created_at: Option<DateTimeUtc>,
-    pub updated_at: Option<DateTimeUtc>,
+    pub created_at: DateTimeUtc,
+    pub updated_at: DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

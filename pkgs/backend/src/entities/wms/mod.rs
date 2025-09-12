@@ -2,17 +2,17 @@
 
 mod items;
 mod lots;
+mod sale_events;
 mod sales;
 mod shelves;
-mod stock_entries;
 mod stock_shelves;
 mod stocks;
 
 pub use items::Entity as Items;
 pub use lots::Entity as Lots;
+pub use sale_events::Entity as SaleEvents;
 pub use sales::Entity as Sales;
 pub use shelves::Entity as Shelves;
-pub use stock_entries::Entity as StockEntries;
 pub use stock_shelves::Entity as StockShelves;
 pub use stocks::Entity as Stocks;
 
@@ -20,6 +20,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+
 use sea_orm::entity::prelude::Expr;
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, JoinType, QueryFilter,
@@ -110,6 +111,21 @@ pub struct Item {
 
     pub cost_price: f64,
     pub status: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Sale {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stock_ids: Option<Vec<i32>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub barcodes: Option<Vec<String>>,
+
+    pub order_id: i32,
+    pub cost_prices: Vec<f64>,
 }
 
 impl Wms {
@@ -238,7 +254,7 @@ impl Wms {
         Ok(inserted)
     }
 
-    pub async fn create_planing_items(
+    pub async fn plan_import_new_items(
         &self,
         tenant_id: i32,
         items: &[Item],
@@ -379,6 +395,48 @@ impl Wms {
 
         txn.commit().await?;
         Ok(ret)
+    }
+
+    pub async fn assign_items_to_shelf(
+        &self,
+        tenant_id: i32,
+        shelf_id: i32,
+        items: &[Item],
+    ) -> Result<(), DbErr> {
+        let models: Vec<stock_shelves::ActiveModel> = items
+            .iter()
+            .filter_map(|item| {
+                if let (Some(item_id), Some(lot_id)) = (item.id, item.lot_id) {
+                    Some(stock_shelves::ActiveModel {
+                        tenant_id: Set(tenant_id),
+                        lot_id: Set(lot_id),
+                        item_id: Set(item_id),
+                        shelf_id: Set(shelf_id),
+                        ..Default::default()
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if models.is_empty() {
+            return Ok(());
+        }
+
+        stock_shelves::Entity::insert_many(models)
+            .on_conflict(
+                sea_query::OnConflict::columns([
+                    stock_shelves::Column::ItemId,
+                    stock_shelves::Column::LotId,
+                ])
+                .do_nothing()
+                .to_owned(),
+            )
+            .exec(&*self.db)
+            .await?;
+
+        Ok(())
     }
 
     pub async fn get_stock(&self, tenant_id: i32, stock_id: i32) -> Result<Stock, DbErr> {
@@ -758,7 +816,7 @@ impl Wms {
             .select_only()
             .column(items::Column::Id)
             .column(items::Column::LotId)
-            .column(items::Column::SaleId)
+            .column(items::Column::OrderId)
             .column(items::Column::StockId)
             .column(items::Column::ExpiredAt)
             .column(items::Column::CostPrice)
@@ -777,7 +835,7 @@ impl Wms {
             .one(&*self.db)
             .await?;
 
-        if let Some((id, lot_id, sale_id, stock_id, expired_at, cost_price, lot_number, shelf)) =
+        if let Some((id, lot_id, order_id, stock_id, expired_at, cost_price, lot_number, shelf)) =
             ret
         {
             Ok(Item {
@@ -790,7 +848,7 @@ impl Wms {
 
                 id: Some(id),
                 barcode: Some(barcode.clone()),
-                status: (if sale_id.is_none() {
+                status: (if order_id.is_none() {
                     "in-stock"
                 } else {
                     "sold-out"
@@ -802,6 +860,87 @@ impl Wms {
                 "Not found barcode {}",
                 barcode
             ))))
+        }
+    }
+
+    pub async fn sale_at_storefront(&self, tenant_id: i32, sale: &Sale) -> Result<Sale, DbErr> {
+        match &sale.barcodes {
+            Some(barcodes) => {
+                let txn = self.db.begin().await?;
+
+                Sales::insert(sales::ActiveModel {
+                    tenant_id: Set(tenant_id),
+                    order_id: Set(sale.order_id),
+                    cost_price: Set(sale.cost_prices.iter().sum()),
+                    ..Default::default()
+                })
+                .exec(&txn)
+                .await?;
+
+                let result = Items::update_many()
+                    .col_expr(items::Column::Status, Expr::value(2))
+                    .col_expr(items::Column::OrderId, Expr::value(sale.order_id))
+                    .filter(items::Column::Barcode.is_in(barcodes.clone()))
+                    .filter(items::Column::Status.eq(1))
+                    .exec(&txn)
+                    .await?;
+                if result.rows_affected < barcodes.len() as u64 {
+                    txn.rollback().await?;
+                    Err(DbErr::Query(RuntimeErr::Internal(format!(
+                        "Some items are not existed, please check"
+                    ))))
+                } else {
+                    txn.commit().await?;
+                    Ok(sale.clone())
+                }
+            }
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Missing field `barcodes`"
+            )))),
+        }
+    }
+
+    pub async fn sale_at_website(&self, tenant_id: i32, sale: &Sale) -> Result<Sale, DbErr> {
+        match &sale.stock_ids {
+            Some(stock_ids) => {
+                let txn = self.db.begin().await?;
+
+                Sales::insert(sales::ActiveModel {
+                    tenant_id: Set(tenant_id),
+                    order_id: Set(sale.order_id),
+                    cost_price: Set(sale.cost_prices.iter().sum()),
+                    ..Default::default()
+                })
+                .exec(&txn)
+                .await?;
+
+                let sale_id = Sales::find()
+                    .filter(sales::Column::OrderId.eq(sale.order_id))
+                    .filter(sales::Column::TenantId.eq(tenant_id))
+                    .one(&txn)
+                    .await?
+                    .ok_or(DbErr::RecordNotFound("Sale not found".to_string()))?
+                    .id;
+
+                SaleEvents::insert_many(
+                    stock_ids
+                        .iter()
+                        .map(|stock_id| sale_events::ActiveModel {
+                            tenant_id: Set(tenant_id),
+                            sale_id: Set(sale_id),
+                            stock_id: Set(*stock_id),
+                            status: Set(0), // 0 = pending
+                            ..Default::default()
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .exec(&txn)
+                .await?;
+                Ok(sale.clone())
+            }
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Missing field `stocks`"
+            )))),
         }
     }
 }
