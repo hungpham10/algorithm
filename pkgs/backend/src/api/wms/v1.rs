@@ -432,7 +432,6 @@ pub async fn list_stocks_in_shelf(
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
     let (shelf_id,) = path.into_inner();
-    if headers.is_guess {}
 
     if let Some(entity) = appstate.wms_entity() {
         let after = query.after.unwrap_or(0);
@@ -442,7 +441,13 @@ pub async fn list_stocks_in_shelf(
             Ok(HttpResponse::InternalServerError().body("not implemented"))
         } else {
             match entity
-                .list_paginated_stocks_of_shelf(headers.tenant_id, shelf_id, after, limit)
+                .list_paginated_stocks_of_shelf(
+                    headers.tenant_id,
+                    shelf_id,
+                    headers.is_guess,
+                    after,
+                    limit,
+                )
                 .await
             {
                 Ok(data) => {

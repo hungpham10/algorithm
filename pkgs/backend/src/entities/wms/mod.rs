@@ -712,54 +712,104 @@ impl Wms {
         &self,
         tenant_id: i32,
         shelf_id: i32,
+        is_publish: bool,
         after: i32,
         limit: u64,
     ) -> Result<Vec<Stock>, DbErr> {
-        Ok(Stocks::find()
-            .filter(
-                Condition::all()
-                    .add(stock_shelves::Column::TenantId.eq(tenant_id))
-                    .add(stock_shelves::Column::ShelfId.eq(shelf_id))
-                    .add(stocks::Column::Id.gt(after)),
-            )
-            .limit(limit)
-            .join_rev(
-                JoinType::InnerJoin,
-                items::Entity::belongs_to(Stocks)
-                    .from(items::Column::StockId)
-                    .to(stocks::Column::Id)
-                    .into(),
-            )
-            .join_rev(
-                JoinType::InnerJoin,
-                stock_shelves::Entity::belongs_to(Items)
-                    .from(stock_shelves::Column::ItemId)
-                    .to(items::Column::Id)
-                    .into(),
-            )
-            .select_only()
-            .column(stocks::Column::Id)
-            .column(stocks::Column::Name)
-            .column(stocks::Column::Unit)
-            .expr_as(Expr::col(items::Column::Id).count(), "quantity")
-            .group_by(stocks::Column::Id)
-            .group_by(stocks::Column::Name)
-            .group_by(stocks::Column::Unit)
-            .order_by_asc(stocks::Column::Id)
-            .into_tuple::<(i32, String, String, i64)>()
-            .all(&*self.db)
-            .await?
-            .into_iter()
-            .map(|(id, name, unit, quantity)| Stock {
-                id: Some(id),
-                lots: None,
-                shelves: None,
-                quantity: Some(quantity as i32),
-                cost_price: None,
-                name,
-                unit,
-            })
-            .collect())
+        if is_publish {
+            Ok(Stocks::find()
+                .filter(
+                    Condition::all()
+                        .add(stock_shelves::Column::TenantId.eq(tenant_id))
+                        .add(stock_shelves::Column::ShelfId.eq(shelf_id))
+                        .add(stocks::Column::Id.gt(after))
+                        .add(shelves::Column::Publish.eq(Some(1))),
+                )
+                .limit(limit)
+                .join_rev(
+                    JoinType::InnerJoin,
+                    items::Entity::belongs_to(Stocks)
+                        .from(items::Column::StockId)
+                        .to(stocks::Column::Id)
+                        .into(),
+                )
+                .join_rev(
+                    JoinType::InnerJoin,
+                    stock_shelves::Entity::belongs_to(Items)
+                        .from(stock_shelves::Column::ItemId)
+                        .to(items::Column::Id)
+                        .into(),
+                )
+                .select_only()
+                .column(stocks::Column::Id)
+                .column(stocks::Column::Name)
+                .column(stocks::Column::Unit)
+                .expr_as(Expr::col(items::Column::Id).count(), "quantity")
+                .group_by(stocks::Column::Id)
+                .group_by(stocks::Column::Name)
+                .group_by(stocks::Column::Unit)
+                .order_by_asc(stocks::Column::Id)
+                .into_tuple::<(i32, String, String, i64)>()
+                .all(&*self.db)
+                .await?
+                .into_iter()
+                .map(|(id, name, unit, quantity)| Stock {
+                    id: Some(id),
+                    lots: None,
+                    shelves: None,
+                    quantity: Some(quantity as i32),
+                    cost_price: None,
+                    name,
+                    unit,
+                })
+                .collect())
+        } else {
+            Ok(Stocks::find()
+                .filter(
+                    Condition::all()
+                        .add(stock_shelves::Column::TenantId.eq(tenant_id))
+                        .add(stock_shelves::Column::ShelfId.eq(shelf_id))
+                        .add(stocks::Column::Id.gt(after)),
+                )
+                .limit(limit)
+                .join_rev(
+                    JoinType::InnerJoin,
+                    items::Entity::belongs_to(Stocks)
+                        .from(items::Column::StockId)
+                        .to(stocks::Column::Id)
+                        .into(),
+                )
+                .join_rev(
+                    JoinType::InnerJoin,
+                    stock_shelves::Entity::belongs_to(Items)
+                        .from(stock_shelves::Column::ItemId)
+                        .to(items::Column::Id)
+                        .into(),
+                )
+                .select_only()
+                .column(stocks::Column::Id)
+                .column(stocks::Column::Name)
+                .column(stocks::Column::Unit)
+                .expr_as(Expr::col(items::Column::Id).count(), "quantity")
+                .group_by(stocks::Column::Id)
+                .group_by(stocks::Column::Name)
+                .group_by(stocks::Column::Unit)
+                .order_by_asc(stocks::Column::Id)
+                .into_tuple::<(i32, String, String, i64)>()
+                .all(&*self.db)
+                .await?
+                .into_iter()
+                .map(|(id, name, unit, quantity)| Stock {
+                    id: Some(id),
+                    lots: None,
+                    shelves: None,
+                    quantity: Some(quantity as i32),
+                    cost_price: None,
+                    name,
+                    unit,
+                })
+                .collect())
+        }
     }
 
     pub async fn list_paginated_shelves(
