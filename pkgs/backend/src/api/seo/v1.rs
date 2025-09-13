@@ -45,6 +45,14 @@ pub async fn tenant_id(appstate: Data<Arc<AppState>>, path: Path<String>) -> Res
     }
 }
 
+pub async fn features(appstate: Data<Arc<AppState>>, headers: SeoHeaders) -> Result<HttpResponse> {
+    if let Some(entity) = appstate.seo_entity() {
+        Ok(HttpResponse::InternalServerError().body(format!("Not implemented")))
+    } else {
+        Ok(HttpResponse::InternalServerError().body(format!("Not implemented")))
+    }
+}
+
 pub async fn sitemap(appstate: Data<Arc<AppState>>, headers: SeoHeaders) -> Result<HttpResponse> {
     if let Some(entity) = appstate.seo_entity() {
         match entity.list_sites(headers.tenant_id).await {
@@ -52,88 +60,95 @@ pub async fn sitemap(appstate: Data<Arc<AppState>>, headers: SeoHeaders) -> Resu
                 let mut buffer = Cursor::new(Vec::new());
                 let mut writer = Writer::new(&mut buffer);
 
-                // XML header
-                writer
-                    .write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None)))
-                    .map_err(|e| ErrorInternalServerError(e))?;
-
-                // <urlset>
-                let mut urlset = BytesStart::new("urlset");
-                urlset.push_attribute(("xmlns", "http://www.sitemaps.org/schemas/sitemap/0.9"));
-                writer
-                    .write_event(Event::Start(urlset))
-                    .map_err(|e| ErrorInternalServerError(e))?;
-
-                for site in sites {
+                if sites.len() > 0 {
+                    // XML header
                     writer
-                        .write_event(Event::Start(BytesStart::new("url")))
+                        .write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None)))
                         .map_err(|e| ErrorInternalServerError(e))?;
 
-                    // <loc>
+                    // <urlset>
+                    let mut urlset = BytesStart::new("urlset");
+                    urlset.push_attribute(("xmlns", "http://www.sitemaps.org/schemas/sitemap/0.9"));
                     writer
-                        .write_event(Event::Start(BytesStart::new("loc")))
-                        .map_err(|e| ErrorInternalServerError(e))?;
-                    writer
-                        .write_event(Event::Text(BytesText::new(site.loc.as_str())))
-                        .map_err(|e| ErrorInternalServerError(e))?;
-                    writer
-                        .write_event(Event::End(BytesEnd::new("loc")))
+                        .write_event(Event::Start(urlset))
                         .map_err(|e| ErrorInternalServerError(e))?;
 
-                    // <lastmod>
+                    for site in sites {
+                        writer
+                            .write_event(Event::Start(BytesStart::new("url")))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+
+                        // <loc>
+                        writer
+                            .write_event(Event::Start(BytesStart::new("loc")))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+                        writer
+                            .write_event(Event::Text(BytesText::new(site.loc.as_str())))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+                        writer
+                            .write_event(Event::End(BytesEnd::new("loc")))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+
+                        // <lastmod>
+                        writer
+                            .write_event(Event::Start(BytesStart::new("lastmod")))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+                        writer
+                            .write_event(Event::Text(BytesText::new(
+                                site.lastmod.format("%Y-%m-%d").to_string().as_str(),
+                            )))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+                        writer
+                            .write_event(Event::End(BytesEnd::new("lastmod")))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+
+                        // <changefreq>
+                        writer
+                            .write_event(Event::Start(BytesStart::new("changefreq")))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+                        writer
+                            .write_event(Event::Text(BytesText::new(site.freq.as_str())))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+                        writer
+                            .write_event(Event::End(BytesEnd::new("changefreq")))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+
+                        // <priority>
+                        writer
+                            .write_event(Event::Start(BytesStart::new("priority")))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+                        writer
+                            .write_event(Event::Text(BytesText::new(
+                                site.priority.to_string().as_str(),
+                            )))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+                        writer
+                            .write_event(Event::End(BytesEnd::new("priority")))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+
+                        writer
+                            .write_event(Event::End(BytesEnd::new("url")))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+                    }
+
+                    // </urlset>
                     writer
-                        .write_event(Event::Start(BytesStart::new("lastmod")))
-                        .map_err(|e| ErrorInternalServerError(e))?;
-                    writer
-                        .write_event(Event::Text(BytesText::new(
-                            site.lastmod.format("%Y-%m-%d").to_string().as_str(),
-                        )))
-                        .map_err(|e| ErrorInternalServerError(e))?;
-                    writer
-                        .write_event(Event::End(BytesEnd::new("lastmod")))
+                        .write_event(Event::End(BytesEnd::new("urlset")))
                         .map_err(|e| ErrorInternalServerError(e))?;
 
-                    // <changefreq>
-                    writer
-                        .write_event(Event::Start(BytesStart::new("changefreq")))
-                        .map_err(|e| ErrorInternalServerError(e))?;
-                    writer
-                        .write_event(Event::Text(BytesText::new(site.freq.as_str())))
-                        .map_err(|e| ErrorInternalServerError(e))?;
-                    writer
-                        .write_event(Event::End(BytesEnd::new("changefreq")))
-                        .map_err(|e| ErrorInternalServerError(e))?;
-
-                    // <priority>
-                    writer
-                        .write_event(Event::Start(BytesStart::new("priority")))
-                        .map_err(|e| ErrorInternalServerError(e))?;
-                    writer
-                        .write_event(Event::Text(BytesText::new(
-                            site.priority.to_string().as_str(),
-                        )))
-                        .map_err(|e| ErrorInternalServerError(e))?;
-                    writer
-                        .write_event(Event::End(BytesEnd::new("priority")))
-                        .map_err(|e| ErrorInternalServerError(e))?;
-
-                    writer
-                        .write_event(Event::End(BytesEnd::new("url")))
-                        .map_err(|e| ErrorInternalServerError(e))?;
+                    Ok(HttpResponse::Ok().content_type("application/xml").body(
+                        String::from_utf8(buffer.into_inner())
+                            .map_err(|e| ErrorInternalServerError(e))?,
+                    ))
+                } else {
+                    Ok(HttpResponse::InternalServerError().body(format!(
+                        "Sitemap is empty for tenant_id {}, host {}",
+                        headers.tenant_id, headers.host
+                    )))
                 }
-
-                // </urlset>
-                writer
-                    .write_event(Event::End(BytesEnd::new("urlset")))
-                    .map_err(|e| ErrorInternalServerError(e))?;
-
-                Ok(HttpResponse::Ok().content_type("application/xml").body(
-                    String::from_utf8(buffer.into_inner())
-                        .map_err(|e| ErrorInternalServerError(e))?,
-                ))
             }
             Err(error) => Ok(HttpResponse::InternalServerError()
-                .body(format!("Failed to get list of stocks: {}", error))),
+                .body(format!("Failed to get sitemap.xml: {}", error))),
         }
     } else {
         Ok(HttpResponse::InternalServerError().body(format!("Not implemented")))

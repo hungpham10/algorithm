@@ -59,7 +59,19 @@ impl FromRequest for SeoHeaders {
                     )));
                 }
             },
-            None => 0,
+            None => {
+                return ready(Err(ErrorBadRequest(format!(
+                    "Missing x-tenant-id, available headers [{}]",
+                    headers
+                        .iter()
+                        .map(|(k, v)| {
+                            let val = v.to_str().unwrap_or("<invalid utf8>");
+                            format!("{}: {}", k.as_str(), val)
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ))));
+            }
         };
 
         ready(Ok(SeoHeaders {
