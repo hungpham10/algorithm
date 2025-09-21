@@ -50,7 +50,7 @@ server:
 	@echo "Building release version $(VERSION)"
 	@mkdir -p $(DIST_DIR)
 	export PATH="$$HOME/.cargo/bin:$$PATH" &&													\
-	$(CARGO) build --release --features full
+	$(CARGO) build --release
 
 client:
 	@echo "Building release version $(VERSION)"
