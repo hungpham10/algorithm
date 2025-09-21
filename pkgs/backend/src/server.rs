@@ -84,7 +84,20 @@ pub async fn run() -> std::io::Result<()> {
                         "/v1/seo/tenant/{host}/id",
                         get().to(crate::api::seo::tenant_id),
                     )
+                    .route("/v1/seo/features", get().to(crate::api::seo::features))
                     .route("/v1/seo/sitemap", get().to(crate::api::seo::sitemap)),
+            )
+            // @NOTE: APIs of Chat
+            .service(
+                scope("/api/chat")
+                    .route(
+                        "/v1/facebook/webhook",
+                        get().to(crate::api::chat::facebook::verify_webhook),
+                    )
+                    .route(
+                        "/v1/facebook/webhook",
+                        post().to(crate::api::chat::facebook::receive_message),
+                    ),
             )
             // @NOTE: APIs of OHCL
             .service(

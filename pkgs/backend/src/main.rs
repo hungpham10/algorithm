@@ -1,9 +1,13 @@
 use clap::{Parser, Subcommand};
 
 mod api;
-mod crawl;
 mod entities;
 mod server;
+
+#[cfg(feature = "crawl")]
+mod crawl;
+
+mod simulate;
 
 #[derive(Parser, Debug)]
 #[command(name = "algorithm", about = "An all in one solution")]
@@ -16,11 +20,13 @@ struct Cli {
 enum Commands {
     Server {},
 
-    #[cfg(feature = "full")]
+    #[cfg(feature = "crawl")]
     Crawl {
         #[arg(default_value = "ecommerce")]
         domain: String,
     },
+
+    Simulate {},
 }
 
 #[actix_rt::main]
@@ -35,7 +41,9 @@ async fn main() -> std::io::Result<()> {
     match cli.command {
         Commands::Server {} => server::run().await,
 
-        #[cfg(feature = "full")]
+        #[cfg(feature = "crawl")]
         Commands::Crawl { domain } => crawl::run(&domain).await,
+
+        Commands::Simulate {} => simulate::run().await,
     }
 }

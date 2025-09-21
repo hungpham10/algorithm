@@ -99,24 +99,6 @@ impl Default for WmsResponse {
 }
 //-------
 #[derive(Serialize, Deserialize, Clone)]
-pub struct SaleInput {
-    item_id: i32,
-    lot_id: Option<i32>,
-    quantity: i32,
-    price_per_unit: f32,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct SaleResponse {
-    item_id: i32,
-    lot_id: Option<i32>,
-    name: String,
-    quantity_sold: i32,
-    total_price: f32,
-    remaining_quantity: i32,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
 pub struct NearExpiryResponse {
     stock_id: i32,
     stock_name: String,

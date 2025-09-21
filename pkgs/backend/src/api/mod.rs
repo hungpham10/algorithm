@@ -33,6 +33,7 @@ use vnscope::schemas::{Portal, CRONJOB, WATCHLIST};
 
 use crate::entities;
 
+pub mod chat;
 pub mod ohcl;
 pub mod seo;
 pub mod wms;
@@ -71,6 +72,7 @@ pub struct AppState {
     tcbs: Arc<Addr<TcbsActor>>,
     vps: Arc<Addr<VpsActor>>,
     cron: Arc<Addr<CronActor>>,
+    chat: Arc<chat::Chat>,
 
     // @NOTE: variables
     tcbs_vars: Arc<Mutex<Variables>>,
@@ -175,6 +177,12 @@ impl AppState {
             Ok(redis) => Some(redis),
             Err(_) => None,
         };
+
+        // @TODO: will change to use secret management tools
+        let chat = Arc::new(chat::Chat {
+            fb_token: std::env::var("FACEBOOK_TOKEN")
+                .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid FACEBOOK_TOKEN"))?,
+        });
 
         let db = match std::env::var("MYSQL_DSN") {
             Ok(dsn) => Some(Arc::new(Database::connect(dsn).await.map_err(|error| {
@@ -292,6 +300,7 @@ impl AppState {
             cron: cron.clone(),
             vps: vps.clone(),
             tcbs: tcbs.clone(),
+            chat: chat.clone(),
 
             // @NOTE: variables
             tcbs_vars,
