@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use actix_web::web::{Data, Query};
 use actix_web::{HttpResponse, Result};
 
+use log::{debug, error};
 use serde::Deserialize;
 
 use crate::api::AppState;
@@ -18,7 +21,7 @@ pub struct VerifyRequest {
 }
 
 pub async fn verify_webhook(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     query: Query<VerifyRequest>,
 ) -> Result<HttpResponse> {
     let fb_token = appstate.chat.fb_token.clone();
