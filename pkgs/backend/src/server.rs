@@ -97,6 +97,10 @@ pub async fn run() -> std::io::Result<()> {
                     .route(
                         "/v1/facebook/webhook",
                         post().to(crate::api::chat::facebook::receive_message),
+                    )
+                    .route(
+                        "/v1/slack/webhook",
+                        post().to(crate::api::chat::slack::receive_message),
                     ),
             )
             // @NOTE: APIs of OHCL

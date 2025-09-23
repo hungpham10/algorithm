@@ -1,7 +1,9 @@
 pub mod facebook;
+pub mod slack;
 
 pub struct Slack {
     pub token: String,
+    pub channel: String,
 }
 
 pub struct Facebook {

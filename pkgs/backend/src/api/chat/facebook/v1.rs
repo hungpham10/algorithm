@@ -8,6 +8,7 @@ use log::error;
 use serde::Deserialize;
 use sha2::Sha256;
 
+use crate::api::chat::slack::create_new_thread;
 use crate::api::AppState;
 
 #[derive(Deserialize)]
@@ -55,8 +56,8 @@ pub struct Entry {
 
 #[derive(Deserialize)]
 pub struct Messaging {
-    sender: Sender,
-    recipient: Recipient,
+    recipient: Option<Recipient>,
+    sender: Option<Sender>,
     message: Option<Message>,
 }
 
@@ -95,7 +96,6 @@ pub async fn receive_message(
 
         let actual = format!("sha256={}", hex::encode(mac.finalize().into_bytes()));
         if actual != signature {
-            error!("signature={}, actual={}", signature, actual,);
             return Ok(HttpResponse::Forbidden().body("Invalid signature"));
         }
     }
@@ -104,7 +104,7 @@ pub async fn receive_message(
     if payload.object == "page" {
         for entry in &payload.entry {
             for messaging in &entry.messaging {
-                if let Some(message) = &messaging.message {
+                if let (Some(sender), Some(message)) = (&messaging.sender, &messaging.message) {
                     if let Some(is_echo) = &message.is_echo {
                         if *is_echo {
                             continue;
@@ -112,7 +112,7 @@ pub async fn receive_message(
                     }
 
                     if let Some(text) = &message.text {
-                        println!("Received message from {}: {:?}", messaging.sender.id, text);
+                        create_new_thread(&appstate, &sender.id, &text).await?;
                     }
                 }
             }

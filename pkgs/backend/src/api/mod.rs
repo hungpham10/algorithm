@@ -221,7 +221,8 @@ impl AppState {
                 .await?,
             },
             slack: chat::Slack {
-                token: get_secret_from_infisical(&infisical_client, "SLACK_TOKEN").await?,
+                token: get_secret_from_infisical(&infisical_client, "SLACK_BOT_TOKEN").await?,
+                channel: get_secret_from_infisical(&infisical_client, "SLACK_CHANNEL").await?,
             },
         });
 
