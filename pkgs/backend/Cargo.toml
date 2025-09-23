@@ -33,6 +33,7 @@ default = [
 	"sea-query",
 	"quick-xml",
 	"hmac",
+	"hex",
 	"sha2",
 	"infisical",
 	"clap",
