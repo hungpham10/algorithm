@@ -79,7 +79,7 @@ pub async fn receive_message(
     request: HttpRequest,
     payload: Json<WebhookRequest>,
 ) -> Result<HttpResponse> {
-    let secret = appstate.chat.fb.secret;
+    let secret = appstate.chat.fb.secret.clone();
 
     if let Some(signature) = request.headers().get("x-hub-signature-256") {
         let signature = signature.to_str().unwrap_or("");
