@@ -1,5 +1,15 @@
 pub mod facebook;
 
+pub struct Slack {
+    pub token: String,
+}
+
+pub struct Facebook {
+    pub token: String,
+    pub secret: String,
+}
+
 pub struct Chat {
-    pub fb_token: String,
+    slack: Slack,
+    fb: Facebook,
 }

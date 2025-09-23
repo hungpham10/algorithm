@@ -15,6 +15,9 @@ use aws_config::{
 };
 use aws_sdk_s3::Client as S3Client;
 
+use infisical::secrets::GetSecretRequest;
+use infisical::{AuthMethod, Client as InfiscalClient};
+
 use chrono::Utc;
 use log::{debug, error};
 use redis::{AsyncCommands, Client as RedisClient};
@@ -37,6 +40,8 @@ pub mod chat;
 pub mod ohcl;
 pub mod seo;
 pub mod wms;
+
+use chat::Chat;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct Status {
@@ -72,7 +77,8 @@ pub struct AppState {
     tcbs: Arc<Addr<TcbsActor>>,
     vps: Arc<Addr<VpsActor>>,
     cron: Arc<Addr<CronActor>>,
-    chat: Arc<chat::Chat>,
+    chat: Arc<Chat>,
+    infisical_client: InfiscalClient,
 
     // @NOTE: variables
     tcbs_vars: Arc<Mutex<Variables>>,
@@ -178,10 +184,36 @@ impl AppState {
             Err(_) => None,
         };
 
-        // @TODO: will change to use secret management tools
+        // @NOTE: setup secret management client
+        let mut infisical_client = InfiscalClient::builder().build().await.map_err(|error| {
+            Error::new(
+                ErrorKind::InvalidInput,
+                format!("Fail to build infisical client: {:?}", error),
+            )
+        })?;
+
+        let auth_method = AuthMethod::new_universal_auth(
+            std::env::var("INFISICAL_CLIENT_ID")
+                .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_CLIENT_ID"))?,
+            std::env::var("INFISICAL_CLIENT_SECRET").map_err(|_| {
+                Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_CLIENT_SECRET")
+            })?,
+        );
+        infisical_client.login(auth_method).await.map_err(|error| {
+            Error::new(
+                ErrorKind::InvalidInput,
+                format!("Fail to login to infisical: {:?}", error),
+            )
+        })?;
+
         let chat = Arc::new(chat::Chat {
-            fb_token: std::env::var("FACEBOOK_TOKEN")
-                .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid FACEBOOK_TOKEN"))?,
+            fb: chat::Facebook {
+                token: get_secret_from_infisical(&infisical_client, "FACEBOOK_SECRET").await?,
+                secret: get_secret_from_infisical(&infisical_client, "FACEBOOK_SECRET").await?,
+            },
+            slack: chat::Slack {
+                token: get_secret_from_infisical(&infisical_client, "SLACK_TOKEN").await?,
+            },
         });
 
         let db = match std::env::var("MYSQL_DSN") {
@@ -293,6 +325,7 @@ impl AppState {
             db,
             redis,
             prometheus,
+            infisical_client,
 
             // @NOTE: shared actors
             portal: portal.clone(),
@@ -562,4 +595,23 @@ pub async fn flush(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
         Ok(Err(error)) => Ok(HttpResponse::BadRequest().body(format!("{}", error))),
         Err(error) => Ok(HttpResponse::BadRequest().body(format!("{}", error))),
     }
+}
+
+async fn get_secret_from_infisical(client: &InfiscalClient, key: &str) -> Result<String, Error> {
+    let request = GetSecretRequest::builder(
+        key,
+        std::env::var("INFISICAL_PROJECT_ID")
+            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_PROJECT_ID"))?,
+        std::env::var("ENVIRONMENT").unwrap_or_else(|_| "dev".to_string()),
+    )
+    .build();
+
+    let secret = client.secrets().get(request).await.map_err(|error| {
+        Error::new(
+            ErrorKind::InvalidInput,
+            format!("Fail fetching secret: {:?}", error),
+        )
+    })?;
+
+    Ok(secret.secret_key)
 }

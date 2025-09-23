@@ -32,6 +32,9 @@ default = [
 	"sea-orm",
 	"sea-query",
 	"quick-xml",
+	"hmac",
+	"sha2",
+	"infisical",
 	"clap",
 	"clap_derive",
 ]
@@ -94,6 +97,10 @@ clap_derive = { version = "4.0.0-rc.1", optional = true }
 # Web application
 dotenvy = "0.15.7"
 futures-util = "0.3"
+infisical = { version = "0.0.3", optional = true }
+hmac = { version = "0.12", optional = true }
+hex = { version = "0.4.3", optional = true }
+sha2 = { version = "0.10", optional = true }
 quick-xml = { version = "0.31", optional = true }
 actix-web = { version = "4.3.1", optional = true }
 redis = { version = "0.32.5", optional = true, features = ["aio", "tokio-comp"] }
