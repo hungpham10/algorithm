@@ -208,8 +208,17 @@ impl AppState {
 
         let chat = Arc::new(chat::Chat {
             fb: chat::Facebook {
-                token: get_secret_from_infisical(&infisical_client, "FACEBOOK_SECRET").await?,
-                secret: get_secret_from_infisical(&infisical_client, "FACEBOOK_SECRET").await?,
+                token: get_secret_from_infisical(&infisical_client, "FACEBOOK_TOKEN").await?,
+                incomming_secret: get_secret_from_infisical(
+                    &infisical_client,
+                    "FACEBOOK_INCOMMING_SECRET",
+                )
+                .await?,
+                outgoing_secret: get_secret_from_infisical(
+                    &infisical_client,
+                    "FACEBOOK_OUTGOING_SECRET",
+                )
+                .await?,
             },
             slack: chat::Slack {
                 token: get_secret_from_infisical(&infisical_client, "SLACK_TOKEN").await?,
@@ -613,5 +622,5 @@ async fn get_secret_from_infisical(client: &InfiscalClient, key: &str) -> Result
         )
     })?;
 
-    Ok(secret.secret_key)
+    Ok(secret.secret_value)
 }

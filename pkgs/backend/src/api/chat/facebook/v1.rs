@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use actix_web::web::{Data, Json, Query};
+use actix_web::web::{Bytes, Data, Query};
 use actix_web::{HttpRequest, HttpResponse, Result};
 
 use hmac::{Hmac, Mac};
-use serde::{Deserialize, Serialize};
+use log::error;
+use serde::Deserialize;
 use sha2::Sha256;
 
 use crate::api::AppState;
@@ -39,68 +40,79 @@ pub async fn verify_webhook(
     }
 }
 
-#[derive(Serialize, Deserialize)]
-struct WebhookRequest {
+#[derive(Deserialize)]
+pub struct WebhookRequest {
     object: String,
     entry: Vec<Entry>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct Entry {
+#[derive(Deserialize)]
+pub struct Entry {
     messaging: Vec<Messaging>,
     time: u64,
     id: String,
 }
 
-#[derive(Serialize, Deserialize)]
-struct Messaging {
+#[derive(Deserialize)]
+pub struct Messaging {
     sender: Sender,
     recipient: Recipient,
     message: Option<Message>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct Recipient {
+#[derive(Deserialize)]
+pub struct Recipient {
     id: String,
 }
 
-#[derive(Serialize, Deserialize)]
-struct Sender {
+#[derive(Deserialize)]
+pub struct Sender {
     id: String,
 }
 
-#[derive(Serialize, Deserialize)]
-struct Message {
+#[derive(Deserialize)]
+pub struct Message {
+    metadata: Option<String>,
     text: Option<String>,
+    is_echo: Option<bool>,
+    mid: Option<String>,
 }
 
 pub async fn receive_message(
     appstate: Data<Arc<AppState>>,
     request: HttpRequest,
-    payload: Json<WebhookRequest>,
+    body: Bytes,
 ) -> Result<HttpResponse> {
-    let secret = appstate.chat.fb.secret.clone();
+    let secret = appstate.chat.fb.incomming_secret.clone();
 
     if let Some(signature) = request.headers().get("x-hub-signature-256") {
         let signature = signature.to_str().unwrap_or("");
-        let bytes = serde_json::to_vec(&payload).unwrap();
 
         let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
             .expect("HMAC can take key of any size");
 
-        mac.update(&bytes);
+        mac.update(&body);
 
-        if format!("sha256={}", hex::encode(mac.finalize().into_bytes())) != signature {
+        let actual = format!("sha256={}", hex::encode(mac.finalize().into_bytes()));
+        if actual != signature {
+            error!("signature={}, actual={}", signature, actual,);
             return Ok(HttpResponse::Forbidden().body("Invalid signature"));
         }
     }
 
+    let payload = serde_json::from_slice::<WebhookRequest>(&body)?;
     if payload.object == "page" {
         for entry in &payload.entry {
             for messaging in &entry.messaging {
                 if let Some(message) = &messaging.message {
+                    if let Some(is_echo) = &message.is_echo {
+                        if *is_echo {
+                            continue;
+                        }
+                    }
+
                     if let Some(text) = &message.text {
-                        println!("Received message from {}: {}", messaging.sender.id, text);
+                        println!("Received message from {}: {:?}", messaging.sender.id, text);
                     }
                 }
             }

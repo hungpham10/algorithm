@@ -6,10 +6,11 @@ pub struct Slack {
 
 pub struct Facebook {
     pub token: String,
-    pub secret: String,
+    pub incomming_secret: String,
+    pub outgoing_secret: String,
 }
 
 pub struct Chat {
-    slack: Slack,
-    fb: Facebook,
+    pub slack: Slack,
+    pub fb: Facebook,
 }

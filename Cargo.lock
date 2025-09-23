@@ -1395,6 +1395,7 @@ dependencies = [
  "env_logger",
  "futures",
  "futures-util",
+ "hex",
  "hf-hub",
  "hmac",
  "infisical",
