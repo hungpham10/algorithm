@@ -70,6 +70,7 @@ pub struct AppState {
     ohcl_entity: Option<entities::ohcl::Ohcl>,
     wms_entity: Option<entities::wms::Wms>,
     seo_entity: Option<entities::seo::Seo>,
+    chat_entity: Option<entities::chat::Chat>,
 
     // @NOTE: shared components
     portal: Arc<Portal>,
@@ -208,7 +209,13 @@ impl AppState {
 
         let chat = Arc::new(chat::Chat {
             fb: chat::Facebook {
-                token: get_secret_from_infisical(&infisical_client, "FACEBOOK_TOKEN").await?,
+                webhook_access_token: get_secret_from_infisical(
+                    &infisical_client,
+                    "FACEBOOK_TOKEN",
+                )
+                .await?,
+                page_access_token: get_secret_from_infisical(&infisical_client, "FACEBOOK_TOKEN")
+                    .await?,
                 incomming_secret: get_secret_from_infisical(
                     &infisical_client,
                     "FACEBOOK_INCOMMING_SECRET",
@@ -265,6 +272,11 @@ impl AppState {
 
         let seo_entity = match db {
             Some(ref db) => Some(entities::seo::Seo::new(db.clone())),
+            None => None,
+        };
+
+        let chat_entity = match db {
+            Some(ref db) => Some(entities::chat::Chat::new(db.clone())),
             None => None,
         };
 
@@ -328,6 +340,7 @@ impl AppState {
             ohcl_entity,
             wms_entity,
             seo_entity,
+            chat_entity,
 
             // @NOTE: monitors
             locked: Arc::new(Mutex::new(true)),
@@ -452,6 +465,10 @@ impl AppState {
 
     pub fn seo_entity(&self) -> &Option<entities::seo::Seo> {
         &self.seo_entity
+    }
+
+    pub fn chat_entity(&self) -> &Option<entities::chat::Chat> {
+        &self.chat_entity
     }
 
     pub async fn ping(&self) -> bool {
