@@ -26,28 +26,28 @@ struct HeatmapResponse {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct OhclResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
+    pub error: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    heatmap: Option<HeatmapResponse>,
+    pub heatmap: Option<HeatmapResponse>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    ohcl: Option<Vec<CandleStick>>,
+    pub ohcl: Option<Vec<CandleStick>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    resolutions: Option<Vec<String>>,
+    pub resolutions: Option<Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    brokers: Option<Vec<String>>,
+    pub brokers: Option<Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    products: Option<Vec<String>>,
+    pub products: Option<Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    symbols: Option<Vec<String>>,
+    pub symbols: Option<Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    next: Option<i32>,
+    pub next: Option<i32>,
 }
 
 async fn update_ohcl_cache_and_return(
@@ -82,12 +82,14 @@ async fn update_ohcl_cache_and_return(
         Ok(Ok(_)) => {
             debug!("Update caching to optimize performance successfully");
             let mut result = Vec::new();
+            let mut next = None;
 
             for candle in candles {
                 if candle.t >= args.from as i32 && candle.t <= args.to as i32 {
                     result.push(candle.clone());
                 }
                 if args.limit > 0 && result.len() > args.limit {
+                    next = Some(candle.t);
                     break;
                 }
             }
@@ -99,8 +101,8 @@ async fn update_ohcl_cache_and_return(
                 symbols: None,
                 resolutions: None,
                 products: None,
-                next: None,
                 error: None,
+                next,
             }))
         }
         Ok(Err(error)) => {
@@ -148,7 +150,7 @@ pub async fn get_ohcl_from_broker(
                     from: args.from,
                     to: args.to,
                     broker: broker,
-                    limit: args.limit,
+                    limit: 0, // @NOTE: call to fetch full data from actor
                 })
                 .await
             {
@@ -159,12 +161,14 @@ pub async fn get_ohcl_from_broker(
                         update_ohcl_cache_and_return(&appstate, &symbol, &args, &candles).await
                     } else {
                         let mut result = Vec::new();
+                        let mut next = None;
 
                         for candle in candles {
                             if candle.t >= args.from as i32 && candle.t <= args.to as i32 {
                                 result.push(candle.clone());
                             }
                             if args.limit > 0 && result.len() > args.limit {
+                                next = Some(candle.t);
                                 break;
                             }
                         }
@@ -175,9 +179,9 @@ pub async fn get_ohcl_from_broker(
                             brokers: None,
                             symbols: None,
                             resolutions: None,
-                            next: None,
                             products: None,
                             error: None,
+                            next,
                         }))
                     }
                 }

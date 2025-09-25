@@ -125,7 +125,7 @@ async fn test_function_map() {
     let symbol = "BCM".to_string();
 
     for timestamp in vars
-        .list_from_s3(symbol.as_str(), "2025-07-23")
+        .list_from_s3(symbol.as_str(), "investing/2025-07-23")
         .await
         .unwrap()
     {
