@@ -124,7 +124,7 @@ priority = "optional"
 section = "utils"
 assets = [
     ["target/release/algorithm", "usr/bin/bff", "755"],
-    ["../conf/bff.service", "lib/systemd/system/", "644"]
+    ["../../conf/bff.service", "lib/systemd/system/", "644"]
 ]
 maintainer-scripts = "debian/"
 
