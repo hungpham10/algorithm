@@ -1,9 +1,8 @@
+use log::{error, info};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::{Arc, RwLock};
-
-use log::debug;
 
 struct Node<K, V> {
     key: K,
@@ -41,8 +40,10 @@ impl<K: Clone + Hash + Eq + Ord + Debug + Send + Sync, V: Debug + Clone + Send +
 
     pub fn put(&self, key: K, value: V) -> bool {
         let mapping_read = self.mapping.read().unwrap();
+
         if let Some(&index) = mapping_read.get(&key) {
             drop(mapping_read); // Release read lock early
+
             if let Some(callback) = &self.on_updating {
                 let key = key.clone();
                 let value = value.clone();
@@ -52,58 +53,83 @@ impl<K: Clone + Hash + Eq + Ord + Debug + Send + Sync, V: Debug + Clone + Send +
             self.move_to_front(index);
         } else {
             drop(mapping_read); // Release read lock
+
             if self.capacity == 0 {
                 return false;
             }
 
             let mut caching = self.caching.write().unwrap();
+            println!("{} {}", caching.len(), self.capacity);
             if caching.len() >= self.capacity {
-                debug!(
-                    "Flush least used item duo to caching({}) > capacity({})",
-                    caching.len(),
-                    self.capacity
-                );
-
                 let first = *self.first.read().unwrap();
+
                 if let Some(callback) = &self.on_removing {
                     let key = caching[first].key.clone();
                     let value = caching[first].value.clone();
                     callback(key, value);
                 }
 
+                // Update self.first before removing
+                *self.first.write().unwrap() = caching[first].next;
+
+                // Remove from mapping
                 let mut mapping = self.mapping.write().unwrap();
+                mapping.remove(&caching[first].key);
+
+                // Update indices in mapping
                 for (_, value) in mapping.iter_mut() {
                     if *value > first {
-                        let origin = *value;
-                        let prev = caching[origin].prev;
-                        let next = caching[origin].next;
                         *value -= 1;
-
-                        if *self.last.read().unwrap() == origin {
-                            *self.last.write().unwrap() = *value;
-                        }
-
-                        caching[prev].next = *value;
-                        caching[next].prev = *value;
                     }
                 }
 
-                *self.first.write().unwrap() = caching[first].next;
-                mapping.remove(&caching[first].key);
+                // Update self.last if necessary
+                let mut last = self.last.write().unwrap();
+                if *last > first {
+                    info!("update last to reduce to remove first");
+                    *last -= 1;
+                } else if *last == first {
+                    info!("update last when last equal to first");
+                    *last = if caching.len() > 1 {
+                        caching[first].prev
+                    } else {
+                        0
+                    };
+                } else {
+                    error!("cannot update last");
+                }
+
+                // Update next and prev links
+                if caching.len() > 1 {
+                    let next = caching[first].next;
+                    let prev = caching[first].prev;
+
+                    caching[next].prev = prev;
+                    caching[prev].next = next;
+                }
+
+                // Remove the element
                 caching.remove(first);
+
+                // If cache is empty, reset first and last
+                if caching.is_empty() {
+                    *self.first.write().unwrap() = 0;
+                    *self.last.write().unwrap() = 0;
+                }
             }
 
             let index = caching.len();
             let last = *self.last.read().unwrap();
             let mut next = 0;
-
             if caching.is_empty() {
                 *self.first.write().unwrap() = index;
                 *self.last.write().unwrap() = index;
                 next = index;
-            } else {
+            } else if last < caching.len() {
                 caching[last].next = index;
                 *self.last.write().unwrap() = index;
+            } else {
+                return false;
             }
 
             if let Some(callback) = &self.on_inserting {
@@ -155,63 +181,71 @@ impl<K: Clone + Hash + Eq + Ord + Debug + Send + Sync, V: Debug + Clone + Send +
 
     fn move_to_front(&self, index: usize) {
         let mut caching = self.caching.write().unwrap();
+        let first = *self.first.read().unwrap();
+        let last = *self.last.read().unwrap();
+
+        if index == first {
+            return; // Already at front
+        }
+
+        if caching.len() <= 1 {
+            return; // Only one element, no need to move
+        }
+
+        // Remove the node from its current position
         let next = caching[index].next;
         let prev = caching[index].prev;
-
-        caching[next].prev = prev;
         caching[prev].next = next;
+        caching[next].prev = prev;
 
-        caching[index].prev = *self.last.read().unwrap();
-        caching[*self.last.read().unwrap()].next = index;
-        *self.last.write().unwrap() = index;
+        // Place the node at the front
+        caching[index].next = first;
+        caching[index].prev = index; // Self-loop for prev of the front node
+        caching[first].prev = index;
+        *self.first.write().unwrap() = index;
+
+        // Update last if the moved node was the last one
+        if index == last {
+            *self.last.write().unwrap() = prev;
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use std::thread;
 
     #[test]
     fn test_lru_cache() {
         let mut cache = LruCache::new(2);
-
         cache.put(1, 10);
         cache.put(2, 20);
-
         assert_eq!(cache.get(&1), Some(10)); // Access 1, making it most recent
         assert_eq!(cache.get(&2), Some(20));
-
         cache.put(3, 30); // Cache full, evicts 1 (LRU)
-
         assert_eq!(cache.get(&1), None);
         assert_eq!(cache.get(&2), Some(20)); // Access 2
         assert_eq!(cache.get(&3), Some(30));
-
         cache.put(4, 40);
-
         assert_eq!(cache.get(&1), None);
         assert_eq!(cache.get(&2), None); // 2 is evicted
         assert_eq!(cache.get(&3), Some(30)); // Access 3
         assert_eq!(cache.get(&4), Some(40));
-
         cache.put(2, 20); // put 2 again, 3 is evicted
-
         assert_eq!(cache.get(&1), None);
         assert_eq!(cache.get(&3), None); // Access 3 fails
         assert_eq!(cache.get(&4), Some(40));
         assert_eq!(cache.get(&2), Some(20)); // Access 2
-
-        cache.put(5, 50); // Cache is full, should evict 3 because it's LRU after 4 and 2
-
+        cache.put(5, 50); // Cache is full, should evict 4
         assert_eq!(cache.get(&1), None);
         assert_eq!(cache.get(&3), None); // 3 is evicted
         assert_eq!(cache.get(&4), None); // 4 is evicted
         assert_eq!(cache.get(&2), Some(20));
         assert_eq!(cache.get(&5), Some(50));
-
         cache.put(1, 10); // Cache full, will evict 2
-        assert_eq!(cache.get(&4), None); // 4 gets evicted.
-
+        assert_eq!(cache.get(&4), None); // 4 gets evicted
         assert_eq!(cache.get(&1), Some(10));
         assert_eq!(cache.get(&2), None); // 2 is evicted
         assert_eq!(cache.get(&5), Some(50));
@@ -225,11 +259,57 @@ mod tests {
     }
 
     #[test]
-    fn update_existing_key() {
+    fn test_update_existing_key() {
         let mut cache = LruCache::new(2);
         cache.put(1, 10);
         cache.put(1, 20);
         assert_eq!(cache.get(&1), Some(20));
         assert_eq!(cache.mapping.read().unwrap().len(), 1); // Check that we still only have one entry for key 1
+    }
+
+    #[test]
+    fn test_lru_cache_single_element() {
+        let mut cache = LruCache::new(1);
+        cache.put(1, 10);
+        assert_eq!(cache.get(&1), Some(10));
+        cache.put(2, 20); // Replace the only element
+        assert_eq!(cache.get(&1), None);
+        assert_eq!(cache.get(&2), Some(20));
+    }
+
+    #[test]
+    fn test_lru_cache_remove_last() {
+        let mut cache = LruCache::new(2);
+        cache.put(1, 10);
+        cache.put(2, 20);
+        cache.put(3, 30); // Evict 1, check self.last
+        assert_eq!(cache.get(&1), None);
+        assert_eq!(cache.get(&2), Some(20));
+        assert_eq!(cache.get(&3), Some(30));
+    }
+
+    #[test]
+    fn test_lru_cache_concurrent() {
+        let cache = Arc::new(LruCache::new(2));
+        let mut handles = vec![];
+
+        // Spawn multiple threads to put and get concurrently
+        for i in 0..10 {
+            let cache = Arc::clone(&cache);
+            let handle = thread::spawn(move || {
+                cache.put(i, i * 10);
+                cache.get(&i);
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all threads to complete
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Verify cache state
+        let mapping = cache.mapping.read().unwrap();
+        assert!(mapping.len() <= 2, "Cache should not exceed capacity");
     }
 }
