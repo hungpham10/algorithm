@@ -59,7 +59,6 @@ impl<K: Clone + Hash + Eq + Ord + Debug + Send + Sync, V: Debug + Clone + Send +
             }
 
             let mut caching = self.caching.write().unwrap();
-            println!("{} {}", caching.len(), self.capacity);
             if caching.len() >= self.capacity {
                 let first = *self.first.read().unwrap();
 
