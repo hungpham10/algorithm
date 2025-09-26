@@ -139,7 +139,9 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
+            pkgs/backend/target/
             backend/target/
+            target/
           # Using the unified cache key for build-related jobs.
           key: ${{ runner.os }}-cargo-release-build-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
@@ -152,7 +154,7 @@ jobs:
       # (e.g., .dev0+<short_sha>) in the package version.
       # This ensures development builds have unique, PEP 440 compliant versions.
       - name: Set development version in backend/Cargo.toml
-        working-directory: ./backend # Ensures sed works on backend/Cargo.toml
+        working-directory: ./pkgs/backend # Ensures sed works on backend/Cargo.toml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
