@@ -39,7 +39,7 @@ library:
 	if grep -q "^version" Cargo.toml; then 														\
 		maturin build --release --features python --no-default-features 									\
 		--out dist && 																\
-		cp dist/*.whl ../$(DIST_DIR)/; 														\
+		cp dist/*.whl ../../$(DIST_DIR)/; 														\
 	else 																		\
 		echo "Missing version in Cargo.toml"; 													\
 		exit 1; 																\
