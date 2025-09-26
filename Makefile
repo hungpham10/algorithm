@@ -7,7 +7,7 @@ PIP_CACHE := .pip-cache
 
 DIST_DIR := dist
 TEST_DIR := tests
-BACKEND_DIR := backend
+BACKEND_DIR := pkgs/backend
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
