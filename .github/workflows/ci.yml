@@ -50,7 +50,8 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            backend/target/
+            pkgs/backend/target/
+            target/
           key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-lint-
@@ -93,7 +94,8 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            backend/target/
+            pkgs/backend/target/
+            target/
           # Using a unified cache key for all jobs that build the Rust backend (test, build_publish_dev, build_publish_release)
           # This allows sharing of build artifacts between these jobs if they run on the same runner.
           # The 'lint' job uses a separate cache key as its dependencies/artifacts might differ slightly.
@@ -140,7 +142,6 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             pkgs/backend/target/
-            backend/target/
             target/
           # Using the unified cache key for build-related jobs.
           key: ${{ runner.os }}-cargo-release-build-${{ hashFiles('**/Cargo.lock') }}
@@ -199,7 +200,7 @@ jobs:
 
           # Construct PEP 440 dev version
           DEV_VERSION="${BASE_VERSION}-dev${COMMIT_COUNT}" # Construct PEP 440 dev version
-          echo "Updating backend/Cargo.toml version to: ${DEV_VERSION}"
+          echo "Updating pkgs/backend/Cargo.toml version to: ${DEV_VERSION}"
 
           # Escape dots in BASE_VERSION for sed pattern to ensure sed works correctly.
           # This prevents sed from misinterpreting dots as regex special characters.
@@ -251,7 +252,8 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            backend/target/
+            pkgs/backend/target/
+            target/
           # Using the unified cache key for build-related jobs.
           key: ${{ runner.os }}-cargo-release-build-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
@@ -315,7 +317,8 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            backend/target/
+            pkgs/backend/target/
+            target/
           key: ${{ runner.os }}-cargo-deb-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-deb-
@@ -324,7 +327,7 @@ jobs:
         run: cargo install cargo-deb
 
       - name: Build .deb package
-        working-directory: ./backend
+        working-directory: ./pkgs/backend
         run: |
           cargo build --release
           cargo deb
