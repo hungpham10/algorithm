@@ -9,8 +9,9 @@ pub struct Model {
     pub thread_id: String,
     pub source_id: String,
     pub source_type: i32,
-    pub created_at: Option<DateTimeUtc>,
-    pub updated_at: Option<DateTimeUtc>,
+    pub created_at: DateTimeUtc,
+    pub updated_at: DateTimeUtc,
+    pub status: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -54,10 +54,34 @@ pub async fn create_thread(
     Ok(response.ts)
 }
 
-pub async fn send_message_to_existing_thread(
+pub async fn send_message(
     appstate: &Data<Arc<AppState>>,
     thread_id: &String,
+    sender_id: &String,
     message: &String,
 ) -> Result<()> {
+    let client = HttpClient::default();
+    let payload = SlackPostMessageRequest {
+        channel: appstate.chat.slack.channel.clone(),
+        text: message.clone(),
+        username: Some(format!("fb:{}", sender_id)),
+        thread_ts: Some(thread_id.clone()),
+    };
+
+    client
+        .post("https://slack.com/api/chat.postMessage")
+        .header(
+            "Authorization",
+            format!("Bearer {}", appstate.chat.slack.token),
+        )
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|error| ErrorInternalServerError(error.to_string()))?
+        .json::<SlackPostMessageReponse>()
+        .await
+        .map_err(|error| ErrorInternalServerError(error.to_string()))?;
+
     Ok(())
 }

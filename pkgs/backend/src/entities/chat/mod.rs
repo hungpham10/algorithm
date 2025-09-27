@@ -1,6 +1,7 @@
 mod threads;
 use threads::Entity as Threads;
 
+use log::info;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QuerySelect, RuntimeErr, Set,
 };
@@ -27,20 +28,44 @@ impl Chat {
         &self,
         tenant_id: i32,
         sender_id: &String,
-    ) -> Result<String, DbErr> {
+    ) -> Result<Option<String>, DbErr> {
         let thread_id = Threads::find()
+            .select_only()
+            .column(threads::Column::ThreadId)
             .filter(threads::Column::TenantId.eq(tenant_id))
             .filter(threads::Column::SourceId.eq(sender_id))
-            .column(threads::Column::ThreadId)
+            .into_tuple::<String>()
+            .one(self.db.as_ref())
+            .await;
+        match thread_id {
+            Ok(thread_id) => {
+                if let Some(thread_id) = thread_id {
+                    Ok(Some(thread_id))
+                } else {
+                    Ok(None)
+                }
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    pub async fn get_sender_id_by_thread(
+        &self,
+        tenant_id: i32,
+        thread_id: &String,
+    ) -> Result<Option<String>, DbErr> {
+        let sender_id = Threads::find()
+            .select_only()
+            .column(threads::Column::SourceId)
+            .filter(threads::Column::TenantId.eq(tenant_id))
+            .filter(threads::Column::ThreadId.eq(thread_id))
             .into_tuple::<String>()
             .one(&*self.db)
             .await?;
-        if let Some(thread_id) = thread_id {
-            Ok(thread_id)
+        if let Some(sender_id) = sender_id {
+            Ok(Some(sender_id))
         } else {
-            Err(DbErr::Query(RuntimeErr::Internal(format!(
-                "Missing field `stocks`"
-            ))))
+            Ok(None)
         }
     }
 
