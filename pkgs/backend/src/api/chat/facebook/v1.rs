@@ -8,9 +8,9 @@ use hmac::{Hmac, Mac};
 use serde::Deserialize;
 use sha2::Sha256;
 
-use crate::api::chat::slack::{create_thread, send_message_to_existing_thread};
+use crate::api::chat::slack::{create_thread, send_message};
 
-use super::get_facebook_username;
+use super::get_username;
 use crate::api::chat::ChatHeaders;
 use crate::api::AppState;
 use crate::entities::chat::Thread;
@@ -119,14 +119,15 @@ pub async fn receive_message(
                         }
 
                         if let Some(text) = &message.text {
-                            let username = get_facebook_username(&appstate, &sender.id).await?;
+                            let username = get_username(&appstate, &sender.id)
+                                .await
+                                .unwrap_or(sender.id.clone());
 
                             if let Ok(thread_id) = entity
                                 .get_thread_by_sender_id(headers.tenant_id, &sender.id)
                                 .await
                             {
-                                send_message_to_existing_thread(&appstate, &thread_id, &text)
-                                    .await?;
+                                send_message(&appstate, &thread_id, &sender.id, &text).await?;
                             } else {
                                 let thread_id = create_thread(&appstate, &username, &text).await?;
 

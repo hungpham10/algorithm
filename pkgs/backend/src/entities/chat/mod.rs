@@ -1,6 +1,7 @@
 mod threads;
 use threads::Entity as Threads;
 
+use log::info;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QuerySelect, RuntimeErr, Set,
 };
@@ -34,12 +35,43 @@ impl Chat {
             .column(threads::Column::ThreadId)
             .into_tuple::<String>()
             .one(&*self.db)
+            .await;
+        match thread_id {
+            Ok(thread_id) => {
+                if let Some(thread_id) = thread_id {
+                    Ok(thread_id)
+                } else {
+                    Err(DbErr::Query(RuntimeErr::Internal(format!(
+                        "Not found {}",
+                        sender_id,
+                    ))))
+                }
+            }
+            Err(error) => {
+                info!("{:?}", error);
+                Err(error)
+            }
+        }
+    }
+
+    pub async fn get_sender_id_by_thread(
+        &self,
+        tenant_id: i32,
+        thread_id: &String,
+    ) -> Result<String, DbErr> {
+        let sender_id = Threads::find()
+            .filter(threads::Column::TenantId.eq(tenant_id))
+            .filter(threads::Column::ThreadId.eq(thread_id))
+            .column(threads::Column::SourceId)
+            .into_tuple::<String>()
+            .one(&*self.db)
             .await?;
-        if let Some(thread_id) = thread_id {
-            Ok(thread_id)
+        if let Some(sender_id) = sender_id {
+            Ok(sender_id)
         } else {
             Err(DbErr::Query(RuntimeErr::Internal(format!(
-                "Missing field `stocks`"
+                "Not found {}",
+                thread_id,
             ))))
         }
     }

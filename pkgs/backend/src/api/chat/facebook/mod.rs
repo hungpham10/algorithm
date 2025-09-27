@@ -10,10 +10,7 @@ use reqwest::Client as HttpClient;
 mod v1;
 pub use v1::*;
 
-pub async fn get_facebook_username(
-    appdata: &Data<Arc<AppState>>,
-    sender_id: &String,
-) -> Result<String> {
+pub async fn get_username(appdata: &Data<Arc<AppState>>, sender_id: &String) -> Result<String> {
     let client = HttpClient::default();
     let url = format!(
         "https://graph.facebook.com/{}?fields=name&access_token={}",
@@ -31,7 +28,15 @@ pub async fn get_facebook_username(
     let username = response["name"]
         .as_str()
         .map(|s| s.to_string())
-        .ok_or_else(|| ErrorInternalServerError("Failed to get username"))?;
+        .ok_or_else(|| ErrorInternalServerError(format!("Failed to get username: {}", response)))?;
 
     Ok(username)
+}
+
+pub async fn send_message(
+    appstate: &Data<Arc<AppState>>,
+    send_id: &String,
+    text: &String,
+) -> Result<()> {
+    Ok(())
 }
