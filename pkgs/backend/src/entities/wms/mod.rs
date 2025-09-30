@@ -659,12 +659,22 @@ impl Wms {
             .column(lots::Column::EntryDate)
             .column(lots::Column::CostPrice)
             .column(lots::Column::Status)
-            .column_as(Expr::col(items::Column::Id).count(), "quantity")
+            .column_as(
+                Expr::col((items::Entity, items::Column::Id)).count(),
+                "quantity",
+            )
             .join_rev(
                 JoinType::InnerJoin,
-                items::Entity::belongs_to(Stocks)
-                    .from(items::Column::StockId)
-                    .to(stocks::Column::Id)
+                items::Entity::belongs_to(Lots)
+                    .from(items::Column::LotId)
+                    .to(lots::Column::Id)
+                    .into(),
+            )
+            .join_rev(
+                JoinType::InnerJoin,
+                stocks::Entity::belongs_to(Items)
+                    .from(stocks::Column::Id)
+                    .to(items::Column::StockId)
                     .into(),
             )
             .filter(
@@ -744,7 +754,10 @@ impl Wms {
                 .column(stocks::Column::Id)
                 .column(stocks::Column::Name)
                 .column(stocks::Column::Unit)
-                .expr_as(Expr::col(items::Column::Id).count(), "quantity")
+                .expr_as(
+                    Expr::col((items::Entity, items::Column::Id)).count(),
+                    "quantity",
+                )
                 .group_by(stocks::Column::Id)
                 .group_by(stocks::Column::Name)
                 .group_by(stocks::Column::Unit)
@@ -790,7 +803,10 @@ impl Wms {
                 .column(stocks::Column::Id)
                 .column(stocks::Column::Name)
                 .column(stocks::Column::Unit)
-                .expr_as(Expr::col(items::Column::Id).count(), "quantity")
+                .expr_as(
+                    Expr::col((items::Entity, items::Column::Id)).count(),
+                    "quantity",
+                )
                 .group_by(stocks::Column::Id)
                 .group_by(stocks::Column::Name)
                 .group_by(stocks::Column::Unit)
