@@ -106,6 +106,10 @@ impl AppState {
                     std::env::var("AIRTABLE_TABLE_CRONJOB").unwrap_or_else(|_| CRONJOB.to_string()),
                 ),
             ]),
+            std::env::var("USE_AIRTABLE")
+                .unwrap_or_else(|_| "false".to_string())
+                .parse::<bool>()
+                .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid USE_AIRTABLE"))?,
         ));
 
         // @NOTE: cronjob configuration

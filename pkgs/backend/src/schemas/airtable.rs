@@ -33,50 +33,68 @@ pub const CRONJOB: &str = "Cronjob";
 pub struct Portal {
     airtable: Airtable,
     mapping: HashMap<String, String>,
+    enabled: bool,
 }
 
 impl Portal {
-    pub fn new(api_key: &str, base_id: &str, mapping: &HashMap<String, String>) -> Self {
+    pub fn new(
+        api_key: &str,
+        base_id: &str,
+        mapping: &HashMap<String, String>,
+        enabled: bool,
+    ) -> Self {
         let airtable = Airtable::new(api_key, base_id, "");
         let mapping = mapping.clone();
-        Self { airtable, mapping }
+        Self {
+            airtable,
+            mapping,
+            enabled,
+        }
     }
 
     pub async fn watchlist(&self) -> Result<Vec<Record<WatchList>>> {
-        let watchlist_table = match self.mapping.get(&WATCHLIST.to_string()) {
-            Some(table) => Ok(table),
-            None => Err(anyhow::anyhow!(
-                "Please define which table will be {}",
-                WATCHLIST
-            )),
-        }?;
+        if self.enabled {
+            let watchlist_table = match self.mapping.get(&WATCHLIST.to_string()) {
+                Some(table) => Ok(table),
+                None => Err(anyhow::anyhow!(
+                    "Please define which table will be {}",
+                    WATCHLIST
+                )),
+            }?;
 
-        self.airtable
-            .list_records(
-                watchlist_table.as_str(),
-                "Watch",
-                vec!["Symbol", "OrderFlow"],
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to fetch WatchList from Airtable: {}", e))
+            self.airtable
+                .list_records(
+                    watchlist_table.as_str(),
+                    "Watch",
+                    vec!["Symbol", "OrderFlow"],
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to fetch WatchList from Airtable: {}", e))
+        } else {
+            Ok(Vec::new())
+        }
     }
 
     pub async fn cronjob(&self) -> Result<Vec<Record<Cronjob>>> {
-        let cronjob_table = match self.mapping.get(&CRONJOB.to_string()) {
-            Some(table) => Ok(table),
-            None => Err(anyhow::anyhow!(
-                "Please define which table will be {}",
-                CRONJOB
-            )),
-        }?;
+        if self.enabled {
+            let cronjob_table = match self.mapping.get(&CRONJOB.to_string()) {
+                Some(table) => Ok(table),
+                None => Err(anyhow::anyhow!(
+                    "Please define which table will be {}",
+                    CRONJOB
+                )),
+            }?;
 
-        self.airtable
-            .list_records(
-                cronjob_table.as_str(),
-                "Cron",
-                vec!["Crontime", "Route", "Timeout", "Fuzzy"],
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to fetch Cronjobs from Airtable: {}", e))
+            self.airtable
+                .list_records(
+                    cronjob_table.as_str(),
+                    "Cron",
+                    vec!["Crontime", "Route", "Timeout", "Fuzzy"],
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to fetch Cronjobs from Airtable: {}", e))
+        } else {
+            Ok(Vec::new())
+        }
     }
 }
