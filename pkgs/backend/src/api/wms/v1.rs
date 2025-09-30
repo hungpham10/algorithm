@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use actix_web::web::{Data, Json, Path, Query};
 use actix_web::{HttpResponse, Result};
 
@@ -129,7 +131,7 @@ pub struct ErrorResponse {
 
 // Route Handlers
 pub async fn list_stocks(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     query: Query<QueryPagingInput>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
@@ -172,7 +174,7 @@ pub async fn list_stocks(
 }
 
 pub async fn create_stocks(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     stocks: Json<Vec<Stock>>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
@@ -213,7 +215,7 @@ pub async fn create_stocks(
 }
 
 pub async fn get_stock(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     path: Path<(i32,)>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
@@ -239,7 +241,7 @@ pub async fn get_stock(
 }
 
 pub async fn list_lots(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     query: Query<QueryPagingInput>,
     path: Path<(i32,)>,
     headers: WmsHeaders,
@@ -290,7 +292,7 @@ pub async fn list_lots(
 }
 
 pub async fn create_lots(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     lots: Json<Vec<Lot>>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
@@ -331,7 +333,7 @@ pub async fn create_lots(
 }
 
 pub async fn get_lot(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     path: Path<(i32,)>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
@@ -357,7 +359,7 @@ pub async fn get_lot(
 }
 
 pub async fn list_shelves(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     query: Query<QueryPagingInput>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
@@ -408,7 +410,7 @@ pub async fn list_shelves(
 }
 
 pub async fn list_stocks_in_shelf(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     query: Query<QueryPagingInput>,
     path: Path<(i32,)>,
     headers: WmsHeaders,
@@ -459,7 +461,7 @@ pub async fn list_stocks_in_shelf(
 }
 
 pub async fn create_shelves(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     shelves: Json<Vec<Shelf>>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
@@ -496,7 +498,7 @@ pub async fn create_shelves(
 }
 
 pub async fn plan_item_for_new_lot(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     plan: Json<Vec<Stock>>,
     path: Path<i32>,
     headers: WmsHeaders,
@@ -579,7 +581,7 @@ pub async fn plan_item_for_new_lot(
 }
 
 pub async fn import_item_to_warehouse(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     items: Json<Vec<Item>>,
     path: Path<i32>,
     headers: WmsHeaders,
@@ -622,7 +624,7 @@ pub async fn import_item_to_warehouse(
 }
 
 pub async fn assign_item_to_shelf(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     items: Json<Vec<Item>>,
     path: Path<i32>,
     headers: WmsHeaders,
@@ -666,7 +668,7 @@ pub async fn assign_item_to_shelf(
 
 pub async fn get_item_by_barcode(
     path: Path<String>,
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
     let barcode = path.into_inner();
@@ -694,7 +696,7 @@ pub async fn get_item_by_barcode(
 }
 
 pub async fn process_offline_sale(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     sale: Json<Sale>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
@@ -725,7 +727,7 @@ pub async fn process_offline_sale(
 }
 
 pub async fn process_online_sale(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     sale: Json<Sale>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
@@ -755,26 +757,26 @@ pub async fn process_online_sale(
     }
 }
 
-pub async fn sync_data(appstate: Data<AppState>) -> Result<HttpResponse> {
+pub async fn sync_data(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
     Ok(HttpResponse::InternalServerError().body("not implemented"))
 }
 
 pub async fn get_near_expiry(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     query: Query<QueryPagingInput>,
 ) -> Result<HttpResponse> {
     Ok(HttpResponse::InternalServerError().body("not implemented"))
 }
 
 pub async fn get_outdated(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     query: Query<QueryPagingInput>,
 ) -> Result<HttpResponse> {
     Ok(HttpResponse::InternalServerError().body("not implemented"))
 }
 
 pub async fn get_high_turnover(
-    appstate: Data<AppState>,
+    appstate: Data<Arc<AppState>>,
     query: Query<QueryPagingInput>,
 ) -> Result<HttpResponse> {
     Ok(HttpResponse::InternalServerError().body("not implemented"))

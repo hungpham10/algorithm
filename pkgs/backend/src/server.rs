@@ -138,7 +138,7 @@ pub async fn run() -> std::io::Result<()> {
             // @NOTE: APIs of WMS
             .service(
                 scope("/api/ecommerce")
-                    .route("/v1/wms/stock", get().to(crate::api::wms::v1::list_stocks))
+                    .route("/v1/wms/stocks", get().to(crate::api::wms::v1::list_stocks))
                     .route(
                         "/v1/wms/stocks",
                         post().to(crate::api::wms::v1::create_stocks),
