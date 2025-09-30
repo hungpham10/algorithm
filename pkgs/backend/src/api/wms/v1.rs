@@ -11,10 +11,15 @@ use crate::entities::wms::{Item, Lot, Sale, Shelf, Stock};
 
 use super::WmsHeaders;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 pub struct QueryPagingInput {
+    #[serde(default)]
     include_details: Option<bool>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     after: Option<i32>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     limit: Option<u64>,
 }
 
