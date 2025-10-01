@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use actix_web::error::ErrorInternalServerError;
 use actix_web::web::{Data, Json};
-use actix_web::{HttpResponse, Result};
+use actix_web::{Error, HttpResponse, Result};
 
 use serde::{Deserialize, Serialize};
 
@@ -53,9 +53,14 @@ pub async fn receive_message(
                         .await
                     {
                         Ok(Some(sender_id)) => {
-                            send_message(&appstate, &sender_id, &text).await?;
+                            send_message(&appstate, &sender_id, &text)
+                                .await
+                                .map_err(|error| do_send_message_falure(error))?
+                            // @TODO: store message to parquet in S3
                         }
-                        Ok(None) => {}
+                        Ok(None) => {
+                            // @TODO: maybe this is command from CSKH
+                        }
                         Err(error) => {
                             return Err(ErrorInternalServerError(format!(
                                 "Fail to get sender.id: {}",
@@ -69,6 +74,10 @@ pub async fn receive_message(
 
         Ok(HttpResponse::Ok().finish())
     } else {
-        Ok(HttpResponse::InternalServerError().body(format!("Not implemented")))
+        Err(ErrorInternalServerError("Not implemented"))
     }
+}
+
+fn do_send_message_falure(error: Error) -> Error {
+    error
 }

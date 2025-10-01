@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use actix_web::error::ErrorInternalServerError;
+use actix_web::error::{ErrorForbidden, ErrorInternalServerError, ErrorNotFound};
 use actix_web::web::{Bytes, Data, Query};
 use actix_web::{HttpRequest, HttpResponse, Result};
 
@@ -103,7 +103,7 @@ pub async fn receive_message(
 
             let actual = format!("sha256={}", hex::encode(mac.finalize().into_bytes()));
             if actual != signature {
-                return Ok(HttpResponse::Forbidden().body("Invalid signature"));
+                return Err(ErrorForbidden("Invalid signature"));
             }
         }
 
@@ -167,9 +167,9 @@ pub async fn receive_message(
 
             Ok(HttpResponse::Ok().body("EVENT_RECEIVED"))
         } else {
-            Ok(HttpResponse::NotFound().body("Invalid payload"))
+            Err(ErrorNotFound("Invalid payload"))
         }
     } else {
-        Ok(HttpResponse::InternalServerError().body(format!("Not implemented")))
+        Err(ErrorInternalServerError("Not implemented"))
     }
 }
