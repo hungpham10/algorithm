@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS  `wms_lots` (
   `supplier` varchar(255),
   `entry_date` timestamp NOT NULL DEFAULT (now()),
   `cost_price` DOUBLE,
-  `status` varchar(50) DEFAULT 'available',
+  `status` integer DEFAULT 0,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -24,8 +24,11 @@ CREATE TABLE IF NOT EXISTS  `wms_lots` (
 CREATE TABLE IF NOT EXISTS  `wms_stock_entries` (
   `id` integer PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` integer NOT NULL,
+  `stock_id` integer NOT NULL,
   `lot_id` integer NOT NULL,
   `quantity` integer NOT NULL,
+  `status` integer NOT NULL,
+  `expired_at` TIMESTAMP,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
