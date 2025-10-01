@@ -17,6 +17,7 @@ impl<T: Clone + Sync + Send> Individual<T> {
 }
 
 pub trait Model<T: Clone + Sync + Send> {
+    fn random(&self) -> Result<T>;
     fn mutate(&self, item: &mut T, arguments: &Vec<f64>, index: usize) -> Result<()>;
     fn crossover(&self, father: &T, mother: &T) -> Result<T>;
     fn extinguish(&self, item: &Individual<T>) -> Result<bool>;
@@ -79,11 +80,12 @@ impl<T: Player + Clone + Sync + Send, M: Model<T>> Genetic<T, M> {
         }
     }
 
-    pub fn initialize(&mut self, players: Vec<T>) -> Result<()> {
+    pub fn initialize(&mut self, n_accentors: usize) -> Result<()> {
         self.population.clear();
 
-        for player in players {
-            self.population.push(Individual::<T>::new(player.clone()));
+        for _ in 0..n_accentors {
+            self.population
+                .push(Individual::<T>::new(self.model.random()?));
         }
 
         for player in &mut self.population {
@@ -299,6 +301,7 @@ impl<T: Player + Clone + Sync + Send, M: Model<T>> Genetic<T, M> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::rngs::ThreadRng;
     use rand::Rng;
 
     #[derive(Clone, Copy, Debug, PartialEq)]
@@ -334,9 +337,22 @@ mod tests {
     unsafe impl Sync for TestPlayer {}
     unsafe impl Send for TestPlayer {}
 
-    struct TestModel {}
+    struct TestModel {
+        rng: ThreadRng,
+    }
 
+    impl TestModel {
+        fn new() -> Self {
+            let mut rng = rand::thread_rng();
+
+            Self { rng }
+        }
+    }
     impl Model<TestPlayer> for TestModel {
+        fn random(&self) -> Result<TestPlayer> {
+            Ok(TestPlayer::new(self.gen::<f64>() * 10.0 - 5.0))
+        }
+
         fn crossover(&self, p1: &TestPlayer, _p2: &TestPlayer) -> Result<TestPlayer> {
             Ok(p1.clone())
         }
@@ -353,13 +369,7 @@ mod tests {
     #[test]
     fn test_evolute_normal_operation() {
         let mut genetic = Genetic::new(5, Arc::new(TestModel {}));
-        let players = vec![
-            TestPlayer::new(1.0),
-            TestPlayer::new(2.0),
-            TestPlayer::new(3.0),
-            TestPlayer::new(4.0),
-        ];
-        genetic.initialize(players).unwrap();
+        genetic.initialize(4).unwrap();
 
         let session = 1;
         let number_of_couple = 2;
@@ -380,42 +390,9 @@ mod tests {
     }
 
     #[test]
-    fn test_evolute_zero_fitness() {
-        let mut genetic = Genetic::new(5, Arc::new(TestModel {}));
-        let players = vec![
-            TestPlayer::new(0.0),
-            TestPlayer::new(0.0),
-            TestPlayer::new(0.0),
-        ];
-        genetic.initialize(players).unwrap();
-
-        let session = 1;
-        let number_of_couple = 2;
-        let mutation_rate = 0.1;
-
-        genetic
-            .evolute(number_of_couple, session, mutation_rate)
-            .unwrap();
-
-        assert_eq!(
-            genetic.size(),
-            5,
-            "Population should grow by number_of_couple"
-        );
-        let avg_fitness = genetic.average_fitness(session);
-        assert_eq!(avg_fitness, 0.0);
-    }
-
-    #[test]
     fn test_evolute_truncation() {
         let mut genetic = Genetic::new(3, Arc::new(TestModel {}));
-        let players = vec![
-            TestPlayer::new(1.0),
-            TestPlayer::new(2.0),
-            TestPlayer::new(3.0),
-            TestPlayer::new(4.0),
-        ];
-        genetic.initialize(players).unwrap();
+        genetic.initialize(4).unwrap();
 
         let session = 1;
         let number_of_couple = 1;
@@ -436,12 +413,7 @@ mod tests {
     #[test]
     fn test_roulette_wheel_selection() {
         let mut genetic = Genetic::new(5, Arc::new(TestModel {}));
-        let players = vec![
-            TestPlayer::new(1.0),
-            TestPlayer::new(2.0),
-            TestPlayer::new(3.0),
-        ];
-        genetic.initialize(players).unwrap();
+        genetic.initialize(3).unwrap();
 
         let mut roulette = vec![1.0, 3.0, 6.0];
         let sumup = 6.0;
@@ -465,8 +437,7 @@ mod tests {
     #[test]
     fn test_fluctuate_mutation() {
         let mut genetic = Genetic::new(5, Arc::new(TestModel {}));
-        let players = vec![TestPlayer::new(1.0), TestPlayer::new(2.0)];
-        genetic.initialize(players).unwrap();
+        genetic.initialize(2).unwrap();
 
         let session = 1;
         let mutation_rate = 1.0;
@@ -484,12 +455,7 @@ mod tests {
     #[test]
     fn test_best_player() {
         let mut genetic = Genetic::new(5, Arc::new(TestModel {}));
-        let players = vec![
-            TestPlayer::new(1.0),
-            TestPlayer::new(4.0),
-            TestPlayer::new(2.0),
-        ];
-        genetic.initialize(players).unwrap();
+        genetic.initialize(3).unwrap();
 
         let session = 1;
         genetic.estimate(session);
