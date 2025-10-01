@@ -313,6 +313,7 @@ pub async fn create_lots(
                         .map(|(i, &id)| Lot {
                             id: Some(id),
                             entry_date: lots[i].entry_date.clone(),
+                            expired_date: None,
                             cost_price: lots[i].cost_price.clone(),
                             status: lots[i].status.clone(),
                             supplier: lots[i].supplier.clone(),
