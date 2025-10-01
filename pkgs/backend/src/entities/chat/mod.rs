@@ -1,7 +1,6 @@
 mod threads;
 use threads::Entity as Threads;
 
-use log::info;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QuerySelect, RuntimeErr, Set,
 };
