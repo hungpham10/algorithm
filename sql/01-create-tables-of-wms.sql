@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS  `wms_stock_shelves` (
   `stock_id` integer NOT NULL,
   `shelf_id` integer NOT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS  `wms_sales` (
@@ -101,8 +101,8 @@ CREATE TABLE IF NOT EXISTS  `wms_items` (
   `tenant_id` integer NOT NULL,
   `stock_id` integer NOT NULL,
   `lot_id` integer NOT NULL,
-  `shelf_id` integer NOT NULL,
-  `order_id` integer NOT NULL,
+  `shelf_id` integer,
+  `order_id` integer,
   `assigned_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `expired_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
