@@ -1,7 +1,6 @@
 mod threads;
 use threads::Entity as Threads;
 
-use log::info;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QuerySelect, RuntimeErr, Set,
 };
@@ -9,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 pub struct Chat {
-    db: Arc<DatabaseConnection>,
+    db: Vec<Arc<DatabaseConnection>>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -20,8 +19,12 @@ pub struct Thread {
 }
 
 impl Chat {
-    pub fn new(db: Arc<DatabaseConnection>) -> Self {
+    pub fn new(db: Vec<Arc<DatabaseConnection>>) -> Self {
         Self { db }
+    }
+
+    fn dbt(&self, tenant_id: i32) -> &DatabaseConnection {
+        self.db[(tenant_id as usize) % self.db.len()].as_ref()
     }
 
     pub async fn get_thread_by_sender_id(
@@ -35,7 +38,7 @@ impl Chat {
             .filter(threads::Column::TenantId.eq(tenant_id))
             .filter(threads::Column::SourceId.eq(sender_id))
             .into_tuple::<String>()
-            .one(self.db.as_ref())
+            .one(self.dbt(tenant_id))
             .await;
         match thread_id {
             Ok(thread_id) => {
@@ -60,7 +63,7 @@ impl Chat {
             .filter(threads::Column::TenantId.eq(tenant_id))
             .filter(threads::Column::ThreadId.eq(thread_id))
             .into_tuple::<String>()
-            .one(&*self.db)
+            .one(self.dbt(tenant_id))
             .await?;
         if let Some(sender_id) = sender_id {
             Ok(Some(sender_id))
@@ -78,7 +81,9 @@ impl Chat {
             ..Default::default()
         };
 
-        Threads::insert(thread_model).exec(&*self.db).await?;
+        Threads::insert(thread_model)
+            .exec(self.dbt(tenant_id))
+            .await?;
         Ok(())
     }
 }

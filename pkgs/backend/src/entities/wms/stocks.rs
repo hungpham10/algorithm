@@ -9,7 +9,6 @@ pub struct Model {
     pub id: i32,
     pub tenant_id: i32,
     pub name: String,
-    pub quantity: i32,
     pub unit: String,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
