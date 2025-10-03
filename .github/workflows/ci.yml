@@ -108,6 +108,36 @@ jobs:
           make setup
           make test # This target should handle setup, build, install, and pytest
 
+      - name: Generate Rust coverage report
+        working-directory: ./pkgs/backend
+        run: |
+          cargo install cargo-tarpaulin
+          cargo tarpaulin --out Cobertura --output-dir ../../coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/cobertura.xml
+
+  sonarqube:
+    name: SonarQube
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
   build_publish_dev:
     name: Build and Publish Dev Version (via Makefile) # Updated name
     runs-on: ${{ matrix.os }}
