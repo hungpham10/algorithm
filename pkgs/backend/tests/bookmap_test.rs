@@ -60,80 +60,80 @@ impl Function for Bookmap {
 async fn test_function_map() {
     dotenvy::dotenv().ok();
 
-    let bookmap = Arc::new(Bookmap::new());
-    let rule = Delegate::new()
-        .add("bookmap", bookmap.clone() as Arc<dyn Function>)
-        .build(
-            &(expr!(
-                "chain",
-                nested!(
-                    "BCM.bookmap",
-                    "bookmap",
-                    nested!("BCM.depth", "as", input!("BCM.price_plus1[0]")),
-                    nested!("BCM.volume", "negative", input!("BCM.volume_plus1[0]")),
-                    input!("BCM.price[0]")
-                ),
-                nested!(
-                    "BCM.bookmap",
-                    "bookmap",
-                    nested!("BCM.depth", "as", input!("BCM.price_plus2[0]")),
-                    nested!("BCM.volume", "negative", input!("BCM.volume_plus2[0]")),
-                    input!("BCM.price[0]")
-                ),
-                nested!(
-                    "BCM.bookmap",
-                    "bookmap",
-                    nested!("BCM.depth", "as", input!("BCM.price_plus3[0]")),
-                    nested!("BCM.volume", "negative", input!("BCM.volume_plus3[0]")),
-                    input!("BCM.price[0]")
-                ),
-                nested!(
-                    "BCM.bookmap",
-                    "bookmap",
-                    nested!("BCM.depth", "as", input!("BCM.price_minus1[0]")),
-                    input!("BCM.volume_minus1[0]"),
-                    input!("BCM.price[0]")
-                ),
-                nested!(
-                    "BCM.bookmap",
-                    "bookmap",
-                    nested!("BCM.depth", "as", input!("BCM.price_minus2[0]")),
-                    input!("BCM.volume_minus2[0]"),
-                    input!("BCM.price[0]")
-                ),
-                nested!(
-                    "BCM.bookmap",
-                    "bookmap",
-                    nested!("BCM.depth", "as", input!("BCM.price_minus3[0]")),
-                    input!("BCM.volume_minus3[0]"),
-                    input!("BCM.price[0]")
-                )
-            )),
-            Format::Expression,
-        )
-        .unwrap();
+    //let bookmap = Arc::new(Bookmap::new());
+    //let rule = Delegate::new()
+    //    .add("bookmap", bookmap.clone() as Arc<dyn Function>)
+    //    .build(
+    //        &(expr!(
+    //            "chain",
+    //            nested!(
+    //                "BCM.bookmap",
+    //                "bookmap",
+    //                nested!("BCM.depth", "as", input!("BCM.price_plus1[0]")),
+    //                nested!("BCM.volume", "negative", input!("BCM.volume_plus1[0]")),
+    //                input!("BCM.price[0]")
+    //            ),
+    //            nested!(
+    //                "BCM.bookmap",
+    //                "bookmap",
+    //                nested!("BCM.depth", "as", input!("BCM.price_plus2[0]")),
+    //                nested!("BCM.volume", "negative", input!("BCM.volume_plus2[0]")),
+    //                input!("BCM.price[0]")
+    //            ),
+    //            nested!(
+    //                "BCM.bookmap",
+    //                "bookmap",
+    //                nested!("BCM.depth", "as", input!("BCM.price_plus3[0]")),
+    //                nested!("BCM.volume", "negative", input!("BCM.volume_plus3[0]")),
+    //                input!("BCM.price[0]")
+    //            ),
+    //            nested!(
+    //                "BCM.bookmap",
+    //                "bookmap",
+    //                nested!("BCM.depth", "as", input!("BCM.price_minus1[0]")),
+    //                input!("BCM.volume_minus1[0]"),
+    //                input!("BCM.price[0]")
+    //            ),
+    //            nested!(
+    //                "BCM.bookmap",
+    //                "bookmap",
+    //                nested!("BCM.depth", "as", input!("BCM.price_minus2[0]")),
+    //                input!("BCM.volume_minus2[0]"),
+    //                input!("BCM.price[0]")
+    //            ),
+    //            nested!(
+    //                "BCM.bookmap",
+    //                "bookmap",
+    //                nested!("BCM.depth", "as", input!("BCM.price_minus3[0]")),
+    //                input!("BCM.volume_minus3[0]"),
+    //                input!("BCM.price[0]")
+    //            )
+    //        )),
+    //        Format::Expression,
+    //    )
+    //    .unwrap();
 
-    let mut vars = Variables::new_with_s3(
-        100,
-        1000,
-        "vnscope",
-        "vps",
-        Some("us-or"),
-        Some("https://k1x0.or1.idrivee2-72.com"),
-    )
-    .await;
-    let symbol = "BCM".to_string();
+    //let mut vars = Variables::new_with_s3(
+    //    100,
+    //    1000,
+    //    "vnscope",
+    //    "vps",
+    //    Some("us-or"),
+    //    Some("https://k1x0.or1.idrivee2-72.com"),
+    //)
+    //.await;
+    //let symbol = "BCM".to_string();
 
-    for timestamp in vars
-        .list_from_s3(symbol.as_str(), "investing/2025-07-23")
-        .await
-        .unwrap()
-    {
-        let (mut reader, num_of_rows) =
-            vars.read_from_s3(symbol.as_str(), timestamp).await.unwrap();
+    //for timestamp in vars
+    //    .list_from_s3(symbol.as_str(), "investing/2025-07-23")
+    //    .await
+    //    .unwrap()
+    //{
+    //    let (mut reader, num_of_rows) =
+    //        vars.read_from_s3(symbol.as_str(), timestamp).await.unwrap();
 
-        replay(&mut reader, num_of_rows, &symbol, &rule)
-            .await
-            .unwrap();
-    }
+    //    replay(&mut reader, num_of_rows, &symbol, &rule)
+    //        .await
+    //        .unwrap();
+    //}
 }

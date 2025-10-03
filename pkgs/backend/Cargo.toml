@@ -128,6 +128,10 @@ assets = [
 ]
 maintainer-scripts = "debian/"
 
+[profile.dev]
+opt-level = 0               # Use slightly better optimizations.
+overflow-checks = false     # Disable integer overflow checks.
+
 [profile.release]
 opt-level = 3          # tối ưu tốc độ (O3)
 lto = "fat"            # link-time optimization đầy đủ
