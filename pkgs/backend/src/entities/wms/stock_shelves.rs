@@ -10,6 +10,7 @@ pub struct Model {
     pub tenant_id: i32,
     pub stock_id: i32,
     pub shelf_id: i32,
+    pub quantity: i32,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

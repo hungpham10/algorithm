@@ -7,7 +7,7 @@ pub mod genetic;
 pub mod heap;
 pub mod kmean;
 pub mod lru;
-pub mod markov;
+//pub mod markov;
 
 pub use binarysearch::*;
 pub use math::*;
