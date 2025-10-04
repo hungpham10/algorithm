@@ -34,7 +34,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_VERSION }}
-          components: clippy, rustfmt # Keep this, it's good practice
+          components: clippy, rustfmt, llvm-tools
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -332,6 +332,7 @@ jobs:
       - name: Build .deb package
         working-directory: ./pkgs/backend
         run: |
+          cargo install cargo-deb
           cargo build --release
           cargo deb
 
