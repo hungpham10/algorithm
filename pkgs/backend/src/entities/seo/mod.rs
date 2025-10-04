@@ -14,7 +14,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 pub struct Seo {
-    db: Arc<DatabaseConnection>,
+    db: Vec<Arc<DatabaseConnection>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -26,8 +26,12 @@ pub struct Site {
 }
 
 impl Seo {
-    pub fn new(db: Arc<DatabaseConnection>) -> Self {
+    pub fn new(db: Vec<Arc<DatabaseConnection>>) -> Self {
         Self { db }
+    }
+
+    fn dbt(&self, tenant_id: i32) -> &DatabaseConnection {
+        self.db[(tenant_id as usize) % self.db.len()].as_ref()
     }
 
     pub async fn get_tenant_id(&self, host: &String) -> Result<i32, DbErr> {
@@ -36,7 +40,7 @@ impl Seo {
             .select_only()
             .column(tenant::Column::Id)
             .into_tuple::<i32>()
-            .one(&*self.db)
+            .one(self.dbt(0))
             .await?
         {
             Some(id) => Ok(id),
@@ -56,7 +60,7 @@ impl Seo {
             .column(sitemap::Column::Priority)
             .column(sitemap::Column::CreatedAt)
             .into_tuple::<(String, String, f64, DateTime<Utc>)>()
-            .all(&*self.db)
+            .all(self.dbt(tenant_id))
             .await?
             .iter()
             .map(|(loc, freq, priority, lastmod)| Site {

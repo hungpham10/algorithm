@@ -10,6 +10,7 @@ pub struct Model {
     pub tenant_id: i32,
     pub stock_id: i32,
     pub lot_id: i32,
+    pub shelf_id: Option<i32>,
     pub order_id: Option<i32>,
     pub expired_at: Option<DateTimeUtc>,
     pub created_at: DateTimeUtc,

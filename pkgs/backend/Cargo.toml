@@ -13,6 +13,10 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [features]
+sharding = [
+	"default",
+	"sea-query",
+]
 python = ["pyo3", "pyo3-asyncio", "pyo3-polars", "polars", "numpy"]
 bff = ["default"]
 crawl = [

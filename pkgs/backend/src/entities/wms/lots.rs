@@ -14,7 +14,7 @@ pub struct Model {
     pub entry_date: DateTimeUtc,
     #[sea_orm(column_type = "Double", nullable)]
     pub cost_price: Option<f64>,
-    pub status: Option<String>,
+    pub status: Option<i32>,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

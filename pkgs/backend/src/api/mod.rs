@@ -264,23 +264,25 @@ impl AppState {
                 .await),
         );
 
+        // @TODO: implement new flow to open multiple db connection pool
+        //        to support sharding in multiple instances
         let ohcl_entity = match db {
             Some(ref db) => Some(entities::ohcl::Ohcl::new(db.clone())),
             None => None,
         };
 
         let wms_entity = match db {
-            Some(ref db) => Some(entities::wms::Wms::new(db.clone())),
+            Some(ref db) => Some(entities::wms::Wms::new(vec![db.clone()])),
             None => None,
         };
 
         let seo_entity = match db {
-            Some(ref db) => Some(entities::seo::Seo::new(db.clone())),
+            Some(ref db) => Some(entities::seo::Seo::new(vec![db.clone()])),
             None => None,
         };
 
         let chat_entity = match db {
-            Some(ref db) => Some(entities::chat::Chat::new(db.clone())),
+            Some(ref db) => Some(entities::chat::Chat::new(vec![db.clone()])),
             None => None,
         };
 
