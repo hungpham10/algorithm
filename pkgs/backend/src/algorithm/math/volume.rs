@@ -333,15 +333,31 @@ mod tests {
             },
         ];
 
+        // Calculate with volume profile
+        let mut vp1_1 = VolumeProfile::new();
+        vp1_1.calculate(&candles, 10, 0, 24).unwrap();
+
+        // Another way to calculate volume profile
+        let vp2_1 = VolumeProfile::new_from_candles(&candles, 10, 0, 24).unwrap();
+
         // Test với overlap_days = 0 (tính toàn bộ dataset)
         let (volumes_all, levels_all) =
             VolumeProfile::cumulate_volume_profile(&candles, 10, 0, 24).unwrap();
         println!("All data volume profile: {:?}", volumes_all);
         assert_eq!(volumes_all.len(), 1); // Chỉ có 1 profile cho toàn bộ data
+        assert_eq!(volumes_all.len(), vp1_1.heatmap().len());
+        assert_eq!(volumes_all.len(), vp2_1.heatmap().len());
 
         // Test với overlap_days = 2 (sliding window theo ngày)
         let (volumes, levels) =
             VolumeProfile::cumulate_volume_profile(&candles, 10, 2, 24).unwrap();
+
+        // Calculate with volume profile
+        let mut vp1_2 = VolumeProfile::new();
+        vp1_2.calculate(&candles, 10, 2, 24).unwrap();
+
+        // Another way to calculate volume profile
+        let vp2_2 = VolumeProfile::new_from_candles(&candles, 10, 2, 24).unwrap();
 
         println!("Number of windows: {}", volumes.len());
         println!("Price levels: {:?}", levels);
@@ -350,5 +366,7 @@ mod tests {
         }
 
         assert_eq!(volumes.len(), 2); // Có 2 windows: ngày [1,2] và ngày [2,3]
+        assert_eq!(volumes.len(), vp1_2.heatmap().len());
+        assert_eq!(volumes.len(), vp2_2.heatmap().len());
     }
 }
