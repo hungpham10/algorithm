@@ -24,11 +24,11 @@ setup:
     			&& rm libtorch.zip;														\
 	fi
 lint:
-	export PATH="$$HOME/.cargo/bin:$$PATH"  && 													\
-	cd $(BACKEND_DIR) 			&& 													\
-	rustup component add clippy rustfmt 	&& 													\
-	$(CARGO) clippy --features python --lib	&& 													\
-	$(CARGO) clippy 			&& 													\
+	export PATH="$$HOME/.cargo/bin:$$PATH"  	&& 												\
+	cd $(BACKEND_DIR) 				&& 												\
+	rustup component add clippy rustfmt llvm-tools 	&& 												\
+	$(CARGO) clippy --features python --lib		&& 												\
+	$(CARGO) clippy 				&& 												\
 	$(CARGO) fmt --all -- --check
 
 library:
@@ -39,7 +39,7 @@ library:
 	if grep -q "^version" Cargo.toml; then 														\
 		maturin build --release --features python --no-default-features 									\
 		--out dist && 																\
-		cp dist/*.whl ../../$(DIST_DIR)/; 														\
+		cp dist/*.whl ../../$(DIST_DIR)/; 													\
 	else 																		\
 		echo "Missing version in Cargo.toml"; 													\
 		exit 1; 																\
@@ -50,7 +50,7 @@ server:
 	@echo "Building release version $(VERSION)"
 	@mkdir -p $(DIST_DIR)
 	export PATH="$$HOME/.cargo/bin:$$PATH" &&													\
-	$(CARGO) build --release
+ 	$(CARGO) build --release
 
 client:
 	@echo "Building release version $(VERSION)"
@@ -65,10 +65,15 @@ ipython:
 install: library
 	$(PYTHON) -m pip install --upgrade $(DIST_DIR)/*.whl
 
-test: library
+test-python:
 	$(PYTHON) -m pip install --upgrade $(DIST_DIR)/*.whl
 	$(PYTHON) -m pytest -xvs $(TEST_DIR)/
-	$(CARGO) test
+
+test-rust:
+	$(CARGO) install grcov cargo-llvm-cov
+	$(CARGO) llvm-cov test --lcov > lcov.info
+
+test: library test-python test-rust
 
 all: test server client library
 

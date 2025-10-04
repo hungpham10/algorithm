@@ -77,8 +77,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_VERSION }}
-          # No specific components like clippy/rustfmt needed here if not directly used by test command itself
-          # but make test -> make build -> make setup will run. The setup in Makefile installs rust if not present.
+
+      - name: Install dependencies via Makefile
+        run: make setup
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -96,9 +97,6 @@ jobs:
             ~/.cargo/git/db/
             pkgs/backend/target/
             target/
-          # Using a unified cache key for all jobs that build the Rust backend (test, build_publish_dev, build_publish_release)
-          # This allows sharing of build artifacts between these jobs if they run on the same runner.
-          # The 'lint' job uses a separate cache key as its dependencies/artifacts might differ slightly.
           key: ${{ runner.os }}-cargo-release-build-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-release-build-
@@ -107,6 +105,14 @@ jobs:
         run: |
           make setup
           make test # This target should handle setup, build, install, and pytest
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >-
+            -Dsonar.rust.lcov.reportPaths=lcov.info
 
   build_publish_dev:
     name: Build and Publish Dev Version (via Makefile) # Updated name
@@ -322,9 +328,6 @@ jobs:
           key: ${{ runner.os }}-cargo-deb-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-deb-
-
-      - name: Install cargo-deb
-        run: cargo install cargo-deb
 
       - name: Build .deb package
         working-directory: ./pkgs/backend

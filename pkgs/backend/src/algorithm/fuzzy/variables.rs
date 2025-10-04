@@ -89,7 +89,7 @@ impl Variables {
         ))
     }
 
-    pub async fn list_from_s3(&self, scope: &str, date: &str) -> Result<Vec<i64>, RuleError> {
+    pub async fn list_from_s3(&self, scope: &str, prefix: &str) -> Result<Vec<i64>, RuleError> {
         let client = self.s3_client.as_ref().ok_or_else(|| RuleError {
             message: "S3 client not initialized".to_string(),
         })?;
@@ -100,7 +100,7 @@ impl Variables {
         let response = client
             .list_objects_v2()
             .bucket(bucket)
-            .prefix(date)
+            .prefix(prefix)
             .send()
             .await
             .map_err(|e| RuleError {

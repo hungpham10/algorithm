@@ -116,16 +116,16 @@ async fn test_function_map() {
     let mut vars = Variables::new_with_s3(
         100,
         1000,
-        "vnscope",
+        "website",
         "vps",
-        Some("us-or"),
-        Some("https://k1x0.or1.idrivee2-72.com"),
+        Some("eu-fra"),
+        Some("https://o5u3.fra3.idrivee2-52.com"),
     )
     .await;
     let symbol = "BCM".to_string();
 
     for timestamp in vars
-        .list_from_s3(symbol.as_str(), "investing/2025-07-23")
+        .list_from_s3(symbol.as_str(), "investing/2025-09-01")
         .await
         .unwrap()
     {
