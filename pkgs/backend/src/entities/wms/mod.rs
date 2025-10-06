@@ -837,7 +837,7 @@ impl Wms {
                 .column_as(lots::Column::CostPrice, "cost_price")
                 .column_as(lots::Column::Status, "lot_status")
                 .column_as(lots::Column::Supplier, "lot_supplier")
-                .column_as(lots::Column::Quantity, "lot_quantity")
+                .column_as(stock_entries::Column::Quantity, "stock_entry_quantity")
                 .join_rev(
                     JoinType::InnerJoin,
                     stocks::Entity::belongs_to(StockShelves)
@@ -897,7 +897,7 @@ impl Wms {
                 cost_price,
                 lot_status,
                 lot_supplier,
-                lot_quantity,
+                stock_entry_quantity,
             ) in rows
             {
                 let entry = stock_map.entry(id).or_insert_with(|| {
@@ -925,12 +925,12 @@ impl Wms {
                     ),
                     supplier: lot_supplier.clone(),
                     lot_number,
-                    quantity: lot_quantity,
+                    quantity: stock_entry_quantity,
                 };
                 entry.3.push(lot);
 
-                entry.4 += lot_quantity as i64;
-                entry.5 += (lot_quantity as f64) * cost_price;
+                entry.4 += stock_entry_quantity as i64;
+                entry.5 += (stock_entry_quantity as f64) * cost_price;
             }
 
             let mut list_ret_stocks = Vec::new();
@@ -1118,8 +1118,8 @@ impl Wms {
                     Condition::all()
                         .add(stock_shelves::Column::TenantId.eq(tenant_id))
                         .add(stock_shelves::Column::ShelfId.eq(shelf_id))
-                        .add(stocks::Column::Id.gt(after))
-                        .add(shelves::Column::Publish.eq(Some(1))),
+                        .add(shelves::Column::Publish.eq(true))
+                        .add(stocks::Column::Id.gt(after)),
                 )
                 .limit(limit)
                 .join_rev(
@@ -1127,6 +1127,13 @@ impl Wms {
                     stock_shelves::Entity::belongs_to(Stocks)
                         .from(stock_shelves::Column::StockId)
                         .to(stocks::Column::Id)
+                        .into(),
+                )
+                .join_rev(
+                    JoinType::InnerJoin,
+                    shelves::Entity::belongs_to(StockShelves)
+                        .from(shelves::Column::Id)
+                        .to(stock_shelves::Column::ShelfId)
                         .into(),
                 )
                 .select_only()
@@ -2217,5 +2224,166 @@ mod tests {
             .unwrap();
         // May be empty if no link, but structure test
         assert!(result.is_empty() || result.len() <= 1);
+
+        let result = wms
+            .list_paginated_stocks_of_shelf(tenant_id, shelf_id, true, 0, 10)
+            .await
+            .unwrap();
+        // May be empty if no link, but structure test
+        //assert!(result.is_empty() || result.len() <= 1);
+    }
+
+    #[tokio::test]
+    async fn test_list_paginated_stocks_detailed() {
+        let db = setup_db().await.unwrap();
+        let wms = Wms::new(vec![Arc::new(db)]);
+        let tenant_id = 17;
+        // Create shelves
+        let shelves = vec![
+            Shelf {
+                id: None,
+                name: Some("Shelf A".to_string()),
+                description: None,
+            },
+            Shelf {
+                id: None,
+                name: Some("Shelf B".to_string()),
+                description: None,
+            },
+        ];
+        let shelf_ids = wms.create_shelves(tenant_id, &shelves).await.unwrap();
+        let shelf_a_id = shelf_ids[0];
+        let shelf_b_id = shelf_ids[1];
+        // Create stocks
+        let stocks = vec![
+            Stock {
+                id: None,
+                name: "Detailed Stock 1".to_string(),
+                unit: "kg".to_string(),
+                ..Default::default()
+            },
+            Stock {
+                id: None,
+                name: "Detailed Stock 2".to_string(),
+                unit: "piece".to_string(),
+                ..Default::default()
+            },
+        ];
+        let stock_ids = wms.create_stocks(tenant_id, &stocks).await.unwrap();
+        let stock1_id = stock_ids[0];
+        let stock2_id = stock_ids[1];
+        // Create lots
+        let lots = vec![
+            Lot {
+                lot_number: "LOT001".to_string(),
+                quantity: 50,
+                cost_price: Some(10.0),
+                status: Some("Available".to_string()),
+                supplier: Some("Supplier A".to_string()),
+                entry_date: Some(Utc::now()),
+                ..Default::default()
+            },
+            Lot {
+                lot_number: "LOT002".to_string(),
+                quantity: 30,
+                cost_price: Some(15.0),
+                status: Some("Available".to_string()),
+                supplier: Some("Supplier B".to_string()),
+                entry_date: Some(Utc::now()),
+                ..Default::default()
+            },
+        ];
+        let lot_ids = wms.create_lots(tenant_id, &lots).await.unwrap();
+        let lot1_id = lot_ids[0];
+        let lot2_id = lot_ids[1];
+        // Plan and import items to link everything
+        let items1 = vec![
+            Item {
+                stock_id: Some(stock1_id),
+                lot_id: Some(lot1_id),
+                cost_price: 10.0,
+                status: "plan".to_string(),
+                ..Default::default()
+            };
+            20  // Part of lot1 for stock1
+        ];
+        let created_items1 = wms.plan_import_new_items(tenant_id, &items1).await.unwrap();
+        let mut import_items1 = created_items1.clone();
+        for item in import_items1.iter_mut() {
+            item.shelf = Some("Shelf A".to_string());
+            item.status = ItemStatus::Available.to_string();
+            item.barcode = Some("BAR1".to_string());
+        }
+        wms.import_real_items(tenant_id, lot1_id, &import_items1)
+            .await
+            .unwrap();
+        wms.assign_items_to_shelf(tenant_id, shelf_a_id, &import_items1)
+            .await
+            .unwrap();
+        let items2 = vec![
+            Item {
+                stock_id: Some(stock2_id),
+                lot_id: Some(lot2_id),
+                cost_price: 15.0,
+                status: "plan".to_string(),
+                ..Default::default()
+            };
+            10  // Part of lot2 for stock2
+        ];
+        let created_items2 = wms.plan_import_new_items(tenant_id, &items2).await.unwrap();
+        let mut import_items2 = created_items2.clone();
+        for item in import_items2.iter_mut() {
+            item.shelf = Some("Shelf B".to_string());
+            item.status = ItemStatus::Available.to_string();
+            item.barcode = Some("BAR2".to_string());
+        }
+        wms.import_real_items(tenant_id, lot2_id, &import_items2)
+            .await
+            .unwrap();
+        wms.assign_items_to_shelf(tenant_id, shelf_b_id, &import_items2)
+            .await
+            .unwrap();
+        // Now list with details
+        let detailed_stocks = wms
+            .list_paginated_stocks(tenant_id, true, 0, 10)
+            .await
+            .unwrap();
+        assert_eq!(detailed_stocks.len(), 2);
+        // Check Stock 1 details
+        let stock1 = detailed_stocks
+            .iter()
+            .find(|s| s.name == "Detailed Stock 1")
+            .unwrap();
+        assert_eq!(stock1.quantity.unwrap(), 20);
+        assert_eq!(stock1.shelves.as_ref().unwrap().len(), 1);
+        assert!(stock1
+            .shelves
+            .as_ref()
+            .unwrap()
+            .contains(&"Shelf A".to_string()));
+        assert_eq!(stock1.lots.as_ref().unwrap().len(), 1);
+        let lot1_in_stock = &stock1.lots.as_ref().unwrap()[0];
+        assert_eq!(lot1_in_stock.lot_number, "LOT001");
+        assert_eq!(lot1_in_stock.quantity, 20); // Only linked items count
+        assert_eq!(lot1_in_stock.cost_price.unwrap(), 10.0);
+        assert_eq!(stock1.cost_price.unwrap(), 10.0); // Avg cost
+                                                      // Check Stock 2 details
+        let stock2 = detailed_stocks
+            .iter()
+            .find(|s| s.name == "Detailed Stock 2")
+            .unwrap();
+        assert_eq!(stock2.quantity.unwrap(), 10);
+        assert_eq!(stock2.shelves.as_ref().unwrap().len(), 1);
+        assert!(stock2
+            .shelves
+            .as_ref()
+            .unwrap()
+            .contains(&"Shelf B".to_string()));
+        assert_eq!(stock2.lots.as_ref().unwrap().len(), 1);
+        let lot2_in_stock = &stock2.lots.as_ref().unwrap()[0];
+        assert_eq!(lot2_in_stock.lot_number, "LOT002");
+        assert_eq!(lot2_in_stock.quantity, 10); // Only linked items count
+        assert_eq!(lot2_in_stock.cost_price.unwrap(), 15.0);
+        assert_eq!(stock2.cost_price.unwrap(), 15.0); // Avg cost
     }
 }

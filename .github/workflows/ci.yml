@@ -136,13 +136,18 @@ jobs:
           make setup
           make test
 
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v6
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - uses: qltysh/qlty-action/coverage@v2
         with:
-          args: >-
-            -Dsonar.rust.lcov.reportPaths=lcov.info
+          token: ${{ secrets.QLTY_COVERAGE_TOKEN }}
+          files: ./lcov.info
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5  # Latest version
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}  # Bắt buộc cho private repo
+          file: ./lcov.info
+          fail_ci_if_error: true  # Fail CI nếu upload lỗi
+          verbose: true  # Debug log
 
   build_publish_dev:
     name: Build and Publish Dev Version (via Makefile) # Updated name
@@ -362,7 +367,7 @@ jobs:
       - name: Build .deb package
         working-directory: ./pkgs/backend
         run: |
-          cargo install cargo-deb
+          cargo install --force cargo-deb
           cargo build --release
           cargo deb
 
