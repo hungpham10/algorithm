@@ -66,9 +66,35 @@ jobs:
     name: Test (via Makefile) # Updated name
     runs-on: ubuntu-22.04
     needs: [] # Assuming it runs in parallel with linA
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: 'rootroot'
+          MYSQL_PASSWORD: 'rootroot'
+          MYSQL_USER: 'mysql'
+          MYSQL_DATABASE: test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 3
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 3
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      MYSQL_DSN: mysql://mysql:rootroot@127.0.0.1:3306/test
+      REDIS_DSN: redis://127.0.0.1::6379
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -101,18 +127,27 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-release-build-
 
+      - name: Setup database for unit test
+        run: |
+          ./scripts/dataload.sh "mysql" ./sql
+
       - name: Run tests via Makefile
         run: |
           make setup
-          make test # This target should handle setup, build, install, and pytest
+          make test
 
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v6
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - uses: qltysh/qlty-action/coverage@v2
         with:
-          args: >-
-            -Dsonar.rust.lcov.reportPaths=lcov.info
+          token: ${{ secrets.QLTY_COVERAGE_TOKEN }}
+          files: ./lcov.info
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5  # Latest version
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}  # Bắt buộc cho private repo
+          file: ./lcov.info
+          fail_ci_if_error: true  # Fail CI nếu upload lỗi
+          verbose: true  # Debug log
 
   build_publish_dev:
     name: Build and Publish Dev Version (via Makefile) # Updated name
@@ -332,7 +367,7 @@ jobs:
       - name: Build .deb package
         working-directory: ./pkgs/backend
         run: |
-          cargo install cargo-deb
+          cargo install --force cargo-deb
           cargo build --release
           cargo deb
 

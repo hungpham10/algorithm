@@ -2,8 +2,17 @@ CREATE TABLE IF NOT EXISTS `wms_stocks`   (
   `id` integer PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` integer NOT NULL,
   `name` varchar(255) NOT NULL,
-  `quantity` integer NOT NULL DEFAULT 0,
   `unit` varchar(50) NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `unique_tenant_name` (`tenant_id`, `name`)
+);
+
+CREATE TABLE IF NOT EXISTS `wms_contents` (
+  `id` integer PRIMARY KEY AUTO_INCREMENT,
+  `tenant_id` integer NOT NULL,
+  `stock_id` integer NOT NULL,
+  `uname` varchar(255) NOT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -16,16 +25,20 @@ CREATE TABLE IF NOT EXISTS  `wms_lots` (
   `supplier` varchar(255),
   `entry_date` timestamp NOT NULL DEFAULT (now()),
   `cost_price` DOUBLE,
-  `status` varchar(50) DEFAULT 'available',
+  `status` integer DEFAULT 0,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `unique_tenant_lot_number` (`tenant_id`, `lot_number`)
 );
 
 CREATE TABLE IF NOT EXISTS  `wms_stock_entries` (
   `id` integer PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` integer NOT NULL,
+  `stock_id` integer NOT NULL,
   `lot_id` integer NOT NULL,
   `quantity` integer NOT NULL,
+  `status` integer NOT NULL,
+  `expired_at` TIMESTAMP,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -33,59 +46,44 @@ CREATE TABLE IF NOT EXISTS  `wms_stock_entries` (
 CREATE TABLE IF NOT EXISTS  `wms_shelves` (
   `id` integer PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` integer NOT NULL,
-  `name` varchar(255) UNIQUE NOT NULL,
+  `name` varchar(255) NOT NULL,
   `publish` BOOLEAN DEFAULT FALSE,
   `description` varchar(255),
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `unique_tenant_name` (`tenant_id`, `name`)
+);
+
+CREATE TABLE IF NOT EXISTS  `wms_stock_shelves` (
+  `id` integer AUTO_INCREMENT PRIMARY KEY,
+  `tenant_id` integer NOT NULL,
+  `stock_id` integer NOT NULL,
+  `shelf_id` integer NOT NULL,
+  `quantity` integer NOT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS  `wms_stock_shelves` (
-  `id` INT AUTO_INCREMENT PRIMARY KEY,
-  `tenant_id` INT NOT NULL,
-  `lot_id` INT NOT NULL,
-  `item_id` INT NOT NULL,
-  `shelf_id` INT NOT NULL,
-  `assigned_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_item (`item_id`)
-);
-
 CREATE TABLE IF NOT EXISTS  `wms_sales` (
-  `id` integer AUTO_INCREMENT,
+  `id` integer AUTO_INCREMENT PRIMARY KEY,
   `tenant_id` integer NOT NULL,
   `order_id` integer NOT NULL,
   `cost_price` DOUBLE NOT NULL,
-  `status` integer NOT NULL,
+  `status` integer DEFAULT 0,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `partition_at` INT AS (YEAR(created_at)*100 + MONTH(created_at)) STORED,
-  PRIMARY KEY (id, partition_at)
-) PARTITION BY RANGE (partition_at) (
-  PARTITION p202509 VALUES LESS THAN (202510),
-  PARTITION p202510 VALUES LESS THAN (202511),
-  PARTITION p202511 VALUES LESS THAN (202512),
-  PARTITION p202512 VALUES LESS THAN (202513),
-  PARTITION pMax VALUES LESS THAN MAXVALUE
+  UNIQUE KEY `unique_tenant_order_id` (`tenant_id`, `order_id`)
 );
 
 CREATE TABLE IF NOT EXISTS `wms_sale_events` (
-  `id` integer AUTO_INCREMENT,
+  `id` integer AUTO_INCREMENT PRIMARY KEY,
   `tenant_id` integer NOT NULL,
   `sale_id` integer NOT NULL,
   `stock_id` integer NOT NULL,
-  `status` integer NOT NULL,
+  `status` integer DEFAULT 0,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `partition_at` INT AS (YEAR(created_at)*100 + MONTH(created_at)) STORED,
-  PRIMARY KEY (id, partition_at)
-) PARTITION BY RANGE (partition_at) (
-  PARTITION p202509 VALUES LESS THAN (202510),
-  PARTITION p202510 VALUES LESS THAN (202511),
-  PARTITION p202511 VALUES LESS THAN (202512),
-  PARTITION p202512 VALUES LESS THAN (202513),
-  PARTITION pMax VALUES LESS THAN MAXVALUE
+  UNIQUE KEY `unique_tenant_sale_id` (`tenant_id`, `sale_id`, `stock_id`)
 );
 
 CREATE TABLE IF NOT EXISTS  `wms_items` (
@@ -93,11 +91,13 @@ CREATE TABLE IF NOT EXISTS  `wms_items` (
   `tenant_id` integer NOT NULL,
   `stock_id` integer NOT NULL,
   `lot_id` integer NOT NULL,
+  `shelf_id` integer,
   `order_id` integer,
+  `assigned_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `expired_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `status` integer NOT NULL,
+  `status` integer DEFAULT 0,
   `cost_price` DOUBLE NOT NULL,
   `barcode` varchar(255)
 );

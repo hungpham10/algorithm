@@ -3,15 +3,18 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "wms_stocks")]
+#[sea_orm(table_name = "wms_stock_entries")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
     pub tenant_id: i32,
-    pub name: String,
-    pub unit: String,
-    pub created_at: DateTimeUtc,
-    pub updated_at: DateTimeUtc,
+    pub lot_id: i32,
+    pub stock_id: i32,
+    pub quantity: i32,
+    pub status: i32,
+    pub expired_at: Option<DateTimeUtc>,
+    pub created_at: Option<DateTimeUtc>,
+    pub updated_at: Option<DateTimeUtc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

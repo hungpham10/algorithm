@@ -8,11 +8,9 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
     pub tenant_id: i32,
-    pub lot_id: i32,
-    #[sea_orm(unique)]
-    pub item_id: i32,
+    pub stock_id: i32,
     pub shelf_id: i32,
-    pub assigned_at: Option<DateTimeUtc>,
+    pub quantity: i32,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

@@ -313,6 +313,7 @@ pub async fn create_lots(
                         .map(|(i, &id)| Lot {
                             id: Some(id),
                             entry_date: lots[i].entry_date.clone(),
+                            expired_date: None,
                             cost_price: lots[i].cost_price.clone(),
                             status: lots[i].status.clone(),
                             supplier: lots[i].supplier.clone(),
@@ -551,23 +552,9 @@ pub async fn plan_item_for_new_lot(
             .plan_import_new_items(headers.tenant_id, &items)
             .await
         {
-            Ok(ids) => Ok(HttpResponse::Ok().json(WmsResponse {
+            Ok(items) => Ok(HttpResponse::Ok().json(WmsResponse {
                 items: Some(ListItemsResponse {
-                    data: ids
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &id)| Item {
-                            id: Some(id),
-                            shelf: items[i].shelf.clone(),
-                            expired_at: items[i].expired_at,
-                            lot_number: items[i].lot_number.clone(),
-                            stock_id: items[i].stock_id,
-                            lot_id: items[i].lot_id,
-                            cost_price: items[i].cost_price,
-                            status: items[i].status.clone(),
-                            barcode: items[i].barcode.clone(),
-                        })
-                        .collect::<Vec<_>>(),
+                    data: items,
                     next_after: None,
                 }),
                 ..Default::default()
