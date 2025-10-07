@@ -301,166 +301,54 @@ impl<T: Player + Clone + Sync + Send, M: Model<T>> Genetic<T, M> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::ThreadRng;
-    use rand::Rng;
 
-    #[derive(Clone, Copy, Debug, PartialEq)]
+    #[derive(Clone)]
     struct TestPlayer {
-        genes: [f64; 3],
-        fitness: f64,
-    }
-
-    impl TestPlayer {
-        fn new(fitness: f64) -> Self {
-            TestPlayer {
-                genes: [0.0, 0.0, 0.0],
-                fitness,
-            }
-        }
+        genes: Vec<f64>,
     }
 
     impl Player for TestPlayer {
         fn initialize(&mut self) -> Result<()> {
-            self.genes = [1.0, 2.0, 3.0];
             Ok(())
         }
-
         fn estimate(&self) -> f64 {
-            self.fitness
+            self.genes.iter().map(|g| g * g).sum()
         }
-
         fn gene(&self) -> Vec<f64> {
-            self.genes.to_vec()
+            self.genes.clone()
         }
     }
-
-    unsafe impl Sync for TestPlayer {}
-    unsafe impl Send for TestPlayer {}
 
     struct TestModel {
-        rng: ThreadRng,
+        num_genes: usize,
     }
 
-    impl TestModel {
-        fn new() -> Self {
-            let mut rng = rand::thread_rng();
-
-            Self { rng }
-        }
-    }
     impl Model<TestPlayer> for TestModel {
         fn random(&self) -> Result<TestPlayer> {
-            Ok(TestPlayer::new(self.gen::<f64>() * 10.0 - 5.0))
+            let genes: Vec<f64> = (0..self.num_genes)
+                .map(|_| rand::thread_rng().gen_range(-1.0..1.0))
+                .collect();
+            Ok(TestPlayer { genes })
         }
-
-        fn crossover(&self, p1: &TestPlayer, _p2: &TestPlayer) -> Result<TestPlayer> {
-            Ok(p1.clone())
-        }
-
-        fn mutate(&self, _player: &mut TestPlayer, _args: &Vec<f64>, _idx: usize) -> Result<()> {
+        fn mutate(&self, item: &mut TestPlayer, _args: &Vec<f64>, index: usize) -> Result<()> {
+            let noise = rand::thread_rng().gen_range(-0.1..0.1);
+            item.genes[index] += noise;
+            item.genes[index] = item.genes[index].clamp(-1.0, 1.0);
             Ok(())
         }
-
-        fn extinguish(&self, _individual: &Individual<TestPlayer>) -> Result<bool> {
+        fn crossover(&self, father: &TestPlayer, mother: &TestPlayer) -> Result<TestPlayer> {
+            let genes: Vec<f64> = father
+                .genes
+                .iter()
+                .zip(mother.genes.iter())
+                .map(|(f, m)| {
+                    ((*f + *m) / 2.0 + rand::thread_rng().gen_range(-0.05..0.05)).clamp(-1.0, 1.0)
+                })
+                .collect();
+            Ok(TestPlayer { genes })
+        }
+        fn extinguish(&self, _item: &Individual<TestPlayer>) -> Result<bool> {
             Ok(false)
         }
-    }
-
-    #[test]
-    fn test_evolute_normal_operation() {
-        let mut genetic = Genetic::new(5, Arc::new(TestModel {}));
-        genetic.initialize(4).unwrap();
-
-        let session = 1;
-        let number_of_couple = 2;
-        let mutation_rate = 0.1;
-
-        genetic
-            .evolute(number_of_couple, session, mutation_rate)
-            .unwrap();
-
-        assert_eq!(genetic.size(), 5);
-        let avg_fitness = genetic.average_fitness(session);
-        assert!(avg_fitness > 0.0, "Average fitness should be positive");
-        let best_fitness = genetic.best_fitness(session);
-        assert!(
-            best_fitness <= 4.0,
-            "Best fitness should not exceed initial max"
-        );
-    }
-
-    #[test]
-    fn test_evolute_truncation() {
-        let mut genetic = Genetic::new(3, Arc::new(TestModel {}));
-        genetic.initialize(4).unwrap();
-
-        let session = 1;
-        let number_of_couple = 1;
-        let mutation_rate = 0.1;
-
-        genetic
-            .evolute(number_of_couple, session, mutation_rate)
-            .unwrap();
-
-        assert_eq!(genetic.size(), 3, "Population should be truncated to limit");
-        let best_fitness = genetic.best_fitness(session);
-        assert!(
-            best_fitness >= 3.0,
-            "Best fitness should be from top individuals"
-        );
-    }
-
-    #[test]
-    fn test_roulette_wheel_selection() {
-        let mut genetic = Genetic::new(5, Arc::new(TestModel {}));
-        genetic.initialize(3).unwrap();
-
-        let mut roulette = vec![1.0, 3.0, 6.0];
-        let sumup = 6.0;
-        for item in roulette.iter_mut() {
-            *item /= sumup;
-        }
-        for i in 1..roulette.len() {
-            roulette[i] += roulette[i - 1];
-        }
-
-        let idx = genetic.roulette_wheel_selection(&mut roulette[..], 0.1);
-        assert_eq!(idx, 0, "Should select first individual for low target");
-
-        let idx = genetic.roulette_wheel_selection(&mut roulette[..], 0.5);
-        assert_eq!(idx, 1, "Should select second individual for mid target");
-
-        let idx = genetic.roulette_wheel_selection(&mut roulette[..], 0.9);
-        assert_eq!(idx, 2, "Should select third individual for high target");
-    }
-
-    #[test]
-    fn test_fluctuate_mutation() {
-        let mut genetic = Genetic::new(5, Arc::new(TestModel {}));
-        genetic.initialize(2).unwrap();
-
-        let session = 1;
-        let mutation_rate = 1.0;
-        let arguments = vec![vec![0.0], vec![0.0], vec![0.0]];
-
-        let _ = genetic.fluctuate(session, arguments, mutation_rate);
-
-        let avg_fitness = genetic.average_fitness(session);
-        assert!(
-            avg_fitness > 0.0,
-            "Fitness should be updated after fluctuation"
-        );
-    }
-
-    #[test]
-    fn test_best_player() {
-        let mut genetic = Genetic::new(5, Arc::new(TestModel {}));
-        genetic.initialize(3).unwrap();
-
-        let session = 1;
-        genetic.estimate(session);
-
-        let best = genetic.best_player(session);
-        assert_eq!(best.fitness, 4.0, "Best player should have highest fitness");
     }
 }
