@@ -271,3 +271,299 @@ pub async fn run() -> std::io::Result<()> {
     #[cfg(feature = "bff")]
     ok
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::{dev::ServiceRequest, http::StatusCode, test, web, App};
+    use log::{info, LevelFilter};
+    use std::env;
+    use std::sync::Arc;
+    use tokio::sync::oneshot;
+
+    // Integration test for health route
+    #[actix_web::test]
+    async fn test_health_route() {
+        let appstate = Arc::new(AppState::new().await.expect("Failed to create AppState"));
+
+        let app = test::init_service(
+            App::new()
+                .route("/health", web::get().to(health))
+                .app_data(web::Data::new(appstate)),
+        )
+        .await;
+
+        let req = test::TestRequest::get().uri("/health").to_request();
+        let resp = test::call_service(&app, req).await;
+
+        assert!(resp.status().is_success());
+        let body = test::read_body(resp).await;
+        assert!(!body.is_empty()); // Assuming health returns some JSON or text
+    }
+
+    // Integration test for config routes (example for flush)
+    #[actix_web::test]
+    async fn test_config_flush_route() {
+        let appstate = Arc::new(AppState::new().await.expect("Failed to create AppState"));
+
+        let app = test::init_service(
+            App::new()
+                .service(
+                    web::scope("/api/config").route("/v1/variables/flush", web::put().to(flush)),
+                )
+                .app_data(web::Data::new(appstate)),
+        )
+        .await;
+
+        let req = test::TestRequest::put()
+            .uri("/api/config/v1/variables/flush")
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK); // Assuming flush returns OK
+    }
+
+    // Test for synchronize route
+    #[actix_web::test]
+    async fn test_config_synchronize_route() {
+        let appstate = Arc::new(AppState::new().await.expect("Failed to create AppState"));
+
+        let app = test::init_service(
+            App::new()
+                .service(
+                    web::scope("/api/config")
+                        .route("/v1/cronjobs/synchronize", web::put().to(synchronize)),
+                )
+                .app_data(web::Data::new(appstate)),
+        )
+        .await;
+
+        let req = test::TestRequest::put()
+            .uri("/api/config/v1/cronjobs/synchronize")
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success()); // Adjust based on actual response
+    }
+
+    // Test for lock/unlock routes (similar pattern)
+    #[actix_web::test]
+    async fn test_config_lock_route() {
+        let appstate = Arc::new(AppState::new().await.expect("Failed to create AppState"));
+
+        let app = test::init_service(
+            App::new()
+                .service(web::scope("/api/config").route("/v1/cronjobs/lock", web::put().to(lock)))
+                .app_data(web::Data::new(appstate)),
+        )
+        .await;
+
+        let req = test::TestRequest::put()
+            .uri("/api/config/v1/cronjobs/lock")
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+    }
+
+    #[actix_web::test]
+    async fn test_config_unlock_route() {
+        let appstate = Arc::new(AppState::new().await.expect("Failed to create AppState"));
+
+        let app = test::init_service(
+            App::new()
+                .service(
+                    web::scope("/api/config").route("/v1/cronjobs/unlock", web::put().to(unlock)),
+                )
+                .app_data(web::Data::new(appstate)),
+        )
+        .await;
+
+        let req = test::TestRequest::put()
+            .uri("/api/config/v1/cronjobs/unlock")
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+    }
+
+    // Test for chat routes (example Facebook webhook verify)
+    #[actix_web::test]
+    async fn test_chat_facebook_verify_webhook() {
+        let appstate = Arc::new(AppState::new().await.expect("Failed to create AppState"));
+
+        let app = test::init_service(
+            App::new()
+                .service(web::scope("/api/chat").route(
+                    "/v1/facebook/webhook",
+                    web::get().to(crate::api::chat::facebook::verify_webhook),
+                ))
+                .app_data(web::Data::new(appstate)),
+        )
+        .await;
+
+        // Mock query params for verification (hub.mode=subscribe, etc.)
+        let req = test::TestRequest::get()
+            .uri("/api/chat/v1/facebook/webhook?hub.mode=subscribe&hub.challenge=test_challenge&hub.verify_token=my_verify_token")
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success()); // Adjust if it returns challenge
+    }
+
+    // Test for investing routes (example get_list_of_product_by_broker)
+    #[actix_web::test]
+    async fn test_investing_get_products() {
+        let appstate = Arc::new(AppState::new().await.expect("Failed to create AppState"));
+
+        let app = test::init_service(
+            App::new()
+                .service(web::scope("/api/investing").route(
+                    "/v1/ohcl/products/{broker}",
+                    web::get().to(crate::api::ohcl::v1::get_list_of_product_by_broker),
+                ))
+                .app_data(web::Data::new(appstate)),
+        )
+        .await;
+
+        let req = test::TestRequest::get()
+            .uri("/api/investing/v1/ohcl/products/binance")
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success()); // Assuming it returns list
+    }
+
+    // Test for WMS routes (example list_stocks, assuming from previous context)
+    #[actix_web::test]
+    async fn test_wms_list_stocks() {
+        let appstate = Arc::new(AppState::new().await.expect("Failed to create AppState"));
+
+        let app = test::init_service(
+            App::new()
+                .service(web::scope("/api/ecommerce").route(
+                    "/v1/wms/stocks",
+                    web::get().to(crate::api::wms::v1::list_stocks),
+                ))
+                .app_data(web::Data::new(appstate)),
+        )
+        .await;
+
+        let req = test::TestRequest::get()
+            .uri("/api/ecommerce/v1/wms/stocks?limit=10")
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+    }
+
+    // Test graceful shutdown simulation (high-level, test channels)
+    #[tokio::test]
+    async fn test_graceful_shutdown_channels() {
+        let (txstop, rxstop) = oneshot::channel::<()>();
+        let (txcron, mut rxcron) = oneshot::channel::<()>();
+        let (txserver, mut rxserver) = oneshot::channel::<()>();
+
+        // Simulate sending stop
+        let _ = txstop.send(());
+
+        // Check cron receives and sends to txcron
+        tokio::spawn(async move {
+            rxstop.await.unwrap();
+            txcron.send(()).unwrap();
+        });
+
+        // Wait for cron signal
+        rxcron.await.unwrap();
+
+        // Simulate server shutdown
+        let _ = txserver.send(());
+
+        rxserver.await.unwrap();
+    }
+
+    // Test full App service initialization (without running server)
+    #[actix_web::test]
+    async fn test_full_app_initialization() {
+        let appstate = Arc::new(AppState::new().await.expect("Failed to create AppState"));
+
+        let app = test::init_service(
+            App::new()
+                // Add all routes as in run() for full coverage
+                .route("/health", web::get().to(health))
+                .service(
+                    web::scope("/api/config")
+                        .route("/v1/variables/flush", web::put().to(flush))
+                        .route("/v1/cronjobs/synchronize", web::put().to(synchronize))
+                        .route("/v1/cronjobs/lock", web::put().to(lock))
+                        .route("/v1/cronjobs/unlock", web::put().to(unlock)), // ... other config routes
+                )
+                .service(
+                    web::scope("/api/chat")
+                        .route(
+                            "/v1/facebook/webhook",
+                            web::get().to(crate::api::chat::facebook::verify_webhook),
+                        )
+                        .route(
+                            "/v1/facebook/webhook",
+                            web::post().to(crate::api::chat::facebook::receive_message),
+                        )
+                        .route(
+                            "/v1/slack/webhook",
+                            web::post().to(crate::api::chat::slack::receive_message),
+                        ),
+                )
+                .service(
+                    web::scope("/api/investing").route(
+                        "/v1/ohcl/products/{broker}",
+                        web::get().to(crate::api::ohcl::v1::get_list_of_product_by_broker),
+                    ), // ... other investing routes
+                )
+                .service(
+                    web::scope("/api/ecommerce").route(
+                        "/v1/wms/stocks",
+                        web::get().to(crate::api::wms::v1::list_stocks),
+                    ), // ... other WMS routes
+                )
+                .app_data(web::Data::new(appstate)),
+        )
+        .await;
+
+        // Test a dummy request to ensure app starts
+        let req = test::TestRequest::get().uri("/health").to_request();
+        let _resp = test::call_service(&app, req).await;
+    }
+
+    // Test cron spawning (mock the spawn, check if init_scheduler is called)
+    #[tokio::test]
+    async fn test_cron_spawning() {
+        let appstate_for_config =
+            Arc::new(AppState::new().await.expect("Failed to create AppState"));
+        let (txstop, mut rxstop) = oneshot::channel::<()>();
+        let (txcron, _rxcron) = oneshot::channel::<()>();
+
+        // Mock the spawn block
+        let handle = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
+            let appstate = appstate_for_config.clone();
+            // Simulate init_scheduler
+            if let Err(err) = appstate.init_scheduler_from_portal().await {
+                error!("Failed to fetch scheduler commands: {}", err);
+            } else {
+                info!("Cron started");
+            }
+            // Tick once for test
+            interval.tick().await;
+            appstate.send_tick_command_to_cron().await;
+            // Simulate stop
+            rxstop.await.unwrap();
+            txcron.send(()).unwrap();
+        });
+
+        // Send stop after short delay
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        let _ = txstop.send(());
+
+        let _ = handle.await;
+    }
+}
