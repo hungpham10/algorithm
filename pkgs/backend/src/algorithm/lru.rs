@@ -127,7 +127,6 @@ impl<K: Clone + Hash + Eq + Ord + Debug + Send + Sync, V: Debug + Clone + Send +
                 *self.last.write().unwrap() = index;
                 prev = index;
             } else {
-                println!("{}, {}, {}", caching.len(), first, self.capacity);
                 caching[first].prev = index;
                 *self.first.write().unwrap() = index;
             }
@@ -147,7 +146,6 @@ impl<K: Clone + Hash + Eq + Ord + Debug + Send + Sync, V: Debug + Clone + Send +
             self.mapping.write().unwrap().insert(key, index);
         }
 
-        println!("{:?}", self.mapping);
         true
     }
 
