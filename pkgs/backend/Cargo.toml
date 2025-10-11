@@ -123,6 +123,7 @@ candle-nn = { version = "0.9.1" }
 candle-transformers = { version = "0.9.1" }
 hf-hub = { version = "0.3" }
 tokenizers = { version = "0.21.4" }
+rstest = "0.18"
 
 [package.metadata.deb]
 maintainer = "Hung Pham <hung0913208@gmail.com>"

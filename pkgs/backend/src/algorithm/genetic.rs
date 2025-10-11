@@ -64,18 +64,6 @@ impl InfluxDb {
 }
 
 #[derive(InfluxDbWriteable, Clone, Debug)]
-pub struct Capture {
-    time: DateTime<Utc>,
-    fitness: f64,
-
-    #[influxdb(tag)]
-    session: String,
-
-    #[influxdb(tag)]
-    index: String,
-}
-
-#[derive(InfluxDbWriteable, Clone, Debug)]
 pub struct Statistic {
     pub p99: f64,
     pub p95: f64,
@@ -100,6 +88,10 @@ impl<T: Player + Clone + Sync + Send> Individual<T> {
             created: session,
             session: session,
         }
+    }
+
+    pub fn gene(&self) -> DVector<f64> {
+        self.player.gene()
     }
 
     pub fn player(&self) -> &T {
@@ -335,34 +327,6 @@ impl<T: Player + Clone + Sync + Send, M: Model<T>> Genetic<T, M> {
         }
 
         Ok(stats)
-    }
-
-    pub async fn capture(&self, session: i64) -> Result<()> {
-        match &self.profile {
-            Some(client) => {
-                let readings = self
-                    .population
-                    .iter()
-                    .enumerate()
-                    .map(|(index, item)| {
-                        Capture {
-                            time: Utc::now(),
-                            fitness: item.estimate(),
-                            session: session.to_string(),
-                            index: index.to_string(),
-                        }
-                        .into_query("genetic_session")
-                    })
-                    .collect::<Vec<_>>();
-
-                client
-                    .query(&readings)
-                    .await
-                    .map_err(|error| anyhow!("InfluxDB write error: {}", error))?;
-            }
-            None => {}
-        }
-        Ok(())
     }
 
     pub fn estimate(&mut self, session: i64) -> Result<()> {

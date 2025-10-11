@@ -1,0 +1,133 @@
+use anyhow::{anyhow, Result};
+use rand::Rng;
+use std::sync::Arc;
+
+use crate::schemas::CandleStick;
+
+#[derive(Clone, Copy)]
+pub enum Phase {
+    Test,
+    Train,
+}
+
+#[derive(Clone)]
+pub struct Data {
+    candles: Arc<Vec<CandleStick>>,
+    range: usize,
+    begin: usize,
+    split: usize,
+    end: usize,
+}
+
+impl Data {
+    pub fn new(candles: Arc<Vec<CandleStick>>, range: usize) -> Self {
+        Self {
+            candles,
+            range,
+            begin: 0,
+            split: 0,
+            end: 0,
+        }
+    }
+
+    pub fn shuttle(&mut self) {
+        let len = self.candles.len();
+        let min_required = self.range * 2;
+        if len < min_required {
+            self.begin = 0;
+            self.end = len;
+            self.split = len / 2;
+            return;
+        }
+        let mut rng = rand::thread_rng();
+        let end = rng.gen_range(min_required..=len);
+        let max_begin = end.saturating_sub(min_required);
+        let begin = rng.gen_range(0..=max_begin);
+        let min_split = begin.saturating_add(self.range);
+        let max_split = end.saturating_sub(self.range);
+        let split = if min_split <= max_split {
+            rng.gen_range(min_split..=max_split)
+        } else {
+            begin
+        };
+        self.begin = begin;
+        self.split = split;
+        self.end = end;
+    }
+
+    pub fn window(&self) -> usize {
+        self.range
+    }
+
+    pub fn size(&self, phase: &Phase) -> usize {
+        match phase {
+            Phase::Train => self
+                .split
+                .saturating_sub(self.begin)
+                .saturating_sub(self.range),
+            Phase::Test => self
+                .end
+                .saturating_sub(self.split)
+                .saturating_sub(self.range),
+        }
+    }
+
+    pub fn sample(&self, i: usize, phase: &Phase) -> Result<&[CandleStick]> {
+        let start = match phase {
+            Phase::Train => self.begin.saturating_add(i),
+            Phase::Test => self.split.saturating_add(i),
+        };
+        let end_slice = start.saturating_add(self.range);
+
+        if self.size(phase) > i {
+            match phase {
+                Phase::Train => {
+                    if end_slice <= self.candles.len() {
+                        Ok(&self.candles[start..end_slice])
+                    } else {
+                        Err(anyhow!("out of range"))
+                    }
+                }
+                Phase::Test => {
+                    if end_slice <= self.candles.len() {
+                        Ok(&self.candles[start..end_slice])
+                    } else {
+                        Err(anyhow!("out of range"))
+                    }
+                }
+            }
+        } else {
+            Err(anyhow!("out of range"))
+        }
+    }
+
+    pub fn last_candle(&self, i: usize, phase: &Phase) -> Result<CandleStick> {
+        let idx = match phase {
+            Phase::Train => self.begin,
+            Phase::Test => self.split,
+        }
+        .saturating_add(i)
+        .saturating_add(self.range);
+
+        if self.size(phase) > i {
+            match phase {
+                Phase::Train => {
+                    if idx < self.candles.len() {
+                        Ok(self.candles[idx].clone())
+                    } else {
+                        Err(anyhow!("out of range"))
+                    }
+                }
+                Phase::Test => {
+                    if idx < self.candles.len() {
+                        Ok(self.candles[idx].clone())
+                    } else {
+                        Err(anyhow!("out of range"))
+                    }
+                }
+            }
+        } else {
+            Err(anyhow!("out of range"))
+        }
+    }
+}
