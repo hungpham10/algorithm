@@ -150,6 +150,7 @@ struct Investor {
     // @NOTE: factors
     factors: DVector<f64>,
     // @NOTE: configuration
+    fee: f64,
     initialize_money: f64,
     initialize_stock: f64,
     holding_period: usize,
@@ -170,6 +171,7 @@ impl Investor {
             data,
             factors,
             phase,
+            fee: 0.001,
             initialize_money: money,
             initialize_stock: stock,
             holding_period: stock_holding_period,
@@ -234,24 +236,22 @@ impl Player for Investor {
             let candles_window = data.sample(i, &phase)?;
             let p_buy = Self::sigmoid(self.logit(candles_window));
 
-            // Sử dụng probabilistic order để tránh quá ít lệnh
-            if rand::thread_rng().gen_bool(p_buy.clamp(0.0, 1.0)) {
+            if p_buy > 0.75 {
                 let buy_candle = data.last_candle(i, &phase)?;
                 if money > (self.minimum_buy as f64) * buy_candle.c {
-                    money -= self.minimum_buy as f64 * buy_candle.c;
+                    money -= (1.0 + self.fee) * self.minimum_buy as f64 * buy_candle.c;
                     stock += self.minimum_buy as f64;
-                }
 
-                if i + self.holding_period < data.size(&phase) {
-                    let sell_candle = data.last_candle(i + self.holding_period, &phase)?;
-                    money += self.minimum_buy as f64 * sell_candle.o;
-                    stock -= self.minimum_buy as f64;
+                    if i + self.holding_period < data.size(&phase) {
+                        let sell_candle = data.last_candle(i + self.holding_period, &phase)?;
+                        money += (1.0 - self.fee) * self.minimum_buy as f64 * sell_candle.o;
+                        stock -= self.minimum_buy as f64;
+                    }
                 }
             }
         }
 
         let last_price = data.last_candle(data.size(&phase) - 1, &phase)?.c;
-
         Ok((money + stock * last_price - self.initialize_money) / self.initialize_money)
     }
 
@@ -414,24 +414,24 @@ impl Model<Investor> for Spot {
     }
 
     fn optimize(&mut self, population: &Vec<Individual<Investor>>) -> Result<()> {
-        // Kích thước không gian: N
         let n = self.mean.len();
-
         if n == 0 || population.is_empty() {
             return Err(anyhow!("Failed duo to population is emptied"));
         }
 
-        // --- BƯỚC KHÓA PHASE ĐỂ ĐÁNH GIÁ (TEST SET)
+        // @NOTE: lock old phase
         let old_phase = *self
             .phase
             .read()
             .map_err(|error| anyhow!("Failed read phase: {}", error))?;
 
-        // Chuyển sang Phase::Test để phục vụ đánh giá CMA-ES
+        // @NOTE: move to test phase
         *self
             .phase
             .write()
             .map_err(|error| anyhow!("Failed write phase: {}", error))? = Phase::Test;
+
+        // @TODO: Review performance using test data
 
         let result = (|| -> Result<()> {
             // @NOTE: step 1 select best individuo
@@ -449,7 +449,8 @@ impl Model<Investor> for Spot {
 
             for individual in best_individuals.iter() {
                 let x = individual.player().gene();
-                let y = (&x - &self.mean) / self.sigma; // Biến đổi chuẩn hóa
+                let y = (&x - &self.mean) / self.sigma;
+
                 y_k.push(y);
             }
 
@@ -473,7 +474,7 @@ impl Model<Investor> for Spot {
             let c_mu =
                 2.0 * (mu_eff - 2.0 + 1.0 / mu_eff) / ((n_f64 + 2.0).powi(2) + 2.0 * mu_eff / 2.0);
 
-            // BƯỚC 4: CẬP NHẬT ĐƯỜNG TIẾN HÓA (Evolution Paths)
+            // @NOTE: step 4, update evolution lines
             let c_cholesky = match self.cov_matrix.clone().cholesky() {
                 Some(cholesky) => cholesky,
                 None => {
@@ -612,7 +613,10 @@ impl Simulator {
         &mut self,
         capacity: usize,
         n_loop: usize,
+        n_train: usize,
+        n_break: usize,
         d_range: usize,
+        shuttle_rate: f64,
         influxdb: Option<InfluxDb>,
     ) -> Result<()> {
         if self.genetic.is_none() {
@@ -640,43 +644,79 @@ impl Simulator {
             .unwrap()
             .lock()
             .map_err(|error| anyhow!("Failed to lock genetic: {}", error))?;
+        let mut step_cnt = 0;
+        let mut breaking_cnt = 0;
+        let mut previous_p55 = 0.0;
+        let mut previous_diff_p55 = 0.0;
 
-        genetic.initialize(capacity, self.session)?;
-        for i in 0..n_loop {
-            genetic.evolute(capacity / 5, self.session + (i + 1) as i64, self.pmutation)?;
+        if self.session == 0 {
+            genetic.initialize(capacity, self.session, Some(shuttle_rate))?;
+        }
 
-            let stats = genetic.statistic(self.session + (i + 1) as i64).await?;
+        for _ in 0..n_loop {
+            for i in 0..n_train {
+                genetic.evolute(capacity / 5, self.session + (i + 1) as i64, self.pmutation)?;
 
-            println!(
-                "session={}, p99={}, p95={}, p75={}, p55={}",
-                self.session + (i + 1) as i64,
-                stats.p99,
-                stats.p95,
-                stats.p75,
-                stats.p55,
-            );
+                let stats = genetic.statistic(self.session + (i + 1) as i64).await?;
+                let current_p55 = stats.p55;
+                let current_diff_p55 = current_p55 - previous_p55;
 
-            if i + 1 < n_loop {
-                genetic.fluctuate(
+                if current_p55 <= previous_p55 {
+                    breaking_cnt += 1;
+                } else if current_diff_p55 <= previous_diff_p55 {
+                    breaking_cnt += 1;
+                } else {
+                    breaking_cnt = 0;
+                }
+
+                println!(
+                    "session={}, p99={}, p95={}, p75={}, p55={}",
                     self.session + (i + 1) as i64,
-                    &self.arguments,
-                    self.pmutation,
-                )?;
+                    stats.p99,
+                    stats.p95,
+                    stats.p75,
+                    stats.p55,
+                );
+                if breaking_cnt > n_break {
+                    break;
+                }
+
+                step_cnt += 1;
+                previous_p55 = current_p55;
+                previous_diff_p55 = current_diff_p55;
+
+                if i + 1 < n_loop {
+                    genetic.fluctuate(
+                        self.session + (i + 1) as i64,
+                        &self.arguments,
+                        self.pmutation,
+                    )?;
+                }
+            }
+            genetic.optimize()?;
+            genetic.initialize(capacity, self.session, Some(shuttle_rate))?;
+
+            if step_cnt < n_train {
+                step_cnt = 0;
+                breaking_cnt = 0;
+                previous_p55 = 0.0;
+                previous_diff_p55 = 0.0;
+            } else {
+                break;
             }
         }
-        genetic.optimize()?;
 
-        self.session += n_loop as i64;
+        self.session += n_train as i64;
         Ok(())
     }
 }
 
 pub async fn run() -> std::io::Result<()> {
     let mut sim = Simulator::new();
-    sim.with_money(1_000_000_000.0);
+    sim.with_money(1_000_000.0);
     sim.with_stock(0.0);
-    sim.with_minimum_stock_buy(1000000);
-    sim.with_stock_holding_period(5);
+    sim.with_minimum_stock_buy(1000);
+    sim.with_stock_holding_period(10);
     sim.with_sampling(
         "lighttrading.pp.ua",
         "stock",
@@ -687,8 +727,11 @@ pub async fn run() -> std::io::Result<()> {
     )
     .await
     .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{}", error)))?;
-    sim.with_genetic(100, 100, 200, None)
-        .await
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{}", error)))?;
+
+    for _ in 0..10 {
+        sim.with_genetic(1000, 100, 100, 4, 50, 0.1, None)
+            .await
+            .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{}", error)))?;
+    }
     Ok(())
 }

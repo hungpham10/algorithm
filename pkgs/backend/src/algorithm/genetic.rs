@@ -143,13 +143,63 @@ impl<T: Player + Clone + Sync + Send, M: Model<T>> Genetic<T, M> {
         }
     }
 
-    pub fn initialize(&mut self, n_accentors: usize, session: i64) -> Result<()> {
-        self.population.clear();
+    pub fn initialize(
+        &mut self,
+        n_accentors: usize,
+        session: i64,
+        shuttle_rate: Option<f64>,
+    ) -> Result<()> {
         let model = self.model.read().unwrap();
-        for _ in 0..n_accentors {
+        let profiles = if session > 0 {
             self.population
-                .push(Individual::<T>::new(model.random()?, session));
+                .iter()
+                .map(|iter| iter.estimate())
+                .collect::<Vec<_>>()
+        } else {
+            vec![0.0; n_accentors]
+        };
+        let sum_profiles = profiles.iter().sum::<f64>();
+        let inverse_weights = profiles
+            .iter()
+            .map(|&p| sum_profiles - p)
+            .collect::<Vec<_>>();
+        let sum_inverse_weights = inverse_weights.iter().sum::<f64>();
+
+        let mut rng = rand::thread_rng();
+        let mut population = Vec::new();
+        let mut roulette = if sum_inverse_weights > 0.0 {
+            inverse_weights
+                .iter()
+                .map(|&iw| iw / sum_inverse_weights)
+                .collect::<Vec<_>>()
+        } else {
+            vec![1.0 / n_accentors as f64; n_accentors]
+        };
+
+        for i in 1..n_accentors {
+            roulette[i] += roulette[i - 1];
         }
+
+        if session == 0 || shuttle_rate.is_none() {
+            self.population.clear();
+        }
+
+        for _ in 0..n_accentors {
+            if session > 0 && shuttle_rate.is_some() {
+                if rng.gen::<f64>() < shuttle_rate.unwrap_or(0.0) {
+                    population.push(
+                        self.population
+                            [self.roulette_wheel_selection(&mut roulette, rng.gen::<f64>())]
+                        .clone(),
+                    );
+                    continue;
+                }
+            }
+
+            population.push(Individual::<T>::new(model.random()?, session));
+        }
+        self.population = population;
+
         drop(model);
         for player in &mut self.population {
             player.initialize()?;
@@ -556,7 +606,7 @@ mod tests {
     fn test_genetic_initialize() {
         let model = Arc::new(RwLock::new(TestModel { num_genes: 2 }));
         let mut genetic = Genetic::new(10, model, None);
-        genetic.initialize(5, 0).unwrap();
+        genetic.initialize(5, 0, None).unwrap();
         assert_eq!(genetic.size(), 5);
         for ind in &genetic.population {
             assert!(!ind.estimate().is_nan());
@@ -567,7 +617,7 @@ mod tests {
     fn test_genetic_average_fitness() {
         let model = Arc::new(RwLock::new(TestModel { num_genes: 1 }));
         let mut genetic = Genetic::new(10, model, None);
-        genetic.initialize(3, 0).unwrap();
+        genetic.initialize(3, 0, None).unwrap();
         // Manually set fitness for testing
         for (i, ind) in genetic.population.iter_mut().enumerate() {
             ind.update_fitness(0, i as f64 + 1.0);
@@ -580,7 +630,7 @@ mod tests {
     fn test_genetic_best_fitness() {
         let model = Arc::new(RwLock::new(TestModel { num_genes: 1 }));
         let mut genetic = Genetic::new(10, model, None);
-        genetic.initialize(3, 0).unwrap();
+        genetic.initialize(3, 0, None).unwrap();
         // Manually set fitness
         genetic.population[0].update_fitness(0, 1.0);
         genetic.population[1].update_fitness(0, 3.0);
@@ -592,7 +642,7 @@ mod tests {
     fn test_genetic_estimate() {
         let model = Arc::new(RwLock::new(TestModel { num_genes: 1 }));
         let mut genetic = Genetic::new(10, model, None);
-        genetic.initialize(2, 0).unwrap();
+        genetic.initialize(2, 0, None).unwrap();
         genetic.estimate(1).unwrap();
         for ind in &genetic.population {
             assert_eq!(ind.session, 1);
@@ -604,7 +654,7 @@ mod tests {
     fn test_genetic_evolute() {
         let model = Arc::new(RwLock::new(TestModel { num_genes: 2 }));
         let mut genetic = Genetic::new(10, model, None);
-        genetic.initialize(5, 0).unwrap();
+        genetic.initialize(5, 0, None).unwrap();
         // Set initial fitness
         for (i, ind) in genetic.population.iter_mut().enumerate() {
             ind.update_fitness(0, (i as f64 + 1.0));
@@ -623,7 +673,7 @@ mod tests {
     fn test_genetic_fluctuate() {
         let model = Arc::new(RwLock::new(TestModel { num_genes: 2 }));
         let mut genetic = Genetic::new(10, model, None);
-        genetic.initialize(2, 0).unwrap();
+        genetic.initialize(2, 0, None).unwrap();
         let initial_fitness: Vec<f64> = genetic.population.iter().map(|p| p.estimate()).collect();
         let args = vec![vec![0.0]; 2];
         genetic.fluctuate(1, &args, 0.5).unwrap();
