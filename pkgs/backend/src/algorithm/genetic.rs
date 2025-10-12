@@ -98,6 +98,10 @@ impl<T: Player + Clone + Sync + Send> Individual<T> {
         &self.player
     }
 
+    pub fn reevalutate(&self) -> f64 {
+        self.player.estimate().unwrap_or(self.fitness)
+    }
+
     pub fn estimate(&self) -> f64 {
         self.fitness
     }

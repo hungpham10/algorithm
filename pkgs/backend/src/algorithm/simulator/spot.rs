@@ -117,7 +117,7 @@ impl Model<Investor> for Spot {
             population
                 .iter()
                 .map(|it| Sampling {
-                    fitness: it.estimate(),
+                    fitness: it.reevalutate(),
                     gene: it.gene(),
                 })
                 .collect::<Vec<_>>(),

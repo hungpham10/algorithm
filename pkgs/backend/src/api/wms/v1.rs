@@ -1,5 +1,7 @@
+use std::fmt::{Display, Error as FmtError, Formatter, Result as FmtResult};
 use std::sync::Arc;
 
+use actix_web::error::ErrorInternalServerError;
 use actix_web::web::{Data, Json, Path, Query};
 use actix_web::{HttpResponse, Result};
 
@@ -11,7 +13,7 @@ use crate::entities::wms::{Item, Lot, Sale, Shelf, Stock};
 
 use super::WmsHeaders;
 
-#[derive(Serialize, Deserialize, Default, Clone)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct QueryPagingInput {
     #[serde(default)]
     include_details: Option<bool>,
@@ -23,7 +25,7 @@ pub struct QueryPagingInput {
     limit: Option<u64>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ListStocksResponse {
     data: Vec<Stock>,
 
@@ -31,7 +33,7 @@ pub struct ListStocksResponse {
     next_after: Option<i32>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ListLotsResponse {
     data: Vec<Lot>,
 
@@ -39,7 +41,7 @@ pub struct ListLotsResponse {
     next_after: Option<i32>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ListShelvesResponse {
     data: Vec<Shelf>,
 
@@ -47,7 +49,7 @@ pub struct ListShelvesResponse {
     next_after: Option<i32>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ListItemsResponse {
     data: Vec<Item>,
 
@@ -55,7 +57,7 @@ pub struct ListItemsResponse {
     next_after: Option<i32>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WmsResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     stocks: Option<ListStocksResponse>,
@@ -86,6 +88,13 @@ pub struct WmsResponse {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+}
+
+impl Display for WmsResponse {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        let json = serde_json::to_string(self).map_err(|_| FmtError)?;
+        f.write_str(&json)
+    }
 }
 
 impl Default for WmsResponse {
@@ -164,14 +173,14 @@ pub async fn list_stocks(
                         ..Default::default()
                     }))
                 }
-                Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+                Err(error) => Err(ErrorInternalServerError(WmsResponse {
                     error: Some(format!("Failed to get list of stocks: {}", error)),
                     ..Default::default()
                 })),
             }
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!("Not implemented")),
             ..Default::default()
         }))
@@ -206,13 +215,13 @@ pub async fn create_stocks(
                 }),
                 ..Default::default()
             })),
-            Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
                 error: Some(format!("Failed to create stock: {}", error)),
                 ..Default::default()
             })),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!("Not implemented")),
             ..Default::default()
         }))
@@ -232,13 +241,13 @@ pub async fn get_stock(
                 stock: Some(data),
                 ..Default::default()
             })),
-            Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
                 error: Some(format!("Failed to get list of stocks: {}", error)),
                 ..Default::default()
             })),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!("Not implemented")),
             ..Default::default()
         }))
@@ -258,7 +267,7 @@ pub async fn list_lots(
         let limit = query.limit.unwrap_or(10);
 
         if limit > 100 {
-            Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            Err(ErrorInternalServerError(WmsResponse {
                 error: Some(format!(
                     "Maximum item per page does not exceed 100, currently is {}",
                     limit
@@ -282,14 +291,14 @@ pub async fn list_lots(
                         ..Default::default()
                     }))
                 }
-                Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+                Err(error) => Err(ErrorInternalServerError(WmsResponse {
                     error: Some(format!("Failed to get list of stocks: {}", error)),
                     ..Default::default()
                 })),
             }
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!("Not implemented")),
             ..Default::default()
         }))
@@ -325,13 +334,13 @@ pub async fn create_lots(
                 }),
                 ..Default::default()
             })),
-            Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
                 error: Some(format!("Failed to create stock: {}", error)),
                 ..Default::default()
             })),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!("Not implemented")),
             ..Default::default()
         }))
@@ -351,13 +360,13 @@ pub async fn get_lot(
                 lot: Some(data),
                 ..Default::default()
             })),
-            Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
                 error: Some(format!("Failed to get list of stocks: {}", error)),
                 ..Default::default()
             })),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!("Not implemented")),
             ..Default::default()
         }))
@@ -374,7 +383,7 @@ pub async fn list_shelves(
         let limit = query.limit.unwrap_or(10);
 
         if limit > 100 {
-            Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            Err(ErrorInternalServerError(WmsResponse {
                 error: Some(format!(
                     "Maximum item per page does not exceed 100, currently is {}",
                     limit
@@ -401,14 +410,14 @@ pub async fn list_shelves(
                         ..Default::default()
                     }))
                 }
-                Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+                Err(error) => Err(ErrorInternalServerError(WmsResponse {
                     error: Some(format!("Failed to get list of shelves: {}", error)),
                     ..Default::default()
                 })),
             }
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!("Not implemented")),
             ..Default::default()
         }))
@@ -452,14 +461,14 @@ pub async fn list_stocks_in_shelf(
                         ..Default::default()
                     }))
                 }
-                Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+                Err(error) => Err(ErrorInternalServerError(WmsResponse {
                     error: Some(format!("Failed to get list of stocks: {}", error)),
                     ..Default::default()
                 })),
             }
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!("Not implemented")),
             ..Default::default()
         }))
@@ -490,13 +499,13 @@ pub async fn create_shelves(
                 }),
                 ..Default::default()
             })),
-            Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
                 error: Some(format!("Failed to create shelves: {}", error)),
                 ..Default::default()
             })),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!("Not implemented")),
             ..Default::default()
         }))
@@ -512,7 +521,7 @@ pub async fn plan_item_for_new_lot(
     let lot_id = path.into_inner();
 
     if plan.len() > 100 {
-        return Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        return Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!(
                 "Maximum stock per plan does not exceed 100, currently is {}",
                 plan.len(),
@@ -559,13 +568,13 @@ pub async fn plan_item_for_new_lot(
                 }),
                 ..Default::default()
             })),
-            Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
                 error: Some(format!("Failed to create shelves: {}", error)),
                 ..Default::default()
             })),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!("Not implemented")),
             ..Default::default()
         }))
@@ -581,7 +590,7 @@ pub async fn import_item_to_warehouse(
     let lot_id = path.into_inner();
 
     if items.len() > 100 {
-        return Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        return Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!(
                 "Maximum item per batch does not exceed 100, currently is {}",
                 items.len(),
@@ -602,13 +611,13 @@ pub async fn import_item_to_warehouse(
                 }),
                 ..Default::default()
             })),
-            Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
                 error: Some(format!("Failed to create shelves: {}", error)),
                 ..Default::default()
             })),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!("Not implemented")),
             ..Default::default()
         }))
@@ -624,7 +633,7 @@ pub async fn assign_item_to_shelf(
     let shelf_id = path.into_inner();
 
     if items.len() > 100 {
-        return Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        return Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!(
                 "Maximum item per batch does not exceed 100, currently is {}",
                 items.len(),
@@ -645,13 +654,13 @@ pub async fn assign_item_to_shelf(
                 }),
                 ..Default::default()
             })),
-            Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
                 error: Some(format!("Failed to create shelves: {}", error)),
                 ..Default::default()
             })),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!("Not implemented")),
             ..Default::default()
         }))
@@ -674,13 +683,13 @@ pub async fn get_item_by_barcode(
                 item: Some(data),
                 ..Default::default()
             })),
-            Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
                 error: Some(format!("Failed to get list of stocks: {}", error)),
                 ..Default::default()
             })),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!("Not implemented")),
             ..Default::default()
         }))
@@ -705,13 +714,13 @@ pub async fn process_offline_sale(
                 sale: Some(data),
                 ..Default::default()
             })),
-            Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
                 error: Some(format!("Fail to sale: {}", error)),
                 ..Default::default()
             })),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!("Not implemented")),
             ..Default::default()
         }))
@@ -736,13 +745,13 @@ pub async fn process_online_sale(
                 sale: Some(data),
                 ..Default::default()
             })),
-            Err(error) => Ok(HttpResponse::InternalServerError().json(WmsResponse {
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
                 error: Some(format!("Fail to sale: {}", error)),
                 ..Default::default()
             })),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(WmsResponse {
+        Err(ErrorInternalServerError(WmsResponse {
             error: Some(format!("Not implemented")),
             ..Default::default()
         }))

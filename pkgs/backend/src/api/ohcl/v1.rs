@@ -1,5 +1,7 @@
+use std::fmt::{Display, Error as FmtError, Formatter, Result as FmtResult};
 use std::sync::Arc;
 
+use actix_web::error::{ErrorBadRequest, ErrorInternalServerError, ErrorServiceUnavailable};
 use actix_web::web::{Data, Path, Query};
 use actix_web::{HttpResponse, Result};
 
@@ -50,6 +52,13 @@ pub struct OhclResponse {
     pub next: Option<i32>,
 }
 
+impl Display for OhclResponse {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        let json = serde_json::to_string(self).map_err(|_| FmtError)?;
+        f.write_str(&json)
+    }
+}
+
 async fn update_ohcl_cache_and_return(
     appstate: &Data<Arc<AppState>>,
     symbol: &String,
@@ -68,7 +77,7 @@ async fn update_ohcl_cache_and_return(
         Err(error) => {
             error!("Fail to update OHCL to cache: {}", error);
 
-            Ok(HttpResponse::InternalServerError().json(OhclResponse {
+            Err(ErrorInternalServerError(OhclResponse {
                 ohcl: None,
                 heatmap: None,
                 brokers: None,
@@ -105,20 +114,16 @@ async fn update_ohcl_cache_and_return(
                 next,
             }))
         }
-        Ok(Err(error)) => {
-            error!("Fail to update OHCL to cache: {}", error);
-
-            Ok(HttpResponse::ServiceUnavailable().json(OhclResponse {
-                ohcl: None,
-                heatmap: None,
-                brokers: None,
-                symbols: None,
-                resolutions: None,
-                products: None,
-                next: None,
-                error: Some(error.message),
-            }))
-        }
+        Ok(Err(error)) => Err(ErrorServiceUnavailable(OhclResponse {
+            ohcl: None,
+            heatmap: None,
+            brokers: None,
+            symbols: None,
+            resolutions: None,
+            products: None,
+            next: None,
+            error: Some(error.message),
+        })),
     }
 }
 
@@ -136,6 +141,19 @@ pub async fn get_ohcl_from_broker(
     args: Query<OhclRequest>,
 ) -> Result<HttpResponse> {
     let (broker, symbol) = path.into_inner();
+
+    if args.from >= args.to {
+        return Err(ErrorBadRequest(OhclResponse {
+            ohcl: None,
+            heatmap: None,
+            brokers: None,
+            symbols: None,
+            products: None,
+            resolutions: None,
+            next: None,
+            error: Some(format!("From({}) shouldn't >= To({})", args.from, args.to)),
+        }));
+    }
 
     if let Some(entity) = appstate.ohcl_entity() {
         match entity
@@ -188,7 +206,7 @@ pub async fn get_ohcl_from_broker(
                 Ok(Err(error)) => {
                     error!("Fail to query OHCL: {}", error);
 
-                    Ok(HttpResponse::ServiceUnavailable().json(OhclResponse {
+                    Err(ErrorServiceUnavailable(OhclResponse {
                         ohcl: None,
                         heatmap: None,
                         brokers: None,
@@ -199,22 +217,18 @@ pub async fn get_ohcl_from_broker(
                         error: Some(error.message),
                     }))
                 }
-                Err(error) => {
-                    error!("Fail to query OHCL: {}", error);
-
-                    Ok(HttpResponse::InternalServerError().json(OhclResponse {
-                        ohcl: None,
-                        heatmap: None,
-                        brokers: None,
-                        symbols: None,
-                        products: None,
-                        resolutions: None,
-                        next: None,
-                        error: Some(format!("Failed to query OHCL: {}", error)),
-                    }))
-                }
+                Err(error) => Err(ErrorInternalServerError(OhclResponse {
+                    ohcl: None,
+                    heatmap: None,
+                    brokers: None,
+                    symbols: None,
+                    products: None,
+                    resolutions: None,
+                    next: None,
+                    error: Some(format!("Failed to query OHCL: {}", error)),
+                })),
             },
-            Err(error) => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+            Err(error) => Err(ErrorInternalServerError(OhclResponse {
                 ohcl: None,
                 heatmap: None,
                 brokers: None,
@@ -226,7 +240,7 @@ pub async fn get_ohcl_from_broker(
             })),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(OhclResponse {
+        Err(ErrorInternalServerError(OhclResponse {
             ohcl: None,
             heatmap: None,
             brokers: None,
@@ -260,7 +274,7 @@ pub async fn get_heatmap_from_broker(
         "1D" => to - 24 * 60 * 60 * args.lookback,
         "1W" => to - 7 * 24 * 60 * 60 * args.lookback,
         _ => {
-            return Ok(HttpResponse::InternalServerError().json(OhclResponse {
+            return Err(ErrorInternalServerError(OhclResponse {
                 ohcl: None,
                 heatmap: None,
                 brokers: None,
@@ -332,50 +346,41 @@ pub async fn get_heatmap_from_broker(
                                         next: None,
                                         error: None,
                                     })),
-                                    Err(error) => {
-                                        Ok(HttpResponse::ServiceUnavailable().json(OhclResponse {
-                                            ohcl: None,
-                                            heatmap: None,
-                                            brokers: None,
-                                            symbols: None,
-                                            resolutions: None,
-                                            products: None,
-                                            next: None,
-                                            error: Some(format!(
-                                                "Calculate VolumeProfile got error: {:?}",
-                                                error
-                                            )),
-                                        }))
-                                    }
+                                    Err(error) => Err(ErrorServiceUnavailable(OhclResponse {
+                                        ohcl: None,
+                                        heatmap: None,
+                                        brokers: None,
+                                        symbols: None,
+                                        resolutions: None,
+                                        products: None,
+                                        next: None,
+                                        error: Some(format!(
+                                            "Calculate VolumeProfile got error: {:?}",
+                                            error
+                                        )),
+                                    })),
                                 }
                             }
-                            Ok(Err(error)) => {
-                                Ok(HttpResponse::ServiceUnavailable().json(OhclResponse {
-                                    ohcl: None,
-                                    heatmap: None,
-                                    brokers: None,
-                                    symbols: None,
-                                    resolutions: None,
-                                    products: None,
-                                    next: None,
-                                    error: Some(error.message),
-                                }))
-                            }
-                            Err(error) => {
-                                Ok(HttpResponse::InternalServerError().json(OhclResponse {
-                                    ohcl: None,
-                                    heatmap: None,
-                                    brokers: None,
-                                    symbols: None,
-                                    products: None,
-                                    resolutions: None,
-                                    next: None,
-                                    error: Some(format!(
-                                        "Failed to update OHCL to cache: {}",
-                                        error
-                                    )),
-                                }))
-                            }
+                            Ok(Err(error)) => Err(ErrorServiceUnavailable(OhclResponse {
+                                ohcl: None,
+                                heatmap: None,
+                                brokers: None,
+                                symbols: None,
+                                resolutions: None,
+                                products: None,
+                                next: None,
+                                error: Some(error.message),
+                            })),
+                            Err(error) => Err(ErrorInternalServerError(OhclResponse {
+                                ohcl: None,
+                                heatmap: None,
+                                brokers: None,
+                                symbols: None,
+                                products: None,
+                                resolutions: None,
+                                next: None,
+                                error: Some(format!("Failed to update OHCL to cache: {}", error)),
+                            })),
                         }
                     } else {
                         match VolumeProfile::new_from_candles(
@@ -408,25 +413,23 @@ pub async fn get_heatmap_from_broker(
                                 next: None,
                                 error: None,
                             })),
-                            Err(error) => {
-                                Ok(HttpResponse::ServiceUnavailable().json(OhclResponse {
-                                    ohcl: None,
-                                    heatmap: None,
-                                    brokers: None,
-                                    symbols: None,
-                                    resolutions: None,
-                                    products: None,
-                                    next: None,
-                                    error: Some(format!(
-                                        "Calculate VolumeProfile got error: {:?}",
-                                        error
-                                    )),
-                                }))
-                            }
+                            Err(error) => Err(ErrorServiceUnavailable(OhclResponse {
+                                ohcl: None,
+                                heatmap: None,
+                                brokers: None,
+                                symbols: None,
+                                resolutions: None,
+                                products: None,
+                                next: None,
+                                error: Some(format!(
+                                    "Calculate VolumeProfile got error: {:?}",
+                                    error
+                                )),
+                            })),
                         }
                     }
                 }
-                Ok(Err(error)) => Ok(HttpResponse::ServiceUnavailable().json(OhclResponse {
+                Ok(Err(error)) => Err(ErrorServiceUnavailable(OhclResponse {
                     ohcl: None,
                     heatmap: None,
                     brokers: None,
@@ -436,7 +439,7 @@ pub async fn get_heatmap_from_broker(
                     next: None,
                     error: Some(error.message),
                 })),
-                Err(error) => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+                Err(error) => Err(ErrorInternalServerError(OhclResponse {
                     ohcl: None,
                     heatmap: None,
                     brokers: None,
@@ -447,7 +450,7 @@ pub async fn get_heatmap_from_broker(
                     error: Some(format!("Failed to query OHCL: {}", error)),
                 })),
             },
-            Err(error) => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+            Err(error) => Err(ErrorInternalServerError(OhclResponse {
                 ohcl: None,
                 heatmap: None,
                 brokers: None,
@@ -459,7 +462,7 @@ pub async fn get_heatmap_from_broker(
             })),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(OhclResponse {
+        Err(ErrorInternalServerError(OhclResponse {
             ohcl: None,
             heatmap: None,
             brokers: None,
@@ -485,7 +488,7 @@ pub async fn get_list_of_resolutions(appstate: Data<Arc<AppState>>) -> Result<Ht
                 next: None,
                 error: None,
             })),
-            Err(error) => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+            Err(error) => Err(ErrorInternalServerError(OhclResponse {
                 ohcl: None,
                 heatmap: None,
                 brokers: None,
@@ -497,7 +500,7 @@ pub async fn get_list_of_resolutions(appstate: Data<Arc<AppState>>) -> Result<Ht
             })),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(OhclResponse {
+        Err(ErrorInternalServerError(OhclResponse {
             ohcl: None,
             heatmap: None,
             brokers: None,
@@ -542,7 +545,7 @@ pub async fn get_list_of_brokers(
         }
     }
 
-    Ok(HttpResponse::InternalServerError().json(OhclResponse {
+    Err(ErrorInternalServerError(OhclResponse {
         ohcl: None,
         heatmap: None,
         brokers: None,
@@ -564,7 +567,7 @@ pub async fn get_list_of_symbols(
             Ok(ok) => {
                 if ok {
                     return match broker.as_str() {
-                        "stock" => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+                        "stock" => Err(ErrorInternalServerError(OhclResponse {
                             ohcl: None,
                             heatmap: None,
                             brokers: None,
@@ -574,7 +577,7 @@ pub async fn get_list_of_symbols(
                             products: None,
                             error: Some(format!("Not implemented")),
                         })),
-                        "crypto" => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+                        "crypto" => Err(ErrorInternalServerError(OhclResponse {
                             ohcl: None,
                             heatmap: None,
                             brokers: None,
@@ -584,7 +587,7 @@ pub async fn get_list_of_symbols(
                             next: None,
                             error: Some(format!("Not implemented")),
                         })),
-                        &_ => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+                        &_ => Err(ErrorInternalServerError(OhclResponse {
                             ohcl: None,
                             heatmap: None,
                             brokers: None,
@@ -603,7 +606,7 @@ pub async fn get_list_of_symbols(
         }
     }
 
-    Ok(HttpResponse::InternalServerError().json(OhclResponse {
+    Err(ErrorInternalServerError(OhclResponse {
         ohcl: None,
         heatmap: None,
         brokers: None,
@@ -633,7 +636,7 @@ pub async fn get_list_of_product_by_broker(
                 next: None,
                 error: None,
             })),
-            Err(error) => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+            Err(error) => Err(ErrorInternalServerError(OhclResponse {
                 ohcl: None,
                 heatmap: None,
                 brokers: None,
@@ -645,7 +648,7 @@ pub async fn get_list_of_product_by_broker(
             })),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().json(OhclResponse {
+        Err(ErrorInternalServerError(OhclResponse {
             ohcl: None,
             heatmap: None,
             brokers: None,
@@ -672,7 +675,7 @@ pub async fn get_list_of_symbols_by_product(
 
                     return match broker.as_str() {
                         "stock" => match product.as_str() {
-                            "cw" => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+                            "cw" => Err(ErrorInternalServerError(OhclResponse {
                                 ohcl: None,
                                 heatmap: None,
                                 brokers: None,
@@ -732,7 +735,7 @@ pub async fn get_list_of_symbols_by_product(
                                 next: None,
                                 error: None,
                             })),
-                            &_ => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+                            &_ => Err(ErrorInternalServerError(OhclResponse {
                                 ohcl: None,
                                 heatmap: None,
                                 brokers: None,
@@ -764,7 +767,7 @@ pub async fn get_list_of_symbols_by_product(
                                 next: None,
                                 error: Some(format!("Not implemented")),
                             })),
-                            &_ => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+                            &_ => Err(ErrorInternalServerError(OhclResponse {
                                 ohcl: None,
                                 heatmap: None,
                                 brokers: None,
@@ -775,7 +778,7 @@ pub async fn get_list_of_symbols_by_product(
                                 error: Some(format!("Product {} is not exist", product)),
                             })),
                         },
-                        &_ => Ok(HttpResponse::InternalServerError().json(OhclResponse {
+                        &_ => Err(ErrorInternalServerError(OhclResponse {
                             ohcl: None,
                             heatmap: None,
                             brokers: None,
@@ -794,7 +797,7 @@ pub async fn get_list_of_symbols_by_product(
         }
     }
 
-    Ok(HttpResponse::InternalServerError().json(OhclResponse {
+    Err(ErrorInternalServerError(OhclResponse {
         ohcl: None,
         heatmap: None,
         brokers: None,

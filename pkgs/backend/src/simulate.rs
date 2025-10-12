@@ -1,5 +1,6 @@
 use std::io::{Error, ErrorKind};
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use nalgebra::DVector;
 use rand::Rng;
@@ -343,7 +344,13 @@ async fn simulate_single_symbol_with_trend_following(
 
 pub async fn run() -> std::io::Result<()> {
     // @TODO: implement flow to cross validate with another stock or another timeline
-    simulate_single_symbol_with_trend_following("stock", "MWG", "1D", 0, 0).await?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs() as i64;
+    let three_years_ago = now - (5 * 365 * 24 * 3600); // Approximate, ignoring leap seconds
+
+    simulate_single_symbol_with_trend_following("stock", "MWG", "1D", three_years_ago, now).await?;
     Ok(())
 }
 

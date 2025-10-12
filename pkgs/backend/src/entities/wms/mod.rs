@@ -31,7 +31,7 @@ use sea_orm::{
 };
 use sea_query::OnConflict;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Stock {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<i32>,
@@ -121,7 +121,7 @@ impl Display for LotStatus {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Lot {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<i32>,
@@ -160,7 +160,7 @@ impl Default for Lot {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Shelf {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<i32>,
@@ -236,7 +236,7 @@ impl Display for ItemStatus {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Item {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<i32>,
@@ -279,7 +279,7 @@ impl Default for Item {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Sale {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<i32>,
