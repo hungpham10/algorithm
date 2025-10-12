@@ -26,7 +26,21 @@ enum Commands {
         domain: String,
     },
 
-    Simulate {},
+    Simulate {
+        #[arg(default_value = "single-symbol-with-trend-following")]
+        model: String,
+
+        #[arg(default_value = "stock")]
+        market: String,
+
+        #[arg(default_value = "1D")]
+        resolution: String,
+
+        #[arg(short, long, default_value_t = 1)]
+        backtest_year_ago: u8,
+
+        symbols: String,
+    },
 }
 
 #[actix_rt::main]
@@ -44,6 +58,24 @@ async fn main() -> std::io::Result<()> {
         #[cfg(feature = "crawl")]
         Commands::Crawl { domain } => crawl::run(&domain).await,
 
-        Commands::Simulate {} => simulate::run().await,
+        Commands::Simulate {
+            model,
+            market,
+            resolution,
+            symbols,
+            backtest_year_ago,
+        } => {
+            simulate::run(
+                model.as_str(),
+                market.as_str(),
+                &(symbols
+                    .split(",")
+                    .map(|it| it.to_string())
+                    .collect::<Vec<_>>()),
+                resolution.as_str(),
+                backtest_year_ago as i64,
+            )
+            .await
+        }
     }
 }

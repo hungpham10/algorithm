@@ -2,16 +2,12 @@ use std::io::{Error, ErrorKind};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use nalgebra::DVector;
-use rand::Rng;
-
 use anyhow::{anyhow, Result};
 use infisical::{AuthMethod, Client as InfiscalClient};
 use reqwest;
 
-use vnscope::algorithm::cmaes::{Convex, Sampling};
-use vnscope::algorithm::genetic::{Genetic, Individual, InfluxDb, Model, Player};
-use vnscope::algorithm::simulator::{Data, Investor, Phase, Spot};
+use vnscope::algorithm::genetic::{Genetic, InfluxDb};
+use vnscope::algorithm::simulator::{Data, Investor, Spot};
 use vnscope::schemas::CandleStick;
 
 use crate::api::get_secret_from_infisical;
@@ -183,7 +179,7 @@ impl Simulator {
 }
 
 async fn simulate_single_symbol_with_trend_following(
-    kind: &str,
+    market: &str,
     symbol: &str,
     resolution: &str,
     from: i64,
@@ -275,7 +271,7 @@ async fn simulate_single_symbol_with_trend_following(
     let window = get_secret_from_infisical(
         &infisical_client,
         "WINDOW",
-        format!("/simulator/{}/", kind).as_str(),
+        format!("/simulator/{}/", market).as_str(),
     )
     .await?
     .parse::<usize>()
@@ -285,7 +281,7 @@ async fn simulate_single_symbol_with_trend_following(
         get_secret_from_infisical(
             &infisical_client,
             "MONEY",
-            format!("/simulator/{}/", kind).as_str(),
+            format!("/simulator/{}/", market).as_str(),
         )
         .await?
         .parse::<f64>()
@@ -295,7 +291,7 @@ async fn simulate_single_symbol_with_trend_following(
         get_secret_from_infisical(
             &infisical_client,
             "STOCK",
-            format!("/simulator/{}/", kind).as_str(),
+            format!("/simulator/{}/", market).as_str(),
         )
         .await?
         .parse::<f64>()
@@ -305,7 +301,7 @@ async fn simulate_single_symbol_with_trend_following(
         get_secret_from_infisical(
             &infisical_client,
             "MINIMUM_STOCK_FOR_BUY",
-            format!("/simulator/{}/", kind).as_str(),
+            format!("/simulator/{}/", market).as_str(),
         )
         .await?
         .parse::<usize>()
@@ -315,14 +311,14 @@ async fn simulate_single_symbol_with_trend_following(
         get_secret_from_infisical(
             &infisical_client,
             "STOCK_HOLDING_PERIOD",
-            format!("/simulator/{}/", kind).as_str(),
+            format!("/simulator/{}/", market).as_str(),
         )
         .await?
         .parse::<usize>()
         .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid STOCK_HOLDING_PERIOD"))?,
     );
 
-    sim.with_sampling(provider.as_str(), kind, symbol, resolution, from, to)
+    sim.with_sampling(provider.as_str(), market, symbol, resolution, from, to)
         .await
         .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{}", error)))?;
 
@@ -342,16 +338,52 @@ async fn simulate_single_symbol_with_trend_following(
     Ok(sim)
 }
 
-pub async fn run() -> std::io::Result<()> {
-    // @TODO: implement flow to cross validate with another stock or another timeline
+#[derive(Debug, Clone, PartialEq)]
+pub enum Model {
+    SingleSymbolWithTrendFollowing,
+}
+
+impl TryFrom<String> for Model {
+    type Error = Error;
+
+    fn try_from(value: String) -> std::io::Result<Model> {
+        match value.as_str() {
+            "single-symbol-with-trend-following" => Ok(Self::SingleSymbolWithTrendFollowing),
+            // Thêm các case khác tương ứng
+            _ => Err(Error::new(
+                ErrorKind::InvalidInput,
+                format!("Unsupported model: {}", value),
+            )),
+        }
+    }
+}
+
+pub async fn run(
+    model: &str,
+    market: &str,
+    symbols: &Vec<String>,
+    resolution: &str,
+    backtest_window_year_ago: i64,
+) -> std::io::Result<()> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
         .as_secs() as i64;
-    let three_years_ago = now - (5 * 365 * 24 * 3600); // Approximate, ignoring leap seconds
+    let backtest_years_ago = now - (backtest_window_year_ago * 365 * 24 * 3600);
 
-    simulate_single_symbol_with_trend_following("stock", "MWG", "1D", three_years_ago, now).await?;
-    Ok(())
+    match Model::try_from(model.to_string())? {
+        Model::SingleSymbolWithTrendFollowing => {
+            simulate_single_symbol_with_trend_following(
+                market,
+                symbols[0].as_str(),
+                resolution,
+                backtest_years_ago,
+                now,
+            )
+            .await?;
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]
