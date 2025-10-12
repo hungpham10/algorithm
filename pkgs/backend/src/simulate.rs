@@ -21,6 +21,7 @@ struct Simulator {
     arguments: Vec<Vec<f64>>,
     pmutation: f64,
     session: i64,
+    lifespan: i64,
     stock_holding_period: usize,
     minimum_stock_buy: usize,
 }
@@ -35,17 +36,22 @@ impl Simulator {
             session: 0,
             arguments: Vec::new(),
             pmutation: 0.1,
+            lifespan: 10,
             minimum_stock_buy: 100,
             stock_holding_period: 10,
         }
     }
 
     pub fn with_minimum_stock_buy(&mut self, value: usize) {
-        self.minimum_stock_buy = value
+        self.minimum_stock_buy = value;
     }
 
     pub fn with_stock_holding_period(&mut self, value: usize) {
-        self.stock_holding_period = value
+        self.stock_holding_period = value;
+    }
+
+    pub fn with_lifespan(&mut self, lifespan: i64) {
+        self.lifespan = lifespan;
     }
 
     pub fn with_arguments(&mut self, arguments: Vec<Vec<f64>>) {
@@ -105,7 +111,7 @@ impl Simulator {
                     Arc::new(RwLock::new(Data::new(Arc::new(candles), d_range))),
                     self.money.ok_or(anyhow!("Not found money"))?,
                     self.stock.unwrap_or(0.0),
-                    30,
+                    self.lifespan,
                     self.stock_holding_period,
                     self.minimum_stock_buy,
                 )?)),
@@ -316,6 +322,16 @@ async fn simulate_single_symbol_with_trend_following(
         .await?
         .parse::<usize>()
         .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid STOCK_HOLDING_PERIOD"))?,
+    );
+    sim.with_lifespan(
+        get_secret_from_infisical(
+            &infisical_client,
+            "LIFESPAN",
+            format!("/simulator/{}/", market).as_str(),
+        )
+        .await?
+        .parse::<i64>()
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid LIFESPAN"))?,
     );
 
     sim.with_sampling(provider.as_str(), market, symbol, resolution, from, to)
