@@ -217,6 +217,17 @@ async fn simulate_single_symbol_with_trend_following(
         })?;
 
     let provider = get_secret_from_infisical(&infisical_client, "PROVIDER", "/simulator/").await?;
+    let influx_url =
+        get_secret_from_infisical(&infisical_client, "INFLUX_URL", "/simulator/").await?;
+    let influx_token =
+        get_secret_from_infisical(&infisical_client, "INFLUX_TOKEN", "/simulator/").await?;
+    let influx_bucket = get_secret_from_infisical(
+        &infisical_client,
+        "INFLUX_BUCKET",
+        format!("/simulator/{}/", market).as_str(),
+    )
+    .await?;
+
     let number_of_genetic_routes =
         get_secret_from_infisical(&infisical_client, "NUMBER_OF_GENETIC_ROUTES", "/simulator/")
             .await?
@@ -346,7 +357,11 @@ async fn simulate_single_symbol_with_trend_following(
             number_of_falsitive_broken_per_route,
             window,
             passing_route_percent,
-            None,
+            Some(InfluxDb::new(
+                influx_url.as_str(),
+                influx_token.as_str(),
+                influx_bucket.as_str(),
+            )),
         )
         .await
         .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{}", error)))?;
