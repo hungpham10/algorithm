@@ -54,10 +54,13 @@ impl Convex {
             (n as f64).sqrt() * (1.0 - 1.0 / (4.0 * n as f64) + 1.0 / (21.0 * (n as f64).powi(2)));
 
         // @NOTE: calculate mean range
-        let (mean_upper, mean_lower) = mean_range.unwrap_or((-1.0, 1.0));
+        let (mean_lower, mean_upper) = mean_range.unwrap_or((-1.0, 1.0));
+        if mean_lower >= mean_upper {
+            panic!("Invalid mean_range: lower bound must be less than upper bound");
+        }
 
         Self {
-            mean: DVector::from_iterator(n, (0..n).map(|_| rng.gen_range(mean_upper..mean_lower))),
+            mean: DVector::from_iterator(n, (0..n).map(|_| rng.gen_range(mean_lower..mean_upper))),
             sigma: sigmal.unwrap_or(0.5),
             cov_matrix: DMatrix::identity(n, n),
 

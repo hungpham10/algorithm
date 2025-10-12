@@ -65,13 +65,24 @@ async fn main() -> std::io::Result<()> {
             symbols,
             backtest_year_ago,
         } => {
+            let symbol_list = symbols
+                .split(',')
+                .map(|it| it.trim())
+                .filter(|it| !it.is_empty())
+                .map(|it| it.to_string())
+                .collect::<Vec<_>>();
+
+            if symbol_list.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "At least one non-empty symbol is required",
+                ));
+            }
+
             simulate::run(
                 model.as_str(),
                 market.as_str(),
-                &(symbols
-                    .split(",")
-                    .map(|it| it.to_string())
-                    .collect::<Vec<_>>()),
+                &symbol_list,
                 resolution.as_str(),
                 backtest_year_ago as i64,
             )

@@ -242,7 +242,7 @@ pub async fn get_stock(
                 ..Default::default()
             })),
             Err(error) => Err(ErrorInternalServerError(WmsResponse {
-                error: Some(format!("Failed to get list of stocks: {}", error)),
+                error: Some(format!("Failed to get stocks: {}", error)),
                 ..Default::default()
             })),
         }
@@ -292,7 +292,7 @@ pub async fn list_lots(
                     }))
                 }
                 Err(error) => Err(ErrorInternalServerError(WmsResponse {
-                    error: Some(format!("Failed to get list of stocks: {}", error)),
+                    error: Some(format!("Failed to get list of lots: {}", error)),
                     ..Default::default()
                 })),
             }
@@ -361,7 +361,7 @@ pub async fn get_lot(
                 ..Default::default()
             })),
             Err(error) => Err(ErrorInternalServerError(WmsResponse {
-                error: Some(format!("Failed to get list of stocks: {}", error)),
+                error: Some(format!("Failed to get lot: {}", error)),
                 ..Default::default()
             })),
         }
@@ -462,7 +462,10 @@ pub async fn list_stocks_in_shelf(
                     }))
                 }
                 Err(error) => Err(ErrorInternalServerError(WmsResponse {
-                    error: Some(format!("Failed to get list of stocks: {}", error)),
+                    error: Some(format!(
+                        "Failed to get list of stocks in shelf {}: {}",
+                        shelf_id, error
+                    )),
                     ..Default::default()
                 })),
             }
@@ -569,7 +572,7 @@ pub async fn plan_item_for_new_lot(
                 ..Default::default()
             })),
             Err(error) => Err(ErrorInternalServerError(WmsResponse {
-                error: Some(format!("Failed to create shelves: {}", error)),
+                error: Some(format!("Failed to plan new items: {}", error)),
                 ..Default::default()
             })),
         }
@@ -612,7 +615,7 @@ pub async fn import_item_to_warehouse(
                 ..Default::default()
             })),
             Err(error) => Err(ErrorInternalServerError(WmsResponse {
-                error: Some(format!("Failed to create shelves: {}", error)),
+                error: Some(format!("Failed to import items: {}", error)),
                 ..Default::default()
             })),
         }
@@ -655,7 +658,10 @@ pub async fn assign_item_to_shelf(
                 ..Default::default()
             })),
             Err(error) => Err(ErrorInternalServerError(WmsResponse {
-                error: Some(format!("Failed to create shelves: {}", error)),
+                error: Some(format!(
+                    "Failed to assign items to shelf {}: {}",
+                    shelf_id, error
+                )),
                 ..Default::default()
             })),
         }
@@ -684,7 +690,10 @@ pub async fn get_item_by_barcode(
                 ..Default::default()
             })),
             Err(error) => Err(ErrorInternalServerError(WmsResponse {
-                error: Some(format!("Failed to get list of stocks: {}", error)),
+                error: Some(format!(
+                    "Failed to get item by barcode {}: {}",
+                    barcode, error
+                )),
                 ..Default::default()
             })),
         }

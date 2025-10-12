@@ -158,7 +158,7 @@ impl Simulator {
                 previous_p55 = current_p55;
                 previous_diff_p55 = current_diff_p55;
 
-                if i + 1 < n_loop {
+                if i + 1 < n_train {
                     genetic.fluctuate(
                         self.session + (i + 1) as i64,
                         &self.arguments,
@@ -250,20 +250,6 @@ async fn simulate_single_symbol_with_trend_following(
             .await?
             .parse::<usize>()
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid NUMBER_OF_EVOLUTION"))?;
-
-    let number_of_falsitive_broken_per_route = get_secret_from_infisical(
-        &infisical_client,
-        "NUMBER_OF_FALSITIVE_BROKEN_PER_ROUTE",
-        "/simulator/",
-    )
-    .await?
-    .parse::<usize>()
-    .map_err(|_| {
-        Error::new(
-            ErrorKind::InvalidInput,
-            "Invalid NUMBER_OF_FALSITIVE_BROKEN_PER_ROUTE",
-        )
-    })?;
 
     let number_of_falsitive_broken_per_route = get_secret_from_infisical(
         &infisical_client,
@@ -380,7 +366,7 @@ impl TryFrom<String> for Model {
     fn try_from(value: String) -> std::io::Result<Model> {
         match value.as_str() {
             "single-symbol-with-trend-following" => Ok(Self::SingleSymbolWithTrendFollowing),
-            // Thêm các case khác tương ứng
+
             _ => Err(Error::new(
                 ErrorKind::InvalidInput,
                 format!("Unsupported model: {}", value),

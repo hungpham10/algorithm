@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use influxdb::{Client, InfluxDbWriteable};
+use log::error;
 use nalgebra::DVector;
 use rand::Rng;
 use rayon::prelude::*;
@@ -99,7 +100,10 @@ impl<T: Player + Clone + Sync + Send> Individual<T> {
     }
 
     pub fn reevalutate(&self) -> f64 {
-        self.player.estimate().unwrap_or(self.fitness)
+        self.player.estimate().unwrap_or_else(|e| {
+            error!("Re-evaluation failed: {}, using cached fitness", e);
+            self.fitness
+        })
     }
 
     pub fn estimate(&self) -> f64 {

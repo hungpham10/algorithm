@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use log::warn;
 use nalgebra::DVector;
 use std::sync::{Arc, RwLock};
 
@@ -50,7 +51,7 @@ impl Investor {
         value
     }
 
-    pub fn get_factor(&mut self, i: usize) -> f64 {
+    pub fn get_factor(&self, i: usize) -> f64 {
         self.factors[i]
     }
 
@@ -61,6 +62,16 @@ impl Investor {
     pub fn logit(&self, candles: &[CandleStick]) -> f64 {
         let window = candles.len();
         if window == 0 {
+            return 0.0;
+        }
+
+        let required_factors = 5 * window + 1;
+        if self.factors.len() < required_factors {
+            warn!(
+                "Insufficient factors: expected at least {}, got {}",
+                required_factors,
+                self.factors.len()
+            );
             return 0.0;
         }
 
@@ -130,8 +141,14 @@ impl Player for Investor {
             }
         }
 
-        let last_price = data.last_candle(data.size(&phase) - 1, &phase)?.c;
-        Ok((money + stock * last_price - self.initialize_money) / self.initialize_money)
+        if data.size(&phase) == 0 {
+            Err(anyhow!(
+                "Faied estimating data: data size is 0 cause nothing to calculate"
+            ))
+        } else {
+            let last_price = data.last_candle(data.size(&phase) - 1, &phase)?.c;
+            Ok((money + stock * last_price - self.initialize_money) / self.initialize_money)
+        }
     }
 
     fn gene(&self) -> DVector<f64> {
