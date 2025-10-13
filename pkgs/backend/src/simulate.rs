@@ -92,6 +92,7 @@ impl Simulator {
 
     pub async fn with_genetic(
         &mut self,
+        symbol: &str,
         capacity: usize,
         n_loop: usize,
         n_train: usize,
@@ -138,7 +139,9 @@ impl Simulator {
             for i in 0..n_train {
                 genetic.evolute(capacity / 5, self.session + (i + 1) as i64, self.pmutation)?;
 
-                let stats = genetic.statistic(self.session + (i + 1) as i64).await?;
+                let stats = genetic
+                    .statistic(self.session + (i + 1) as i64, symbol)
+                    .await?;
                 let current_p55 = stats.p55;
                 let current_diff_p55 = current_p55 - previous_p55;
 
@@ -337,6 +340,7 @@ async fn simulate_single_symbol_with_trend_following(
 
     for _ in 0..number_of_genetic_routes {
         sim.with_genetic(
+            symbol,
             number_of_investors,
             number_of_loop_per_route,
             number_of_evolution,
@@ -414,7 +418,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
             .as_secs() as i64;
-        let three_years_ago = now - (3 * 365 * 24 * 3600); // Approximate, ignoring leap seconds
+        let three_years_ago = now - (3 * 365 * 24 * 3600);
 
         simulate_single_symbol_with_trend_following("stock", "MWG", "1D", three_years_ago, now)
             .await

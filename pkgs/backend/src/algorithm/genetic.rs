@@ -245,7 +245,7 @@ impl<T: Player + Clone + Sync + Send, M: Model<T>> Genetic<T, M> {
         self.population[id_best].player.clone()
     }
 
-    pub async fn statistic(&self, session: i64) -> Result<Statistic> {
+    pub async fn statistic(&self, session: i64, name: &str) -> Result<Statistic> {
         if self.population.is_empty() {
             return Err(anyhow!("There is no population to profile"));
         }
@@ -327,7 +327,7 @@ impl<T: Player + Clone + Sync + Send, M: Model<T>> Genetic<T, M> {
         match &self.profile {
             Some(client) => {
                 client
-                    .query(vec![stats.clone().into_query("genetic_stats")])
+                    .query(vec![stats.clone().into_query(name)])
                     .await
                     .map_err(|error| anyhow!("InfluxDB write error: {}", error))?;
             }
