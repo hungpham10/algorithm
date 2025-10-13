@@ -27,18 +27,19 @@ enum Commands {
     },
 
     Simulate {
-        #[arg(default_value = "single-symbol-with-trend-following")]
+        #[arg(long = "model", default_value = "single-symbol-with-trend-following")]
         model: String,
 
-        #[arg(default_value = "stock")]
+        #[arg(long = "market", default_value = "stock")]
         market: String,
 
-        #[arg(default_value = "1D")]
+        #[arg(long = "resolution", default_value = "1D")]
         resolution: String,
 
-        #[arg(short, long, default_value_t = 1)]
+        #[arg(long = "lookback-to-year", default_value_t = 1)]
         backtest_year_ago: u8,
 
+        #[arg(long = "symbols")]
         symbols: String,
     },
 }
