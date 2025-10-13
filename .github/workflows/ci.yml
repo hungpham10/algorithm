@@ -317,7 +317,7 @@ jobs:
       # This ensures that the released package version accurately reflects the intended tag.
       # The job will fail if the versions do not match.
       - name: Verify version match for release
-        working-directory: ./backend # Ensures grep works on backend/Cargo.toml
+        working-directory: ./pkg/backend # Ensures grep works on backend/Cargo.toml
         run: |
           CARGO_VERSION=$(grep -oP '^version = "\K[^"]+' Cargo.toml) # Extract version from Cargo.toml
           TAG_NAME="${{ github.ref_name }}" # Get the full tag name (e.g., v0.1.0 or 0.1.0)
