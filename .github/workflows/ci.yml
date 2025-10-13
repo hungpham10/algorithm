@@ -91,8 +91,17 @@ jobs:
           --health-timeout 5s
           --health-retries 3
     env:
+      # @NOTE: AWS S3
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      # @NOTE: secret management
+      INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
+      INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+      INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
+
+      # @NOTE: dev environment
+      ENVIRONMENT: dev
       MYSQL_DSN: mysql://mysql:rootroot@127.0.0.1:3306/test
       REDIS_DSN: redis://127.0.0.1::6379
     steps:

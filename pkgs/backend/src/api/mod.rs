@@ -216,24 +216,31 @@ impl AppState {
                 webhook_access_token: get_secret_from_infisical(
                     &infisical_client,
                     "FACEBOOK_TOKEN",
+                    "/",
                 )
                 .await?,
-                page_access_token: get_secret_from_infisical(&infisical_client, "FACEBOOK_TOKEN")
-                    .await?,
+                page_access_token: get_secret_from_infisical(
+                    &infisical_client,
+                    "FACEBOOK_TOKEN",
+                    "/",
+                )
+                .await?,
                 incomming_secret: get_secret_from_infisical(
                     &infisical_client,
                     "FACEBOOK_INCOMMING_SECRET",
+                    "/",
                 )
                 .await?,
                 outgoing_secret: get_secret_from_infisical(
                     &infisical_client,
                     "FACEBOOK_OUTGOING_SECRET",
+                    "/",
                 )
                 .await?,
             },
             slack: chat::Slack {
-                token: get_secret_from_infisical(&infisical_client, "SLACK_BOT_TOKEN").await?,
-                channel: get_secret_from_infisical(&infisical_client, "SLACK_CHANNEL").await?,
+                token: get_secret_from_infisical(&infisical_client, "SLACK_BOT_TOKEN", "/").await?,
+                channel: get_secret_from_infisical(&infisical_client, "SLACK_CHANNEL", "/").await?,
             },
         });
 
@@ -630,13 +637,18 @@ pub async fn flush(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
     }
 }
 
-async fn get_secret_from_infisical(client: &InfiscalClient, key: &str) -> Result<String, Error> {
+pub async fn get_secret_from_infisical(
+    client: &InfiscalClient,
+    key: &str,
+    path: &str,
+) -> Result<String, Error> {
     let request = GetSecretRequest::builder(
         key,
         std::env::var("INFISICAL_PROJECT_ID")
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_PROJECT_ID"))?,
         std::env::var("ENVIRONMENT").unwrap_or_else(|_| "dev".to_string()),
     )
+    .path(path)
     .build();
 
     let secret = client.secrets().get(request).await.map_err(|error| {

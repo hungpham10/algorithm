@@ -67,6 +67,8 @@ statrs = "0.16.0"
 rand = "0.8.5"
 rayon = "1.10.0"
 itertools = "0.13"
+nalgebra = "0.34.1"
+influxdb = { version = "0.7.2", features = ["derive"] }
 
 # feature order management
 airtable-api = { version = "0.1", optional = true }
@@ -121,6 +123,7 @@ candle-nn = { version = "0.9.1" }
 candle-transformers = { version = "0.9.1" }
 hf-hub = { version = "0.3" }
 tokenizers = { version = "0.21.4" }
+rstest = "0.18"
 
 [package.metadata.deb]
 maintainer = "Hung Pham <hung0913208@gmail.com>"
