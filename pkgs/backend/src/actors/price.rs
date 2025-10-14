@@ -421,7 +421,7 @@ pub async fn fetch_ohcl_by_stock(
 
         for _ in 0..10 {
             let resp = client.get(format!(
-                    "https://api.binance.com/api/v3/klines?startTime={}&endTime={}&symbol={}&interval={}&limit={}",
+                    "https://api.binance.us/api/v3/klines?startTime={}&endTime={}&symbol={}&interval={}&limit={}",
                     from,
                     to,
                     (*stock),

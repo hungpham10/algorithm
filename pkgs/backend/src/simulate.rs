@@ -80,15 +80,26 @@ impl Simulator {
             "https://{}/api/investing/v1/ohcl/{}/{}?resolution={}&from={}&to={}&limit=0",
             provider, market, symbol, resolution, from, to,
         ))
-        .await?;
-        self.candles = Some(
-            resp.json::<OhclResponse>()
-                .await
-                .map_err(|error| anyhow!("Failed parsing candlesticks: {:?}", error))?
-                .ohcl
-                .unwrap_or(Vec::new()),
-        );
-        Ok(())
+        .await?
+        .json::<OhclResponse>()
+        .await
+        .map_err(|error| anyhow!("Failed parsing candlesticks: {:?}", error))?;
+        let candles = resp.ohcl.unwrap_or(Vec::new());
+
+        if candles.len() > 0 {
+            self.candles = Some(candles);
+            Ok(())
+        } else if let Some(error) = resp.error {
+            Err(anyhow!(format!(
+                "Failed to fetch data of {}: {}",
+                symbol, error
+            )))
+        } else {
+            Err(anyhow!(format!(
+                "Failed to fetch data of {}: server return empty data",
+                symbol
+            )))
+        }
     }
 
     pub async fn with_genetic(
@@ -335,7 +346,12 @@ async fn simulate_with_trend_following(
                 )),
             )
             .await
-            .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{}", error)))?;
+            .map_err(|error| {
+                Error::new(
+                    ErrorKind::InvalidInput,
+                    format!("Fail while training {}: {}", symbol, error),
+                )
+            })?;
         }
         simulators.push(sim);
     }
@@ -415,7 +431,7 @@ pub async fn run(
                 CRONJOB.to_string(),
                 get_secret_from_infisical(
                     &infisical_client,
-                    "AIRTABLE_TABLE_WATCHLIST",
+                    "AIRTABLE_TABLE_CRONJOB",
                     "/feature-flags/",
                 )
                 .await
@@ -465,45 +481,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_simulate_single_symbol_with_trend_following() {
-        let mut infisical_client = InfiscalClient::builder()
-            .build()
-            .await
-            .map_err(|error| {
-                Error::new(
-                    ErrorKind::InvalidInput,
-                    format!("Fail to build infisical client: {:?}", error),
-                )
-            })
-            .unwrap();
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
-            .as_secs() as i64;
-        let three_years_ago = now - (3 * 365 * 24 * 3600);
-
-        infisical_client
-            .login(AuthMethod::new_universal_auth(
-                std::env::var("INFISICAL_CLIENT_ID")
-                    .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_CLIENT_ID"))
-                    .unwrap(),
-                std::env::var("INFISICAL_CLIENT_SECRET")
-                    .map_err(|_| {
-                        Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_CLIENT_SECRET")
-                    })
-                    .unwrap(),
-            ))
-            .await
-            .unwrap();
-
-        simulate_with_trend_following(
-            &infisical_client,
-            "stock",
-            vec!["MWG".to_string()],
-            "1D",
-            three_years_ago,
-            now,
-        )
-        .await
-        .unwrap();
+        run("trend-following", "stock", "1D", 3).await.unwrap();
     }
 }

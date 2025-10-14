@@ -30,16 +30,16 @@ impl Data {
         }
     }
 
-    pub fn shuttle(&mut self) {
-        let len = self.candles.len();
-        let min_required = self.range * 2;
-        if len < min_required {
-            self.begin = 0;
-            self.end = len;
-            self.split = len / 2;
-            return;
-        }
+    pub fn shuttle(&mut self) -> Result<()> {
         let mut rng = rand::thread_rng();
+        let len = self.candles.len();
+        let min_required = (self.range) * 2;
+        if len < min_required {
+            return Err(anyhow!(format!(
+                "provided data have {} candles, but we require {} candles",
+                len, min_required,
+            )));
+        }
         let end = rng.gen_range(min_required..=len);
         let max_begin = end.saturating_sub(min_required);
         let begin = rng.gen_range(0..=max_begin);
@@ -53,6 +53,7 @@ impl Data {
         self.begin = begin;
         self.split = split;
         self.end = end;
+        Ok(())
     }
 
     pub fn window(&self) -> usize {
@@ -64,11 +65,13 @@ impl Data {
             Phase::Train => self
                 .split
                 .saturating_sub(self.begin)
-                .saturating_sub(self.range),
+                .saturating_sub(self.range)
+                .saturating_add(1),
             Phase::Test => self
                 .end
                 .saturating_sub(self.split)
-                .saturating_sub(self.range),
+                .saturating_sub(self.range)
+                .saturating_add(1),
         }
     }
 

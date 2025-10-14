@@ -137,7 +137,7 @@ impl AppState {
                     CRONJOB.to_string(),
                     get_secret_from_infisical(
                         &infisical_client,
-                        "AIRTABLE_TABLE_WATCHLIST",
+                        "AIRTABLE_TABLE_CRONJOB",
                         "/feature-flags/",
                     )
                     .await
