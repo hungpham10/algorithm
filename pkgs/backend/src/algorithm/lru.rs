@@ -102,8 +102,6 @@ impl<K: Clone + Hash + Eq + Ord + Debug + Send + Sync, V: Debug + Clone + Send +
                     } else {
                         0
                     };
-                } else {
-                    error!("cannot update last");
                 }
 
                 // Update self.last before removing
@@ -276,5 +274,50 @@ mod tests {
         assert_eq!(cache.get(&1), None);
         assert_eq!(cache.get(&2), Some(20));
         assert_eq!(cache.get(&3), Some(30));
+    }
+
+    #[test]
+    fn test_consecutive_puts_no_access() {
+        let mut cache = LruCache::new(2);
+        cache.put(1, 10); // MRU=1, LRU=1
+        cache.put(2, 20); // MRU=2, LRU=1
+        cache.put(3, 30); // Evict LRU=1, now MRU=3, LRU=2
+        assert_eq!(cache.get(&1), None);
+        assert_eq!(cache.get(&2), Some(20)); // LRU
+        assert_eq!(cache.get(&3), Some(30)); // MRU
+                                             // Không get, put tiếp
+        cache.put(4, 40); // Evict LRU=2 (không access nên vẫn LRU), now MRU=4, LRU=3
+        assert_eq!(cache.get(&2), None);
+        assert_eq!(cache.get(&3), Some(30)); // LRU now
+        assert_eq!(cache.get(&4), Some(40)); // MRU
+                                             // Put nữa
+        cache.put(5, 50); // Evict LRU=3, now MRU=5, LRU=4
+        assert_eq!(cache.get(&3), None);
+        assert_eq!(cache.get(&4), Some(40)); // LRU
+        assert_eq!(cache.get(&5), Some(50)); // MRU
+    }
+
+    #[test]
+    fn test_internal_state_after_eviction() {
+        let mut cache = LruCache::new(2);
+        cache.put(1, 10); // first=0, last=0
+        cache.put(2, 20); // first=1, last=0 (MRU=2@1, LRU=1@0)
+                          // Evict last=0, first=1>0 → first=0 (sau shift index1→0)
+        cache.put(3, 30); // Evict 1@0
+        let caching = cache.caching.read().unwrap();
+        let first = *cache.first.read().unwrap();
+        let last = *cache.last.read().unwrap();
+        assert_eq!(caching.len(), 2); // 2@0 (old1→0), 3@1
+        assert_eq!(first, 1); // MRU=3@1
+        assert_eq!(last, 1); // LRU=2@0
+                             // Traverse check: from first=1 next=0? prev of 0=1?
+        let node1 = &caching[1]; // key=3, next nên=0 (LRU), prev=self=1
+        let node0 = &caching[0]; // key=2, next=self=0? (last), prev=1
+        assert_eq!(node1.key, 3);
+        assert_eq!(node1.next, 0);
+        assert_eq!(node1.prev, 1); // self
+        assert_eq!(node0.key, 2);
+        assert_eq!(node0.next, 0); // self last
+        assert_eq!(node0.prev, 1);
     }
 }

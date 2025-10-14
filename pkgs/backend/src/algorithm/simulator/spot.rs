@@ -29,14 +29,15 @@ impl Spot {
     ) -> Result<Self> {
         data.write()
             .map_err(|error| anyhow!("Failed to read data: {}", error))?
-            .shuttle();
+            .shuttle()?;
 
         // @TODO: cần điều chỉnh lại hằng số này để khống chế số lượng
         //        factors mỗi candles
         let n = 5 * data
             .read()
             .map_err(|error| anyhow!("Failed to read data: {}", error))?
-            .window();
+            .window()
+            + 1;
 
         Ok(Self {
             data,

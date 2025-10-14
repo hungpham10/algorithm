@@ -185,7 +185,7 @@ pub struct CryptoInfoResponse {
 }
 
 pub async fn list_crypto() -> Vec<String> {
-    let resp = reqwest::get("https://api.binance.com/api/v1/exchangeInfo")
+    let resp = reqwest::get("https://api.binance.us/api/v1/exchangeInfo")
         .await
         .expect("Fail to fetch list of crypto")
         .json::<CryptoInfoResponse>()

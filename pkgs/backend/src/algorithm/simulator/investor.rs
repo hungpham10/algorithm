@@ -143,7 +143,7 @@ impl Player for Investor {
 
         if data.size(&phase) == 0 {
             Err(anyhow!(
-                "Faied estimating data: data size is 0 cause nothing to calculate"
+                "Failed estimating data: data size is 0 cause nothing to calculate"
             ))
         } else {
             let last_price = data.last_candle(data.size(&phase) - 1, &phase)?.c;

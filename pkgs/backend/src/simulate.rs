@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -8,7 +9,7 @@ use reqwest;
 
 use vnscope::algorithm::genetic::{Genetic, InfluxDb};
 use vnscope::algorithm::simulator::{Data, Investor, Spot};
-use vnscope::schemas::CandleStick;
+use vnscope::schemas::{CandleStick, Portal, CRONJOB, WATCHLIST};
 
 use crate::api::get_secret_from_infisical;
 use crate::api::ohcl::v1::OhclResponse;
@@ -79,15 +80,26 @@ impl Simulator {
             "https://{}/api/investing/v1/ohcl/{}/{}?resolution={}&from={}&to={}&limit=0",
             provider, market, symbol, resolution, from, to,
         ))
-        .await?;
-        self.candles = Some(
-            resp.json::<OhclResponse>()
-                .await
-                .map_err(|error| anyhow!("Failed parsing candlesticks: {:?}", error))?
-                .ohcl
-                .unwrap_or(Vec::new()),
-        );
-        Ok(())
+        .await?
+        .json::<OhclResponse>()
+        .await
+        .map_err(|error| anyhow!("Failed parsing candlesticks: {:?}", error))?;
+        let candles = resp.ohcl.unwrap_or(Vec::new());
+
+        if candles.len() > 0 {
+            self.candles = Some(candles);
+            Ok(())
+        } else if let Some(error) = resp.error {
+            Err(anyhow!(format!(
+                "Failed to fetch data of {}: {}",
+                symbol, error
+            )))
+        } else {
+            Err(anyhow!(format!(
+                "Failed to fetch data of {}: server return empty data",
+                symbol
+            )))
+        }
     }
 
     pub async fn with_genetic(
@@ -187,38 +199,15 @@ impl Simulator {
     }
 }
 
-async fn simulate_single_symbol_with_trend_following(
+async fn simulate_with_trend_following(
+    infisical_client: &InfiscalClient,
     market: &str,
-    symbol: &str,
+    symbols: Vec<String>,
     resolution: &str,
     from: i64,
     to: i64,
-) -> std::io::Result<Simulator> {
-    let mut sim = Simulator::new();
-
-    let mut infisical_client = InfiscalClient::builder().build().await.map_err(|error| {
-        Error::new(
-            ErrorKind::InvalidInput,
-            format!("Fail to build infisical client: {:?}", error),
-        )
-    })?;
-
-    infisical_client
-        .login(AuthMethod::new_universal_auth(
-            std::env::var("INFISICAL_CLIENT_ID")
-                .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_CLIENT_ID"))?,
-            std::env::var("INFISICAL_CLIENT_SECRET").map_err(|_| {
-                Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_CLIENT_SECRET")
-            })?,
-        ))
-        .await
-        .map_err(|error| {
-            Error::new(
-                ErrorKind::InvalidInput,
-                format!("Fail to login to infisical: {:?}", error),
-            )
-        })?;
-
+) -> std::io::Result<Vec<Simulator>> {
+    let mut simulators = Vec::new();
     let provider = get_secret_from_infisical(&infisical_client, "PROVIDER", "/simulator/").await?;
     let influx_url =
         get_secret_from_infisical(&infisical_client, "INFLUX_URL", "/simulator/").await?;
@@ -273,7 +262,6 @@ async fn simulate_single_symbol_with_trend_following(
             .await?
             .parse::<f64>()
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid PASSING_ROUTE_PERCENT"))?;
-
     let window = get_secret_from_infisical(
         &infisical_client,
         "WINDOW",
@@ -282,86 +270,98 @@ async fn simulate_single_symbol_with_trend_following(
     .await?
     .parse::<usize>()
     .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid WINDOW"))?;
+    let money = get_secret_from_infisical(
+        &infisical_client,
+        "MONEY",
+        format!("/simulator/{}/", market).as_str(),
+    )
+    .await?
+    .parse::<f64>()
+    .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid MONEY"))?;
+    let stock = get_secret_from_infisical(
+        &infisical_client,
+        "STOCK",
+        format!("/simulator/{}/", market).as_str(),
+    )
+    .await?
+    .parse::<f64>()
+    .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid STOCK"))?;
+    let minimum_stock_buy = get_secret_from_infisical(
+        &infisical_client,
+        "MINIMUM_STOCK_FOR_BUY",
+        format!("/simulator/{}/", market).as_str(),
+    )
+    .await?
+    .parse::<usize>()
+    .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid MINIMUM_STOCK_FOR_BUY"))?;
+    let stock_holding_period = get_secret_from_infisical(
+        &infisical_client,
+        "STOCK_HOLDING_PERIOD",
+        format!("/simulator/{}/", market).as_str(),
+    )
+    .await?
+    .parse::<usize>()
+    .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid STOCK_HOLDING_PERIOD"))?;
+    let lifespan = get_secret_from_infisical(
+        &infisical_client,
+        "LIFESPAN",
+        format!("/simulator/{}/", market).as_str(),
+    )
+    .await?
+    .parse::<i64>()
+    .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid LIFESPAN"))?;
 
-    sim.with_money(
-        get_secret_from_infisical(
-            &infisical_client,
-            "MONEY",
-            format!("/simulator/{}/", market).as_str(),
-        )
-        .await?
-        .parse::<f64>()
-        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid MONEY"))?,
-    );
-    sim.with_stock(
-        get_secret_from_infisical(
-            &infisical_client,
-            "STOCK",
-            format!("/simulator/{}/", market).as_str(),
-        )
-        .await?
-        .parse::<f64>()
-        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid STOCK"))?,
-    );
-    sim.with_minimum_stock_buy(
-        get_secret_from_infisical(
-            &infisical_client,
-            "MINIMUM_STOCK_FOR_BUY",
-            format!("/simulator/{}/", market).as_str(),
-        )
-        .await?
-        .parse::<usize>()
-        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid MINIMUM_STOCK_FOR_BUY"))?,
-    );
-    sim.with_stock_holding_period(
-        get_secret_from_infisical(
-            &infisical_client,
-            "STOCK_HOLDING_PERIOD",
-            format!("/simulator/{}/", market).as_str(),
-        )
-        .await?
-        .parse::<usize>()
-        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid STOCK_HOLDING_PERIOD"))?,
-    );
-    sim.with_lifespan(
-        get_secret_from_infisical(
-            &infisical_client,
-            "LIFESPAN",
-            format!("/simulator/{}/", market).as_str(),
-        )
-        .await?
-        .parse::<i64>()
-        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid LIFESPAN"))?,
-    );
+    for symbol in symbols {
+        let mut sim = Simulator::new();
 
-    sim.with_sampling(provider.as_str(), market, symbol, resolution, from, to)
+        sim.with_money(money);
+        sim.with_stock(stock);
+        sim.with_minimum_stock_buy(minimum_stock_buy);
+        sim.with_stock_holding_period(stock_holding_period);
+        sim.with_lifespan(lifespan);
+        sim.with_sampling(
+            provider.as_str(),
+            market,
+            symbol.as_str(),
+            resolution,
+            from,
+            to,
+        )
         .await
         .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{}", error)))?;
 
-    for _ in 0..number_of_genetic_routes {
-        sim.with_genetic(
-            symbol,
-            number_of_investors,
-            number_of_loop_per_route,
-            number_of_evolution,
-            number_of_falsitive_broken_per_route,
-            window,
-            passing_route_percent,
-            Some(InfluxDb::new(
-                influx_url.as_str(),
-                influx_token.as_str(),
-                influx_bucket.as_str(),
-            )),
-        )
-        .await
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{}", error)))?;
+        for _ in 0..number_of_genetic_routes {
+            sim.with_genetic(
+                symbol.as_str(),
+                number_of_investors,
+                number_of_loop_per_route,
+                number_of_evolution,
+                number_of_falsitive_broken_per_route,
+                window,
+                passing_route_percent,
+                Some(InfluxDb::new(
+                    influx_url.as_str(),
+                    influx_token.as_str(),
+                    influx_bucket.as_str(),
+                )),
+            )
+            .await
+            .map_err(|error| {
+                Error::new(
+                    ErrorKind::InvalidInput,
+                    format!("Fail while training {}: {}", symbol, error),
+                )
+            })?;
+        }
+        simulators.push(sim);
     }
-    Ok(sim)
+
+    Ok(simulators)
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Model {
-    SingleSymbolWithTrendFollowing,
+    TrendFollowing,
 }
 
 impl TryFrom<String> for Model {
@@ -369,7 +369,7 @@ impl TryFrom<String> for Model {
 
     fn try_from(value: String) -> std::io::Result<Model> {
         match value.as_str() {
-            "single-symbol-with-trend-following" => Ok(Self::SingleSymbolWithTrendFollowing),
+            "trend-following" => Ok(Self::TrendFollowing),
 
             _ => Err(Error::new(
                 ErrorKind::InvalidInput,
@@ -382,10 +382,76 @@ impl TryFrom<String> for Model {
 pub async fn run(
     model: &str,
     market: &str,
-    symbols: &Vec<String>,
     resolution: &str,
     backtest_window_year_ago: i64,
 ) -> std::io::Result<()> {
+    let mut infisical_client = InfiscalClient::builder().build().await.map_err(|error| {
+        Error::new(
+            ErrorKind::InvalidInput,
+            format!("Fail to build infisical client: {:?}", error),
+        )
+    })?;
+
+    infisical_client
+        .login(AuthMethod::new_universal_auth(
+            std::env::var("INFISICAL_CLIENT_ID")
+                .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_CLIENT_ID"))?,
+            std::env::var("INFISICAL_CLIENT_SECRET").map_err(|_| {
+                Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_CLIENT_SECRET")
+            })?,
+        ))
+        .await
+        .map_err(|error| {
+            Error::new(
+                ErrorKind::InvalidInput,
+                format!("Fail to login to infisical: {:?}", error),
+            )
+        })?;
+    let portal = Arc::new(Portal::new(
+        get_secret_from_infisical(&infisical_client, "AIRTABLE_API_KEY", "/feature-flags/")
+            .await
+            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid AIRTABLE_API_KEY"))?
+            .as_str(),
+        get_secret_from_infisical(&infisical_client, "AIRTABLE_BASE_ID", "/feature-flags/")
+            .await
+            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid AIRTABLE_BASE_ID"))?
+            .as_str(),
+        &HashMap::from([
+            (
+                WATCHLIST.to_string(),
+                get_secret_from_infisical(
+                    &infisical_client,
+                    "AIRTABLE_TABLE_WATCHLIST",
+                    "/feature-flags/",
+                )
+                .await
+                .unwrap_or_else(|_| WATCHLIST.to_string()),
+            ),
+            (
+                CRONJOB.to_string(),
+                get_secret_from_infisical(
+                    &infisical_client,
+                    "AIRTABLE_TABLE_CRONJOB",
+                    "/feature-flags/",
+                )
+                .await
+                .unwrap_or_else(|_| CRONJOB.to_string()),
+            ),
+        ]),
+        get_secret_from_infisical(&infisical_client, "USE_AIRTABLE", "/feature-flags/")
+            .await
+            .unwrap_or_else(|_| "false".to_string())
+            .parse::<bool>()
+            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid USE_AIRTABLE"))?,
+    ));
+
+    let symbols: Vec<String> = portal
+        .watchlist()
+        .await
+        .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?
+        .iter()
+        .filter_map(|record| Some(record.fields.symbol.as_ref()?.clone()))
+        .collect::<Vec<String>>();
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
@@ -393,10 +459,11 @@ pub async fn run(
     let backtest_years_ago = now - (backtest_window_year_ago * 365 * 24 * 3600);
 
     match Model::try_from(model.to_string())? {
-        Model::SingleSymbolWithTrendFollowing => {
-            simulate_single_symbol_with_trend_following(
+        Model::TrendFollowing => {
+            simulate_with_trend_following(
+                &infisical_client,
                 market,
-                symbols[0].as_str(),
+                symbols,
                 resolution,
                 backtest_years_ago,
                 now,
@@ -414,14 +481,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_simulate_single_symbol_with_trend_following() {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
-            .as_secs() as i64;
-        let three_years_ago = now - (3 * 365 * 24 * 3600);
-
-        simulate_single_symbol_with_trend_following("stock", "MWG", "1D", three_years_ago, now)
-            .await
-            .unwrap();
+        run("trend-following", "stock", "1D", 3).await.unwrap();
     }
 }

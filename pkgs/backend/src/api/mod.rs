@@ -88,25 +88,64 @@ pub struct AppState {
 
 impl AppState {
     pub async fn new() -> AppStateResult<AppState> {
+        // @NOTE: setup secret management client
+        let mut infisical_client = InfiscalClient::builder().build().await.map_err(|error| {
+            Error::new(
+                ErrorKind::InvalidInput,
+                format!("Fail to build infisical client: {:?}", error),
+            )
+        })?;
+
+        infisical_client
+            .login(AuthMethod::new_universal_auth(
+                std::env::var("INFISICAL_CLIENT_ID").map_err(|_| {
+                    Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_CLIENT_ID")
+                })?,
+                std::env::var("INFISICAL_CLIENT_SECRET").map_err(|_| {
+                    Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_CLIENT_SECRET")
+                })?,
+            ))
+            .await
+            .map_err(|error| {
+                Error::new(
+                    ErrorKind::InvalidInput,
+                    format!("Fail to login to infisical: {:?}", error),
+                )
+            })?;
+
         let portal = Arc::new(Portal::new(
-            std::env::var("AIRTABLE_API_KEY")
+            get_secret_from_infisical(&infisical_client, "AIRTABLE_API_KEY", "/feature-flags/")
+                .await
                 .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid AIRTABLE_API_KEY"))?
                 .as_str(),
-            std::env::var("AIRTABLE_BASE_ID")
+            get_secret_from_infisical(&infisical_client, "AIRTABLE_BASE_ID", "/feature-flags/")
+                .await
                 .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid AIRTABLE_BASE_ID"))?
                 .as_str(),
             &HashMap::from([
                 (
                     WATCHLIST.to_string(),
-                    std::env::var("AIRTABLE_TABLE_WATCHLIST")
-                        .unwrap_or_else(|_| WATCHLIST.to_string()),
+                    get_secret_from_infisical(
+                        &infisical_client,
+                        "AIRTABLE_TABLE_WATCHLIST",
+                        "/feature-flags/",
+                    )
+                    .await
+                    .unwrap_or_else(|_| WATCHLIST.to_string()),
                 ),
                 (
                     CRONJOB.to_string(),
-                    std::env::var("AIRTABLE_TABLE_CRONJOB").unwrap_or_else(|_| CRONJOB.to_string()),
+                    get_secret_from_infisical(
+                        &infisical_client,
+                        "AIRTABLE_TABLE_CRONJOB",
+                        "/feature-flags/",
+                    )
+                    .await
+                    .unwrap_or_else(|_| CRONJOB.to_string()),
                 ),
             ]),
-            std::env::var("USE_AIRTABLE")
+            get_secret_from_infisical(&infisical_client, "USE_AIRTABLE", "/feature-flags/")
+                .await
                 .unwrap_or_else(|_| "false".to_string())
                 .parse::<bool>()
                 .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid USE_AIRTABLE"))?,
@@ -181,35 +220,20 @@ impl AppState {
             Err(_) => "".to_string(),
         };
 
-        let redis = match RedisClient::open(format!(
-            "redis://{}:{}@{}:{}",
-            redis_username, redis_password, redis_host, redis_port
-        )) {
+        let redis_dsn = get_secret_from_infisical(&infisical_client, "REDIS_DSN", "/")
+            .await
+            .unwrap_or("".to_string());
+        let redis = match RedisClient::open(if redis_dsn.len() > 0 {
+            redis_dsn
+        } else {
+            format!(
+                "redis://{}:{}@{}:{}",
+                redis_username, redis_password, redis_host, redis_port,
+            )
+        }) {
             Ok(redis) => Some(redis),
             Err(_) => None,
         };
-
-        // @NOTE: setup secret management client
-        let mut infisical_client = InfiscalClient::builder().build().await.map_err(|error| {
-            Error::new(
-                ErrorKind::InvalidInput,
-                format!("Fail to build infisical client: {:?}", error),
-            )
-        })?;
-
-        let auth_method = AuthMethod::new_universal_auth(
-            std::env::var("INFISICAL_CLIENT_ID")
-                .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_CLIENT_ID"))?,
-            std::env::var("INFISICAL_CLIENT_SECRET").map_err(|_| {
-                Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_CLIENT_SECRET")
-            })?,
-        );
-        infisical_client.login(auth_method).await.map_err(|error| {
-            Error::new(
-                ErrorKind::InvalidInput,
-                format!("Fail to login to infisical: {:?}", error),
-            )
-        })?;
 
         let chat = Arc::new(chat::Chat {
             fb: chat::Facebook {
@@ -244,15 +268,35 @@ impl AppState {
             },
         });
 
-        let db = match std::env::var("MYSQL_DSN") {
-            Ok(dsn) => Some(Arc::new(Database::connect(dsn).await.map_err(|error| {
-                Error::new(
-                    ErrorKind::InvalidInput,
-                    format!("Failed to connect database: {}", error),
-                )
-            })?)),
+        let db_dsn = get_secret_from_infisical(&infisical_client, "DB_DSN", "/")
+            .await
+            .unwrap_or("".to_string());
+        let db = match std::env::var("DB_DSN") {
+            Ok(dsn) => Some(Arc::new(
+                Database::connect(if db_dsn.len() > 0 { db_dsn } else { dsn })
+                    .await
+                    .map_err(|error| {
+                        Error::new(
+                            ErrorKind::InvalidInput,
+                            format!("Failed to connect database: {}", error),
+                        )
+                    })?,
+            )),
             Err(_) => None,
         };
+
+        match get_secret_from_infisical(&infisical_client, "AWS_ACCESS_KEY_ID", "/").await {
+            Ok(access_key) => {
+                std::env::set_var("AWS_ACCESS_KEY_ID", &access_key);
+            }
+            Err(_) => {}
+        }
+        match get_secret_from_infisical(&infisical_client, "AWS_SECRET_ACCESS_KEY", "/").await {
+            Ok(secret_key) => {
+                std::env::set_var("AWS_SECRET_ACCESS_KEY", &secret_key);
+            }
+            Err(_) => {}
+        }
 
         let s3 = S3Client::new(
             &(aws_config::defaults(BehaviorVersion::latest())

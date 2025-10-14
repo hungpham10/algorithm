@@ -27,7 +27,7 @@ enum Commands {
     },
 
     Simulate {
-        #[arg(long = "model", default_value = "single-symbol-with-trend-following")]
+        #[arg(long = "model", default_value = "trend-following")]
         model: String,
 
         #[arg(long = "market", default_value = "stock")]
@@ -38,9 +38,6 @@ enum Commands {
 
         #[arg(long = "lookback-to-year", default_value_t = 1)]
         backtest_year_ago: u8,
-
-        #[arg(long = "symbols")]
-        symbols: String,
     },
 }
 
@@ -63,27 +60,11 @@ async fn main() -> std::io::Result<()> {
             model,
             market,
             resolution,
-            symbols,
             backtest_year_ago,
         } => {
-            let symbol_list = symbols
-                .split(',')
-                .map(|it| it.trim())
-                .filter(|it| !it.is_empty())
-                .map(|it| it.to_string())
-                .collect::<Vec<_>>();
-
-            if symbol_list.is_empty() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "At least one non-empty symbol is required",
-                ));
-            }
-
             simulate::run(
                 model.as_str(),
                 market.as_str(),
-                &symbol_list,
                 resolution.as_str(),
                 backtest_year_ago as i64,
             )
