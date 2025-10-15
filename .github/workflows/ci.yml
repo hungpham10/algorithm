@@ -346,10 +346,14 @@ jobs:
         run: |
           python -m twine upload --non-interactive --verbose dist/*.whl # Updated path
 
+
   build_deb:
-    name: Build .deb Package
+    name: Build .deb Package and Attach to Release
     runs-on: ubuntu-22.04
     needs: test
+    if: startsWith(github.ref, 'refs/tags/')  # Chỉ chạy trên tag release
+    permissions:
+      contents: write  # Cần để tạo GitHub Release
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -381,14 +385,33 @@ jobs:
           cargo deb
 
       - name: Verify .deb package contents
+        working-directory: ./pkgs/backend
         run: |
           dpkg -c target/debian/*.deb
 
+      # Upload artifact như fallback (vẫn giữ, nhưng chỉ cần cho debug nếu release fail)
       - name: Upload .deb as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: deb-package
-          path: target/debian/*.deb
+          name: deb-package-${{ github.ref_name }}  # Thêm tag name để dễ phân biệt
+          path: pkgs/backend/target/debian/*.deb
+
+      # Tạo GitHub Release và attach .deb (chạy sau build)
+      - name: Create Release and Upload .deb
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pkgs/backend/target/debian/*.deb  # Path đến file .deb
+          tag_name: ${{ github.ref_name }}  # Sử dụng tag hiện tại (e.g., v1.0.0)
+          name: Release ${{ github.ref_name }} - DEB Package  # Tên release
+          body: |
+            Auto-generated release for version ${{ github.ref_name }}.
+            - Includes .deb package for Debian/Ubuntu installation.
+            - Built from commit: ${{ github.sha }}.
+            - Install: `sudo dpkg -i your-package.deb` or `sudo apt install ./your-package.deb`.
+          draft: false  # Publish ngay, không draft
+          prerelease: false  # Không phải pre-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Sử dụng token mặc định
 
   build_docker_image:
     name: Build and Push Docker Image
