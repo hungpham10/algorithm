@@ -284,12 +284,14 @@ impl AppState {
             )),
             Err(_) => {
                 if db_dsn.len() > 0 {
-                    Database::connect(db_dsn).await.map_err(|error| {
-                        Error::new(
-                            ErrorKind::InvalidInput,
-                            format!("Failed to connect database: {}", error),
-                        )
-                    })?
+                    Some(Arc::new(Database::connect(db_dsn).await.map_err(
+                        |error| {
+                            Error::new(
+                                ErrorKind::InvalidInput,
+                                format!("Failed to connect database: {}", error),
+                            )
+                        },
+                    )?))
                 } else {
                     None
                 }
