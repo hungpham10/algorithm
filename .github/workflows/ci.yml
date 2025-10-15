@@ -385,24 +385,21 @@ jobs:
           cargo deb
 
       - name: Verify .deb package contents
-        working-directory: ./pkgs/backend
         run: |
-          dpkg -c target/debian/*.deb
+          dpkg -c ./target/debian/*.deb
 
-      # Upload artifact như fallback (vẫn giữ, nhưng chỉ cần cho debug nếu release fail)
       - name: Upload .deb as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: deb-package-${{ github.ref_name }}  # Thêm tag name để dễ phân biệt
-          path: pkgs/backend/target/debian/*.deb
+          name: deb-package-${{ github.ref_name }}
+          path: ./target/debian/*.deb
 
-      # Tạo GitHub Release và attach .deb (chạy sau build)
       - name: Create Release and Upload .deb
         uses: softprops/action-gh-release@v2
         with:
-          files: pkgs/backend/target/debian/*.deb  # Path đến file .deb
-          tag_name: ${{ github.ref_name }}  # Sử dụng tag hiện tại (e.g., v1.0.0)
-          name: Release ${{ github.ref_name }} - DEB Package  # Tên release
+          files: ./target/debian/*.deb
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }} - DEB Package
           body: |
             Auto-generated release for version ${{ github.ref_name }}.
             - Includes .deb package for Debian/Ubuntu installation.
