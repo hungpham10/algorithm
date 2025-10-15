@@ -282,7 +282,18 @@ impl AppState {
                         )
                     })?,
             )),
-            Err(_) => None,
+            Err(_) => {
+                if db_dsn.len() > 0 {
+                    Database::connect(db_dsn).await.map_err(|error| {
+                        Error::new(
+                            ErrorKind::InvalidInput,
+                            format!("Failed to connect database: {}", error),
+                        )
+                    })?
+                } else {
+                    None
+                }
+            }
         };
 
         match get_secret_from_infisical(&infisical_client, "AWS_ACCESS_KEY_ID", "/").await {
