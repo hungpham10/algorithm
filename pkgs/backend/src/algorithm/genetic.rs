@@ -1,10 +1,14 @@
-use anyhow::{anyhow, Result};
-use chrono::{DateTime, Utc};
-use influxdb::{Client, InfluxDbWriteable};
-use log::error;
 use nalgebra::DVector;
 use rand::Rng;
+
+use chrono::{DateTime, Utc};
 use rayon::prelude::*;
+
+use anyhow::{anyhow, Result};
+use influxdb::{Client, InfluxDbWriteable};
+use log::error;
+
+use std::cmp::min;
 use std::sync::{Arc, RwLock};
 
 #[derive(Clone, Debug)]
@@ -159,24 +163,19 @@ impl<T: Player + Clone + Sync + Send, M: Model<T>> Genetic<T, M> {
             vec![0.0; n_accentors]
         };
         let sum_profiles = profiles.iter().sum::<f64>();
-        let inverse_weights = profiles
-            .iter()
-            .map(|&p| sum_profiles - p)
-            .collect::<Vec<_>>();
-        let sum_inverse_weights = inverse_weights.iter().sum::<f64>();
 
         let mut rng = rand::thread_rng();
         let mut population = Vec::new();
-        let mut roulette = if sum_inverse_weights > 0.0 {
-            inverse_weights
+        let mut roulette = if sum_profiles > 0.0 {
+            profiles
                 .iter()
-                .map(|&iw| iw / sum_inverse_weights)
+                .map(|&iw| iw / sum_profiles)
                 .collect::<Vec<_>>()
         } else {
             vec![1.0 / n_accentors as f64; n_accentors]
         };
 
-        for i in 1..n_accentors {
+        for i in 1..min(n_accentors, roulette.len()) {
             roulette[i] += roulette[i - 1];
         }
 
@@ -187,12 +186,12 @@ impl<T: Player + Clone + Sync + Send, M: Model<T>> Genetic<T, M> {
         for _ in 0..n_accentors {
             if session > 0 && shuttle_rate.is_some() {
                 if rng.gen::<f64>() < shuttle_rate.unwrap_or(0.0) {
-                    population.push(
-                        self.population
-                            [self.roulette_wheel_selection(&mut roulette, rng.gen::<f64>())]
-                        .clone(),
-                    );
-                    continue;
+                    let i = self.roulette_wheel_selection(&mut roulette, rng.gen::<f64>());
+
+                    if i < self.population.len() {
+                        population.push(self.population[i].clone());
+                        continue;
+                    }
                 }
             }
 
