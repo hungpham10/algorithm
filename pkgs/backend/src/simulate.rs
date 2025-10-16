@@ -262,6 +262,7 @@ async fn simulate_with_trend_following(
             .await?
             .parse::<f64>()
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid PASSING_ROUTE_PERCENT"))?;
+
     let window = get_secret_from_infisical(
         &infisical_client,
         "WINDOW",
@@ -270,6 +271,7 @@ async fn simulate_with_trend_following(
     .await?
     .parse::<usize>()
     .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid WINDOW"))?;
+
     let money = get_secret_from_infisical(
         &infisical_client,
         "MONEY",
@@ -278,6 +280,7 @@ async fn simulate_with_trend_following(
     .await?
     .parse::<f64>()
     .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid MONEY"))?;
+
     let stock = get_secret_from_infisical(
         &infisical_client,
         "STOCK",
@@ -286,6 +289,7 @@ async fn simulate_with_trend_following(
     .await?
     .parse::<f64>()
     .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid STOCK"))?;
+
     let minimum_stock_buy = get_secret_from_infisical(
         &infisical_client,
         "MINIMUM_STOCK_FOR_BUY",
@@ -294,6 +298,7 @@ async fn simulate_with_trend_following(
     .await?
     .parse::<usize>()
     .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid MINIMUM_STOCK_FOR_BUY"))?;
+
     let stock_holding_period = get_secret_from_infisical(
         &infisical_client,
         "STOCK_HOLDING_PERIOD",
@@ -302,6 +307,7 @@ async fn simulate_with_trend_following(
     .await?
     .parse::<usize>()
     .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid STOCK_HOLDING_PERIOD"))?;
+
     let lifespan = get_secret_from_infisical(
         &infisical_client,
         "LIFESPAN",
@@ -310,6 +316,16 @@ async fn simulate_with_trend_following(
     .await?
     .parse::<i64>()
     .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid LIFESPAN"))?;
+
+    let push_metric_to_influxdb = get_secret_from_infisical(
+        &infisical_client,
+        "PUSH_METRIC_TO_INFLUXDB",
+        format!("/simulator/{}/", market).as_str(),
+    )
+    .await
+    .unwrap_or("false".to_string())
+    .parse::<bool>()
+    .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid PUSH_METRIC_TO_INFLUXDB"))?;
 
     for symbol in symbols {
         let mut sim = Simulator::new();
@@ -339,11 +355,15 @@ async fn simulate_with_trend_following(
                 number_of_falsitive_broken_per_route,
                 window,
                 passing_route_percent,
-                Some(InfluxDb::new(
-                    influx_url.as_str(),
-                    influx_token.as_str(),
-                    influx_bucket.as_str(),
-                )),
+                if push_metric_to_influxdb {
+                    Some(InfluxDb::new(
+                        influx_url.as_str(),
+                        influx_token.as_str(),
+                        influx_bucket.as_str(),
+                    ))
+                } else {
+                    None
+                },
             )
             .await
             .map_err(|error| {
