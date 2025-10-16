@@ -61,7 +61,8 @@ impl Investor {
 
     pub fn logit(&self, candles: &[CandleStick]) -> f64 {
         // @TODO: replace this by using our fuzzy library and let
-        //        GA to explore new algorithm
+        //        GA to explore new algorithm, we can think it as
+        //        genetic programing
 
         let window = candles.len();
         if window == 0 {

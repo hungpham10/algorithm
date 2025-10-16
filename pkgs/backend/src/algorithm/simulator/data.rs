@@ -91,13 +91,11 @@ impl Data {
                         Err(anyhow!("out of range"))
                     }
                 }
-                Phase::Test => {
-                    if end_slice <= self.candles.len() {
-                        Ok(&self.candles[start..end_slice])
-                    } else {
-                        Err(anyhow!("out of range"))
-                    }
-                }
+                Phase::Test => Ok(if end_slice <= self.candles.len() {
+                    &self.candles[start..end_slice]
+                } else {
+                    &self.candles[(self.candles.len() - self.range)..self.candles.len()]
+                }),
             }
         } else {
             Err(anyhow!("out of range"))
