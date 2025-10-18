@@ -107,7 +107,6 @@ jobs:
       S3_ENDPOINT: https://o5u3.fra3.idrivee2-52.com
       DB_DSN: mysql://mysql:rootroot@127.0.0.1:3306/test
       REDIS_DSN: redis://127.0.0.1::6379
-      FACEBOOK_TOKEN: "123456"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
