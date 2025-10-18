@@ -102,7 +102,10 @@ jobs:
 
       # @NOTE: dev environment
       ENVIRONMENT: dev
-      MYSQL_DSN: mysql://mysql:rootroot@127.0.0.1:3306/test
+      S3_BUCKET: website
+      S3_REGION: eu-fra
+      S3_ENDPOINT: https://o5u3.fra3.idrivee2-52.com
+      DB_DSN: mysql://mysql:rootroot@127.0.0.1:3306/test
       REDIS_DSN: redis://127.0.0.1::6379
     steps:
       - name: Checkout code
