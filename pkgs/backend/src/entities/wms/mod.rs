@@ -1384,7 +1384,7 @@ mod tests {
     use std::sync::Arc;
 
     async fn setup_db() -> Result<DatabaseConnection, DbErr> {
-        Ok(Database::connect(env::var("MYSQL_DSN").expect("MYSQL_DSN must be set")).await?)
+        Ok(Database::connect(env::var("DB_DSN").expect("DB_DSN must be set")).await?)
     }
 
     #[tokio::test]
