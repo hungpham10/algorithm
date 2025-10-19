@@ -11,6 +11,40 @@ use log::error;
 use std::cmp::min;
 use std::sync::{Arc, RwLock};
 
+#[derive(InfluxDbWriteable, Clone, Debug)]
+pub struct Statistic {
+    pub p99: f64,
+    pub p95: f64,
+    pub p75: f64,
+    pub p55: f64,
+    pub best: f64,
+    pub worst: f64,
+    pub median: f64,
+    pub stddev: f64,
+
+    time: DateTime<Utc>,
+
+    #[influxdb(tag)]
+    session: String,
+}
+
+#[derive(Clone)]
+pub struct InfluxDb {
+    url: String,
+    token: String,
+    bucket: String,
+}
+
+impl InfluxDb {
+    pub fn new(url: &str, token: &str, bucket: &str) -> Self {
+        Self {
+            url: url.to_string(),
+            token: token.to_string(),
+            bucket: bucket.to_string(),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Individual<T: Clone + Sync + Send> {
     player: T,
@@ -49,40 +83,6 @@ pub struct Genetic<T: Clone + Sync + Send, M: Model<T>> {
     profile: Option<Client>,
     model: Arc<RwLock<M>>,
     limit: usize,
-}
-
-#[derive(Clone)]
-pub struct InfluxDb {
-    url: String,
-    token: String,
-    bucket: String,
-}
-
-impl InfluxDb {
-    pub fn new(url: &str, token: &str, bucket: &str) -> Self {
-        Self {
-            url: url.to_string(),
-            token: token.to_string(),
-            bucket: bucket.to_string(),
-        }
-    }
-}
-
-#[derive(InfluxDbWriteable, Clone, Debug)]
-pub struct Statistic {
-    pub p99: f64,
-    pub p95: f64,
-    pub p75: f64,
-    pub p55: f64,
-    pub best: f64,
-    pub worst: f64,
-    pub median: f64,
-    pub stddev: f64,
-
-    time: DateTime<Utc>,
-
-    #[influxdb(tag)]
-    session: String,
 }
 
 impl<T: Player + Clone + Sync + Send> Individual<T> {
@@ -244,7 +244,7 @@ impl<T: Player + Clone + Sync + Send, M: Model<T>> Genetic<T, M> {
         self.population[id_best].player.clone()
     }
 
-    pub async fn statistic(&self, session: i64, name: &str) -> Result<Statistic> {
+    pub fn statistic(&self, session: i64) -> Result<Statistic> {
         if self.population.is_empty() {
             return Err(anyhow!("There is no population to profile"));
         }
@@ -323,6 +323,10 @@ impl<T: Player + Clone + Sync + Send, M: Model<T>> Genetic<T, M> {
             session: session.to_string(),
         };
 
+        Ok(stats)
+    }
+
+    pub async fn capture(&self, name: &str, stats: &Statistic) -> Result<()> {
         match &self.profile {
             Some(client) => {
                 client
@@ -332,8 +336,7 @@ impl<T: Player + Clone + Sync + Send, M: Model<T>> Genetic<T, M> {
             }
             None => {}
         }
-
-        Ok(stats)
+        Ok(())
     }
 
     pub fn estimate(&mut self, session: i64) -> Result<()> {
