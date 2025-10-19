@@ -97,7 +97,7 @@ impl Convex {
         DVector::from_iterator(num_factors, new_factors.iter().map(|&x| x.clamp(-1.0, 1.0)))
     }
 
-    pub fn optimize(&mut self, population: Vec<Sampling>) -> Result<()> {
+    pub fn optimize(&mut self, population: &Vec<Sampling>) -> Result<()> {
         let n = self.mean.len();
         if n == 0 || population.is_empty() {
             return Err(anyhow!("Failed duo to population is emptied"));
@@ -377,7 +377,7 @@ mod tests {
         };
 
         // 2. Chạy optimize
-        let result = convex.optimize(population);
+        let result = convex.optimize(&population);
         assert!(result.is_ok(), "Optimization failed: {:?}", result.err());
 
         // 3. Kiểm tra các thuộc tính sau khi optimize
@@ -414,7 +414,7 @@ mod tests {
         let mut convex = Convex::new(n, None, None);
         let empty_pop: Vec<Sampling> = vec![];
 
-        let result = convex.optimize(empty_pop);
+        let result = convex.optimize(&empty_pop);
         // Kiểm tra xem hàm có trả về lỗi khi population rỗng không
         assert!(result.is_err());
         assert_eq!(
@@ -445,7 +445,7 @@ mod tests {
             })
             .collect();
 
-        original_convex.optimize(population)?;
+        original_convex.optimize(&population)?;
 
         // 2. Chuyển Convex -> Model (Serialize)
         let model = original_convex.to_model();

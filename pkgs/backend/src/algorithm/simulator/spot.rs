@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use log::debug;
 use nalgebra::DVector;
 use rand::Rng;
 use std::sync::{Arc, RwLock};
@@ -101,7 +102,7 @@ impl Model<Investor> for Spot {
         Ok(item.lifetime() > self.lifespan)
     }
 
-    fn optimize(&mut self, population: &Vec<Individual<Investor>>) -> Result<()> {
+    fn optimize(&mut self, population: &Vec<Individual<Investor>>) -> Result<Vec<f64>> {
         // @NOTE: lock old phase
         let old_phase = *self
             .phase
@@ -114,20 +115,21 @@ impl Model<Investor> for Spot {
             .write()
             .map_err(|error| anyhow!("Failed write phase: {}", error))? = Phase::Test;
 
-        let result = self.generator.optimize(
-            population
-                .iter()
-                .map(|it| Sampling {
-                    fitness: it.reevalutate(),
-                    gene: it.gene(),
-                })
-                .collect::<Vec<_>>(),
-        );
+        let fitnesses = population
+            .iter()
+            .map(|it| Sampling {
+                fitness: it.reevalutate(),
+                gene: it.gene(),
+            })
+            .collect::<Vec<_>>();
+
+        self.generator.optimize(&fitnesses)?;
 
         *self
             .phase
             .write()
             .map_err(|error| anyhow!("Failed write phase: {}", error))? = old_phase;
-        result
+
+        Ok(fitnesses.iter().map(|it| it.fitness).collect::<Vec<_>>())
     }
 }
