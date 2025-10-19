@@ -97,7 +97,7 @@ impl Convex {
         DVector::from_iterator(num_factors, new_factors.iter().map(|&x| x.clamp(-1.0, 1.0)))
     }
 
-    pub fn optimize(&mut self, population: Vec<Sampling>) -> Result<()> {
+    pub fn optimize(&mut self, population: &Vec<Sampling>) -> Result<()> {
         let n = self.mean.len();
         if n == 0 || population.is_empty() {
             return Err(anyhow!("Failed duo to population is emptied"));

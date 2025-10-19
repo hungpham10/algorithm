@@ -9,6 +9,7 @@ use pyo3::prelude::*;
 use pyo3_polars::PyDataFrame;
 
 use crate::algorithm::genetic::Genetic;
+use crate::algorithm::percentile;
 use crate::algorithm::simulator::{Data, Investor, Spot};
 use crate::schemas::CandleStick;
 
@@ -235,13 +236,17 @@ impl Evolution {
         n_loop: usize,
         birth_rate: f64,
         shuttle_rate: f64,
-    ) -> PyResult<()> {
+    ) -> PyResult<PyDataFrame> {
         match self.capacity {
             Some(capacity) => {
                 let mut genetic = self.genetic.as_ref().unwrap().lock().map_err(|error| {
                     PyRuntimeError::new_err(format!("Failed to lock genetic: {}", error))
                 })?;
+                let mut p95 = Vec::new();
+                let mut p75 = Vec::new();
+                let mut p55 = Vec::new();
                 let mut n = 0;
+                let mut done = false;
                 let mut step_cnt = 0;
                 let mut try_cnt = 0;
                 let mut breaking_cnt = 0;
@@ -256,14 +261,13 @@ impl Evolution {
                         })?;
                 }
 
-                while step_cnt < n_step {
+                while step_cnt < n_step && !done {
                     for i in 0..n_try {
                         if n_loop > 0 {
-                            if n >= n_loop {
-                                self.session += step_cnt as i64;
-                                return Err(PyRuntimeError::new_err(
-                                    "Cannot find optimized solution",
-                                ));
+                            done = n >= n_loop;
+
+                            if done {
+                                break;
                             } else {
                                 n += 1;
                             }
@@ -338,9 +342,18 @@ impl Evolution {
                         step_cnt += 1;
                     }
 
-                    genetic.optimize().map_err(|error| {
+                    let mut fitnesses = genetic.optimize().map_err(|error| {
                         PyRuntimeError::new_err(format!("Failed to optimize: {}", error))
                     })?;
+
+                    if try_cnt >= n_try {
+                        fitnesses
+                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+                        p95.push(percentile(&fitnesses, 95.0));
+                        p75.push(percentile(&fitnesses, 75.0));
+                        p55.push(percentile(&fitnesses, 55.0));
+                    }
 
                     genetic
                         .initialize(capacity, self.session + step_cnt as i64, Some(shuttle_rate))
@@ -354,8 +367,17 @@ impl Evolution {
                     previous_diff_p75 = 0.0;
                 }
 
-                self.session += n_step as i64;
-                Ok(())
+                self.session += step_cnt as i64;
+                Ok(PyDataFrame(
+                    DataFrame::new(vec![
+                        Series::new("p95", &p95),
+                        Series::new("p75", &p75),
+                        Series::new("p55", &p55),
+                    ])
+                    .map_err(|e| {
+                        PyRuntimeError::new_err(format!("Failed to create DataFrame: {}", e))
+                    })?,
+                ))
             }
             None => Err(PyRuntimeError::new_err("Capacity is missing")),
         }

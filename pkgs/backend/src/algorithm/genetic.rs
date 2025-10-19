@@ -11,6 +11,8 @@ use log::error;
 use std::cmp::min;
 use std::sync::{Arc, RwLock};
 
+use crate::algorithm::percentile;
+
 #[derive(InfluxDbWriteable, Clone, Debug)]
 pub struct Statistic {
     pub p99: f64,
@@ -64,7 +66,7 @@ impl<T: Clone + Sync + Send> Individual<T> {
 }
 
 pub trait Model<T: Clone + Sync + Send> {
-    fn optimize(&mut self, population: &Vec<Individual<T>>) -> Result<()>;
+    fn optimize(&mut self, population: &Vec<Individual<T>>) -> Result<Vec<f64>>;
     fn random(&self) -> Result<T>;
     fn mutate(&self, item: &mut T, arguments: &Vec<f64>, index: usize) -> Result<()>;
     fn crossover(&self, father: &T, mother: &T) -> Result<T>;
@@ -259,30 +261,6 @@ impl<T: Player + Clone + Sync + Send, M: Model<T>> Genetic<T, M> {
         // sort ascending for percentile calculations
         vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-        // helper: linear-interpolated percentile (p in [0.0, 100.0])
-        fn percentile(sorted: &[f64], p: f64) -> f64 {
-            let n = sorted.len();
-            if n == 0 {
-                return f64::NAN;
-            }
-
-            if n == 1 {
-                return sorted[0];
-            }
-
-            let p = p.clamp(0.0, 100.0) / 100.0;
-            let idx = p * ((n - 1) as f64);
-            let lo = idx.floor() as usize;
-            let hi = idx.ceil() as usize;
-
-            if lo == hi {
-                sorted[lo]
-            } else {
-                let w = idx - (lo as f64);
-                sorted[lo] * (1.0 - w) + sorted[hi] * w
-            }
-        }
-
         let n = vals.len() as f64;
         let mean = vals.iter().sum::<f64>() / n;
         let variance = vals
@@ -473,7 +451,7 @@ impl<T: Player + Clone + Sync + Send, M: Model<T>> Genetic<T, M> {
         Ok(())
     }
 
-    pub fn optimize(&mut self) -> Result<()> {
+    pub fn optimize(&mut self) -> Result<Vec<f64>> {
         self.model
             .write()
             .map_err(|error| anyhow!("Failed to lock model to write: {}", error))?

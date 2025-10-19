@@ -140,8 +140,8 @@ impl Pipeline {
             .map_err(|error| anyhow!("Failed to lock genetic: {}", error))?;
         let mut step_cnt = 0;
         let mut breaking_cnt = 0;
-        let mut previous_p55 = 0.0;
-        let mut previous_diff_p55 = 0.0;
+        let mut previous_p75 = 0.0;
+        let mut previous_diff_p75 = 0.0;
 
         if self.session == 0 {
             genetic.initialize(capacity, self.session, Some(shuttle_rate))?;
@@ -152,12 +152,12 @@ impl Pipeline {
                 genetic.evolute(capacity / 5, self.session + (i + 1) as i64, self.pmutation)?;
 
                 let stats = genetic.statistic(self.session + (i + 1) as i64)?;
-                let current_p55 = stats.p55;
-                let current_diff_p55 = current_p55 - previous_p55;
+                let current_p75 = stats.p75;
+                let current_diff_p75 = current_p75 - previous_p75;
 
-                if current_p55 <= previous_p55 {
+                if current_p75 <= previous_p75 {
                     breaking_cnt += 1;
-                } else if current_diff_p55 <= previous_diff_p55 {
+                } else if current_diff_p75 <= previous_diff_p75 {
                     breaking_cnt += 1;
                 } else {
                     breaking_cnt = 0;
@@ -168,8 +168,8 @@ impl Pipeline {
                 }
 
                 step_cnt += 1;
-                previous_p55 = current_p55;
-                previous_diff_p55 = current_diff_p55;
+                previous_p75 = current_p75;
+                previous_diff_p75 = current_diff_p75;
 
                 if i + 1 < n_train {
                     genetic.fluctuate(
@@ -185,8 +185,8 @@ impl Pipeline {
             if step_cnt < n_train {
                 step_cnt = 0;
                 breaking_cnt = 0;
-                previous_p55 = 0.0;
-                previous_diff_p55 = 0.0;
+                previous_p75 = 0.0;
+                previous_diff_p75 = 0.0;
             } else {
                 break;
             }
