@@ -200,8 +200,6 @@ impl Convex {
     }
 
     pub fn to_model(&self) -> Model {
-        let n = self.mean.len();
-
         // 1. Chuyển DVector sang Vec<f64>
         let mean_vec = self.mean.as_slice().to_vec();
         let p_sigma_vec = self.p_sigma.as_slice().to_vec();

@@ -136,8 +136,9 @@ assets = [
 maintainer-scripts = "debian/"
 
 [profile.dev]
-opt-level = 0               # Use slightly better optimizations.
-overflow-checks = false     # Disable integer overflow checks.
+debug = 1
+opt-level = 1
+overflow-checks = false
 
 [profile.release]
 opt-level = 3          # tối ưu tốc độ (O3)

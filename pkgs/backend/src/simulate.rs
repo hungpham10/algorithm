@@ -14,7 +14,7 @@ use vnscope::schemas::{CandleStick, Portal, CRONJOB, WATCHLIST};
 use crate::api::get_secret_from_infisical;
 use crate::api::ohcl::v1::OhclResponse;
 
-struct Simulator {
+struct Pipeline {
     genetic: Option<Arc<Mutex<Genetic<Investor, Spot>>>>,
     candles: Option<Vec<CandleStick>>,
     money: Option<f64>,
@@ -27,7 +27,7 @@ struct Simulator {
     minimum_stock_buy: usize,
 }
 
-impl Simulator {
+impl Pipeline {
     pub fn new() -> Self {
         Self {
             candles: None,
@@ -151,9 +151,7 @@ impl Simulator {
             for i in 0..n_train {
                 genetic.evolute(capacity / 5, self.session + (i + 1) as i64, self.pmutation)?;
 
-                let stats = genetic
-                    .statistic(self.session + (i + 1) as i64, symbol)
-                    .await?;
+                let stats = genetic.statistic(self.session + (i + 1) as i64)?;
                 let current_p55 = stats.p55;
                 let current_diff_p55 = current_p55 - previous_p55;
 
@@ -206,7 +204,7 @@ async fn simulate_with_trend_following(
     resolution: &str,
     from: i64,
     to: i64,
-) -> std::io::Result<Vec<Simulator>> {
+) -> std::io::Result<Vec<Pipeline>> {
     let mut simulators = Vec::new();
     let provider = get_secret_from_infisical(&infisical_client, "PROVIDER", "/simulator/").await?;
     let influx_url =
@@ -328,7 +326,7 @@ async fn simulate_with_trend_following(
     .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid PUSH_METRIC_TO_INFLUXDB"))?;
 
     for symbol in symbols {
-        let mut sim = Simulator::new();
+        let mut sim = Pipeline::new();
 
         sim.with_money(money);
         sim.with_stock(stock);

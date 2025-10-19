@@ -70,8 +70,7 @@ test-python:
 	$(PYTHON) -m pytest -xvs $(TEST_DIR)/
 
 test-rust:
-	$(CARGO) install grcov cargo-llvm-cov
-	$(CARGO) llvm-cov test --lcov > lcov.info
+	$(CARGO) test
 
 test: library test-python test-rust
 
