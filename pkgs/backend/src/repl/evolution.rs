@@ -218,6 +218,7 @@ impl Evolution {
                         )),
                         None,
                     ))));
+                    self.session = 0;
                     Ok(())
                 }
                 None => Err(PyRuntimeError::new_err("Missing capacity")),
@@ -244,8 +245,8 @@ impl Evolution {
                 let mut step_cnt = 0;
                 let mut try_cnt = 0;
                 let mut breaking_cnt = 0;
-                let mut previous_p55 = 0.0;
-                let mut previous_diff_p55 = 0.0;
+                let mut previous_p75 = 0.0;
+                let mut previous_diff_p75 = 0.0;
 
                 if self.session == 0 {
                     genetic
@@ -259,6 +260,7 @@ impl Evolution {
                     for i in 0..n_try {
                         if n_loop > 0 {
                             if n >= n_loop {
+                                self.session += step_cnt as i64;
                                 return Err(PyRuntimeError::new_err(
                                     "Cannot find optimized solution",
                                 ));
@@ -270,28 +272,27 @@ impl Evolution {
                         genetic
                             .evolute(
                                 ((capacity as f64) * birth_rate) as usize,
-                                self.session + (i + 1) as i64,
+                                self.session + (step_cnt + i + 1) as i64,
                                 self.pmutation,
                             )
                             .map_err(|error| {
                                 PyRuntimeError::new_err(format!("Failed to evolute: {}", error))
                             })?;
 
-                        let stats =
-                            genetic
-                                .statistic(self.session + (i + 1) as i64)
-                                .map_err(|error| {
-                                    PyRuntimeError::new_err(format!(
-                                        "Failed to calculate statistic: {}",
-                                        error
-                                    ))
-                                })?;
-                        let current_p55 = stats.p55;
-                        let current_diff_p55 = current_p55 - previous_p55;
+                        let stats = genetic
+                            .statistic(self.session + (step_cnt + i + 1) as i64)
+                            .map_err(|error| {
+                                PyRuntimeError::new_err(format!(
+                                    "Failed to calculate statistic: {}",
+                                    error
+                                ))
+                            })?;
+                        let current_p75 = stats.p75;
+                        let current_diff_p75 = current_p75 - previous_p75;
 
-                        if current_p55 <= previous_p55 {
+                        if current_p75 <= previous_p75 {
                             breaking_cnt += 1;
-                        } else if current_diff_p55 <= previous_diff_p55 {
+                        } else if current_diff_p75 <= previous_diff_p75 {
                             breaking_cnt += 1;
                         } else {
                             breaking_cnt = 0;
@@ -299,8 +300,8 @@ impl Evolution {
 
                         debug!(
                             "[{}/{}] best={}, p99={}, p95={}, p75={}, p55={}, worst={}",
-                            self.session + (i as i64) + 1,
-                            self.session,
+                            self.session + (step_cnt + i + 1) as i64,
+                            self.session + (step_cnt as i64),
                             stats.best,
                             stats.p99,
                             stats.p95,
@@ -314,13 +315,13 @@ impl Evolution {
                         }
 
                         try_cnt += 1;
-                        previous_p55 = current_p55;
-                        previous_diff_p55 = current_diff_p55;
+                        previous_p75 = current_p75;
+                        previous_diff_p75 = current_diff_p75;
 
                         if i + 1 < n_try {
                             genetic
                                 .fluctuate(
-                                    self.session + (i + 1) as i64,
+                                    self.session + (step_cnt + i + 1) as i64,
                                     &self.arguments,
                                     self.pmutation,
                                 )
@@ -342,15 +343,15 @@ impl Evolution {
                     })?;
 
                     genetic
-                        .initialize(capacity, self.session, Some(shuttle_rate))
+                        .initialize(capacity, self.session + step_cnt as i64, Some(shuttle_rate))
                         .map_err(|error| {
                             PyRuntimeError::new_err(format!("Failed to reinitialize: {}", error))
                         })?;
 
                     try_cnt = 0;
                     breaking_cnt = 0;
-                    previous_p55 = 0.0;
-                    previous_diff_p55 = 0.0;
+                    previous_p75 = 0.0;
+                    previous_diff_p75 = 0.0;
                 }
 
                 self.session += n_step as i64;
