@@ -231,6 +231,7 @@ impl Evolution {
         n_step: usize,
         n_try: usize,
         n_break: usize,
+        n_loop: usize,
         birth_rate: f64,
         shuttle_rate: f64,
     ) -> PyResult<()> {
@@ -239,7 +240,9 @@ impl Evolution {
                 let mut genetic = self.genetic.as_ref().unwrap().lock().map_err(|error| {
                     PyRuntimeError::new_err(format!("Failed to lock genetic: {}", error))
                 })?;
+                let mut n = 0;
                 let mut step_cnt = 0;
+                let mut try_cnt = 0;
                 let mut breaking_cnt = 0;
                 let mut previous_p55 = 0.0;
                 let mut previous_diff_p55 = 0.0;
@@ -252,8 +255,18 @@ impl Evolution {
                         })?;
                 }
 
-                for _ in 0..n_step {
+                while step_cnt < n_step {
                     for i in 0..n_try {
+                        if n_loop > 0 {
+                            if n >= n_loop {
+                                return Err(PyRuntimeError::new_err(
+                                    "Cannot find optimized solution",
+                                ));
+                            } else {
+                                n += 1;
+                            }
+                        }
+
                         genetic
                             .evolute(
                                 ((capacity as f64) * birth_rate) as usize,
@@ -284,14 +297,6 @@ impl Evolution {
                             breaking_cnt = 0;
                         }
 
-                        if breaking_cnt > n_break {
-                            break;
-                        }
-
-                        step_cnt += 1;
-                        previous_p55 = current_p55;
-                        previous_diff_p55 = current_diff_p55;
-
                         debug!(
                             "[{}/{}] best={}, p99={}, p95={}, p75={}, p55={}, worst={}",
                             self.session + (i as i64) + 1,
@@ -303,6 +308,14 @@ impl Evolution {
                             stats.p55,
                             stats.worst,
                         );
+
+                        if breaking_cnt > n_break {
+                            break;
+                        }
+
+                        try_cnt += 1;
+                        previous_p55 = current_p55;
+                        previous_diff_p55 = current_diff_p55;
 
                         if i + 1 < n_try {
                             genetic
@@ -320,13 +333,8 @@ impl Evolution {
                         }
                     }
 
-                    if step_cnt < n_try {
-                        step_cnt = 0;
-                        breaking_cnt = 0;
-                        previous_p55 = 0.0;
-                        previous_diff_p55 = 0.0;
-                    } else {
-                        self.session += 1;
+                    if try_cnt >= n_try {
+                        step_cnt += 1;
                     }
 
                     genetic.optimize().map_err(|error| {
@@ -338,7 +346,14 @@ impl Evolution {
                         .map_err(|error| {
                             PyRuntimeError::new_err(format!("Failed to reinitialize: {}", error))
                         })?;
+
+                    try_cnt = 0;
+                    breaking_cnt = 0;
+                    previous_p55 = 0.0;
+                    previous_diff_p55 = 0.0;
                 }
+
+                self.session += n_step as i64;
                 Ok(())
             }
             None => Err(PyRuntimeError::new_err("Capacity is missing")),
