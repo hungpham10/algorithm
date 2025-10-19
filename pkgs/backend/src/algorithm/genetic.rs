@@ -497,8 +497,8 @@ mod tests {
     }
 
     impl Model<TestPlayer> for TestModel {
-        fn optimize(&mut self, _population: &Vec<Individual<TestPlayer>>) -> Result<()> {
-            Ok(())
+        fn optimize(&mut self, _population: &Vec<Individual<TestPlayer>>) -> Result<Vec<f64>> {
+            Ok(Vec::new())
         }
 
         fn random(&self) -> Result<TestPlayer> {
