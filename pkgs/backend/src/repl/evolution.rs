@@ -57,6 +57,9 @@ impl Evolution {
     }
 
     fn with_capacity(&mut self, capacity: usize) -> PyResult<()> {
+        if capacity == 0 {
+            return Err(PyRuntimeError::new_err("capacity must be > 0"));
+        }
         self.capacity = Some(capacity);
         Ok(())
     }
@@ -184,6 +187,11 @@ impl Evolution {
             }
         }
 
+        if candles.is_empty() {
+            return Err(PyRuntimeError::new_err(
+                "No valid candles after preprocessing (nulls/invalid dates removed)",
+            ));
+        }
         self.candles = Some(candles);
         Ok(())
     }
@@ -205,10 +213,7 @@ impl Evolution {
                                 self.minimum_stock_buy,
                             )
                             .map_err(|error| {
-                                PyRuntimeError::new_err(format!(
-                                    "Failed to lock genetic: {}",
-                                    error
-                                ))
+                                PyRuntimeError::new_err(format!("Failed to new model: {}", error))
                             })?,
                         )),
                         None,
