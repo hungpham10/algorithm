@@ -145,19 +145,6 @@ jobs:
           make setup
           make test
 
-      - uses: qltysh/qlty-action/coverage@v2
-        with:
-          token: ${{ secrets.QLTY_COVERAGE_TOKEN }}
-          files: ./lcov.info
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5  # Latest version
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}  # Bắt buộc cho private repo
-          file: ./lcov.info
-          fail_ci_if_error: true  # Fail CI nếu upload lỗi
-          verbose: true  # Debug log
-
   build_publish_dev:
     name: Build and Publish Dev Version (via Makefile) # Updated name
     runs-on: ${{ matrix.os }}
