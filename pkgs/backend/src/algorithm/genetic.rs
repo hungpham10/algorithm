@@ -67,6 +67,7 @@ impl<T: Clone + Sync + Send> Individual<T> {
 
 pub trait Model<T: Clone + Sync + Send> {
     fn optimize(&mut self, population: &Vec<Individual<T>>) -> Result<Vec<f64>>;
+    fn validate(&self, population: &Vec<Individual<T>>) -> Result<Vec<f64>>;
     fn random(&self) -> Result<T>;
     fn mutate(&self, item: &mut T, arguments: &Vec<f64>, index: usize) -> Result<()>;
     fn crossover(&self, father: &T, mother: &T) -> Result<T>;
@@ -458,6 +459,22 @@ impl<T: Player + Clone + Sync + Send, M: Model<T>> Genetic<T, M> {
             .optimize(&self.population)
     }
 
+    pub fn validate(&self) -> Result<Vec<f64>> {
+        match self
+            .model
+            .read()
+            .map_err(|error| anyhow!("Failed to lock model to read: {}", error))?
+            .validate(&self.population)
+        {
+            Ok(ret) => Ok(ret),
+            Err(_) => Ok(self
+                .population
+                .iter()
+                .map(|it| it.estimate())
+                .collect::<Vec<_>>()),
+        }
+    }
+
     fn roulette_wheel_selection(&self, roulette: &mut [f64], target: f64) -> usize {
         match roulette
             .binary_search_by(|x| x.partial_cmp(&target).unwrap_or(std::cmp::Ordering::Equal))
@@ -498,6 +515,10 @@ mod tests {
 
     impl Model<TestPlayer> for TestModel {
         fn optimize(&mut self, _population: &Vec<Individual<TestPlayer>>) -> Result<Vec<f64>> {
+            Ok(Vec::new())
+        }
+
+        fn validate(&self, _population: &Vec<Individual<TestPlayer>>) -> Result<Vec<f64>> {
             Ok(Vec::new())
         }
 

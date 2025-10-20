@@ -7,8 +7,8 @@ use anyhow::{anyhow, Result};
 use infisical::{AuthMethod, Client as InfiscalClient};
 use reqwest;
 
+use vnscope::algorithm::evolution::{Data, Investor, Spot};
 use vnscope::algorithm::genetic::{Genetic, InfluxDb};
-use vnscope::algorithm::simulator::{Data, Investor, Spot};
 use vnscope::schemas::{CandleStick, Portal, CRONJOB, WATCHLIST};
 
 use crate::api::get_secret_from_infisical;

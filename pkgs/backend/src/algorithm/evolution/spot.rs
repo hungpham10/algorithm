@@ -1,12 +1,11 @@
 use anyhow::{anyhow, Result};
-use log::debug;
 use nalgebra::DVector;
 use rand::Rng;
 use std::sync::{Arc, RwLock};
 
 use crate::algorithm::cmaes::{Convex, Sampling};
+use crate::algorithm::evolution::{Data, Investor, Phase};
 use crate::algorithm::genetic::{Individual, Model};
-use crate::algorithm::simulator::{Data, Investor, Phase};
 
 pub struct Spot {
     data: Arc<RwLock<Data>>,
@@ -102,14 +101,35 @@ impl Model<Investor> for Spot {
         Ok(item.lifetime() > self.lifespan)
     }
 
-    fn optimize(&mut self, population: &Vec<Individual<Investor>>) -> Result<Vec<f64>> {
-        // @NOTE: lock old phase
+    fn validate(&self, population: &Vec<Individual<Investor>>) -> Result<Vec<f64>> {
         let old_phase = *self
             .phase
             .read()
             .map_err(|error| anyhow!("Failed read phase: {}", error))?;
 
-        // @NOTE: move to test phase
+        *self
+            .phase
+            .write()
+            .map_err(|error| anyhow!("Failed write phase: {}", error))? = Phase::Test;
+
+        let fitnesses = population
+            .iter()
+            .map(|it| it.reevalutate())
+            .collect::<Vec<_>>();
+
+        *self
+            .phase
+            .write()
+            .map_err(|error| anyhow!("Failed write phase: {}", error))? = old_phase;
+        Ok(fitnesses)
+    }
+
+    fn optimize(&mut self, population: &Vec<Individual<Investor>>) -> Result<Vec<f64>> {
+        let old_phase = *self
+            .phase
+            .read()
+            .map_err(|error| anyhow!("Failed read phase: {}", error))?;
+
         *self
             .phase
             .write()
@@ -123,12 +143,16 @@ impl Model<Investor> for Spot {
             })
             .collect::<Vec<_>>();
 
-        self.generator.optimize(&fitnesses)?;
-
         *self
             .phase
             .write()
             .map_err(|error| anyhow!("Failed write phase: {}", error))? = old_phase;
+
+        self.generator.optimize(&fitnesses)?;
+        self.data
+            .write()
+            .map_err(|error| anyhow!("Failed to read data: {}", error))?
+            .shuttle()?;
 
         Ok(fitnesses.iter().map(|it| it.fitness).collect::<Vec<_>>())
     }

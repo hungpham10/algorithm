@@ -3,8 +3,8 @@ use log::warn;
 use nalgebra::DVector;
 use std::sync::{Arc, RwLock};
 
+use crate::algorithm::evolution::{Data, Phase};
 use crate::algorithm::genetic::Player;
-use crate::algorithm::simulator::{Data, Phase};
 use crate::schemas::CandleStick;
 
 #[derive(Clone)]

@@ -8,9 +8,9 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3_polars::PyDataFrame;
 
+use crate::algorithm::evolution::{Data, Investor, Spot};
 use crate::algorithm::genetic::Genetic;
 use crate::algorithm::percentile;
-use crate::algorithm::simulator::{Data, Investor, Spot};
 use crate::schemas::CandleStick;
 
 #[pyclass]
