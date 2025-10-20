@@ -210,6 +210,7 @@ pub async fn run() -> std::io::Result<()> {
             .app_data(Data::new(appstate_for_control.clone()))
     })
     .workers(concurrent)
+    .keep_alive(std::time::Duration::from_secs(100))
     .bind((host.as_str(), port))
     .map_err(|e| {
         Error::new(
