@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::{Display, Error as FmtError, Formatter, Result as FmtResult};
 use std::sync::Arc;
 
@@ -5,13 +6,14 @@ use actix_web::error::{ErrorBadRequest, ErrorInternalServerError, ErrorServiceUn
 use actix_web::web::{Data, Path, Query};
 use actix_web::{HttpResponse, Result};
 
+use lazy_static::lazy_static;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 
 use vnscope::actors::price::{GetOHCLCommand, UpdateOHCLToCacheCommand};
 use vnscope::actors::{
-    list_crypto, list_futures, list_of_hose, list_of_midcap, list_of_penny, list_of_vn100,
-    list_of_vn30,
+    list_crypto, list_futures, list_of_hose, list_of_industry, list_of_midcap, list_of_penny,
+    list_of_vn100, list_of_vn30,
 };
 use vnscope::algorithm::VolumeProfile;
 use vnscope::schemas::CandleStick;
@@ -23,6 +25,32 @@ struct HeatmapResponse {
     heatmap: Vec<Vec<f64>>,
     levels: Vec<f64>,
     ranges: Vec<(usize, usize, usize)>,
+}
+
+lazy_static! {
+    static ref INDUSTRY_CODES: HashMap<&'static str, &'static str> = {
+        let mut m = HashMap::new();
+        m.insert("petroleum", "0500");
+        m.insert("chemical", "1300");
+        m.insert("basic resources", "1700");
+        m.insert("construction & building materials", "2300");
+        m.insert("industrial goods & services", "2700");
+        m.insert("cars & car parts", "3300");
+        m.insert("food & beverage", "3500");
+        m.insert("personal & household goods", "3700");
+        m.insert("medical", "4500");
+        m.insert("retail", "5300");
+        m.insert("communication", "5500");
+        m.insert("travel & entertainment", "5700");
+        m.insert("telecomunication", "6500");
+        m.insert("electricity, water & petrol", "7500");
+        m.insert("banking", "8300");
+        m.insert("insurance", "8500");
+        m.insert("real estate", "8600");
+        m.insert("finance service", "8700");
+        m.insert("information technology", "9500");
+        m
+    };
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -735,16 +763,32 @@ pub async fn get_list_of_symbols_by_product(
                                 next: None,
                                 error: None,
                             })),
-                            &_ => Err(ErrorInternalServerError(OhclResponse {
-                                ohcl: None,
-                                heatmap: None,
-                                brokers: None,
-                                symbols: None,
-                                products: None,
-                                resolutions: None,
-                                next: None,
-                                error: Some(format!("Product {} is not exist", product)),
-                            })),
+                            &_ => {
+                                if let Some(_) = INDUSTRY_CODES.get(product.as_str()) {
+                                    let symbols = list_of_industry(&product).await;
+                                    Ok(HttpResponse::Ok().json(OhclResponse {
+                                        ohcl: None,
+                                        heatmap: None,
+                                        brokers: None,
+                                        symbols: Some(symbols),
+                                        resolutions: None,
+                                        next: None,
+                                        products: None,
+                                        error: None,
+                                    }))
+                                } else {
+                                    Err(ErrorInternalServerError(OhclResponse {
+                                        ohcl: None,
+                                        heatmap: None,
+                                        brokers: None,
+                                        symbols: None,
+                                        products: None,
+                                        resolutions: None,
+                                        next: None,
+                                        error: Some(format!("Product {} is not exist", product)),
+                                    }))
+                                }
+                            }
                         },
                         "crypto" => match product.as_str() {
                             "spot" => Ok(HttpResponse::Ok().json(OhclResponse {
