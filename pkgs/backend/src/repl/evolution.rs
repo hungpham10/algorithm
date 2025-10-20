@@ -346,7 +346,7 @@ impl Evolution {
                         PyRuntimeError::new_err(format!("Failed to optimize: {}", error))
                     })?;
 
-                    if try_cnt >= n_try {
+                    if try_cnt >= n_try || done {
                         fitnesses
                             .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
