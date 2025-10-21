@@ -14,5 +14,6 @@ Session.vim
 # Added by cargo
 /target
 /dist
+/pkgs/backend/dist
 .aider*
 /templates

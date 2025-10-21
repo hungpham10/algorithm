@@ -413,15 +413,18 @@ impl<T: Player + Clone + Sync + Send, M: Model<T>> Genetic<T, M> {
         for _ in 0..number_of_couple {
             let f = self.roulette_wheel_selection(&mut roulette, rng.gen::<f64>());
             let m = self.roulette_wheel_selection(&mut roulette, rng.gen::<f64>());
-            let mut new_player =
-                model.crossover(&self.population[f].player, &self.population[m].player)?;
-            for i in 0..new_player.gene().len() {
-                if rng.gen::<f64>() < mutation_rate {
-                    model.mutate(&mut new_player, &Vec::new(), i)?;
+
+            if f != m {
+                let mut new_player =
+                    model.crossover(&self.population[f].player, &self.population[m].player)?;
+                for i in 0..new_player.gene().len() {
+                    if rng.gen::<f64>() < mutation_rate {
+                        model.mutate(&mut new_player, &Vec::new(), i)?;
+                    }
                 }
+                self.population
+                    .push(Individual::<T>::new(new_player, session));
             }
-            self.population
-                .push(Individual::<T>::new(new_player, session));
         }
         Ok(())
     }
