@@ -137,12 +137,12 @@ pub async fn list_futures() -> Vec<String> {
         .collect()
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CWInfo {
-    #[serde(rename = "stockSymbol")]
+    #[serde(rename = "code")]
     pub symbol: String,
 
-    #[serde(rename = "underlyingSymbol")]
+    #[serde(rename = "underlyingAsset")]
     pub underlying: String,
 
     #[serde(rename = "exercisePrice")]
@@ -155,20 +155,20 @@ pub struct CWInfo {
     pub last_trading_date: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct CWInfoResponse {
-    code: String,
-    message: String,
     data: Option<Vec<CWInfo>>,
 }
 
 pub async fn list_cw() -> Vec<CWInfo> {
-    let resp = reqwest::get("https://iboard-query.ssi.com.vn/stock/type/w/hose")
-        .await
-        .expect("Fail to fetch list of CW")
-        .json::<CWInfoResponse>()
-        .await
-        .expect("Fail to parse list of CW");
+    let resp = reqwest::get(
+        "https://api-finfo.vndirect.com.vn/v4/derivatives?q=derType:CW~status:LISTED&size=1000",
+    )
+    .await
+    .expect("Fail to fetch list of CW")
+    .json::<CWInfoResponse>()
+    .await
+    .expect("Fail to parse list of CW");
 
     resp.data.unwrap_or_default()
 }

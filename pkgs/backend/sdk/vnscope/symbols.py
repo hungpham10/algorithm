@@ -81,6 +81,36 @@ class Symbols:
     def vn100(self) -> tp.List[str]:
         return self._get_symbols("stock", "vn100")
 
+    def cw(self) -> pl.DataFrame:
+        base_url = getattr(self, "_base_url", self._base_url)
+        resp = self._session.get(f"{base_url}/api/investing/v1/ohcl/symbols/stock/cw")
+        if resp.status_code == 200:
+            data = resp.json().get("cws")
+            data = resp.json()
+            if "error" in data:
+                raise ValueError(f"API error: {data['error']}")
+            cws = data.get("cws", [])
+
+            # Assuming the API returns a direct JSON array of CWInfo objects
+            # Each item has keys: "code", "underlyingAsset", "exercisePrice", "exerciseRatio", "lastTradingDate"
+            df_data = {
+                "symbol": [item.get("code", "") for item in cws],
+                "underlying": [item.get("underlyingAsset", "") for item in cws],
+                "exercise_price": [int(item.get("exercisePrice", 0)) for item in cws],
+                "exercise_ratio": [item.get("exerciseRatio", "") for item in cws],
+                "last_trading_date": [item.get("lastTradingDate", "") for item in cws],
+            }
+            return pl.DataFrame(df_data)
+        return pl.DataFrame(
+            schema={
+                "symbol": pl.Utf8,
+                "underlying": pl.Utf8,
+                "exercise_price": pl.UInt64,
+                "exercise_ratio": pl.Utf8,
+                "last_trading_date": pl.Utf8,
+            }
+        )
+
     def price(
         self, symbol: str, broker: str, resolution: str, from_date: str, to_date: str
     ) -> pl.DataFrame:
