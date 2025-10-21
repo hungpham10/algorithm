@@ -146,7 +146,7 @@ pub struct CWInfo {
     pub underlying: String,
 
     #[serde(rename = "exercisePrice")]
-    pub exercise_price: u64,
+    pub exercise_price: f64,
 
     #[serde(rename = "exerciseRatio")]
     pub exercise_ratio: String,
