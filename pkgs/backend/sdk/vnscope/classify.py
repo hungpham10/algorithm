@@ -147,7 +147,9 @@ class ClassifyVolumeProfile:
         # For integrated plotting, mpf.plot creates its own figure. To integrate heatmap, plot separately or use returnfig=True
         # Here, we'll let mpf.plot create its own figure for candlestick + volume, and plot heatmap separately if enabled
         if enable_heatmap:
-            fig_heatmap, ax_heatmap = plt.subplots(figsize=(15, 3))
+            fig_heatmap, ax_heatmap = plt.subplots(
+                figsize=(60, 24)
+            )  # Increased size for heatmap
             # Plot heatmap with imshow
             im = ax_heatmap.imshow(
                 consolidated,
@@ -167,12 +169,13 @@ class ClassifyVolumeProfile:
             )
             ax_heatmap.set_xticklabels([])
             plt.colorbar(im, ax=ax_heatmap, label="Volume")
+            plt.tight_layout()  # Improve spacing
             plt.show()
 
         # Create a colormap for price range lines
         colors = sns.color_palette("husl", n_colors=top_n)
 
-        # Add horizontal lines for Bollinger Bands and markers
+        # Add horizontal lines for Bollinger Bands and markers (with consolidated labels to reduce legend clutter)
         apds = [
             mpf.make_addplot(price_df["SMA"], color="blue", width=1, label="SMA"),
             mpf.make_addplot(
@@ -205,11 +208,12 @@ class ClassifyVolumeProfile:
         if enable_inverst_ranges:
             ranges.reverse()
 
-        # Add price range lines (begin, center, end) with color gradient
+        # Add price range lines (begin, center, end) with a single shared label per range to reduce legend items
         for i, (center, begin, end) in enumerate(ranges):
             if i >= top_n:
                 break
             color = colors[i % len(colors)]  # Chọn màu từ palette
+            range_label = f"Range {i+1}"  # Shared label for the entire range
             apds.extend(
                 [
                     mpf.make_addplot(
@@ -217,26 +221,28 @@ class ClassifyVolumeProfile:
                         color=color,
                         linestyle="--",
                         width=0.5,
-                        label=f"Range {i+1} Begin",
+                        label=range_label
+                        if i == 0
+                        else None,  # Only label the first one to avoid duplicates
                     ),
                     mpf.make_addplot(
                         pd.Series(levels[center], index=price_df.index),
                         color=color,
                         linestyle="--",
                         width=1.0,
-                        label=f"Range {i+1} Center",
+                        label=None,  # No individual label
                     ),
                     mpf.make_addplot(
                         pd.Series(levels[end], index=price_df.index),
                         color=color,
                         linestyle="--",
                         width=0.5,
-                        label=f"Range {i+1} End",
+                        label=None,  # No individual label
                     ),
                 ]
             )
 
-        # Plot candlestick with Bollinger Bands and horizontal lines (mpf.plot creates its own figure)
+        # Plot candlestick with Bollinger Bands and horizontal lines (increased figsize, adjusted volume panel, legend position)
         mpf.plot(
             price_df,
             type="candle",
@@ -244,6 +250,12 @@ class ClassifyVolumeProfile:
             show_nontrading=False,
             addplot=apds,  # Add Bollinger Bands and horizontal lines
             volume=True,
+            volume_panel=1,  # Use panel 1 for volume
+            panel_ratios=(3, 1),  # Allocate more space to main chart vs volume
+            figsize=(40, 24),  # Increased figure size
+            tight_layout=True,  # Improve overall spacing
+            legend_loc="upper left",  # Position legend to avoid overlap
+            legend_fontsize=8,  # Smaller font for legend to fit better
             returnfig=False,
         )
 
