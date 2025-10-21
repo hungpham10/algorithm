@@ -145,8 +145,8 @@ pub struct CWInfo {
     #[serde(rename = "underlyingAsset")]
     pub underlying: String,
 
-    #[serde(rename = "exercisePrice")]
-    pub exercise_price: f64,
+    #[serde(rename = "exercisePrice", skip_serializing_if = "Option::is_none")]
+    pub exercise_price: Option<f64>,
 
     #[serde(rename = "exerciseRatio")]
     pub exercise_ratio: String,

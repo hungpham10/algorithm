@@ -27,32 +27,6 @@ pub struct HeatmapResponse {
     ranges: Vec<(usize, usize, usize)>,
 }
 
-lazy_static! {
-    static ref INDUSTRY_CODES: HashMap<&'static str, &'static str> = {
-        let mut m = HashMap::new();
-        m.insert("petroleum", "0500");
-        m.insert("chemical", "1300");
-        m.insert("basic resources", "1700");
-        m.insert("construction & building materials", "2300");
-        m.insert("industrial goods & services", "2700");
-        m.insert("cars & car parts", "3300");
-        m.insert("food & beverage", "3500");
-        m.insert("personal & household goods", "3700");
-        m.insert("medical", "4500");
-        m.insert("retail", "5300");
-        m.insert("communication", "5500");
-        m.insert("travel & entertainment", "5700");
-        m.insert("telecomunication", "6500");
-        m.insert("electricity, water & petrol", "7500");
-        m.insert("banking", "8300");
-        m.insert("insurance", "8500");
-        m.insert("real estate", "8600");
-        m.insert("finance service", "8700");
-        m.insert("information technology", "9500");
-        m
-    };
-}
-
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct OhclResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -557,20 +531,10 @@ pub async fn get_list_of_symbols_by_product(
                                 symbols: Some(list_futures().await),
                                 ..Default::default()
                             })),
-                            &_ => {
-                                if let Some(_) = INDUSTRY_CODES.get(product.as_str()) {
-                                    let symbols = list_of_industry(&product).await;
-                                    Ok(HttpResponse::Ok().json(OhclResponse {
-                                        symbols: Some(symbols),
-                                        ..Default::default()
-                                    }))
-                                } else {
-                                    Err(ErrorInternalServerError(OhclResponse {
-                                        error: Some(format!("Product {} is not exist", product)),
-                                        ..Default::default()
-                                    }))
-                                }
-                            }
+                            &_ => Ok(HttpResponse::Ok().json(OhclResponse {
+                                symbols: Some(list_of_industry(&product).await),
+                                ..Default::default()
+                            })),
                         },
                         "crypto" => match product.as_str() {
                             "spot" => Ok(HttpResponse::Ok().json(OhclResponse {

@@ -94,9 +94,7 @@ class ClassifyVolumeProfile:
         )
 
         # Invert levels for low to high order on y-axis
-        consolidated = np.flipud(
-            consolidated
-        )  # Flip the consolidated data to match inverted levels
+        consolidated = np.flipud(consolidated)
 
         # Prepare candlestick data
         price_df = candlesticks.copy()
@@ -132,7 +130,8 @@ class ClassifyVolumeProfile:
             else None
         )
 
-        # Create a series for markers (place markers above the high of candles where volume > MA)
+        # Create a series for markers (place markers above the high of candles
+        # where volume > MA)
         price_df["Marker"] = np.where(
             price_df["High_Volume"], price_df["High"] * 1.01, np.nan
         )
@@ -144,8 +143,10 @@ class ClassifyVolumeProfile:
                 price_df.loc[max_deviation_idx, "High"] * 1.02
             )  # Slightly higher for visibility
 
-        # For integrated plotting, mpf.plot creates its own figure. To integrate heatmap, plot separately or use returnfig=True
-        # Here, we'll let mpf.plot create its own figure for candlestick + volume, and plot heatmap separately if enabled
+        # For integrated plotting, mpf.plot creates its own figure. To integrate
+        # heatmap, plot separately or use returnfig=True
+        # Here, we'll let mpf.plot create its own figure for candlestick +
+        # volume, and plot heatmap separately if enabled
         if enable_heatmap:
             fig_heatmap, ax_heatmap = plt.subplots(
                 figsize=(60, 24)
@@ -175,7 +176,8 @@ class ClassifyVolumeProfile:
         # Create a colormap for price range lines
         colors = sns.color_palette("husl", n_colors=top_n)
 
-        # Add horizontal lines for Bollinger Bands and markers (with consolidated labels to reduce legend clutter)
+        # Add horizontal lines for Bollinger Bands and markers (with
+        # consolidated labels to reduce legend clutter)
         apds = [
             mpf.make_addplot(price_df["SMA"], color="blue", width=1, label="SMA"),
             mpf.make_addplot(
@@ -208,7 +210,8 @@ class ClassifyVolumeProfile:
         if enable_inverst_ranges:
             ranges.reverse()
 
-        # Add price range lines (begin, center, end) with a single shared label per range to reduce legend items
+        # Add price range lines (begin, center, end) with a single shared label
+        # per range to reduce legend items
         for i, (center, begin, end) in enumerate(ranges):
             if i >= top_n:
                 break
@@ -221,9 +224,8 @@ class ClassifyVolumeProfile:
                         color=color,
                         linestyle="--",
                         width=0.5,
-                        label=range_label
-                        if i == 0
-                        else None,  # Only label the first one to avoid duplicates
+                        # Only label the first one to avoid duplicates
+                        label=range_label if i == 0 else None,
                     ),
                     mpf.make_addplot(
                         pd.Series(levels[center], index=price_df.index),
@@ -242,7 +244,8 @@ class ClassifyVolumeProfile:
                 ]
             )
 
-        # Plot candlestick with Bollinger Bands and horizontal lines (increased figsize, adjusted volume panel, legend position)
+        # Plot candlestick with Bollinger Bands and horizontal lines (increased
+        # figsize, adjusted volume panel, legend position)
         mpf.plot(
             price_df,
             type="candle",
@@ -259,5 +262,6 @@ class ClassifyVolumeProfile:
             returnfig=False,
         )
 
-        # Note: For full integration with custom subplots, consider using mpf.plot with returnfig=True and manual subplot addition
-        # This version plots heatmap separately if enabled, and candlestick in its own figure
+        # Note: For full integration with custom subplots, consider using
+        # mpf.plot with returnfig=True and manual subplot addition. This version
+        # plots heatmap separately if enabled, and candlestick in its own figure
