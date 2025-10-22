@@ -498,76 +498,128 @@ pub async fn get_list_of_symbols_by_product(
     path: Path<(String, String)>,
 ) -> Result<HttpResponse> {
     let (broker, product) = path.into_inner();
+    let key = format!("symbols_list:{}:{}", broker, product);
 
-    if let Some(entity) = appstate.ohcl_entity() {
+    match appstate.get(&key).await {
+        Ok(value) if !value.is_empty() => match serde_json::from_str::<OhclResponse>(&value) {
+            Ok(response) => {
+                if response.error.is_none() {
+                    return Ok(HttpResponse::Ok().json(response));
+                }
+            }
+            Err(_) => {}
+        },
+        Err(_) => {}
+        _ => {}
+    }
+
+    let response = if let Some(entity) = appstate.ohcl_entity() {
         match entity.is_product_enabled(&product, &broker).await {
             Ok(ok) => {
                 if ok {
                     // @TODO: replace with another solution to show brokers from out tables
-
-                    return match broker.as_str() {
+                    match broker.as_str() {
                         "stock" => match product.as_str() {
-                            "cw" => Ok(HttpResponse::Ok().json(OhclResponse {
-                                cws: Some(list_cw().await),
-                                ..Default::default()
-                            })),
-                            "vn30" => Ok(HttpResponse::Ok().json(OhclResponse {
+                            "cw" => match list_cw().await {
+                                Ok(cws) => OhclResponse {
+                                    cws: Some(cws),
+                                    ..Default::default()
+                                },
+                                Err(error) => OhclResponse {
+                                    error: Some(format!("{}", error)),
+                                    ..Default::default()
+                                },
+                            },
+                            "vn30" => OhclResponse {
                                 symbols: Some(list_of_vn30().await),
                                 ..Default::default()
-                            })),
-                            "vn100" => Ok(HttpResponse::Ok().json(OhclResponse {
+                            },
+                            "vn100" => OhclResponse {
                                 symbols: Some(list_of_vn100().await),
                                 ..Default::default()
-                            })),
-                            "midcap" => Ok(HttpResponse::Ok().json(OhclResponse {
+                            },
+                            "midcap" => OhclResponse {
                                 symbols: Some(list_of_midcap().await),
                                 ..Default::default()
-                            })),
-                            "penny" => Ok(HttpResponse::Ok().json(OhclResponse {
+                            },
+                            "penny" => OhclResponse {
                                 symbols: Some(list_of_penny().await),
                                 ..Default::default()
-                            })),
-                            "future" => Ok(HttpResponse::Ok().json(OhclResponse {
+                            },
+                            "future" => OhclResponse {
                                 symbols: Some(list_futures().await),
                                 ..Default::default()
-                            })),
-                            &_ => Ok(HttpResponse::Ok().json(OhclResponse {
+                            },
+                            &_ => OhclResponse {
                                 symbols: Some(list_of_industry(&product).await),
                                 ..Default::default()
-                            })),
+                            },
                         },
                         "crypto" => match product.as_str() {
-                            "spot" => Ok(HttpResponse::Ok().json(OhclResponse {
+                            "spot" => OhclResponse {
                                 symbols: Some(list_crypto().await),
                                 ..Default::default()
-                            })),
-                            "future" => Ok(HttpResponse::Ok().json(OhclResponse {
-                                error: Some(format!("Not implemented")),
+                            },
+                            "future" => OhclResponse {
+                                error: Some("Not implemented".to_string()),
                                 ..Default::default()
-                            })),
-                            &_ => Err(ErrorInternalServerError(OhclResponse {
+                            },
+                            &_ => OhclResponse {
                                 error: Some(format!("Product {} is not exist", product)),
                                 ..Default::default()
-                            })),
+                            },
                         },
-                        &_ => Err(ErrorInternalServerError(OhclResponse {
+                        &_ => OhclResponse {
                             error: Some(format!("Broker {} is not exist", broker)),
                             ..Default::default()
-                        })),
-                    };
+                        },
+                    }
+                } else {
+                    OhclResponse {
+                        error: Some(format!(
+                            "Product {} of {} has been blocked",
+                            product, broker
+                        )),
+                        ..Default::default()
+                    }
                 }
             }
             Err(error) => {
-                error!("Fail to perform in db: {}", error);
+                log::error!("Fail to perform in db: {}", error);
+                OhclResponse {
+                    error: Some(format!(
+                        "Product {} of {} has been blocked",
+                        product, broker
+                    )),
+                    ..Default::default()
+                }
             }
+        }
+    } else {
+        OhclResponse {
+            error: Some(format!(
+                "Product {} of {} has been blocked",
+                product, broker
+            )),
+            ..Default::default()
+        }
+    };
+
+    // Cache successful responses only (TTL: 1 day = 86400 seconds)
+    if response.error.is_none() {
+        if let Ok(json_str) = serde_json::to_string(&response) {
+            if let Err(e) = appstate.set(&key, &json_str, 86400).await {
+                log::warn!("Failed to cache response for key {}: {}", key, e);
+            }
+        } else {
+            log::warn!("Failed to serialize response for caching");
         }
     }
 
-    Err(ErrorInternalServerError(OhclResponse {
-        error: Some(format!(
-            "Product {} of {} has been blocked",
-            product, broker
-        )),
-        ..Default::default()
-    }))
+    // Return response
+    if response.error.is_some() {
+        Err(ErrorInternalServerError(response))
+    } else {
+        Ok(HttpResponse::Ok().json(response))
+    }
 }

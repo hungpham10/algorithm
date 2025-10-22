@@ -160,17 +160,21 @@ struct CWInfoResponse {
     data: Option<Vec<CWInfo>>,
 }
 
-pub async fn list_cw() -> Vec<CWInfo> {
+pub async fn list_cw() -> Result<Vec<CWInfo>, ActorError> {
     let resp = reqwest::get(
         "https://api-finfo.vndirect.com.vn/v4/derivatives?q=derType:CW~status:LISTED&size=1000",
     )
     .await
-    .expect("Fail to fetch list of CW")
+    .map_err(|error| ActorError {
+        message: format!("Fail to fetch list of CW: {}", error),
+    })?
     .json::<CWInfoResponse>()
     .await
-    .expect("Fail to parse list of CW");
+    .map_err(|error| ActorError {
+        message: format!("Fail to parse list of CW: {}", error),
+    })?;
 
-    resp.data.unwrap_or_default()
+    Ok(resp.data.unwrap_or_default())
 }
 
 #[derive(Debug, Deserialize, Serialize)]

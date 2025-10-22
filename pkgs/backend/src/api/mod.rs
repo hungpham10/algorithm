@@ -1,5 +1,5 @@
 use std::collections::{HashMap, VecDeque};
-use std::io::{Error, ErrorKind, Result as AppStateResult};
+use std::io::{Error, ErrorKind as AppErrorKind, Result as AppStateResult};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -20,7 +20,7 @@ use infisical::{AuthMethod, Client as InfiscalClient};
 
 use chrono::Utc;
 use log::{debug, error};
-use redis::{AsyncCommands, Client as RedisClient};
+use redis::{AsyncCommands, Client as RedisClient, ErrorKind as RedisErrorKind, RedisResult};
 use sea_orm::{Database, DatabaseConnection};
 use serde::{Deserialize, Serialize};
 
@@ -91,7 +91,7 @@ impl AppState {
         // @NOTE: setup secret management client
         let mut infisical_client = InfiscalClient::builder().build().await.map_err(|error| {
             Error::new(
-                ErrorKind::InvalidInput,
+                AppErrorKind::InvalidInput,
                 format!("Fail to build infisical client: {:?}", error),
             )
         })?;
@@ -99,16 +99,19 @@ impl AppState {
         infisical_client
             .login(AuthMethod::new_universal_auth(
                 std::env::var("INFISICAL_CLIENT_ID").map_err(|_| {
-                    Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_CLIENT_ID")
+                    Error::new(AppErrorKind::InvalidInput, "Invalid INFISICAL_CLIENT_ID")
                 })?,
                 std::env::var("INFISICAL_CLIENT_SECRET").map_err(|_| {
-                    Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_CLIENT_SECRET")
+                    Error::new(
+                        AppErrorKind::InvalidInput,
+                        "Invalid INFISICAL_CLIENT_SECRET",
+                    )
                 })?,
             ))
             .await
             .map_err(|error| {
                 Error::new(
-                    ErrorKind::InvalidInput,
+                    AppErrorKind::InvalidInput,
                     format!("Fail to login to infisical: {:?}", error),
                 )
             })?;
@@ -116,11 +119,11 @@ impl AppState {
         let portal = Arc::new(Portal::new(
             get_secret_from_infisical(&infisical_client, "AIRTABLE_API_KEY", "/feature-flags/")
                 .await
-                .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid AIRTABLE_API_KEY"))?
+                .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid AIRTABLE_API_KEY"))?
                 .as_str(),
             get_secret_from_infisical(&infisical_client, "AIRTABLE_BASE_ID", "/feature-flags/")
                 .await
-                .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid AIRTABLE_BASE_ID"))?
+                .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid AIRTABLE_BASE_ID"))?
                 .as_str(),
             &HashMap::from([
                 (
@@ -148,21 +151,21 @@ impl AppState {
                 .await
                 .unwrap_or_else(|_| "false".to_string())
                 .parse::<bool>()
-                .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid USE_AIRTABLE"))?,
+                .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid USE_AIRTABLE"))?,
         ));
 
         // @NOTE: cronjob configuration
         let vps_symbols: Vec<String> = portal
             .watchlist()
             .await
-            .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?
+            .map_err(|error| Error::new(AppErrorKind::InvalidInput, format!("{:?}", error)))?
             .iter()
             .filter_map(|record| Some(record.fields.symbol.as_ref()?.clone()))
             .collect::<Vec<String>>();
         let tcbs_symbols: Vec<String> = portal
             .watchlist()
             .await
-            .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?
+            .map_err(|error| Error::new(AppErrorKind::InvalidInput, format!("{:?}", error)))?
             .iter()
             .filter_map(|record| {
                 if *(record.fields.use_order_flow.as_ref()?) {
@@ -176,32 +179,32 @@ impl AppState {
         let tcbs_depth = std::env::var("TCBS_DEPTH")
             .unwrap_or_else(|_| "1".to_string())
             .parse::<usize>()
-            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid TCBS_DEPTH"))?;
+            .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid TCBS_DEPTH"))?;
 
         let tcbs_timeseries = std::env::var("TCBS_TIMESERIES")
             .unwrap_or_else(|_| "360".to_string())
             .parse::<usize>()
-            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid TCBS_TIMESERIES"))?;
+            .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid TCBS_TIMESERIES"))?;
         let tcbs_flush = std::env::var("TCBS_FLUSH")
             .unwrap_or_else(|_| "360".to_string())
             .parse::<usize>()
-            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid TCBS_FLUSH"))?;
+            .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid TCBS_FLUSH"))?;
         let vps_timeseries = std::env::var("VPS_TIMESERIES")
             .unwrap_or_else(|_| "1000".to_string())
             .parse::<usize>()
-            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid VPS_TIMESERIES"))?;
+            .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid VPS_TIMESERIES"))?;
         let vps_flush = std::env::var("VPS_FLUSH")
             .unwrap_or_else(|_| "1000".to_string())
             .parse::<usize>()
-            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid VPS_FLUSH"))?;
+            .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid VPS_FLUSH"))?;
         let s3_vps_name = std::env::var("S3_VPS_NAME").unwrap_or_else(|_| "vps".to_string());
         let s3_tcbs_name = std::env::var("S3_TCBS_NAME").unwrap_or_else(|_| "tcbs".to_string());
         let s3_bucket = std::env::var("S3_BUCKET")
-            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid S3_BUCKET"))?;
+            .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid S3_BUCKET"))?;
         let s3_region = std::env::var("S3_REGION")
-            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid S3_REGION"))?;
+            .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid S3_REGION"))?;
         let s3_endpoint = std::env::var("S3_ENDPOINT")
-            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid S3_ENDPOINT"))?;
+            .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid S3_ENDPOINT"))?;
 
         let redis_host = match std::env::var("REDIS_HOST") {
             Ok(redis_host) => redis_host,
@@ -277,7 +280,7 @@ impl AppState {
                     .await
                     .map_err(|error| {
                         Error::new(
-                            ErrorKind::InvalidInput,
+                            AppErrorKind::InvalidInput,
                             format!("Failed to connect database: {}", error),
                         )
                     })?,
@@ -287,7 +290,7 @@ impl AppState {
                     Some(Arc::new(Database::connect(db_dsn).await.map_err(
                         |error| {
                             Error::new(
-                                ErrorKind::InvalidInput,
+                                AppErrorKind::InvalidInput,
                                 format!("Failed to connect database: {}", error),
                             )
                         },
@@ -380,7 +383,7 @@ impl AppState {
             .build()
             .map_err(|e| {
                 Error::new(
-                    ErrorKind::Other,
+                    AppErrorKind::Other,
                     format!("Failed to build prometheus metrics: {:?}", e),
                 )
             })?;
@@ -404,7 +407,9 @@ impl AppState {
             timeframe: std::env::var("APPSTATE_TIMEFRAME")
                 .unwrap_or_else(|_| "4".to_string())
                 .parse::<usize>()
-                .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid APPSTATE_TIMEFRAME"))?,
+                .map_err(|_| {
+                    Error::new(AppErrorKind::InvalidInput, "Invalid APPSTATE_TIMEFRAME")
+                })?,
 
             // @NOTE: database entities
             ohcl_entity,
@@ -439,7 +444,7 @@ impl AppState {
             .portal
             .cronjob()
             .await
-            .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?
+            .map_err(|error| Error::new(AppErrorKind::InvalidInput, format!("{:?}", error)))?
             .iter()
             .filter_map(|record| {
                 Some(ScheduleCommand {
@@ -455,7 +460,7 @@ impl AppState {
             self.cron
                 .send(command)
                 .await
-                .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?;
+                .map_err(|error| Error::new(AppErrorKind::InvalidInput, format!("{:?}", error)))?;
         }
         Ok(())
     }
@@ -506,18 +511,18 @@ impl AppState {
         self.tcbs_vars
             .clone()
             .lock()
-            .map_err(|e| Error::new(ErrorKind::Other, format!("{:?}", e)))?
+            .map_err(|e| Error::new(AppErrorKind::Other, format!("{:?}", e)))?
             .flush_all()
             .await
-            .map_err(|e| Error::new(ErrorKind::Other, e.message))?;
+            .map_err(|e| Error::new(AppErrorKind::Other, e.message))?;
 
         self.vps_vars
             .clone()
             .lock()
-            .map_err(|e| Error::new(ErrorKind::Other, format!("{:?}", e)))?
+            .map_err(|e| Error::new(AppErrorKind::Other, format!("{:?}", e)))?
             .flush_all()
             .await
-            .map_err(|e| Error::new(ErrorKind::Other, e.message))?;
+            .map_err(|e| Error::new(AppErrorKind::Other, e.message))?;
         Ok(())
     }
 
@@ -563,6 +568,28 @@ impl AppState {
 
         redis_ok && db_ok
     }
+
+    pub async fn get(&self, key: &String) -> RedisResult<String> {
+        let client = self
+            .redis
+            .as_ref()
+            .ok_or_else(|| (RedisErrorKind::IoError, "No Redis client available"))?;
+
+        let mut conn = client.get_multiplexed_tokio_connection().await?;
+
+        conn.get(key).await
+    }
+
+    pub async fn set(&self, key: &String, value: &String, ttl: usize) -> RedisResult<()> {
+        let client = self
+            .redis
+            .as_ref()
+            .ok_or_else(|| (RedisErrorKind::IoError, "No Redis client available"))?;
+
+        let mut conn = client.get_multiplexed_tokio_connection().await?;
+
+        conn.set_ex(key, value, ttl as u64).await
+    }
 }
 
 pub async fn unlock(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
@@ -591,12 +618,12 @@ pub async fn health(appstate: Data<Arc<AppState>>) -> HttpResult<HttpResponse> {
     let max_inflight = std::env::var("MAX_INFLIGHT")
         .unwrap_or_else(|_| "2".to_string())
         .parse::<_>()
-        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid MAX_INFLIGHT"))?;
+        .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid MAX_INFLIGHT"))?;
 
     let max_updated_time = std::env::var("MAX_UPDATED_TIME")
         .unwrap_or_else(|_| "2".to_string())
         .parse::<_>()
-        .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid MAX_UPDATED_TIME"))?;
+        .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid MAX_UPDATED_TIME"))?;
 
     if appstate.ping().await {
         match appstate.crontime.lock() {
@@ -646,14 +673,14 @@ pub async fn synchronize(appstate: Data<Arc<AppState>>) -> HttpResult<HttpRespon
     let vps_symbols: Vec<String> = portal
         .watchlist()
         .await
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?
+        .map_err(|error| Error::new(AppErrorKind::InvalidInput, format!("{:?}", error)))?
         .iter()
         .filter_map(|record| Some(record.fields.symbol.as_ref()?.clone()))
         .collect::<Vec<String>>();
     let tcbs_symbols: Vec<String> = portal
         .watchlist()
         .await
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?
+        .map_err(|error| Error::new(AppErrorKind::InvalidInput, format!("{:?}", error)))?
         .iter()
         .filter_map(|record| {
             if *(record.fields.use_order_flow.as_ref()?) {
@@ -670,12 +697,12 @@ pub async fn synchronize(appstate: Data<Arc<AppState>>) -> HttpResult<HttpRespon
         stocks: tcbs_symbols.clone(),
     })
     .await
-    .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?;
+    .map_err(|error| Error::new(AppErrorKind::InvalidInput, format!("{:?}", error)))?;
     vps.send(UpdateStocksCommand {
         stocks: vps_symbols.clone(),
     })
     .await
-    .map_err(|error| Error::new(ErrorKind::InvalidInput, format!("{:?}", error)))?;
+    .map_err(|error| Error::new(AppErrorKind::InvalidInput, format!("{:?}", error)))?;
     Ok(HttpResponse::Ok().body("ok"))
 }
 
@@ -702,7 +729,7 @@ pub async fn get_secret_from_infisical(
     let request = GetSecretRequest::builder(
         key,
         std::env::var("INFISICAL_PROJECT_ID")
-            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid INFISICAL_PROJECT_ID"))?,
+            .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid INFISICAL_PROJECT_ID"))?,
         std::env::var("ENVIRONMENT").unwrap_or_else(|_| "dev".to_string()),
     )
     .path(path)
@@ -710,7 +737,7 @@ pub async fn get_secret_from_infisical(
 
     let secret = client.secrets().get(request).await.map_err(|error| {
         Error::new(
-            ErrorKind::InvalidInput,
+            AppErrorKind::InvalidInput,
             format!("Fail fetching secret: {:?}", error),
         )
     })?;
