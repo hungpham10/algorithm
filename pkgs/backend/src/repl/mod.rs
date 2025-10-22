@@ -23,16 +23,6 @@ fn core(_: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(market::history, m)?)?;
     m.add_function(wrap_pyfunction!(market::price, m)?)?;
     m.add_function(wrap_pyfunction!(market::market, m)?)?;
-    m.add_function(wrap_pyfunction!(market::futures, m)?)?;
-    m.add_function(wrap_pyfunction!(market::cw, m)?)?;
-    m.add_function(wrap_pyfunction!(market::vn30, m)?)?;
-    m.add_function(wrap_pyfunction!(market::vn100, m)?)?;
-    m.add_function(wrap_pyfunction!(market::midcap, m)?)?;
-    m.add_function(wrap_pyfunction!(market::penny, m)?)?;
-    m.add_function(wrap_pyfunction!(market::hose, m)?)?;
-    m.add_function(wrap_pyfunction!(market::sectors, m)?)?;
-    m.add_function(wrap_pyfunction!(market::industry, m)?)?;
-    m.add_function(wrap_pyfunction!(market::crypto, m)?)?;
     m.add_function(wrap_pyfunction!(configure, m)?)?;
     Ok(())
 }
