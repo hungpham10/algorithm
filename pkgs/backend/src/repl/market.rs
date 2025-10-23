@@ -1,6 +1,5 @@
 use chrono::{NaiveDate, NaiveDateTime, Utc};
 use lazy_static::lazy_static;
-use numpy::{PyArray2, ToPyArray};
 use polars::prelude::*;
 
 use pyo3::exceptions::PyRuntimeError;
@@ -280,93 +279,6 @@ pub fn price(
         ])
         .map_err(|e| PyRuntimeError::new_err(format!("Failed to create DataFrame: {:?}", e)))?,
     ))
-}
-
-#[pyfunction]
-pub fn heatmap(
-    symbol: String,
-    resolution: String,
-    now: i64,
-    lookback: i64,
-    overlap: usize,
-    number_of_levels: usize,
-    interval_in_hour: i32,
-) -> PyResult<(Py<PyArray2<f64>>, Vec<f64>, Vec<(usize, usize, usize)>)> {
-    let to = now;
-    let from = match resolution.as_str() {
-        "1D" => Ok(to - 24 * 60 * 60 * lookback),
-        "1W" => Ok(to - 7 * 24 * 60 * 60 * lookback),
-        _ => Err(PyRuntimeError::new_err(format!(
-            "Not support resolution `{}`",
-            resolution
-        ))),
-    }?;
-
-    let profiles = actix_rt::Runtime::new().unwrap().block_on(async {
-        let broker = PRICE_PROVIDER.lock().unwrap();
-        let mapping = PROFILE_RESOLUTION.lock().unwrap();
-        let actor = connect_to_price();
-
-        match VolumeProfile::new_from_candles(
-            actor
-                .send(GetOHCLCommand {
-                    resolution: match mapping.get(&resolution) {
-                        Some(resolution) => resolution.clone(),
-                        None => "1D".to_string(),
-                    },
-                    stock: symbol.clone(),
-                    from,
-                    to,
-                    broker: broker.to_string(),
-                    limit: 0,
-                })
-                .await
-                .unwrap()
-                .unwrap()
-                .0
-                .iter()
-                .filter_map(|candle| {
-                    if candle.t >= from as i32 && candle.t <= to as i32 {
-                        Some(candle.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-                .as_slice(),
-            number_of_levels,
-            overlap,
-            interval_in_hour,
-        ) {
-            Ok(vp) => Some(vp),
-            Err(_) => None,
-        }
-    });
-
-    if let Some(vp) = profiles {
-        let cols = vp.heatmap().len();
-        let rows = number_of_levels;
-        let mut data: Vec<Vec<f64>> = vec![vec![0.0; cols]; rows];
-
-        for (j, profile) in vp.heatmap().iter().enumerate() {
-            for i in 0..rows {
-                data[i][j] = *profile.get(i).unwrap();
-            }
-        }
-
-        Python::with_gil(|py| {
-            Ok((
-                PyArray2::from_vec2(py, &data)?.to_owned(),
-                vp.levels().clone(),
-                vp.ranges().clone(),
-            ))
-        })
-    } else {
-        Err(PyRuntimeError::new_err(format!(
-            "Cannot produce heatmap of {}",
-            symbol
-        )))
-    }
 }
 
 #[pyfunction]

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 ######################################################################
 # @author      : Hung Nguyen Xuan Pham (hung0913208@gmail.com)

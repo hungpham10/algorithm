@@ -1,4 +1,16 @@
 #!/bin/sh
 set -e
-systemctl enable bff.service
-systemctl start bff.service
+
+systemctl daemon-reload
+
+echo "Doing '$1'"
+if [ "$1" = "configure" ]; then
+    systemctl enable bff
+    systemctl start bff
+elif [ "$1" = "upgrade" ]; then
+    echo "Not changing configuration. This is an upgrade."
+    systemctl stop bff
+    systemctl start bff
+fi
+
+echo "Done executing post install scripts."

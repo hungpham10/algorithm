@@ -1,7 +1,7 @@
-#[cfg(not(feature = "python"))]
+#[cfg(not(any(feature = "python", feature = "proxy")))]
 mod airtable;
 
-#[cfg(not(feature = "python"))]
+#[cfg(not(any(feature = "python", feature = "proxy")))]
 pub use airtable::*;
 
 mod ohcl;

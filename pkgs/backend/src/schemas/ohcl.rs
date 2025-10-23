@@ -1,4 +1,4 @@
-#[cfg(not(feature = "python"))]
+#[cfg(not(any(feature = "python", feature = "proxy")))]
 use async_graphql::Object;
 
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ pub struct CandleStick {
     pub v: f64,
 }
 
-#[cfg(not(feature = "python"))]
+#[cfg(not(any(feature = "python", feature = "proxy")))]
 #[Object]
 impl CandleStick {
     async fn timestamp(&self) -> i32 {
