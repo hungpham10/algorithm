@@ -46,17 +46,23 @@ library:
 	fi
 	@echo "Release wheel built in $(DIST_DIR)/"
 
+proxy:
+	@echo "Building release version $(VERSION)"
+	@mkdir -p $(DIST_DIR)
+	export PATH="$$HOME/.cargo/bin:$$PATH" &&													\
+ 	$(CARGO) build -p proxy --release --lib
+
 server:
 	@echo "Building release version $(VERSION)"
 	@mkdir -p $(DIST_DIR)
 	export PATH="$$HOME/.cargo/bin:$$PATH" &&													\
- 	$(CARGO) build --release
+ 	$(CARGO) build -p backend --release --bin algorithm
 
 client:
 	@echo "Building release version $(VERSION)"
 	@mkdir -p $(DIST_DIR)
 	export PATH="$$HOME/.cargo/bin:$$PATH" &&													\
-	$(TRUNK) build --release
+	$(TRUNK) build -p frontend --release
 
 ipython:
 	@cp -av target/debug/libvnscope.dylib target/debug/vnscope.so || 										\
@@ -65,14 +71,17 @@ ipython:
 install: library
 	$(PYTHON) -m pip install --upgrade $(DIST_DIR)/*.whl
 
-test-python:
+test-repl:
 	$(PYTHON) -m pip install --upgrade $(DIST_DIR)/*.whl
 	$(PYTHON) -m pytest -xvs $(TEST_DIR)/
 
-test-rust:
-	$(CARGO) test
+test-backend:
+	$(CARGO) test -p backend
 
-test: library test-python test-rust
+test-proxy:
+	$(CARGO) test -p proxy
+
+test: library test-repl test-backend
 
 all: test server client library
 

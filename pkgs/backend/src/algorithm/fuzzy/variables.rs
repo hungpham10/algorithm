@@ -452,13 +452,19 @@ impl Variables {
             .buffers
             .iter()
             .filter_map(|(column, buffer)| {
-                if scope.contains(&column) {
+                if scope.contains(&column) && buffer.len() > 0 {
                     Some((Field::new(column, DataType::Float64, false), buffer))
                 } else {
                     None
                 }
             })
             .collect::<Vec<_>>();
+
+        // @NOTE: if no data, return soon to avoid creating empty parquet
+        if mapping.len() == 0 {
+            return Ok(Vec::new());
+        }
+
         let batch = RecordBatch::try_new(
             Arc::new(Schema::new(
                 mapping
@@ -523,18 +529,20 @@ impl Variables {
         })?;
         let folder = format!("investing/{}", Utc::now().format("%Y-%m-%d"));
 
-        client
-            .put_object()
-            .bucket(bucket)
-            .key(&self.name_of_parquet(&folder, scope, Utc::now().timestamp_millis())?)
-            .body(buffer.into())
-            .send()
-            .await
-            .map_err(|e| RuleError {
-                message: format!("Failed to upload to S3: {}", e),
-            })?;
+        if buffer.len() > 0 {
+            client
+                .put_object()
+                .bucket(bucket)
+                .key(&self.name_of_parquet(&folder, scope, Utc::now().timestamp_millis())?)
+                .body(buffer.into())
+                .send()
+                .await
+                .map_err(|e| RuleError {
+                    message: format!("Failed to upload to S3: {}", e),
+                })?;
 
-        self.clean_cache_after_flushing(scope);
+            self.clean_cache_after_flushing(scope);
+        }
         Ok(())
     }
 
