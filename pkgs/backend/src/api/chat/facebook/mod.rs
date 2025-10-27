@@ -4,8 +4,10 @@ use actix_web::error::ErrorInternalServerError;
 use actix_web::web::Data;
 use actix_web::Result;
 
-use crate::api::AppState;
 use reqwest::Client as HttpClient;
+use serde_json::json;
+
+use crate::api::AppState;
 
 mod v1;
 pub use v1::*;
@@ -38,5 +40,36 @@ pub async fn send_message(
     send_id: &String,
     text: &String,
 ) -> Result<()> {
+    let client = HttpClient::default();
+    let url = format!(
+        "https://graph.facebook.com/v24.0/me/messages?access_token={}",
+        appstate.chat.fb.page_access_token,
+    );
+    let body = json!({
+        "recipient": {
+            "id": send_id
+        },
+        "message": {
+            "text": text
+        },
+        "messaging_type": "RESPONSE"
+    });
+    let response = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| ErrorInternalServerError(error.to_string()))?;
+
+    if !response.status().is_success() {
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(ErrorInternalServerError(format!(
+            "Failed to send message: {}",
+            error_text
+        )));
+    }
     Ok(())
 }
