@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 ######################################################################
 # @author      : Hung Nguyen Xuan Pham (hung0913208@gmail.com)
@@ -59,38 +59,38 @@ function boot() {
   local cmd=$1
 
   if [ "${USE_TAILSCALE}" = "true" ]; then
-    rm -fr /etc/supervisor.d/without-tailscale.ini
+    rm -fr ${SUPERVISOR_DIR}/without-tailscale.conf
   else
-    rm -fr /etc/supervisor.d/with-tailscale.ini
+    rm -fr ${SUPERVISOR_DIR}/with-tailscale.conf
   fi
 
   if [ "${HTTP_PROTOCOL}" = "https" ]; then
-    sed -i "s/%%FORCE_SSL%%/on/g" /etc/nginx/http.d/default.conf
+    sed -i "s/%%FORCE_SSL%%/on/g" ${NGINX_DIR}/http.d/default.conf
   else
-    sed -i '/HTTPS/d' /etc/nginx/http.d/default.conf
-    sed -i '/HTTP_X_FORWARDED_PROTO/d' /etc/nginx/http.d/default.conf
-    sed -i '/HTTP_X_FORWARDED_PORT/d' /etc/nginx/http.d/default.conf
+    sed -i '/HTTPS/d' ${NGINX_DIR}/http.d/default.conf
+    sed -i '/HTTP_X_FORWARDED_PROTO/d' ${NGINX_DIR}/http.d/default.conf
+    sed -i '/HTTP_X_FORWARDED_PORT/d' ${NGINX_DIR}/http.d/default.conf
     HTTP_PROTOCOL="http"
   fi
   # Setup S3 backend
-  sed -i "s#%%CDN_ENDPOINT%%#$CDN_ENDPOINT#g" /etc/nginx/http.d/default.conf
-  sed -i "s#%%CDN_BUCKET%%#$CDN_BUCKET#g" /etc/nginx/http.d/default.conf
-  sed -i "s#%%AWS_ACCESS_KEY_ID%%#$AWS_ACCESS_KEY_ID#g" /etc/nginx/http.d/default.conf
-  sed -i "s#%%AWS_SECRET_ACCESS_KEY%%#$AWS_SECRET_ACCESS_KEY#g" /etc/nginx/http.d/default.conf
+  sed -i "s#%%CDN_ENDPOINT%%#$CDN_ENDPOINT#g" ${NGINX_DIR}/http.d/default.conf
+  sed -i "s#%%CDN_BUCKET%%#$CDN_BUCKET#g" ${NGINX_DIR}/http.d/default.conf
+  sed -i "s#%%AWS_ACCESS_KEY_ID%%#$AWS_ACCESS_KEY_ID#g" ${NGINX_DIR}/http.d/default.conf
+  sed -i "s#%%AWS_SECRET_ACCESS_KEY%%#$AWS_SECRET_ACCESS_KEY#g" ${NGINX_DIR}/http.d/default.conf
 
   # Setup Rest backend
-  sed -i "s/%%SERVER_PORT%%/$SERVER_PORT/g" /etc/nginx/http.d/default.conf
+  sed -i "s/%%SERVER_PORT%%/$SERVER_PORT/g" ${NGINX_DIR}/http.d/default.conf
 
   # Setup woocommerce backend
-  sed -i "s/%%HTTP_SERVER%%/$HTTP_SERVER/g" /etc/nginx/http.d/default.conf
-  sed -i "s/%%HTTP_PORT%%/$HTTP_PORT/g" /etc/nginx/http.d/default.conf
-  sed -i "s#%%WOOCOMMERCE_SERVER%%#$WOOCOMMERCE_SERVER#g" /etc/nginx/http.d/default.conf
+  sed -i "s/%%HTTP_SERVER%%/$HTTP_SERVER/g" ${NGINX_DIR}/http.d/default.conf
+  sed -i "s/%%HTTP_PORT%%/$HTTP_PORT/g" ${NGINX_DIR}/http.d/default.conf
+  sed -i "s#%%WOOCOMMERCE_SERVER%%#$WOOCOMMERCE_SERVER#g" ${NGINX_DIR}/http.d/default.conf
 
   # Setup command for the backend
   if [ "${USE_TAILSCALE}" = "true" ]; then
-    sed -i "s/%%COMMAND%%/$COMMAND/g" /etc/supervisor.d/with-tailscale.ini
+    sed -i "s/%%COMMAND%%/$COMMAND/g" ${SUPERVISOR_DIR}/with-tailscale.conf
   else
-    sed -i "s/%%COMMAND%%/$COMMAND/g" /etc/supervisor.d/without-tailscale.ini
+    sed -i "s/%%COMMAND%%/$COMMAND/g" ${SUPERVISOR_DIR}/without-tailscale.conf
   fi
 
   shift

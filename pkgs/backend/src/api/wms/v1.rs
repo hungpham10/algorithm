@@ -137,12 +137,6 @@ pub struct HighTurnoverResponse {
     turnover_risk: f32,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct ErrorResponse {
-    status: String,
-    message: String,
-}
-
 // Route Handlers
 pub async fn list_stocks(
     appstate: Data<Arc<AppState>>,
@@ -155,7 +149,13 @@ pub async fn list_stocks(
         let limit = query.limit.unwrap_or(10);
 
         if limit > 100 {
-            Ok(HttpResponse::InternalServerError().body("not implemented"))
+            Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!(
+                    "Maximum item per page does not exceed 100, currently is {}",
+                    limit
+                )),
+                ..Default::default()
+            }))
         } else {
             match entity
                 .list_paginated_stocks(headers.tenant_id, include_details, after, limit)
@@ -437,7 +437,12 @@ pub async fn list_stocks_in_shelf(
         let limit = query.limit.unwrap_or(10);
 
         if limit > 100 {
-            Ok(HttpResponse::InternalServerError().body("not implemented"))
+            Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!(
+                    "Failed to list stocks: limit must not larger than 100"
+                )),
+                ..Default::default()
+            }))
         } else {
             match entity
                 .list_paginated_stocks_of_shelf(
