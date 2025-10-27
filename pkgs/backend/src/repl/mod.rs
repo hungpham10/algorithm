@@ -17,7 +17,6 @@ fn core(_: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<evolution::Evolution>()?;
 
     m.add_function(wrap_pyfunction!(analytics::filter, m)?)?;
-    m.add_function(wrap_pyfunction!(market::heatmap, m)?)?;
     m.add_function(wrap_pyfunction!(market::order, m)?)?;
     m.add_function(wrap_pyfunction!(market::profile, m)?)?;
     m.add_function(wrap_pyfunction!(market::history, m)?)?;
