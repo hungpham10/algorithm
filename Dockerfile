@@ -43,6 +43,8 @@ RUN make server
 # --- Release stage
 # -----------------------------------------------------------------------
 FROM openresty/openresty:1.27.1.2-4-bookworm-fat
+ENV NGINX_DIR=/usr/local/openresty/nginx/conf
+ENV SUPERVISOR_DIR=/etc/supervisor/conf.d
 
 WORKDIR /app
 COPY --from=backend /app/target/release/algorithm ./aio
