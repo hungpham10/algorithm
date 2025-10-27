@@ -133,7 +133,6 @@ impl Handler<UpdateOHCLToCacheCommand> for PriceActor {
                 });
             }
 
-            // Group candles vào blocks
             let mut block_map: BTreeMap<i64, Vec<CandleStick>> = BTreeMap::new();
             for candle in candles {
                 let block_id = (candle.t as i64) / size_of_block;
@@ -149,27 +148,31 @@ impl Handler<UpdateOHCLToCacheCommand> for PriceActor {
                 });
             }
 
-            // Write lock để update cache
             let mut caches_write = caches.write().map_err(|error| ActorError {
                 message: format!("Fail to access cache: {}", error),
             })?;
 
-            // Tạo nested BTreeMap nếu chưa có
             let stock_caches = caches_write
                 .entry(stock.clone())
                 .or_insert_with(BTreeMap::new);
 
-            // Tạo LRU cache nếu chưa có
             let cache = stock_caches
                 .entry(resolution.clone())
                 .or_insert_with(|| LruCache::new(capacity));
 
-            // Insert blocks vào LRU cache
-            for (block_id, block_candles) in block_map {
-                debug!("Update block {}", block_id);
-                cache.put(block_id, block_candles);
-            }
+            let block_size = block_map
+                .iter()
+                .map(|(_, block_candles)| block_candles.len())
+                .max()
+                .ok_or(ActorError {
+                    message: format!("Failed to calculate block size"),
+                })?;
 
+            for (block_id, block_candles) in block_map {
+                if block_candles.len() == block_size {
+                    cache.put(block_id, block_candles);
+                }
+            }
             Ok(())
         })
     }
@@ -205,17 +208,16 @@ impl Handler<GetOHCLCommand> for PriceActor {
             let caches_read = caches.read().map_err(|error| ActorError {
                 message: format!("Fail to read cache: {}", error),
             })?;
+            let mut result = Vec::new();
 
             if let Some(stock_caches) = caches_read.get(&stock) {
                 if let Some(cache) = stock_caches.get(&resolution) {
-                    let mut result = Vec::new();
                     let mut keep = true;
-                    let i_from = from / size_of_block;
-                    let i_to = to / size_of_block;
+                    let i_from = (from / size_of_block) - (((from % size_of_block) != 0) as i64);
+                    let i_to = (to / size_of_block) + (((to % size_of_block) != 0) as i64);
 
                     for i in i_from..=i_to {
                         if let Some(candles) = cache.get(&i) {
-                            // Filter candles trong range (tối ưu: nếu sorted, dùng binary search)
                             for candle in candles {
                                 let candle_time = candle.t as i64;
                                 if from <= candle_time && candle_time < to {
@@ -228,19 +230,13 @@ impl Handler<GetOHCLCommand> for PriceActor {
                                 }
                             }
                         } else {
-                            debug!(
-                                "Cannot find block {}, timestamp at {}",
-                                i,
-                                i * size_of_block
-                            );
-
                             from = (i - 1) * size_of_block;
                             keep = false;
                             break;
                         }
                     }
 
-                    if keep {
+                    if keep || from > to {
                         return Ok((result, false)); // Cache hit full
                     }
                 } else {
@@ -251,20 +247,37 @@ impl Handler<GetOHCLCommand> for PriceActor {
             }
             drop(caches_read); // Release read lock sớm
 
-            Ok((
-                fetch_ohcl_by_stock(
-                    Arc::new(HttpClient::default()),
-                    &broker,
-                    &stock,
-                    &resolution,
-                    from,
-                    to,
-                    limit + (size_of_block as usize) * 2,
-                    timeout,
-                )
-                .await?,
-                true,
-            )) // Return fetched data, đánh dấu là fresh
+            let tail = fetch_ohcl_by_stock(
+                Arc::new(HttpClient::default()),
+                &broker,
+                &stock,
+                &resolution,
+                from,
+                to,
+                if limit > 0 {
+                    limit + (size_of_block as usize) * 2
+                } else {
+                    0
+                },
+                timeout,
+            )
+            .await?;
+
+            if result.len() > 0 {
+                for candle in tail {
+                    let last = result.len() - 1;
+
+                    if result[last].t < candle.t {
+                        result.push(candle);
+                    } else if result[last].t == candle.t {
+                        result[last] = candle;
+                    }
+                }
+            } else {
+                result = tail;
+            }
+
+            Ok((result, true)) // Return fetched data, đánh dấu là fresh
         })
     }
 }
