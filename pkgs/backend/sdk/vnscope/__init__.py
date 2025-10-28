@@ -1,7 +1,6 @@
 from .core import configure
 from .core import filter, order, profile, history, price, market
 
-from .core import crypto
 from .core import Monitor, Datastore, Evolution
 from .util import align_and_concat, group_files_by_symbol
 
