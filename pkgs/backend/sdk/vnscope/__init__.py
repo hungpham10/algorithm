@@ -1,5 +1,5 @@
 from .core import configure
-from .core import filter, order, profile, history, price, market, heatmap
+from .core import filter, order, profile, history, price, market
 from .core import cw, sectors, industry
 
 from .core import crypto
@@ -13,7 +13,6 @@ from .models import CandleStick
 __all__ = [
     "align_and_concat",
     "group_files_by_symbol",
-    "heatmap",
     "filter",
     "order",
     "profile",
