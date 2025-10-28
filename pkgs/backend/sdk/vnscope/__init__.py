@@ -1,6 +1,5 @@
 from .core import configure
 from .core import filter, order, profile, history, price, market
-from .core import cw, sectors, industry
 
 from .core import crypto
 from .core import Monitor, Datastore, Evolution
@@ -19,9 +18,6 @@ __all__ = [
     "history",
     "price",
     "market",
-    "cw",
-    "sectors",
-    "industry",
     "configure",
     "Symbols",
     "Evolution",
