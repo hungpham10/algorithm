@@ -216,7 +216,6 @@ class ClassifyVolumeProfile:
             if i >= top_n:
                 break
             color = colors[i % len(colors)]  # Chọn màu từ palette
-            range_label = f"Range {i+1}"  # Shared label for the entire range
             apds.extend(
                 [
                     mpf.make_addplot(
@@ -224,22 +223,21 @@ class ClassifyVolumeProfile:
                         color=color,
                         linestyle="--",
                         width=0.5,
-                        # Only label the first one to avoid duplicates
-                        label=range_label if i == 0 else None,
+                        label=f"Range {i+1}",
                     ),
                     mpf.make_addplot(
                         pd.Series(levels[center], index=price_df.index),
                         color=color,
                         linestyle="--",
                         width=1.0,
-                        label=None,  # No individual label
+                        label=f"Range {i+1} Center",
                     ),
                     mpf.make_addplot(
                         pd.Series(levels[end], index=price_df.index),
                         color=color,
                         linestyle="--",
                         width=0.5,
-                        label=None,  # No individual label
+                        label=f"Range {i+1} End",
                     ),
                 ]
             )
