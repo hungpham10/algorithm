@@ -232,14 +232,14 @@ class ClassifyVolumeProfile:
                         color=color,
                         linestyle="--",
                         width=1.0,
-                        label=None,  # No individual label
+                        label=f"Range {i+1} Center",
                     ),
                     mpf.make_addplot(
                         pd.Series(levels[end], index=price_df.index),
                         color=color,
                         linestyle="--",
                         width=0.5,
-                        label=None,  # No individual label
+                        label=f"Range {i+1} End",
                     ),
                 ]
             )
