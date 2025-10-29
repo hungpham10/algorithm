@@ -255,7 +255,6 @@ class ClassifyVolumeProfile:
             panel_ratios=(3, 1),  # Allocate more space to main chart vs volume
             figsize=(40, 24),  # Increased figure size
             tight_layout=True,  # Improve overall spacing
-            legend_loc="upper left",  # Position legend to avoid overlap
             legend_fontsize=8,  # Smaller font for legend to fit better
             returnfig=False,
         )
