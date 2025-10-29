@@ -253,9 +253,8 @@ class ClassifyVolumeProfile:
             volume=True,
             volume_panel=1,  # Use panel 1 for volume
             panel_ratios=(3, 1),  # Allocate more space to main chart vs volume
-            figsize=(40, 24),  # Increased figure size
+            figsize=(12, 7),  # Increased figure size
             tight_layout=True,  # Improve overall spacing
-            legend_fontsize=8,  # Smaller font for legend to fit better
             returnfig=False,
         )
 
