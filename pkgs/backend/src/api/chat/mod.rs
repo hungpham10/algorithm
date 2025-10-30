@@ -12,7 +12,6 @@ pub struct Slack {
 
 pub struct Facebook {
     pub webhook_access_token: String,
-    pub page_access_token: String,
     pub incomming_secret: String,
     pub outgoing_secret: String,
 }

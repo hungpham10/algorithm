@@ -16,7 +16,7 @@ pub async fn get_username(appdata: &Data<Arc<AppState>>, sender_id: &String) -> 
     let client = HttpClient::default();
     let url = format!(
         "https://graph.facebook.com/{}?fields=name&access_token={}",
-        sender_id, appdata.chat.fb.page_access_token,
+        sender_id, appdata.chat.fb.outgoing_secret,
     );
     let response = client
         .get(&url)
@@ -43,7 +43,7 @@ pub async fn send_message(
     let client = HttpClient::default();
     let url = format!(
         "https://graph.facebook.com/v24.0/me/messages?access_token={}",
-        appstate.chat.fb.page_access_token,
+        appstate.chat.fb.outgoing_secret,
     );
     let body = json!({
         "recipient": {
