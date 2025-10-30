@@ -242,32 +242,28 @@ impl AppState {
             fb: chat::Facebook {
                 webhook_access_token: get_secret_from_infisical(
                     &infisical_client,
-                    "FACEBOOK_TOKEN",
-                    "/",
-                )
-                .await?,
-                page_access_token: get_secret_from_infisical(
-                    &infisical_client,
-                    "FACEBOOK_TOKEN",
-                    "/",
+                    "FACEBOOK_WEBHOOK_VERIFY_TOKEN",
+                    "/facebook/",
                 )
                 .await?,
                 incomming_secret: get_secret_from_infisical(
                     &infisical_client,
                     "FACEBOOK_INCOMMING_SECRET",
-                    "/",
+                    "/facebook/",
                 )
                 .await?,
                 outgoing_secret: get_secret_from_infisical(
                     &infisical_client,
                     "FACEBOOK_OUTGOING_SECRET",
-                    "/",
+                    "/facebook/",
                 )
                 .await?,
             },
             slack: chat::Slack {
-                token: get_secret_from_infisical(&infisical_client, "SLACK_BOT_TOKEN", "/").await?,
-                channel: get_secret_from_infisical(&infisical_client, "SLACK_CHANNEL", "/").await?,
+                token: get_secret_from_infisical(&infisical_client, "SLACK_BOT_TOKEN", "/slack/")
+                    .await?,
+                channel: get_secret_from_infisical(&infisical_client, "SLACK_CHANNEL", "/slack/")
+                    .await?,
             },
         });
 
