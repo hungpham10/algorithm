@@ -22,6 +22,10 @@ pub struct SlackMessage {
 pub struct SlackEvent {
     #[serde(rename = "type")]
     event_type: String,
+
+    #[serde(rename = "bot_id")]
+    bot: Option<String>,
+
     user: Option<String>,
     text: Option<String>,
     channel: Option<String>,
@@ -46,32 +50,32 @@ pub async fn receive_message(
         return Ok(HttpResponse::Ok().body(challenge.clone()));
     }
 
-    info!("{:?}", body);
-
     if let Some(entity) = appstate.chat_entity() {
         if let Some(event) = &payload.event {
             if event.event_type == "message" {
-                if let (Some(user), Some(text), Some(thread_ts)) =
-                    (&event.user, &event.text, &event.thread_ts)
-                {
-                    match entity
-                        .get_sender_id_by_thread(headers.tenant_id, thread_ts)
-                        .await
+                if event.bot.is_none() {
+                    if let (Some(user), Some(text), Some(thread_ts)) =
+                        (&event.user, &event.text, &event.thread_ts)
                     {
-                        Ok(Some(sender_id)) => {
-                            send_message(&appstate, &sender_id, &text)
-                                .await
-                                .map_err(|error| do_send_message_falure(error))?
-                            // @TODO: store message to parquet in S3
-                        }
-                        Ok(None) => {
-                            // @TODO: maybe this is command from CSKH
-                        }
-                        Err(error) => {
-                            return Err(ErrorInternalServerError(format!(
-                                "Fail to get sender.id: {}",
-                                error
-                            )));
+                        match entity
+                            .get_sender_id_by_thread(headers.tenant_id, thread_ts)
+                            .await
+                        {
+                            Ok(Some(sender_id)) => {
+                                send_message(&appstate, &sender_id, &text)
+                                    .await
+                                    .map_err(|error| do_send_message_falure(error))?
+                                // @TODO: store message to parquet in S3
+                            }
+                            Ok(None) => {
+                                // @TODO: maybe this is command from CSKH
+                            }
+                            Err(error) => {
+                                return Err(ErrorInternalServerError(format!(
+                                    "Fail to get sender.id: {}",
+                                    error
+                                )));
+                            }
                         }
                     }
                 }
