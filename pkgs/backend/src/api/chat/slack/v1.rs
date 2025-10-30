@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+use log::info;
+
 use actix_web::error::ErrorInternalServerError;
-use actix_web::web::{Data, Json};
+use actix_web::web::{Bytes, Data, Query};
 use actix_web::{Error, HttpResponse, Result};
 
 use serde::{Deserialize, Serialize};
@@ -10,13 +12,13 @@ use crate::api::chat::facebook::send_message;
 use crate::api::chat::ChatHeaders;
 use crate::api::AppState;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct SlackMessage {
     channel: String,
     text: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SlackEvent {
     #[serde(rename = "type")]
     event_type: String,
@@ -26,7 +28,7 @@ pub struct SlackEvent {
     thread_ts: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SlackEventWrapper {
     token: String,
     challenge: Option<String>,
@@ -35,12 +37,16 @@ pub struct SlackEventWrapper {
 
 pub async fn receive_message(
     appstate: Data<Arc<AppState>>,
-    payload: Json<SlackEventWrapper>,
+    body: Bytes,
     headers: ChatHeaders,
 ) -> Result<HttpResponse> {
+    let payload = serde_json::from_slice::<SlackEventWrapper>(&body)?;
+
     if let Some(challenge) = &payload.challenge {
         return Ok(HttpResponse::Ok().body(challenge.clone()));
     }
+
+    info!("{:?}", body);
 
     if let Some(entity) = appstate.chat_entity() {
         if let Some(event) = &payload.event {
