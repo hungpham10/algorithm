@@ -102,7 +102,13 @@ pub fn market(symbols: Vec<String>) -> PyResult<PyDataFrame> {
     // Extract data into vectors for each column
     let prices = symbols
         .iter()
-        .map(|s| mapping.get(s).unwrap().lastPrice)
+        .map(|s| {
+            if mapping.get(s).unwrap().lastPrice == 0.0 {
+                mapping.get(s).unwrap().r
+            } else {
+                mapping.get(s).unwrap().lastPrice
+            }
+        })
         .collect::<Vec<_>>();
     let volumes = symbols
         .iter()
