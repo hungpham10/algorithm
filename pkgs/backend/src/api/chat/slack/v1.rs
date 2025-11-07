@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use log::info;
-
 use actix_web::error::ErrorInternalServerError;
 use actix_web::web::{Bytes, Data, Query};
 use actix_web::{Error, HttpResponse, Result};
