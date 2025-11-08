@@ -295,14 +295,27 @@ pub async fn get_heatmap_from_broker(
                                     args.overlap,
                                     args.interval_in_hour,
                                 ) {
-                                    Ok(vp) => Ok(HttpResponse::Ok().json(OhclResponse {
-                                        heatmap: Some(HeatmapResponse {
-                                            heatmap: vp.heatmap().clone(),
-                                            levels: vp.levels().clone(),
-                                            ranges: vp.ranges().clone(),
-                                        }),
-                                        ..Default::default()
-                                    })),
+                                    Ok(vp) => {
+                                        let cols = vp.heatmap().len();
+                                        let rows = args.number_of_levels;
+                                        let mut heatmap: Vec<Vec<f64>> =
+                                            vec![vec![0.0; cols]; rows];
+
+                                        for (j, profile) in vp.heatmap().iter().enumerate() {
+                                            for i in 0..rows {
+                                                heatmap[i][j] = *profile.get(i).unwrap();
+                                            }
+                                        }
+
+                                        Ok(HttpResponse::Ok().json(OhclResponse {
+                                            heatmap: Some(HeatmapResponse {
+                                                heatmap,
+                                                levels: vp.levels().clone(),
+                                                ranges: vp.ranges().clone(),
+                                            }),
+                                            ..Default::default()
+                                        }))
+                                    }
                                     Err(error) => Err(ErrorServiceUnavailable(OhclResponse {
                                         error: Some(format!(
                                             "Calculate VolumeProfile got error: {:?}",
@@ -338,14 +351,25 @@ pub async fn get_heatmap_from_broker(
                             args.overlap,
                             args.interval_in_hour,
                         ) {
-                            Ok(vp) => Ok(HttpResponse::Ok().json(OhclResponse {
-                                heatmap: Some(HeatmapResponse {
-                                    heatmap: vp.heatmap().clone(),
-                                    levels: vp.levels().clone(),
-                                    ranges: vp.ranges().clone(),
-                                }),
-                                ..Default::default()
-                            })),
+                            Ok(vp) => {
+                                let cols = vp.heatmap().len();
+                                let rows = args.number_of_levels;
+                                let mut heatmap: Vec<Vec<f64>> = vec![vec![0.0; cols]; rows];
+
+                                for (j, profile) in vp.heatmap().iter().enumerate() {
+                                    for i in 0..rows {
+                                        heatmap[i][j] = *profile.get(i).unwrap();
+                                    }
+                                }
+                                Ok(HttpResponse::Ok().json(OhclResponse {
+                                    heatmap: Some(HeatmapResponse {
+                                        heatmap: vp.heatmap().clone(),
+                                        levels: vp.levels().clone(),
+                                        ranges: vp.ranges().clone(),
+                                    }),
+                                    ..Default::default()
+                                }))
+                            }
                             Err(error) => Err(ErrorServiceUnavailable(OhclResponse {
                                 error: Some(format!(
                                     "Calculate VolumeProfile got error: {:?}",
