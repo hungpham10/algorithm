@@ -1,10 +1,12 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import polars as pl
 import pandas as pd
 import mplfinance as mpf
 import seaborn as sns
 
 from .symbols import Symbols
+from .core import market
 
 
 class ClassifyVolumeProfile:
@@ -261,3 +263,137 @@ class ClassifyVolumeProfile:
         # Note: For full integration with custom subplots, consider using
         # mpf.plot with returnfig=True and manual subplot addition. This version
         # plots heatmap separately if enabled, and candlestick in its own figure
+
+    def detect_possible_reverse_point(
+        self,
+        symbols,
+        broker,
+        number_of_levels,
+        overlap_days,
+    ):
+        # Hàm helper để gọi heatmap và extract info
+        def get_heatmap_info(symbol: str):
+            (_, levels, ranges) = self.symbols.heatmap(
+                symbol,
+                broker,
+                self.resolution,
+                self.now,
+                self.lookback,
+                overlap_days,
+                number_of_levels,
+                self.interval_in_hour,
+            )
+            centers = []
+            begins = []
+            ends = []
+            for (center, begin, end) in ranges:
+                centers.append(center)
+                begins.append(begin)
+                ends.append(end)
+            return {
+                "levels": levels,
+                "centers": centers,
+                "begins": begins,
+                "ends": ends,
+            }
+
+        def possible_down_to(price, heatmap):
+            ends = heatmap["ends"]
+            begins = heatmap["begins"]
+            levels = heatmap["levels"]
+            centers = heatmap["centers"]
+
+            # next centers according price
+            mapping = sorted(
+                [i for i in range(0, len(centers))],
+                key=lambda i: levels[centers[i]],
+            )
+            blocks = [
+                (i, levels[begins[i]], levels[centers[i]], levels[ends[i]])
+                for i in mapping
+            ]
+
+            for (p, (i, begin, center, end)) in enumerate(blocks):
+                if (begin < price < end) or (
+                    (blocks[i - 1][2] if i > 0 else 0.0) < price < begin
+                ):
+                    if price >= center * 1.07:
+                        if len(blocks) == i + 1:
+                            return center
+
+                    for q in range(p, 1, -1):
+                        if blocks[q][0] > blocks[q - 1][0]:
+                            return blocks[q - 1][3]
+                    else:
+                        if blocks[p - 1][2] < price:
+                            return blocks[p - 1][2]
+                        else:
+                            return 0.0
+            return 0.0
+
+        def possible_distributed_phase(price, heatmap):
+            ends = heatmap["ends"]
+            begins = heatmap["begins"]
+            levels = heatmap["levels"]
+            centers = heatmap["centers"]
+
+            # next centers according price
+            mapping = sorted(
+                [i for i in range(0, len(centers))],
+                key=lambda i: levels[centers[i]],
+            )
+            blocks = [
+                (i, levels[begins[i]], levels[centers[i]], levels[ends[i]])
+                for i in mapping
+            ]
+
+            for (p, (i, begin, center, end)) in enumerate(blocks):
+                if (begin < price < end) or (
+                    (blocks[i - 1][2] if i > 0 else 0.0) < price < begin
+                ):
+                    for q in range(p, 1, -1):
+                        if blocks[q][0] > blocks[q - 1][0]:
+                            return False
+                    else:
+                        return True
+            return None
+
+        return (
+            market(symbols)[("symbol", "price")]
+            .with_columns(
+                pl.col("symbol")
+                .map_elements(
+                    get_heatmap_info,
+                    strategy="threading",
+                    return_dtype=pl.Struct(
+                        {
+                            "levels": pl.List(pl.Float64),
+                            "centers": pl.List(pl.Int64),
+                            "begins": pl.List(pl.Int64),
+                            "ends": pl.List(pl.Int64),
+                        }
+                    ),
+                )
+                .alias("heatmap"),
+            )
+            .with_columns(
+                pl.struct(["price", "heatmap"])
+                .map_elements(
+                    lambda row: possible_down_to(
+                        row["price"],
+                        row["heatmap"],
+                    ),
+                    return_dtype=pl.Float64,
+                )
+                .alias("possible_down_to"),
+                pl.struct(["price", "heatmap"])
+                .map_elements(
+                    lambda row: possible_distributed_phase(
+                        row["price"],
+                        row["heatmap"],
+                    ),
+                    return_dtype=pl.Boolean,
+                )
+                .alias("possible_distributed_phase"),
+            )[("symbol", "price", "possible_down_to", "possible_distributed_phase")]
+        )
