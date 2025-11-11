@@ -10,6 +10,7 @@ from .symbols import Symbols
 class ClassifyVolumeProfile:
     def __init__(
         self,
+        base_url=None,
         now=None,
         resolution="1D",
         lookback=120,
@@ -17,7 +18,7 @@ class ClassifyVolumeProfile:
     ):
         from datetime import datetime, timezone, timedelta
 
-        self.symbols = Symbols()
+        self.symbols = Symbols(base_url)
 
         if now is None:
             self.now = int((datetime.now(timezone.utc) + timedelta(days=1)).timestamp())
@@ -211,37 +212,55 @@ class ClassifyVolumeProfile:
         if enable_inverst_ranges:
             ranges.reverse()
 
-        # Add price range lines (begin, center, end) with a single shared label
-        # per range to reduce legend items
+        # Add price range lines (begin, center, end), but only over the specific timeline periods for each range
         for i, (center, begin, end) in enumerate(ranges):
             if i >= top_n:
                 break
-            color = colors[i % len(colors)]  # Chọn màu từ palette
-            apds.extend(
-                [
-                    mpf.make_addplot(
-                        pd.Series(levels[begin], index=price_df.index),
-                        color=color,
-                        linestyle="--",
-                        width=0.5,
-                        label=f"Range {i+1}",
-                    ),
-                    mpf.make_addplot(
-                        pd.Series(levels[center], index=price_df.index),
-                        color=color,
-                        linestyle="--",
-                        width=1.0,
-                        label=f"Range {i+1} Center",
-                    ),
-                    mpf.make_addplot(
-                        pd.Series(levels[end], index=price_df.index),
-                        color=color,
-                        linestyle="--",
-                        width=0.5,
-                        label=f"Range {i+1} End",
-                    ),
-                ]
-            )
+            color = colors[i % len(colors)]  # Select color from palette
+
+            # Assuming timelines[i] is a tuple (start_col, end_col) where col is index in consolidated columns / heatmap_dates
+            if i < len(timelines):
+                start_col, end_col = timelines[i]
+                start_date = heatmap_dates[start_col]
+                end_date = heatmap_dates[end_col]
+
+                # Create masked series for begin, center, end lines
+                mask = (price_df.index >= start_date) & (price_df.index <= end_date)
+
+                begin_series = pd.Series(np.nan, index=price_df.index)
+                begin_series[mask] = levels[begin]
+
+                center_series = pd.Series(np.nan, index=price_df.index)
+                center_series[mask] = levels[center]
+
+                end_series = pd.Series(np.nan, index=price_df.index)
+                end_series[mask] = levels[end]
+
+                apds.extend(
+                    [
+                        mpf.make_addplot(
+                            begin_series,
+                            color=color,
+                            linestyle="--",
+                            width=0.5,
+                            label=f"Range {i+1}",
+                        ),
+                        mpf.make_addplot(
+                            center_series,
+                            color=color,
+                            linestyle="--",
+                            width=1.0,
+                            label=f"Range {i+1} Center",
+                        ),
+                        mpf.make_addplot(
+                            end_series,
+                            color=color,
+                            linestyle="--",
+                            width=0.5,
+                            label=f"Range {i+1} End",
+                        ),
+                    ]
+                )
 
         # Plot candlestick with Bollinger Bands and horizontal lines (increased
         # figsize, adjusted volume panel, legend position)

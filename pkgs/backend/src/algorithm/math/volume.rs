@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
+use log::info;
 
 use crate::schemas::CandleStick as OHCL;
 
@@ -99,45 +100,51 @@ impl VolumeProfile {
     ) -> Result<Vec<(usize, usize)>> {
         Ok(ranges
             .iter()
-            .flat_map(|(_, l_beg, l_end)| {
-                (*l_beg..*l_end).map(|col| {
-                    let mut t_beg = heatmap[0].len();
-                    let mut t_end = heatmap[0].len();
-                    let mut t_cur = heatmap[0].len();
+            .map(|(_, l_beg, l_end)| {
+                let footprints = (*l_beg..*l_end)
+                    .map(|col| {
+                        let mut t_beg = heatmap[0].len();
+                        let mut t_end = heatmap[0].len();
+                        let mut t_cur = 0;
 
-                    loop {
-                        let mut found = false;
+                        for _ in 0..heatmap.len() {
+                            let mut found = false;
 
-                        for (i, row) in heatmap.iter().enumerate() {
-                            if row[col] > 0.0 {
-                                if t_beg < heatmap[0].len() {
-                                    t_beg = i;
-                                }
-
-                                t_cur = i;
-                                found = true;
-                                break;
-                            }
-                        }
-
-                        if found {
                             for (i, row) in heatmap.iter().enumerate() {
-                                if i > t_cur && row[col] <= 0.0 {
-                                    t_end = i;
+                                if i >= t_cur && row[col] > 0.0 {
+                                    if t_beg == heatmap[0].len() {
+                                        t_beg = i;
+                                    }
+
                                     t_cur = i;
                                     found = true;
                                     break;
                                 }
                             }
+
+                            if found {
+                                found = false;
+
+                                for (i, row) in heatmap.iter().enumerate() {
+                                    if i > t_cur && row[col] <= 0.0 {
+                                        t_end = i;
+                                        t_cur = i;
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if !found {
+                                break;
+                            }
                         }
 
-                        if !found {
-                            break;
-                        }
-                    }
+                        (t_beg, t_end)
+                    })
+                    .collect::<Vec<_>>();
 
-                    (t_beg, t_end)
-                })
+                (footprints.first().unwrap().0, footprints.last().unwrap().1)
             })
             .collect())
     }

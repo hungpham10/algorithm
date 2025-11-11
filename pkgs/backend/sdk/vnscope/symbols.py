@@ -145,7 +145,12 @@ class Symbols:
         overlap: int,
         number_of_levels: int,
         interval_in_hour: int,
-    ) -> tp.Tuple[np.ndarray, tp.List[float], tp.List[tp.Tuple[int, int, int]]]:
+    ) -> tp.Tuple[
+        np.ndarray,
+        tp.List[float],
+        tp.List[tp.Tuple[int, int, int]],
+        tp.List[tp.Tuple[int, int]],
+    ]:
         base_url = getattr(self, "_base_url", self._base_url)
         url = (
             f"{base_url}/api/investing/v1/ohcl/{broker}/{symbol}/heatmap?"
