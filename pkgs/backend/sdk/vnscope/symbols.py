@@ -169,7 +169,15 @@ class Symbols:
             for r in data.get("ranges", [])
             if len(r) == 3
         ]
-        return data_arr, levels, ranges
+        timelines = [
+            (int(r[0]), int(r[1])) for r in data.get("timelines", []) if len(r) == 2
+        ]
+        return (
+            data_arr,
+            levels,
+            ranges,
+            timelines,
+        )
 
     def history(
         self, symbols: tp.List[str], broker: str, resolution: str, lookback: int

@@ -49,6 +49,7 @@ impl VolumeProfile {
             Self::cumulate_volume_profile(candles, number_of_levels, overlap, interval_in_hour)?;
 
         self.ranges = Self::cumulate_volume_range(&heatmap)?;
+        self.timelines = Self::calculate_cumulate_volume_timeline(&heatmap, &self.ranges)?;
         self.levels = levels;
         self.heatmap = heatmap;
         Ok(())
@@ -64,6 +65,10 @@ impl VolumeProfile {
 
     pub fn ranges(&self) -> &Vec<(usize, usize, usize)> {
         &self.ranges
+    }
+
+    pub fn timelines(&self) -> &Vec<(usize, usize)> {
+        &self.timelines
     }
 
     pub fn center(&self, index: usize) -> f64 {
@@ -85,6 +90,56 @@ impl VolumeProfile {
     #[inline]
     fn timestamp_to_pin(t: i32, interval_in_hour: i32) -> i32 {
         t / (interval_in_hour * 60 * 60)
+    }
+
+    #[inline]
+    pub fn calculate_cumulate_volume_timeline(
+        heatmap: &Vec<Vec<f64>>,
+        ranges: &Vec<(usize, usize, usize)>,
+    ) -> Result<Vec<(usize, usize)>> {
+        Ok(ranges
+            .iter()
+            .flat_map(|(_, l_beg, l_end)| {
+                (*l_beg..*l_end).map(|col| {
+                    let mut t_beg = heatmap[0].len();
+                    let mut t_end = heatmap[0].len();
+                    let mut t_cur = heatmap[0].len();
+
+                    loop {
+                        let mut found = false;
+
+                        for (i, row) in heatmap.iter().enumerate() {
+                            if row[col] > 0.0 {
+                                if t_beg < heatmap[0].len() {
+                                    t_beg = i;
+                                }
+
+                                t_cur = i;
+                                found = true;
+                                break;
+                            }
+                        }
+
+                        if found {
+                            for (i, row) in heatmap.iter().enumerate() {
+                                if i > t_cur && row[col] <= 0.0 {
+                                    t_end = i;
+                                    t_cur = i;
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if !found {
+                            break;
+                        }
+                    }
+
+                    (t_beg, t_end)
+                })
+            })
+            .collect())
     }
 
     #[inline]
