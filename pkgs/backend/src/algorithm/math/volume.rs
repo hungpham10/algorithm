@@ -10,7 +10,6 @@ pub struct VolumeProfile {
     heatmap: Vec<Vec<f64>>,
     levels: Vec<f64>,
     ranges: Vec<(usize, usize, usize)>,
-    timelines: Vec<(usize, usize)>,
 }
 
 impl VolumeProfile {
@@ -19,7 +18,6 @@ impl VolumeProfile {
             heatmap: Vec::new(),
             levels: Vec::new(),
             ranges: Vec::new(),
-            timelines: Vec::new(),
         }
     }
 
@@ -32,13 +30,11 @@ impl VolumeProfile {
         let (heatmap, levels) =
             Self::cumulate_volume_profile(candles, number_of_levels, overlap, interval_in_hour)?;
         let ranges = Self::cumulate_volume_range(&heatmap)?;
-        let timelines = Self::calculate_cumulate_volume_timeline(&heatmap, &ranges)?;
 
         Ok(Self {
             heatmap,
             levels,
             ranges,
-            timelines,
         })
     }
 
@@ -53,7 +49,6 @@ impl VolumeProfile {
             Self::cumulate_volume_profile(candles, number_of_levels, overlap, interval_in_hour)?;
 
         self.ranges = Self::cumulate_volume_range(&heatmap)?;
-        self.timelines = Self::calculate_cumulate_volume_timeline(&heatmap, &self.ranges)?;
         self.levels = levels;
         self.heatmap = heatmap;
         Ok(())
@@ -69,10 +64,6 @@ impl VolumeProfile {
 
     pub fn ranges(&self) -> &Vec<(usize, usize, usize)> {
         &self.ranges
-    }
-
-    pub fn timelines(&self) -> &Vec<(usize, usize)> {
-        &self.timelines
     }
 
     pub fn center(&self, index: usize) -> f64 {
@@ -94,38 +85,6 @@ impl VolumeProfile {
     #[inline]
     fn timestamp_to_pin(t: i32, interval_in_hour: i32) -> i32 {
         t / (interval_in_hour * 60 * 60)
-    }
-
-    #[inline]
-    pub fn calculate_cumulate_volume_timeline(
-        heatmap: &Vec<Vec<f64>>,
-        ranges: &Vec<(usize, usize, usize)>,
-    ) -> Result<Vec<(usize, usize)>> {
-        Ok(ranges
-            .iter()
-            .flat_map(|(_, l_beg, l_end)| {
-                (*l_beg..*l_end).map(|col| {
-                    let mut t_beg = heatmap[0].len();
-                    let mut t_end = heatmap[0].len();
-
-                    for (i, row) in heatmap.iter().enumerate() {
-                        if row[col] > 0.0 {
-                            t_beg = i;
-                            break;
-                        }
-                    }
-
-                    for (i, row) in heatmap.iter().enumerate() {
-                        if i > t_beg && row[col] <= 0.0 {
-                            t_end = i;
-                            break;
-                        }
-                    }
-
-                    (t_beg, t_end)
-                })
-            })
-            .collect())
     }
 
     #[inline]

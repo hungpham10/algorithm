@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::{Display, Error as FmtError, Formatter, Result as FmtResult};
 use std::sync::Arc;
 
@@ -5,6 +6,7 @@ use actix_web::error::{ErrorBadRequest, ErrorInternalServerError, ErrorServiceUn
 use actix_web::web::{Data, Path, Query};
 use actix_web::{HttpResponse, Result};
 
+use lazy_static::lazy_static;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +25,6 @@ pub struct HeatmapResponse {
     heatmap: Vec<Vec<f64>>,
     levels: Vec<f64>,
     ranges: Vec<(usize, usize, usize)>,
-    timelines: Vec<(usize, usize)>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -311,7 +312,6 @@ pub async fn get_heatmap_from_broker(
                                                 heatmap,
                                                 levels: vp.levels().clone(),
                                                 ranges: vp.ranges().clone(),
-                                                timelines: vp.timelines().clone(),
                                             }),
                                             ..Default::default()
                                         }))
@@ -363,10 +363,9 @@ pub async fn get_heatmap_from_broker(
                                 }
                                 Ok(HttpResponse::Ok().json(OhclResponse {
                                     heatmap: Some(HeatmapResponse {
-                                        heatmap: heatmap,
+                                        heatmap: vp.heatmap().clone(),
                                         levels: vp.levels().clone(),
                                         ranges: vp.ranges().clone(),
-                                        timelines: vp.timelines().clone(),
                                     }),
                                     ..Default::default()
                                 }))
