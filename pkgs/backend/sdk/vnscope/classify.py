@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import polars as pl
 import numpy as np
 import pandas as pd
 import mplfinance as mpf
