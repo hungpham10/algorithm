@@ -3,7 +3,6 @@ use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
-use log::info;
 
 use crate::schemas::CandleStick as OHCL;
 
@@ -11,6 +10,7 @@ pub struct VolumeProfile {
     heatmap: Vec<Vec<f64>>,
     levels: Vec<f64>,
     ranges: Vec<(usize, usize, usize)>,
+    timelines: Vec<(usize, usize)>,
 }
 
 impl VolumeProfile {
@@ -19,6 +19,7 @@ impl VolumeProfile {
             heatmap: Vec::new(),
             levels: Vec::new(),
             ranges: Vec::new(),
+            timelines: Vec::new(),
         }
     }
 
@@ -31,11 +32,13 @@ impl VolumeProfile {
         let (heatmap, levels) =
             Self::cumulate_volume_profile(candles, number_of_levels, overlap, interval_in_hour)?;
         let ranges = Self::cumulate_volume_range(&heatmap)?;
+        let timelines = Self::calculate_cumulate_volume_timeline(&heatmap, &ranges)?;
 
         Ok(Self {
             heatmap,
             levels,
             ranges,
+            timelines,
         })
     }
 
