@@ -212,55 +212,38 @@ class ClassifyVolumeProfile:
         if enable_inverst_ranges:
             ranges.reverse()
 
-        # Add price range lines (begin, center, end), but only over the specific timeline periods for each range
+        # Add price range lines (begin, center, end), but only over the specific
+        # timeline periods for each range
         for i, (center, begin, end) in enumerate(ranges):
             if i >= top_n:
                 break
             color = colors[i % len(colors)]  # Select color from palette
 
-            # Assuming timelines[i] is a tuple (start_col, end_col) where col is index in consolidated columns / heatmap_dates
-            if i < len(timelines):
-                start_col, end_col = timelines[i]
-                start_date = heatmap_dates[start_col]
-                end_date = heatmap_dates[end_col]
-
-                # Create masked series for begin, center, end lines
-                mask = (price_df.index >= start_date) & (price_df.index <= end_date)
-
-                begin_series = pd.Series(np.nan, index=price_df.index)
-                begin_series[mask] = levels[begin]
-
-                center_series = pd.Series(np.nan, index=price_df.index)
-                center_series[mask] = levels[center]
-
-                end_series = pd.Series(np.nan, index=price_df.index)
-                end_series[mask] = levels[end]
-
-                apds.extend(
-                    [
-                        mpf.make_addplot(
-                            begin_series,
-                            color=color,
-                            linestyle="--",
-                            width=0.5,
-                            label=f"Range {i+1}",
-                        ),
-                        mpf.make_addplot(
-                            center_series,
-                            color=color,
-                            linestyle="--",
-                            width=1.0,
-                            label=f"Range {i+1} Center",
-                        ),
-                        mpf.make_addplot(
-                            end_series,
-                            color=color,
-                            linestyle="--",
-                            width=0.5,
-                            label=f"Range {i+1} End",
-                        ),
-                    ]
-                )
+            apds.extend(
+                [
+                    mpf.make_addplot(
+                        pd.Series(levels[begin], index=price_df.index),
+                        color=color,
+                        linestyle="--",
+                        width=0.5,
+                        label=f"Range {i+1}",
+                    ),
+                    mpf.make_addplot(
+                        pd.Series(levels[center], index=price_df.index),
+                        color=color,
+                        linestyle="--",
+                        width=1.0,
+                        label=f"Range {i+1} Center",
+                    ),
+                    mpf.make_addplot(
+                        pd.Series(levels[end], index=price_df.index),
+                        color=color,
+                        linestyle="--",
+                        width=0.5,
+                        label=f"Range {i+1} End",
+                    ),
+                ]
+            )
 
         # Plot candlestick with Bollinger Bands and horizontal lines (increased
         # figsize, adjusted volume panel, legend position)
@@ -281,6 +264,87 @@ class ClassifyVolumeProfile:
         # Note: For full integration with custom subplots, consider using
         # mpf.plot with returnfig=True and manual subplot addition. This version
         # plots heatmap separately if enabled, and candlestick in its own figure
+
+    def calculate_beta_between_index_and_symbols(
+        self,
+        index,
+        symbols,
+        broker,
+        resolution,
+        overlap,
+    ):
+        df_index = self.symbols.log_return(
+            index,
+            broker,
+            resolution,
+            from_ts=self.now - self.lookback * 24 * 60 * 60,
+            to_ts=self.now,
+        )
+
+        def calculate_beta(symbol, df_index):
+            df = self.symbols.log_return(
+                symbol,
+                broker,
+                resolution,
+                from_ts=self.now - self.lookback * 24 * 60 * 60,
+                to_ts=self.now,
+            ).join(
+                df_index,
+                on="Date",
+                how="inner",
+            )
+            betas = []
+            timestamps = []
+
+            for i in range(len(df) - overlap + 1):
+                df_sliced = df.slice(i, overlap)
+
+                cov = df_sliced.select(
+                    pl.cov("LogReturn", "LogReturn_right").alias("correlation")
+                ).row(0)[0]
+                var = df_sliced.select(
+                    pl.var("LogReturn_right").alias("correlation")
+                ).row(0)[0]
+                timestamp = df_sliced["Date"].max()
+
+                betas.append(cov / var)
+                timestamps.append(timestamp)
+            return {
+                "beta": betas,
+                "timestamp": timestamps,
+            }
+
+        return (
+            pl.DataFrame({"symbol": symbols})
+            .with_columns(
+                pl.struct(["symbol"])
+                .map_elements(
+                    lambda row: calculate_beta(row["symbol"], df_index),
+                    strategy="threading",
+                    return_dtype=pl.Struct(
+                        {
+                            "beta": pl.List(pl.Float64),
+                            "timestamp": pl.List(pl.Datetime),
+                        }
+                    ),
+                )
+                .alias("output"),
+            )
+            .with_columns(
+                pl.struct(["output"])
+                .map_elements(
+                    lambda row: row["output"]["beta"],
+                    return_dtype=pl.List(pl.Float64),
+                )
+                .alias("beta"),
+                pl.struct(["output"])
+                .map_elements(
+                    lambda row: row["output"]["timestamp"],
+                    return_dtype=pl.List(pl.Datetime),
+                )
+                .alias("timestamp"),
+            )[("symbol", "beta", "timestamp")]
+        )
 
     def detect_possible_reverse_point(
         self,

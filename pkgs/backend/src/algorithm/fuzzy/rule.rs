@@ -200,6 +200,7 @@ impl Rule {
                     })
                 }
             }
+
             Format::Expression => {
                 if let Some(expression) = input.as_expression() {
                     Self::from_expression(functions, expression)
