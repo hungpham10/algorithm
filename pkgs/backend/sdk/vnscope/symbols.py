@@ -112,16 +112,25 @@ class Symbols:
         )
 
     def price(
-        self, symbol: str, broker: str, resolution: str, from_date: str, to_date: str
+        self,
+        symbol: str,
+        broker: str,
+        resolution: str,
+        from_date: str = "",
+        to_date: str = "",
+        from_ts: int = 0,
+        to_ts: int = 0,
     ) -> pl.DataFrame:
-        from_dt = dt.datetime.strptime(from_date, "%Y-%m-%d").replace(
-            tzinfo=dt.timezone.utc
-        )
-        to_dt = dt.datetime.strptime(to_date, "%Y-%m-%d").replace(
-            tzinfo=dt.timezone.utc
-        )
-        from_ts = int(from_dt.timestamp())
-        to_ts = int(to_dt.timestamp())
+        if from_ts == 0:
+            from_dt = dt.datetime.strptime(from_date, "%Y-%m-%d").replace(
+                tzinfo=dt.timezone.utc
+            )
+            from_ts = int(from_dt.timestamp())
+        if to_ts == 0:
+            to_dt = dt.datetime.strptime(to_date, "%Y-%m-%d").replace(
+                tzinfo=dt.timezone.utc
+            )
+            to_ts = int(to_dt.timestamp())
 
         datapoints = self._fetch_ohcl(broker, symbol, resolution, from_ts, to_ts)
 
@@ -135,6 +144,43 @@ class Symbols:
         }
         return pl.DataFrame(df_data)
 
+    def log_return(
+        self,
+        symbol: str,
+        broker: str,
+        resolution: str,
+        from_date: str = "",
+        to_date: str = "",
+        from_ts: int = 0,
+        to_ts: int = 0,
+    ) -> pl.DataFrame:
+        if from_ts == 0 and from_date:
+            from_dt = dt.datetime.strptime(from_date, "%Y-%m-%d").replace(
+                tzinfo=dt.timezone.utc
+            )
+            from_ts = int(from_dt.timestamp())
+        if to_ts == 0 and to_date:
+            to_dt = dt.datetime.strptime(to_date, "%Y-%m-%d").replace(
+                tzinfo=dt.timezone.utc
+            )
+            to_ts = int(to_dt.timestamp())
+        datapoints = self._fetch_ohcl(
+            broker,
+            symbol,
+            resolution,
+            from_ts,
+            to_ts,
+        )
+        df_data = {
+            "Date": [dt.datetime.fromtimestamp(it.t) for it in datapoints],
+            "Close": [it.c for it in datapoints],
+        }
+        df = pl.DataFrame(df_data)
+        df = df.with_columns(
+            (pl.col("Close") / pl.col("Close").shift(1)).log().alias("LogReturn")
+        )
+        return df.drop("Close").drop_nulls()
+
     def heatmap(
         self,
         symbol: str,
@@ -145,7 +191,12 @@ class Symbols:
         overlap: int,
         number_of_levels: int,
         interval_in_hour: int,
-    ) -> tp.Tuple[np.ndarray, tp.List[float], tp.List[tp.Tuple[int, int, int]]]:
+    ) -> tp.Tuple[
+        np.ndarray,
+        tp.List[float],
+        tp.List[tp.Tuple[int, int, int]],
+        tp.List[tp.Tuple[int, int]],
+    ]:
         base_url = getattr(self, "_base_url", self._base_url)
         url = (
             f"{base_url}/api/investing/v1/ohcl/{broker}/{symbol}/heatmap?"
@@ -169,7 +220,15 @@ class Symbols:
             for r in data.get("ranges", [])
             if len(r) == 3
         ]
-        return data_arr, levels, ranges
+        timelines = [
+            (int(r[0]), int(r[1])) for r in data.get("timelines", []) if len(r) == 2
+        ]
+        return (
+            data_arr,
+            levels,
+            ranges,
+            timelines,
+        )
 
     def history(
         self, symbols: tp.List[str], broker: str, resolution: str, lookback: int

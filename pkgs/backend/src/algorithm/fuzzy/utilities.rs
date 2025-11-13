@@ -1,4 +1,5 @@
 use super::{Rule, RuleError, Variables};
+
 use parquet::arrow::arrow_reader::ParquetRecordBatchReader;
 use std::collections::HashMap;
 

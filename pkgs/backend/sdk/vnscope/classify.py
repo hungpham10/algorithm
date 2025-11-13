@@ -10,6 +10,7 @@ from .symbols import Symbols
 class ClassifyVolumeProfile:
     def __init__(
         self,
+        base_url=None,
         now=None,
         resolution="1D",
         lookback=120,
@@ -17,7 +18,7 @@ class ClassifyVolumeProfile:
     ):
         from datetime import datetime, timezone, timedelta
 
-        self.symbols = Symbols()
+        self.symbols = Symbols(base_url)
 
         if now is None:
             self.now = int((datetime.now(timezone.utc) + timedelta(days=1)).timestamp())
@@ -65,7 +66,7 @@ class ClassifyVolumeProfile:
             from_time,
             to_time,
         ).to_pandas()
-        consolidated, levels, ranges = self.symbols.heatmap(
+        consolidated, levels, ranges, timelines = self.symbols.heatmap(
             symbol,
             broker,  # Use provided broker
             self.resolution,
@@ -79,7 +80,8 @@ class ClassifyVolumeProfile:
         # Convert from_time and to_time to datetime for time axis
         start_date = datetime.strptime(from_time, "%Y-%m-%d")
 
-        # Create time axis for heatmap (starting from the overlap_days to match overlap)
+        # Create time axis for heatmap (starting from the overlap_days to match
+        # overlap)
         heatmap_dates = pd.date_range(
             start=start_date + timedelta(days=overlap_days),
             periods=consolidated.shape[1],
@@ -210,12 +212,13 @@ class ClassifyVolumeProfile:
         if enable_inverst_ranges:
             ranges.reverse()
 
-        # Add price range lines (begin, center, end) with a single shared label
-        # per range to reduce legend items
+        # Add price range lines (begin, center, end), but only over the specific
+        # timeline periods for each range
         for i, (center, begin, end) in enumerate(ranges):
             if i >= top_n:
                 break
-            color = colors[i % len(colors)]  # Chọn màu từ palette
+            color = colors[i % len(colors)]  # Select color from palette
+
             apds.extend(
                 [
                     mpf.make_addplot(
@@ -261,3 +264,218 @@ class ClassifyVolumeProfile:
         # Note: For full integration with custom subplots, consider using
         # mpf.plot with returnfig=True and manual subplot addition. This version
         # plots heatmap separately if enabled, and candlestick in its own figure
+
+    def calculate_beta_between_index_and_symbols(
+        self,
+        index,
+        symbols,
+        broker,
+        resolution,
+        overlap,
+    ):
+        df_index = self.symbols.log_return(
+            index,
+            broker,
+            resolution,
+            from_ts=self.now - self.lookback * 24 * 60 * 60,
+            to_ts=self.now,
+        )
+
+        def calculate_beta(symbol, df_index):
+            df = self.symbols.log_return(
+                symbol,
+                broker,
+                resolution,
+                from_ts=self.now - self.lookback * 24 * 60 * 60,
+                to_ts=self.now,
+            ).join(
+                df_index,
+                on="Date",
+                how="inner",
+            )
+            betas = []
+            timestamps = []
+
+            for i in range(len(df) - overlap + 1):
+                df_sliced = df.slice(i, overlap)
+
+                cov = df_sliced.select(
+                    pl.cov("LogReturn", "LogReturn_right").alias("correlation")
+                ).row(0)[0]
+                var = df_sliced.select(
+                    pl.var("LogReturn_right").alias("correlation")
+                ).row(0)[0]
+                timestamp = df_sliced["Date"].max()
+
+                betas.append(cov / var)
+                timestamps.append(timestamp)
+            return {
+                "beta": betas,
+                "timestamp": timestamps,
+            }
+
+        return (
+            pl.DataFrame({"symbol": symbols})
+            .with_columns(
+                pl.struct(["symbol"])
+                .map_elements(
+                    lambda row: calculate_beta(row["symbol"], df_index),
+                    strategy="threading",
+                    return_dtype=pl.Struct(
+                        {
+                            "beta": pl.List(pl.Float64),
+                            "timestamp": pl.List(pl.Datetime),
+                        }
+                    ),
+                )
+                .alias("output"),
+            )
+            .with_columns(
+                pl.struct(["output"])
+                .map_elements(
+                    lambda row: row["output"]["beta"],
+                    return_dtype=pl.List(pl.Float64),
+                )
+                .alias("beta"),
+                pl.struct(["output"])
+                .map_elements(
+                    lambda row: row["output"]["timestamp"],
+                    return_dtype=pl.List(pl.Datetime),
+                )
+                .alias("timestamp"),
+            )[("symbol", "beta", "timestamp")]
+        )
+
+    def detect_possible_reverse_point(
+        self,
+        symbols,
+        broker,
+        number_of_levels,
+        overlap_days,
+    ):
+        # Hàm helper để gọi heatmap và extract info
+        def get_heatmap_info(symbol: str):
+            (_, levels, ranges, timelines) = self.symbols.heatmap(
+                symbol,
+                broker,
+                self.resolution,
+                self.now,
+                self.lookback,
+                overlap_days,
+                number_of_levels,
+                self.interval_in_hour,
+            )
+            centers = []
+            begins = []
+            ends = []
+            for (center, begin, end) in ranges:
+                centers.append(center)
+                begins.append(begin)
+                ends.append(end)
+            return {
+                "levels": levels,
+                "centers": centers,
+                "begins": begins,
+                "ends": ends,
+            }
+
+        def possible_down_to(price, heatmap):
+            ends = heatmap["ends"]
+            begins = heatmap["begins"]
+            levels = heatmap["levels"]
+            centers = heatmap["centers"]
+
+            # next centers according price
+            mapping = sorted(
+                [i for i in range(0, len(centers))],
+                key=lambda i: levels[centers[i]],
+            )
+            blocks = [
+                (i, levels[begins[i]], levels[centers[i]], levels[ends[i]])
+                for i in mapping
+            ]
+
+            for (p, (i, begin, center, end)) in enumerate(blocks):
+                if (begin < price < end) or (
+                    (blocks[i - 1][2] if i > 0 else 0.0) < price < begin
+                ):
+                    if price >= center * 1.07:
+                        if len(blocks) == i + 1:
+                            return center
+
+                    for q in range(p, 1, -1):
+                        if blocks[q][0] > blocks[q - 1][0]:
+                            return blocks[q - 1][3]
+                    else:
+                        if blocks[p - 1][2] < price:
+                            return blocks[p - 1][2]
+                        else:
+                            return 0.0
+            return 0.0
+
+        def possible_distributed_phase(price, heatmap):
+            ends = heatmap["ends"]
+            begins = heatmap["begins"]
+            levels = heatmap["levels"]
+            centers = heatmap["centers"]
+
+            # next centers according price
+            mapping = sorted(
+                [i for i in range(0, len(centers))],
+                key=lambda i: levels[centers[i]],
+            )
+            blocks = [
+                (i, levels[begins[i]], levels[centers[i]], levels[ends[i]])
+                for i in mapping
+            ]
+
+            for (p, (i, begin, center, end)) in enumerate(blocks):
+                if (begin < price < end) or (
+                    (blocks[i - 1][2] if i > 0 else 0.0) < price < begin
+                ):
+                    for q in range(p, 1, -1):
+                        if blocks[q][0] > blocks[q - 1][0]:
+                            return False
+                    else:
+                        return True
+            return None
+
+        return (
+            market(symbols)[("symbol", "price")]
+            .with_columns(
+                pl.col("symbol")
+                .map_elements(
+                    get_heatmap_info,
+                    strategy="threading",
+                    return_dtype=pl.Struct(
+                        {
+                            "levels": pl.List(pl.Float64),
+                            "centers": pl.List(pl.Int64),
+                            "begins": pl.List(pl.Int64),
+                            "ends": pl.List(pl.Int64),
+                        }
+                    ),
+                )
+                .alias("heatmap"),
+            )
+            .with_columns(
+                pl.struct(["price", "heatmap"])
+                .map_elements(
+                    lambda row: possible_down_to(
+                        row["price"],
+                        row["heatmap"],
+                    ),
+                    return_dtype=pl.Float64,
+                )
+                .alias("possible_down_to"),
+                pl.struct(["price", "heatmap"])
+                .map_elements(
+                    lambda row: possible_distributed_phase(
+                        row["price"],
+                        row["heatmap"],
+                    ),
+                    return_dtype=pl.Boolean,
+                )
+                .alias("possible_distributed_phase"),
+            )[("symbol", "price", "possible_down_to", "possible_distributed_phase")]
+        )
