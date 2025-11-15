@@ -147,7 +147,10 @@ impl VolumeProfile {
                     })
                     .collect::<Vec<_>>();
 
-                (footprints.first().unwrap().0, footprints.last().unwrap().1)
+                (
+                    footprints.first().unwrap_or(&(0 as usize, 0 as usize)).0,
+                    footprints.last().unwrap_or(&(0 as usize, 0 as usize)).1,
+                )
             })
             .collect())
     }

@@ -1,11 +1,12 @@
 import matplotlib.pyplot as plt
-import polars as pl
 import numpy as np
+import polars as pl
 import pandas as pd
 import mplfinance as mpf
 import seaborn as sns
 
 from .symbols import Symbols
+from .core import market
 
 
 class ClassifyVolumeProfile:
@@ -406,12 +407,18 @@ class ClassifyVolumeProfile:
 
                     for q in range(p, 1, -1):
                         if blocks[q][0] > blocks[q - 1][0]:
-                            return blocks[q - 1][3]
-                    else:
-                        if blocks[p - 1][2] < price:
-                            return blocks[p - 1][2]
-                        else:
-                            return 0.0
+                            return (blocks[q - 1][2] + blocks[q - 1][3]) / 2.0
+
+                    for q in range(p, 0, -1):
+                        if blocks[q][2] < price:
+                            return (blocks[q][1] + blocks[q][2]) / 2.0
+
+            if blocks[-1][2] < price:
+                return blocks[-1][2]
+            elif blocks[0][2] < price:
+                return blocks[0][2]
+            elif blocks[0][1] < price:
+                return blocks[0][1]
             return 0.0
 
         def possible_distributed_phase(price, heatmap):
@@ -440,6 +447,22 @@ class ClassifyVolumeProfile:
                     else:
                         return True
             return None
+
+        def max_distance_between_centers(heatmap):
+            levels = heatmap["levels"]
+            centers = heatmap["centers"]
+
+            mapping = sorted(
+                [i for i in range(0, len(centers))],
+                key=lambda i: levels[centers[i]],
+            )
+
+            return max(
+                [
+                    levels[centers[mapping[i]]] - levels[centers[mapping[i - 1]]]
+                    for i in range(1, len(mapping))
+                ]
+            )
 
         return (
             market(symbols)[("symbol", "price")]
@@ -478,5 +501,19 @@ class ClassifyVolumeProfile:
                     return_dtype=pl.Boolean,
                 )
                 .alias("possible_distributed_phase"),
-            )[("symbol", "price", "possible_down_to", "possible_distributed_phase")]
+                pl.struct(["heatmap"])
+                .map_elements(
+                    lambda row: max_distance_between_centers(row["heatmap"]),
+                    return_dtype=pl.Float64,
+                )
+                .alias("max_distance_between_centers"),
+            )[
+                (
+                    "symbol",
+                    "price",
+                    "possible_down_to",
+                    "possible_distributed_phase",
+                    "max_distance_between_centers",
+                )
+            ]
         )
