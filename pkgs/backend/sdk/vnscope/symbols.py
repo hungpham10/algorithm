@@ -81,6 +81,9 @@ class Symbols:
     def vn100(self) -> tp.List[str]:
         return self._get_symbols("stock", "vn100")
 
+    def industry(self, name) -> tp.List[str]:
+        return self._get_symbols("stock", name)
+
     def cw(self) -> pl.DataFrame:
         base_url = getattr(self, "_base_url", self._base_url)
         resp = self._session.get(f"{base_url}/api/investing/v1/ohcl/symbols/stock/cw")
