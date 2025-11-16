@@ -95,6 +95,15 @@ pub async fn list_of_vn100() -> Vec<String> {
         .unwrap()
 }
 
+pub async fn list_of_etf() -> Vec<String> {
+    reqwest::get("https://bgapidatafeed.vps.com.vn/getlistckindex/hsx_e")
+        .await
+        .unwrap()
+        .json::<Vec<String>>()
+        .await
+        .unwrap()
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct Industry {
     data: Vec<String>,
