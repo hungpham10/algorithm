@@ -1,7 +1,9 @@
 use actix::prelude::*;
 use chrono::{Datelike, Duration, Utc};
-use reqwest::{header, Client};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
+
+use log::info;
 
 use std::error::Error;
 use std::fmt;
@@ -220,14 +222,14 @@ pub async fn list_cw() -> Result<Vec<CWInfo>, ActorError> {
         .map_err(|error| ActorError {
             message: format!("Fail to build client: {}", error),
         })?;
-    let now = Utc::now();
-    let from_date = now - Duration::days(365);
+    let from = Utc::now();
+    let now = from + Duration::days(365);
     let resp = client.get(
         format!(
             "https://livedragon.vdsc.com.vn//general/cwHistoryMainBoardInfo.rv?fromDate={from_year:04}-{from_month:02}-{from_day:02}&toDate={to_year:04}-{to_month:02}-{to_day:02}&mode=ALL",
-            from_year = from_date.year(),
-            from_month = from_date.month(),
-            from_day = from_date.day(),
+            from_year = from.year(),
+            from_month = from.month(),
+            from_day = from.day(),
             to_year = now.year(),
             to_month = now.month(),
             to_day = now.day(),

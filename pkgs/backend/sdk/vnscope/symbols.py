@@ -100,11 +100,11 @@ class Symbols:
             # Assuming the API returns a direct JSON array of CWInfo objects
             # Each item has keys: "code", "underlyingAsset", "exercisePrice", "exerciseRatio", "lastTradingDate"
             df_data = {
-                "symbol": [item.get("code", "") for item in cws],
+                "symbol": [item.get("StockCode", "") for item in cws],
                 "underlying": [item.get("underlyingAsset", "") for item in cws],
-                "exercise_price": [int(item.get("exercisePrice", 0)) for item in cws],
-                "exercise_ratio": [item.get("exerciseRatio", "") for item in cws],
-                "last_trading_date": [item.get("lastTradingDate", "") for item in cws],
+                "exercise_price": [int(item.get("ExcercisePrice", 0)) for item in cws],
+                "exercise_ratio": [item.get("ExcerciseRatio", "") for item in cws],
+                "last_trading_date": [item.get("LastTradingDate", "") for item in cws],
             }
             return pl.DataFrame(df_data)
         return pl.DataFrame(
