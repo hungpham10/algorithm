@@ -193,25 +193,27 @@ pub async fn list_futures() -> Vec<String> {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CWInfo {
-    #[serde(rename = "StockCode")]
+    #[serde(rename = "symbol")]
     pub symbol: String,
 
     #[serde(rename = "underlyingAsset", skip_serializing_if = "Option::is_none")]
     pub underlying: Option<String>,
 
-    #[serde(rename = "ExcercisePrice", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "exercisePrice", skip_serializing_if = "Option::is_none")]
     pub exercise_price: Option<f64>,
 
-    #[serde(rename = "ExcerciseRatio", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "exerciseRatioString",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub exercise_ratio: Option<String>,
 
-    #[serde(rename = "LastTradingDate")]
+    #[serde(rename = "lastTradingDate")]
     pub last_trading_date: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct CWInfoResponse {
-    #[serde(rename = "listStock")]
     data: Option<Vec<CWInfo>>,
 }
 
@@ -222,29 +224,18 @@ pub async fn list_cw() -> Result<Vec<CWInfo>, ActorError> {
         .map_err(|error| ActorError {
             message: format!("Fail to build client: {}", error),
         })?;
-    let from = Utc::now();
-    let now = from + Duration::days(365);
-    let resp = client.get(
-        format!(
-            "https://livedragon.vdsc.com.vn//general/cwHistoryMainBoardInfo.rv?fromDate={from_year:04}-{from_month:02}-{from_day:02}&toDate={to_year:04}-{to_month:02}-{to_day:02}&mode=ALL",
-            from_year = from.year(),
-            from_month = from.month(),
-            from_day = from.day(),
-            to_year = now.year(),
-            to_month = now.month(),
-            to_day = now.day(),
-        )
-    )
-    .send()
-    .await
-    .map_err(|error| ActorError {
-        message: format!("Fail to fetch list of CW: {}", error),
-    })?
-    .json::<CWInfoResponse>()
-    .await
-    .map_err(|error| ActorError {
-        message: format!("Fail to parse list of CW: {}", error),
-    })?;
+    let resp = client
+        .get("https://external.vpbanks.com.vn/invest/api/v2/cwInfoByList?symbols=ALL")
+        .send()
+        .await
+        .map_err(|error| ActorError {
+            message: format!("Fail to fetch list of CW: {}", error),
+        })?
+        .json::<CWInfoResponse>()
+        .await
+        .map_err(|error| ActorError {
+            message: format!("Fail to parse list of CW: {}", error),
+        })?;
 
     Ok(resp.data.unwrap_or_default())
 }
