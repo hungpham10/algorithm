@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use vnscope::actors::price::{GetOHCLCommand, UpdateOHCLToCacheCommand};
 use vnscope::actors::{
-    list_crypto, list_cw, list_futures, list_of_hose, list_of_industry, list_of_midcap,
-    list_of_penny, list_of_vn100, list_of_vn30, CWInfo,
+    list_crypto, list_cw, list_futures, list_of_etf, list_of_hose, list_of_industry,
+    list_of_midcap, list_of_penny, list_of_vn100, list_of_vn30, CWInfo,
 };
 use vnscope::algorithm::VolumeProfile;
 use vnscope::schemas::CandleStick;
@@ -553,6 +553,10 @@ pub async fn get_list_of_symbols_by_product(
                                     error: Some(format!("{}", error)),
                                     ..Default::default()
                                 },
+                            },
+                            "etf" => OhclResponse {
+                                symbols: Some(list_of_etf().await),
+                                ..Default::default()
                             },
                             "vn30" => OhclResponse {
                                 symbols: Some(list_of_vn30().await),
