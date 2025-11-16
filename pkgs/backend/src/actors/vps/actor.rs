@@ -253,9 +253,14 @@ impl Handler<GetPriceCommand> for VpsActor {
 async fn fetch_price_depth(stocks: &Vec<String>, timeout: u64) -> Result<Vec<Price>, ActorError> {
     let retry_policy = ExponentialBackoff::builder().build_with_max_retries(5);
     let client = Arc::new(
-        ClientBuilder::new(Client::builder().build().map_err(|err| ActorError {
-            message: format!("Failed to create client: {}", err),
-        })?)
+        ClientBuilder::new(
+            Client::builder()
+                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                .build()
+                .map_err(|err| ActorError {
+                    message: format!("Failed to create client: {}", err),
+                })?
+        )
         .with(RetryTransientMiddleware::new_with_policy(retry_policy))
         .build(),
     );

@@ -257,7 +257,12 @@ async fn fetch_orders(
 ) -> Vec<OrderResponse> {
     let retry_policy = ExponentialBackoff::builder().build_with_max_retries(7);
     let client = Arc::new(
-        ClientBuilder::new(Client::builder().build().unwrap())
+        ClientBuilder::new(
+                Client::builder()
+                    .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                    .build()
+                    .unwrap()
+            )
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build(),
     );
@@ -429,7 +434,11 @@ impl Handler<GetIncomeStatementCommand> for TcbsActor {
         Box::pin(async move {
             let retry_policy = ExponentialBackoff::builder().build_with_max_retries(100);
             let client = Arc::new(
-                ClientBuilder::new(Client::builder().build().unwrap())
+                ClientBuilder::new(Client::builder()
+                        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                        .build()
+                        .unwrap()
+                    )
                     .with(RetryTransientMiddleware::new_with_policy(retry_policy))
                     .build(),
             );
@@ -511,7 +520,11 @@ impl Handler<GetCashFlowCommand> for TcbsActor {
         Box::pin(async move {
             let retry_policy = ExponentialBackoff::builder().build_with_max_retries(100);
             let client = Arc::new(
-                ClientBuilder::new(Client::builder().build().unwrap())
+                ClientBuilder::new(Client::builder()
+                        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                        .build()
+                        .unwrap()
+                    )
                     .with(RetryTransientMiddleware::new_with_policy(retry_policy))
                     .build(),
             );
@@ -580,9 +593,14 @@ impl Handler<SetAlertCommand> for TcbsActor {
         Box::pin(async move {
             let retry_policy = ExponentialBackoff::builder().build_with_max_retries(100);
             let client = Arc::new(
-                ClientBuilder::new(Client::builder().build().map_err(|err| ActorError {
-                    message: format!("Failed to create client: {}", err),
-                })?)
+                ClientBuilder::new(
+                    Client::builder()
+                        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                        .build()
+                        .map_err(|err| ActorError {
+                            message: format!("Failed to create client: {}", err),
+                        })?
+                )
                 .with(RetryTransientMiddleware::new_with_policy(retry_policy))
                 .build(),
             );
