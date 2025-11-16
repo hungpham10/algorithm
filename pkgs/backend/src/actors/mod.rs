@@ -1,4 +1,5 @@
 use actix::prelude::*;
+use chrono::{Datelike, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 use std::error::Error;
@@ -148,30 +149,41 @@ pub async fn list_futures() -> Vec<String> {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CWInfo {
-    #[serde(rename = "code")]
+    #[serde(rename = "StockCode")]
     pub symbol: String,
 
-    #[serde(rename = "underlyingAsset")]
-    pub underlying: String,
+    #[serde(rename = "underlyingAsset", skip_serializing_if = "Option::is_none")]
+    pub underlying: Option<String>,
 
-    #[serde(rename = "exercisePrice", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "ExcercisePrice", skip_serializing_if = "Option::is_none")]
     pub exercise_price: Option<f64>,
 
-    #[serde(rename = "exerciseRatio")]
-    pub exercise_ratio: String,
+    #[serde(rename = "ExcerciseRatio", skip_serializing_if = "Option::is_none")]
+    pub exercise_ratio: Option<String>,
 
-    #[serde(rename = "lastTradingDate")]
+    #[serde(rename = "LastTradingDate")]
     pub last_trading_date: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct CWInfoResponse {
+    #[serde(rename = "listStock")]
     data: Option<Vec<CWInfo>>,
 }
 
 pub async fn list_cw() -> Result<Vec<CWInfo>, ActorError> {
+    let now = Utc::now();
+    let from_date = now - Duration::days(365);
     let resp = reqwest::get(
-        "https://api-finfo.vndirect.com.vn/v4/derivatives?q=derType:CW~status:LISTED&size=1000",
+        format!(
+            "https://livedragon.vdsc.com.vn//general/cwHistoryMainBoardInfo.rv?fromDate={from_year:04}-{from_month:02}-{from_day:02}&toDate={to_year:04}-{to_month:02}-{to_day:02}&mode=ALL",
+            from_year = from_date.year(),
+            from_month = from_date.month(),
+            from_day = from_date.day(),
+            to_year = now.year(),
+            to_month = now.month(),
+            to_day = now.day(),
+        )
     )
     .await
     .map_err(|error| ActorError {

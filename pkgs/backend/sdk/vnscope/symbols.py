@@ -66,6 +66,9 @@ class Symbols:
     def crypto(self) -> tp.List[str]:
         return self._get_symbols("crypto", "spot")
 
+    def etf(self) -> tp.List[str]:
+        return self._get_symbols("stock", "etf")
+
     def futures(self) -> tp.List[str]:
         return self._get_symbols("futures", "futures")
 
