@@ -61,7 +61,7 @@ impl TcbsActor {
 
         Self {
             stocks: stocks.to_owned(),
-            futures: list_futures().await.into_iter().collect(),
+            futures: HashSet::new(),
             timeout: 10,
             page_size: 100,
             token,
