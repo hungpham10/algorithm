@@ -180,7 +180,7 @@ impl VolumeProfile {
             for (group, (begin, end, order)) in &centers {
                 left = *begin;
                 right = *end;
-                found = t + 1 == *begin || t - 1 == *end;
+                found = t + 1 == *begin || (t > 0 && t - 1 == *end);
 
                 if t + 1 == *begin {
                     center = *group;
@@ -188,7 +188,7 @@ impl VolumeProfile {
                     weight = *order;
                     break;
                 }
-                if t - 1 == *end {
+                if t > 0 && t - 1 == *end {
                     center = *group;
                     right = t;
                     weight = *order;

@@ -3,7 +3,7 @@ use std::fmt;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use log::debug;
+use log::{debug, warn};
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -134,6 +134,9 @@ impl Handler<UpdateOHCLToCacheCommand> for PriceActor {
             }
 
             let mut block_map: BTreeMap<i64, Vec<CandleStick>> = BTreeMap::new();
+            let latest = candles.last().unwrap().t as i64;
+            let last_block = latest / size_of_block + ((latest % size_of_block) as i64);
+
             for candle in candles {
                 let block_id = (candle.t as i64) / size_of_block;
                 block_map
@@ -169,8 +172,17 @@ impl Handler<UpdateOHCLToCacheCommand> for PriceActor {
                 })?;
 
             for (block_id, block_candles) in block_map {
-                if block_candles.len() == block_size {
-                    cache.put(block_id, block_candles);
+                let uncover = ((block_size - block_candles.len()) as f64) / block_size as f64;
+
+                cache.put(block_id, block_candles.clone());
+                if (uncover > 0.05) && (block_id != last_block) {
+                    debug!(
+                        "Block {} has uncover above 0.05 ({}, {}, {})",
+                        block_id,
+                        uncover,
+                        block_candles.len(),
+                        block_size
+                    );
                 }
             }
             Ok(())
@@ -194,7 +206,7 @@ impl Handler<GetOHCLCommand> for PriceActor {
 
     fn handle(&mut self, msg: GetOHCLCommand, _: &mut Self::Context) -> Self::Result {
         let mut from = msg.from;
-        let to = msg.to;
+        let mut to = msg.to;
         let broker = msg.broker.clone();
         let resolution = msg.resolution.clone();
         let stock = msg.stock.clone();
@@ -213,6 +225,8 @@ impl Handler<GetOHCLCommand> for PriceActor {
             if let Some(stock_caches) = caches_read.get(&stock) {
                 if let Some(cache) = stock_caches.get(&resolution) {
                     let mut keep = true;
+                    let mut first = to;
+                    let mut last = from;
                     let i_from = (from / size_of_block) - (((from % size_of_block) != 0) as i64);
                     let i_to = (to / size_of_block) + (((to % size_of_block) != 0) as i64);
 
@@ -222,6 +236,13 @@ impl Handler<GetOHCLCommand> for PriceActor {
                                 let candle_time = candle.t as i64;
                                 if from <= candle_time && candle_time < to {
                                     result.push(candle.clone());
+
+                                    if (candle.t as i64) < first {
+                                        first = candle.t as i64
+                                    }
+                                    if last < (candle.t as i64) {
+                                        last = candle.t as i64
+                                    }
                                 }
                                 if candle_time >= to
                                     || (limit > 0 && (i * size_of_block) as usize > limit)
@@ -236,14 +257,20 @@ impl Handler<GetOHCLCommand> for PriceActor {
                         }
                     }
 
+                    if ((last - first) as f64) / ((to - from) as f64) > 0.90 {
+                        keep = true;
+                    }
+
                     if keep || from > to {
                         return Ok((result, false)); // Cache hit full
                     }
                 } else {
                     from = (from / size_of_block - 1) * size_of_block;
+                    to = (to / size_of_block + 1) * size_of_block;
                 }
             } else {
                 from = (from / size_of_block - 1) * size_of_block;
+                to = (to / size_of_block + 1) * size_of_block;
             }
             drop(caches_read); // Release read lock sớm
 
