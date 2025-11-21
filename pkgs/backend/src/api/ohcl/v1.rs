@@ -250,9 +250,21 @@ pub async fn get_heatmap_from_broker(
         }
     };
 
+    let resolution = match args.resolution.as_str() {
+        "1D" => "1H",
+        "1W" => "1D",
+        _ => {
+            return Err(ErrorInternalServerError(OhclResponse {
+                error: Some(format!("Not support resolution `{}`", args.resolution,)),
+                ..Default::default()
+            }));
+        }
+    }
+    .to_string();
+
     if let Some(entity) = appstate.ohcl_entity() {
         match entity
-            .convert_to_broker_resolution(&broker, &args.resolution)
+            .convert_to_broker_resolution(&broker, &resolution)
             .await
         {
             Ok(resolution) => match appstate
