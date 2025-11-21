@@ -1,9 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
+use std::sync::OnceLock;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use log::{debug, warn};
+use log::debug;
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -17,11 +18,78 @@ use crate::schemas::CandleStick;
 
 const INDEXES: [&str; 3] = ["VNINDEX", "HNXINDEX", "VN30"];
 
+static CACHE_TTL_CONFIG: OnceLock<CacheTtlConfig> = OnceLock::new();
+
+#[derive(Clone, Debug)]
+struct CacheTtlConfig {
+    ttls: HashMap<String, u64>,
+    default_ttl: u64, // fallback khi resolution không match
+}
+
+impl CacheTtlConfig {
+    fn load_from_env() -> Self {
+        let default_ttl = std::env::var("CACHE_DEFAULT_TTL_SECONDS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(60); // mặc định 1 phút như cũ
+
+        let mut ttls = HashMap::new();
+
+        // Ví dụ các env bạn sẽ set:
+        // CACHE_TTL_1=60
+        // CACHE_TTL_5=300
+        // CACHE_TTL_1H=3600
+        // CACHE_TTL_1D=86400
+        // CACHE_TTL_1W=604800
+        // ...
+
+        let possible_resolutions = vec![
+            "1", "3", "5", "15", "30", "45", "1H", "4H", "1D", "1W", "1M",
+        ];
+
+        for res in possible_resolutions {
+            if let Ok(seconds) = std::env::var(format!("CACHE_TTL_{}", res)) {
+                if let Ok(sec) = seconds.parse::<u64>() {
+                    ttls.insert(res.to_string(), sec);
+                }
+            }
+        }
+
+        if ttls.is_empty() {
+            ttls.insert("1".into(), 60);
+            ttls.insert("5".into(), 300);
+            ttls.insert("15".into(), 900);
+            ttls.insert("1H".into(), 3600);
+            ttls.insert("4H".into(), 4 * 3600);
+            ttls.insert("1D".into(), 86400);
+            ttls.insert("1W".into(), 7 * 86400);
+        }
+
+        Self { ttls, default_ttl }
+    }
+
+    fn get(&self, resolution: &str) -> u64 {
+        if let Some(&ttl) = self.ttls.get(resolution) {
+            ttl
+        } else if let Ok(minutes) = resolution.parse::<u64>() {
+            // Các resolution kiểu "5", "15", "30"...
+            minutes * 60
+        } else {
+            self.default_ttl
+        }
+    }
+}
+
+fn cache_ttl_config() -> &'static CacheTtlConfig {
+    CACHE_TTL_CONFIG.get_or_init(|| CacheTtlConfig::load_from_env())
+}
+
 pub struct PriceActor {
     // @NOTE: caching
     size_of_block_in_cache: i64,
     num_of_available_cache: usize,
     caches: Arc<RwLock<BTreeMap<String, BTreeMap<String, LruCache<i64, Vec<CandleStick>>>>>>,
+    timers: Arc<RwLock<BTreeMap<String, usize>>>,
 
     // @NOTE: parameters
     timeout: u64,
@@ -33,8 +101,44 @@ impl PriceActor {
             size_of_block_in_cache: 24 * 60 * 60 * 7, // 1 week
             num_of_available_cache: 70,
             caches: Arc::new(RwLock::new(BTreeMap::new())),
+            timers: Arc::new(RwLock::new(BTreeMap::new())),
             timeout: 60,
         }
+    }
+
+    fn is_cache_invalidated(&self, stock: &str, resolution: &str) -> bool {
+        let key = format!("{}:{}", stock, resolution);
+
+        let last_update_sec = {
+            let timers = self.timers.read().unwrap();
+            if let Some(&ts) = timers.get(&key) {
+                ts as u64
+            } else {
+                return true; // chưa có cache → invalidated
+            }
+        };
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs();
+
+        let max_age_sec = cache_ttl_config().get(resolution);
+
+        now.saturating_sub(last_update_sec) > max_age_sec
+    }
+
+    fn update_cache_timestamp(&self, stock: &str, resolution: &str) {
+        let key = format!("{}:{}", stock, resolution);
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs();
+
+        let now_usize = now as usize;
+
+        let mut timers = self.timers.write().unwrap();
+        timers.insert(key, now_usize);
     }
 }
 
@@ -126,6 +230,9 @@ impl Handler<UpdateOHCLToCacheCommand> for PriceActor {
             candles.first().unwrap().t,
             candles.last().unwrap().t
         );
+
+        self.update_cache_timestamp(&stock, &resolution);
+
         Box::pin(async move {
             if candles.is_empty() {
                 return Err(ActorError {
@@ -213,7 +320,8 @@ impl Handler<GetOHCLCommand> for PriceActor {
         let limit = msg.limit;
         let timeout = self.timeout;
         let size_of_block = self.size_of_block_in_cache;
-        let caches = self.caches.clone(); // Clone Arc để share vào future
+        let caches = self.caches.clone();
+        let is_invalid = self.is_cache_invalidated(&stock, &resolution);
 
         Box::pin(async move {
             // Read lock để check cache (non-blocking)
@@ -222,55 +330,58 @@ impl Handler<GetOHCLCommand> for PriceActor {
             })?;
             let mut result = Vec::new();
 
-            if let Some(stock_caches) = caches_read.get(&stock) {
-                if let Some(cache) = stock_caches.get(&resolution) {
-                    let mut keep = true;
-                    let mut first = to;
-                    let mut last = from;
-                    let i_from = (from / size_of_block) - (((from % size_of_block) != 0) as i64);
-                    let i_to = (to / size_of_block) + (((to % size_of_block) != 0) as i64);
+            if !is_invalid {
+                if let Some(stock_caches) = caches_read.get(&stock) {
+                    if let Some(cache) = stock_caches.get(&resolution) {
+                        let mut keep = true;
+                        let mut first = to;
+                        let mut last = from;
+                        let i_from =
+                            (from / size_of_block) - (((from % size_of_block) != 0) as i64);
+                        let i_to = (to / size_of_block) + (((to % size_of_block) != 0) as i64);
 
-                    for i in i_from..=i_to {
-                        if let Some(candles) = cache.get(&i) {
-                            for candle in candles {
-                                let candle_time = candle.t as i64;
-                                if from <= candle_time && candle_time < to {
-                                    result.push(candle.clone());
+                        for i in i_from..=i_to {
+                            if let Some(candles) = cache.get(&i) {
+                                for candle in candles {
+                                    let candle_time = candle.t as i64;
+                                    if from <= candle_time && candle_time < to {
+                                        result.push(candle.clone());
 
-                                    if (candle.t as i64) < first {
-                                        first = candle.t as i64
+                                        if (candle.t as i64) < first {
+                                            first = candle.t as i64
+                                        }
+                                        if last < (candle.t as i64) {
+                                            last = candle.t as i64
+                                        }
                                     }
-                                    if last < (candle.t as i64) {
-                                        last = candle.t as i64
+                                    if candle_time >= to
+                                        || (limit > 0 && (i * size_of_block) as usize > limit)
+                                    {
+                                        break;
                                     }
                                 }
-                                if candle_time >= to
-                                    || (limit > 0 && (i * size_of_block) as usize > limit)
-                                {
-                                    break;
-                                }
+                            } else {
+                                from = (i - 1) * size_of_block;
+                                keep = false;
+                                break;
                             }
-                        } else {
-                            from = (i - 1) * size_of_block;
-                            keep = false;
-                            break;
                         }
-                    }
 
-                    if ((last - first) as f64) / ((to - from) as f64) > 0.90 {
-                        keep = true;
-                    }
+                        if ((last - first) as f64) / ((to - from) as f64) > 0.90 {
+                            keep = true;
+                        }
 
-                    if keep || from > to {
-                        return Ok((result, false)); // Cache hit full
+                        if keep || from > to {
+                            return Ok((result, false)); // Cache hit full
+                        }
+                    } else {
+                        from = (from / size_of_block - 1) * size_of_block;
+                        to = (to / size_of_block + 1) * size_of_block;
                     }
                 } else {
                     from = (from / size_of_block - 1) * size_of_block;
                     to = (to / size_of_block + 1) * size_of_block;
                 }
-            } else {
-                from = (from / size_of_block - 1) * size_of_block;
-                to = (to / size_of_block + 1) * size_of_block;
             }
             drop(caches_read); // Release read lock sớm
 
