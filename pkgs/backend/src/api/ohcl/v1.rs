@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fmt::{Display, Error as FmtError, Formatter, Result as FmtResult};
 use std::sync::Arc;
 
@@ -6,7 +5,6 @@ use actix_web::error::{ErrorBadRequest, ErrorInternalServerError, ErrorServiceUn
 use actix_web::web::{Data, Path, Query};
 use actix_web::{HttpResponse, Result};
 
-use lazy_static::lazy_static;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 

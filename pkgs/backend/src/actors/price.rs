@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use log::debug;
+use log::{debug, warn};
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -330,7 +330,9 @@ impl Handler<GetOHCLCommand> for PriceActor {
             })?;
             let mut result = Vec::new();
 
-            if !is_invalid {
+            if is_invalid {
+                warn!("cache is invalidated now");
+            } else {
                 if let Some(stock_caches) = caches_read.get(&stock) {
                     if let Some(cache) = stock_caches.get(&resolution) {
                         let mut keep = true;
@@ -347,7 +349,7 @@ impl Handler<GetOHCLCommand> for PriceActor {
                                     if from <= candle_time && candle_time < to {
                                         result.push(candle.clone());
 
-                                        if (candle.t as i64) < first {
+                                        if first > (candle.t as i64) {
                                             first = candle.t as i64
                                         }
                                         if last < (candle.t as i64) {
@@ -367,18 +369,27 @@ impl Handler<GetOHCLCommand> for PriceActor {
                             }
                         }
 
-                        if ((last - first) as f64) / ((to - from) as f64) > 0.90 {
-                            keep = true;
+                        if !keep {
+                            if ((last - first) as f64) / ((to - from) as f64) > 0.90 {
+                                keep = true;
+                            } else {
+                                debug!(
+                                    "Only cover {}",
+                                    ((last - first) as f64) / ((to - from) as f64)
+                                );
+                            }
                         }
 
                         if keep || from > to {
                             return Ok((result, false)); // Cache hit full
                         }
                     } else {
+                        debug!("Not found any cache data");
                         from = (from / size_of_block - 1) * size_of_block;
                         to = (to / size_of_block + 1) * size_of_block;
                     }
                 } else {
+                    debug!("Not found any cache data");
                     from = (from / size_of_block - 1) * size_of_block;
                     to = (to / size_of_block + 1) * size_of_block;
                 }
