@@ -144,6 +144,17 @@ impl PriceActor {
 
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Clone, Debug)]
+struct DragonOhcl {
+    t: Option<Vec<i32>>,
+    o: Option<Vec<String>>,
+    c: Option<Vec<String>>,
+    h: Option<Vec<String>>,
+    l: Option<Vec<String>>,
+    v: Option<Vec<String>>,
+}
+
+#[allow(non_snake_case)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 struct SsiOhclWrapper {
     code: String,
     data: Ohcl,
@@ -442,12 +453,19 @@ pub async fn fetch_ohcl_by_stock(
     timeout: u64,
 ) -> Result<Vec<CandleStick>, ActorError> {
     let mut kind = "stock";
+    let default_stock = std::env::var("DEFAULT_STOCK").unwrap_or_else(|_| "dnse".to_string());
 
     if INDEXES.iter().any(|&s| s == *stock) {
         kind = "index";
     }
 
-    if provider == "ssi" {
+    let provider = if (provider == "dragon" || default_stock == "dragon") && kind == "index" {
+        "dnse"
+    } else {
+        provider
+    };
+
+    if provider == "ssi" || (provider == "stock" && default_stock == "ssi") {
         let resp = client.get(format!(
             "https://iboard-api.ssi.com.vn/statistics/charts/history?from={}&to={}&symbol={}&resolution={}",
             from,
@@ -512,7 +530,7 @@ pub async fn fetch_ohcl_by_stock(
                 message: format!("{}", error),
             }),
         }
-    } else if provider == "dnse" || provider == "stock" {
+    } else if provider == "dnse" || (provider == "stock" && default_stock == "dnse") {
         let resp = client
             .get(format!(
             "https://api.dnse.com.vn/chart-api/v2/ohlcs/{}?from={}&to={}&symbol={}&resolution={}",
@@ -575,11 +593,88 @@ pub async fn fetch_ohcl_by_stock(
                 message: format!("{}", error),
             }),
         }
+    } else if provider == "dragon" || (provider == "stock" && default_stock == "dragon") {
+        let limit = if limit == 0 { 1_000_000 } else { limit };
+        let resp = client
+            .get(format!(
+                "https://godragon.vdsc.com.vn/IdragonMarketDataServer/trading-view/rest/history?lang=vi&symbol={}&resolution={}&from={}&to={}&countback={}",
+                (*stock),
+                (*resolution),
+                from,
+                to,
+                limit,
+            ))
+            .timeout(Duration::from_secs(timeout))
+            .send()
+            .await;
+
+        match resp {
+            Ok(resp) => {
+                let mut candles = Vec::<CandleStick>::new();
+                let ohcl = resp
+                    .json::<DragonOhcl>()
+                    .await
+                    .map_err(|error| ActorError {
+                        message: format!("{}", error),
+                    })?;
+
+                if let Some(t) = ohcl.t {
+                    for i in 0..t.len() {
+                        if limit > 0 && i >= limit {
+                            break;
+                        }
+
+                        candles.push(CandleStick {
+                            t: t[i],
+                            o: match ohcl.o.as_ref() {
+                                Some(o) => o[i].parse::<f64>().map_err(|error| ActorError {
+                                    message: format!("Fail parse Open: {}", error),
+                                })?,
+                                None => 0.0,
+                            },
+                            h: match ohcl.h.as_ref() {
+                                Some(h) => h[i].parse::<f64>().map_err(|error| ActorError {
+                                    message: format!("Fail parse High: {}", error),
+                                })?,
+                                None => 0.0,
+                            },
+                            c: match ohcl.c.as_ref() {
+                                Some(c) => c[i].parse::<f64>().map_err(|error| ActorError {
+                                    message: format!("Fail parse Close: {}", error),
+                                })?,
+                                None => 0.0,
+                            },
+                            l: match ohcl.l.as_ref() {
+                                Some(l) => l[i].parse::<f64>().map_err(|error| ActorError {
+                                    message: format!("Fail parse Low: {}", error),
+                                })?,
+                                None => 0.0,
+                            },
+                            v: match ohcl.v.as_ref() {
+                                Some(v) => v[i].parse::<f64>().map_err(|error| ActorError {
+                                    message: format!("Fail parse Volume: {}", error),
+                                })?,
+                                None => 0.0,
+                            },
+                        })
+                    }
+
+                    Ok(candles)
+                } else {
+                    Err(ActorError {
+                        message: format!("cannot fetch any data from provider"),
+                    })
+                }
+            }
+            Err(error) => Err(ActorError {
+                message: format!("{}", error),
+            }),
+        }
     } else if provider == "binance" || provider == "crypto" {
         let mut candles = Vec::<CandleStick>::new();
         let mut from = from * 1000;
         let to = to * 1000;
-        let limit = if limit == 0 { 1000 } else { limit };
+        let limit = if limit == 0 { 1_000_000 } else { limit };
 
         for _ in 0..10 {
             let resp = client.get(format!(
