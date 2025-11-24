@@ -437,15 +437,45 @@ class ClassifyVolumeProfile:
                 for i in mapping
             ]
 
-            for (p, (i, begin, center, end)) in enumerate(blocks):
+            # RISK FILTER 1: if price is outside blocks, consider to do nothing
+            min_price = blocks[0][1]
+            max_price = blocks[-1][3]
+
+            if price < min_price:
+                return None
+            if price > max_price:
+                return None
+            cnv_cnt = 0
+            inv_cnt = 0
+            shift = 0
+            flow = None
+            for p, (i, begin, center, end) in enumerate(blocks):
                 if (begin < price < end) or (
                     (blocks[i - 1][2] if i > 0 else 0.0) < price < begin
                 ):
-                    for q in range(p, 1, -1):
+                    for q in range(p, 0, -1):
                         if blocks[q][0] > blocks[q - 1][0]:
-                            return False
+                            if flow is None or flow is False:
+                                shift += 1
+                                flow = True
+                            if shift > 2:
+                                break
+                            inv_cnt += 1
+                        else:
+                            if flow is None or flow is False:
+                                shift += 1
+                                flow = False
+                            if shift > 2:
+                                break
+                            cnv_cnt += 1
+
+                    if p > 0:
+                        if cnv_cnt > 0:
+                            return 1.0 * cnv_cnt / p
+                        else:
+                            return -1.0 * inv_cnt / p
                     else:
-                        return True
+                        break
             return None
 
         def max_distance_between_centers(heatmap):
@@ -498,7 +528,7 @@ class ClassifyVolumeProfile:
                         row["price"],
                         row["heatmap"],
                     ),
-                    return_dtype=pl.Boolean,
+                    return_dtype=pl.Float64,
                 )
                 .alias("possible_distributed_phase"),
                 pl.struct(["heatmap"])

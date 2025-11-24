@@ -111,7 +111,7 @@ pub async fn run() -> std::io::Result<()> {
                         get().to(crate::api::ohcl::v1::get_list_of_product_by_broker),
                     )
                     .route(
-                        "/v1/ohcl/{broker}/{symbol}",
+                        "/v1/ohcl/{broker}/{symbol}/candles",
                         get().to(crate::api::ohcl::v1::get_ohcl_from_broker),
                     )
                     .route(
@@ -127,12 +127,12 @@ pub async fn run() -> std::io::Result<()> {
                         get().to(crate::api::ohcl::v1::get_list_of_brokers),
                     )
                     .route(
-                        "/v1/ohcl/symbols/{broker}/{product}",
-                        get().to(crate::api::ohcl::v1::get_list_of_symbols_by_product),
+                        "/v1/ohcl/brokers/{broker}/all",
+                        get().to(crate::api::ohcl::v1::get_list_of_symbols),
                     )
                     .route(
-                        "/v1/ohcl/{broker}/symbols",
-                        get().to(crate::api::ohcl::v1::get_list_of_symbols),
+                        "/v1/ohcl/symbols/{broker}/{product}",
+                        get().to(crate::api::ohcl::v1::get_list_of_symbols_by_product),
                     ),
             )
             // @NOTE: APIs of WMS

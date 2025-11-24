@@ -475,11 +475,11 @@ pub async fn get_list_of_symbols(
             Ok(ok) => {
                 if ok {
                     return match broker.as_str() {
-                        "stock" => Err(ErrorInternalServerError(OhclResponse {
+                        "stock" => Ok(HttpResponse::Ok().json(OhclResponse {
                             symbols: Some(list_of_hose().await),
                             ..Default::default()
                         })),
-                        "crypto" => Err(ErrorInternalServerError(OhclResponse {
+                        "crypto" => Ok(HttpResponse::Ok().json(OhclResponse {
                             symbols: Some(list_crypto().await),
                             ..Default::default()
                         })),

@@ -70,7 +70,7 @@ class Symbols:
         return self._get_symbols("stock", "etf")
 
     def futures(self) -> tp.List[str]:
-        return self._get_symbols("futures", "futures")
+        return self._get_symbols("stock", "future")
 
     def midcap(self) -> tp.List[str]:
         return self._get_symbols("stock", "midcap")
@@ -100,11 +100,18 @@ class Symbols:
             # Assuming the API returns a direct JSON array of CWInfo objects
             # Each item has keys: "code", "underlyingAsset", "exercisePrice", "exerciseRatio", "lastTradingDate"
             df_data = {
-                "symbol": [item.get("StockCode", "") for item in cws],
-                "underlying": [item.get("underlyingAsset", "") for item in cws],
-                "exercise_price": [int(item.get("ExcercisePrice", 0)) for item in cws],
-                "exercise_ratio": [item.get("ExcerciseRatio", "") for item in cws],
-                "last_trading_date": [item.get("LastTradingDate", "") for item in cws],
+                "symbol": [item.get("symbol", "") for item in cws],
+                "underlying": [
+                    item.get("underlyingAsset", item.get("symbol")[1:4]) for item in cws
+                ],
+                "exercise_price": [int(item.get("exercisePrice", 0)) for item in cws],
+                "exercise_ratio": [item.get("exerciseRatioString", "") for item in cws],
+                "last_trading_date": [
+                    dt.datetime.strptime(
+                        item.get("lastTradingDate", "19910101"), "%Y%m%d"
+                    )
+                    for item in cws
+                ],
             }
             return pl.DataFrame(df_data)
         return pl.DataFrame(

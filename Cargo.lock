@@ -1383,7 +1383,7 @@ dependencies = [
 
 [[package]]
 name = "backend"
-version = "1.0.42"
+version = "1.0.43"
 dependencies = [
  "actix",
  "actix-rt",
