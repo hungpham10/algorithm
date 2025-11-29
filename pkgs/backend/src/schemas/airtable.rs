@@ -88,7 +88,7 @@ impl Portal {
                     vec!["Symbol", "OrderFlow"],
                 )
                 .await
-                .map_err(|e| anyhow::anyhow!("Failed to fetch WatchList from Airtable: {}", e));
+                .map_err(|e| anyhow::anyhow!("Failed to fetch WatchList from Airtable: {}", e))?;
 
             if let Some(mut con) = self.get_redis_con().await? {
                 if let Ok(json) = serde_json::to_string(&records) {
