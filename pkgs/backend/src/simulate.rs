@@ -492,13 +492,13 @@ pub async fn run(
     }
 }
 
-//#[cfg(test)]
-//mod tests {
-//    use super::*;
-//    use std::time::{SystemTime, UNIX_EPOCH};
-//
-//    #[tokio::test]
-//    async fn test_simulate_single_symbol_with_trend_following() {
-//        run("trend-following", "stock", "1D", 3).await.unwrap();
-//    }
-//}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[tokio::test]
+    async fn test_simulate_single_symbol_with_trend_following() {
+        run("trend-following", "stock", "1D", 3).await.unwrap();
+    }
+}
