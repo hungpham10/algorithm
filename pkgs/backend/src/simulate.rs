@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Result};
 use infisical::{AuthMethod, Client as InfiscalClient};
+use redis::Client as RedisClient;
 use reqwest;
 
 use vnscope::algorithm::evolution::{Data, Investor, Spot};
@@ -425,6 +426,39 @@ pub async fn run(
                 format!("Fail to login to infisical: {:?}", error),
             )
         })?;
+
+    let redis_host = match std::env::var("REDIS_HOST") {
+        Ok(redis_host) => redis_host,
+        Err(_) => "".to_string(),
+    };
+    let redis_port = match std::env::var("REDIS_PORT") {
+        Ok(redis_port) => redis_port,
+        Err(_) => "".to_string(),
+    };
+    let redis_password = match std::env::var("REDIS_PASSWORD") {
+        Ok(redis_password) => redis_password,
+        Err(_) => "".to_string(),
+    };
+    let redis_username = match std::env::var("REDIS_USERNAME") {
+        Ok(redis_password) => redis_password,
+        Err(_) => "".to_string(),
+    };
+
+    let redis_dsn = get_secret_from_infisical(&infisical_client, "REDIS_DSN", "/")
+        .await
+        .unwrap_or("".to_string());
+    let redis = match RedisClient::open(if redis_dsn.len() > 0 {
+        redis_dsn
+    } else {
+        format!(
+            "redis://{}:{}@{}:{}",
+            redis_username, redis_password, redis_host, redis_port,
+        )
+    }) {
+        Ok(redis) => Some(redis),
+        Err(_) => None,
+    };
+
     let portal = Arc::new(Portal::new(
         get_secret_from_infisical(&infisical_client, "AIRTABLE_API_KEY", "/feature-flags/")
             .await
@@ -456,6 +490,7 @@ pub async fn run(
                 .unwrap_or_else(|_| CRONJOB.to_string()),
             ),
         ]),
+        redis,
         get_secret_from_infisical(&infisical_client, "USE_AIRTABLE", "/feature-flags/")
             .await
             .unwrap_or_else(|_| "false".to_string())

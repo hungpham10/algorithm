@@ -181,6 +181,7 @@ impl AppState {
                     .unwrap_or_else(|_| CRONJOB.to_string()),
                 ),
             ]),
+            redis.clone(),
             get_secret_from_infisical(&infisical_client, "USE_AIRTABLE", "/feature-flags/")
                 .await
                 .unwrap_or_else(|_| "false".to_string())
