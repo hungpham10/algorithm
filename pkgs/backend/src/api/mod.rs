@@ -118,6 +118,38 @@ impl AppState {
                 )
             })?;
 
+        let redis_host = match std::env::var("REDIS_HOST") {
+            Ok(redis_host) => redis_host,
+            Err(_) => "".to_string(),
+        };
+        let redis_port = match std::env::var("REDIS_PORT") {
+            Ok(redis_port) => redis_port,
+            Err(_) => "".to_string(),
+        };
+        let redis_password = match std::env::var("REDIS_PASSWORD") {
+            Ok(redis_password) => redis_password,
+            Err(_) => "".to_string(),
+        };
+        let redis_username = match std::env::var("REDIS_USERNAME") {
+            Ok(redis_password) => redis_password,
+            Err(_) => "".to_string(),
+        };
+
+        let redis_dsn = get_secret_from_infisical(&infisical_client, "REDIS_DSN", "/")
+            .await
+            .unwrap_or("".to_string());
+        let redis = match RedisClient::open(if redis_dsn.len() > 0 {
+            redis_dsn
+        } else {
+            format!(
+                "redis://{}:{}@{}:{}",
+                redis_username, redis_password, redis_host, redis_port,
+            )
+        }) {
+            Ok(redis) => Some(redis),
+            Err(_) => None,
+        };
+
         let portal = Arc::new(Portal::new(
             get_secret_from_infisical(&infisical_client, "AIRTABLE_API_KEY", "/feature-flags/")
                 .await
@@ -149,6 +181,7 @@ impl AppState {
                     .unwrap_or_else(|_| CRONJOB.to_string()),
                 ),
             ]),
+            redis.clone(),
             get_secret_from_infisical(&infisical_client, "USE_AIRTABLE", "/feature-flags/")
                 .await
                 .unwrap_or_else(|_| "false".to_string())
@@ -207,38 +240,6 @@ impl AppState {
             .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid S3_REGION"))?;
         let s3_endpoint = std::env::var("S3_ENDPOINT")
             .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid S3_ENDPOINT"))?;
-
-        let redis_host = match std::env::var("REDIS_HOST") {
-            Ok(redis_host) => redis_host,
-            Err(_) => "".to_string(),
-        };
-        let redis_port = match std::env::var("REDIS_PORT") {
-            Ok(redis_port) => redis_port,
-            Err(_) => "".to_string(),
-        };
-        let redis_password = match std::env::var("REDIS_PASSWORD") {
-            Ok(redis_password) => redis_password,
-            Err(_) => "".to_string(),
-        };
-        let redis_username = match std::env::var("REDIS_USERNAME") {
-            Ok(redis_password) => redis_password,
-            Err(_) => "".to_string(),
-        };
-
-        let redis_dsn = get_secret_from_infisical(&infisical_client, "REDIS_DSN", "/")
-            .await
-            .unwrap_or("".to_string());
-        let redis = match RedisClient::open(if redis_dsn.len() > 0 {
-            redis_dsn
-        } else {
-            format!(
-                "redis://{}:{}@{}:{}",
-                redis_username, redis_password, redis_host, redis_port,
-            )
-        }) {
-            Ok(redis) => Some(redis),
-            Err(_) => None,
-        };
 
         let chat = Arc::new(chat::Chat {
             fb: chat::Facebook {
