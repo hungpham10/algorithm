@@ -23,9 +23,12 @@ class Symbols:
 
     def _get_symbols(self, broker: str, product: str) -> tp.List[str]:
         base_url = getattr(self, "_base_url", self._base_url)
-        resp = self._session.get(
-            f"{base_url}/api/investing/v1/ohcl/symbols/{broker}/{product}"
-        )
+
+        full_url = f"{base_url}/api/investing/v1/ohcl/brokers/{broker}/all"
+        if len(product) > 0:
+            full_url = f"{base_url}/api/investing/v1/ohcl/symbols/{broker}/{product}"
+
+        resp = self._session.get(full_url)
         if resp.status_code == 200:
             data = resp.json()
             return data.get("symbols", [])
@@ -36,7 +39,7 @@ class Symbols:
     ) -> tp.List[CandleStick]:
         base_url = getattr(self, "_base_url", self._base_url)
         resp = self._session.get(
-            f"{base_url}/api/investing/v1/ohcl/{broker}/{symbol}?resolution={resolution}&from={from_ts}&to={to_ts}&limit=0"
+            f"{base_url}/api/investing/v1/ohcl/{broker}/{symbol}/candles?resolution={resolution}&from={from_ts}&to={to_ts}&limit=0"
         )
         if resp.status_code != 200:
             raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
@@ -86,6 +89,9 @@ class Symbols:
 
     def industry(self, name) -> tp.List[str]:
         return self._get_symbols("stock", name)
+
+    def hose(self) -> tp.List[str]:
+        return self._get_symbols("stock", "")
 
     def cw(self) -> pl.DataFrame:
         base_url = getattr(self, "_base_url", self._base_url)

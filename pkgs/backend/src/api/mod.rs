@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use log::info;
+
 use actix::Addr;
 use actix_web::web::Data;
 use actix_web::{HttpResponse, Result as HttpResult};
@@ -722,21 +724,26 @@ pub async fn get_secret_from_infisical(
     key: &str,
     path: &str,
 ) -> Result<String, Error> {
-    let request = GetSecretRequest::builder(
-        key,
-        std::env::var("INFISICAL_PROJECT_ID")
-            .map_err(|_| Error::new(AppErrorKind::InvalidInput, "Invalid INFISICAL_PROJECT_ID"))?,
-        std::env::var("ENVIRONMENT").unwrap_or_else(|_| "dev".to_string()),
-    )
-    .path(path)
-    .build();
-
-    let secret = client.secrets().get(request).await.map_err(|error| {
-        Error::new(
-            AppErrorKind::InvalidInput,
-            format!("Fail fetching secret: {:?}", error),
+    if let Ok(value) = std::env::var(key) {
+        Ok(value)
+    } else {
+        let request = GetSecretRequest::builder(
+            key,
+            std::env::var("INFISICAL_PROJECT_ID").map_err(|_| {
+                Error::new(AppErrorKind::InvalidInput, "Invalid INFISICAL_PROJECT_ID")
+            })?,
+            std::env::var("ENVIRONMENT").unwrap_or_else(|_| "dev".to_string()),
         )
-    })?;
+        .path(path)
+        .build();
 
-    Ok(secret.secret_value)
+        let secret = client.secrets().get(request).await.map_err(|error| {
+            Error::new(
+                AppErrorKind::InvalidInput,
+                format!("Fail fetching secret: {:?}", error),
+            )
+        })?;
+
+        Ok(secret.secret_value)
+    }
 }

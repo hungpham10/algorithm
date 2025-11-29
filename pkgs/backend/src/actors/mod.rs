@@ -1,9 +1,6 @@
 use actix::prelude::*;
-use chrono::{Datelike, Duration, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-
-use log::info;
 
 use std::error::Error;
 use std::fmt;
@@ -12,6 +9,7 @@ pub mod cron;
 pub mod fireant;
 pub mod price;
 pub mod tcbs;
+pub mod vdsc;
 pub mod vps;
 
 const FUZZY_TRIGGER_THRESHOLD: f64 = 1.0;
@@ -54,9 +52,11 @@ pub async fn list_active_stocks() -> Vec<String> {
     list_of_vn30().await
 }
 
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
+
 pub async fn list_of_hose() -> Vec<String> {
     Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        .user_agent(USER_AGENT)
         .build()
         .unwrap()
         .get("https://bgapidatafeed.vps.com.vn/getlistckindex/hose")
@@ -70,7 +70,7 @@ pub async fn list_of_hose() -> Vec<String> {
 
 pub async fn list_of_midcap() -> Vec<String> {
     Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        .user_agent(USER_AGENT)
         .build()
         .unwrap()
         .get("https://bgapidatafeed.vps.com.vn/getlistckindex/VNMID")
@@ -84,7 +84,7 @@ pub async fn list_of_midcap() -> Vec<String> {
 
 pub async fn list_of_penny() -> Vec<String> {
     Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        .user_agent(USER_AGENT)
         .build()
         .unwrap()
         .get("https://bgapidatafeed.vps.com.vn/getlistckindex/VNSML")
@@ -98,7 +98,7 @@ pub async fn list_of_penny() -> Vec<String> {
 
 pub async fn list_of_vn30() -> Vec<String> {
     Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        .user_agent(USER_AGENT)
         .build()
         .unwrap()
         .get("https://bgapidatafeed.vps.com.vn/getlistckindex/VN30")
@@ -112,7 +112,7 @@ pub async fn list_of_vn30() -> Vec<String> {
 
 pub async fn list_of_vn100() -> Vec<String> {
     Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        .user_agent(USER_AGENT)
         .build()
         .unwrap()
         .get("https://bgapidatafeed.vps.com.vn/getlistckindex/VN100")
@@ -126,7 +126,7 @@ pub async fn list_of_vn100() -> Vec<String> {
 
 pub async fn list_of_etf() -> Vec<String> {
     Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        .user_agent(USER_AGENT)
         .build()
         .unwrap()
         .get("https://bgapidatafeed.vps.com.vn/getlistckindex/hsx_e")
@@ -144,10 +144,7 @@ struct Industry {
 }
 
 pub async fn list_of_industry(industry_code: &str) -> Vec<String> {
-    let client = Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-        .build()
-        .unwrap();
+    let client = Client::builder().user_agent(USER_AGENT).build().unwrap();
     let industry = client
         .get(format!(
             "https://histdatafeed.vps.com.vn/industry/symbols/{}",
@@ -176,7 +173,7 @@ struct Future {
 
 pub async fn list_futures() -> Vec<String> {
     Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        .user_agent(USER_AGENT)
         .build()
         .unwrap()
         .get("https://bgapidatafeed.vps.com.vn/pslistmap")
@@ -219,7 +216,7 @@ struct CWInfoResponse {
 
 pub async fn list_cw() -> Result<Vec<CWInfo>, ActorError> {
     let client = Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        .user_agent(USER_AGENT)
         .build()
         .map_err(|error| ActorError {
             message: format!("Fail to build client: {}", error),
