@@ -155,8 +155,10 @@ jobs:
         include:
           - os: ubuntu-24.04
             arch: x86_64
+            platform_tag: manylinux_2_28_x86_64
           - os: ubuntu-24.04
             arch: aarch64
+            platform_tag: manylinux_2_28_aarch64
     permissions:
       contents: write # For updating Cargo.toml
     steps:
@@ -254,6 +256,8 @@ jobs:
         shell: bash
 
       - name: Build wheel via Makefile
+        env:
+          MATURIN_PLATFORM: ${{ matrix.platform_tag }}
         run: make library # This will use the modified Cargo.toml and output to dist/
 
       - name: Publish development version to TestPyPI
