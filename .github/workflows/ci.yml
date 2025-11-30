@@ -152,11 +152,9 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     strategy:
       matrix:
-        include:
-          - arch: aarch64
-            distro: ubuntu24.04
-          - arch: aarch64
-            distro: ubuntu-24.04
+        os:
+          - ubuntu-22.04
+          - ubuntu-22.04-arm
     permissions:
       contents: write # For updating Cargo.toml
     steps:
@@ -173,6 +171,21 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            pkgs/backend/target/
+            target/
+          # Using the unified cache key for build-related jobs.
+          key: ${{ runner.os }}-cargo-release-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-build-
 
       - name: Install build dependencies via Makefile
         run: make setup # Installs maturin, twine, wheel etc. via Makefile
@@ -272,11 +285,9 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     strategy:
       matrix:
-        include:
-          - arch: aarch64
-            distro: ubuntu24.04
-          - arch: aarch64
-            distro: ubuntu-24.04
+        os:
+          - ubuntu-22.04
+          - ubuntu-22.04-arm
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -291,21 +302,6 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-
-      - name: Cache Cargo dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            pkgs/backend/target/
-            target/
-          # Using the unified cache key for build-related jobs.
-          key: ${{ runner.os }}-cargo-release-build-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-release-build-
 
       - name: Install build dependencies via Makefile
         run: make setup # Installs maturin, twine, etc.
