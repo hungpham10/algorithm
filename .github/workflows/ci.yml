@@ -172,21 +172,6 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
-      - name: Cache Cargo dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            pkgs/backend/target/
-            target/
-          # Using the unified cache key for build-related jobs.
-          key: ${{ runner.os }}-cargo-release-build-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-release-build-
-
       - name: Install build dependencies via Makefile
         run: make setup # Installs maturin, twine, wheel etc. via Makefile
 
