@@ -9,8 +9,6 @@ DIST_DIR := dist
 TEST_DIR := tests
 BACKEND_DIR := pkgs/backend
 
-MATURIN_PLATFORM ?= auto                                   # mặc định: để maturin tự detect
-
 setup:
 	$(PYTHON) -m pip install --upgrade pip
 	$(PYTHON) -m pip install maturin twine pytest pyarrow patchelf --cache-dir $(PIP_CACHE)
@@ -39,14 +37,7 @@ library:
 	export PATH="$$HOME/.cargo/bin:$$PATH" &&													\
 	cd $(BACKEND_DIR) && 																\
 	if grep -q "^version" Cargo.toml; then 														\
-		maturin build 																\
-			--release 															\
-			--strip 															\
-			--features python 														\
-			--no-default-features 														\
-			-p $(MATURIN_PLATFORM) 														\
-			--out dist 															\
-			--cargo-extra-args="--locked" && 												\
+		maturin build --release --features python --no-default-features --bindings pyo3 --out dist && 						\
 		cp dist/*.whl ../../$(DIST_DIR)/; 													\
 	else 																		\
 		echo "Missing version in Cargo.toml"; 													\

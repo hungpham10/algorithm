@@ -255,9 +255,25 @@ jobs:
           echo "New version in Cargo.toml: $(grep '^version = ' Cargo.toml)"
         shell: bash
 
+      - name: Check CPU architecture
+        run: |
+          echo "=== GitHub Actions Runner Info ==="
+          echo "Runner OS       : ${{ runner.os }}"
+          echo "Runner Arch     : ${{ runner.arch }}"     # X64 hoặc ARM64
+          echo ""
+          echo "=== uname -m ==="
+          uname -m                                          # x86_64 hoặc aarch64
+          echo ""
+          echo "=== lscpu (chi tiết) ==="
+          lscpu | grep -E "Architecture|Model name|Vendor ID"
+          echo ""
+          echo "=== file /bin/bash ==="
+          file /bin/bash
+          echo ""
+          echo "=== python -c import platform ==="
+          python3 -c "import platform, sys; print('platform.machine():', platform.machine()); print('sys.maxsize > 2**32:', sys.maxsize > 2**32)"
+
       - name: Build wheel via Makefile
-        env:
-          MATURIN_PLATFORM: ${{ matrix.platform_tag }}
         run: make library # This will use the modified Cargo.toml and output to dist/
 
       - name: Publish development version to TestPyPI
