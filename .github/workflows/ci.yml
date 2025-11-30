@@ -153,7 +153,6 @@ jobs:
     strategy:
       matrix:
         os:
-          - ubuntu-22.04
           - ubuntu-24.04
     permissions:
       contents: write # For updating Cargo.toml
