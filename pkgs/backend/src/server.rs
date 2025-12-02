@@ -119,6 +119,10 @@ pub async fn run() -> std::io::Result<()> {
                         get().to(crate::api::ohcl::v1::get_heatmap_from_broker),
                     )
                     .route(
+                        "/v1/ohcl/{broker}/{symbol}/recap",
+                        get().to(crate::api::ohcl::v1::get_recap_data_from_broker),
+                    )
+                    .route(
                         "/v1/ohcl/resolutions",
                         get().to(crate::api::ohcl::v1::get_list_of_resolutions),
                     )

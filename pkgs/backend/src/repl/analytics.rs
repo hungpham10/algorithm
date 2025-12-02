@@ -69,7 +69,7 @@ async fn filter_in_async(
         for label in rule.inputs() {
             inputs.insert(
                 label.to_string(),
-                vars.get_by_expr(label).map_err(|e| {
+                vars.get_by_selected_expr(label).map_err(|e| {
                     PyRuntimeError::new_err(format!("Failed to get variable {}: {}", label, e))
                 })?,
             );

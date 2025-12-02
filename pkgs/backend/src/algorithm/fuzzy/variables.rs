@@ -300,7 +300,7 @@ impl Variables {
         Ok(ret)
     }
 
-    pub fn get_by_expr(&self, expr: &str) -> Result<f64, RuleError> {
+    pub fn get_by_selected_expr(&self, expr: &str) -> Result<f64, RuleError> {
         // Parse expression like "variable[index]"
         let parts: Vec<&str> = expr.split('[').collect();
         if parts.len() != 2 {
@@ -332,6 +332,56 @@ impl Variables {
         buffer.get(index).copied().ok_or_else(|| RuleError {
             message: format!("Index {} out of bounds for variable {}", index, name),
         })
+    }
+
+    pub fn get_by_range_expr(&self, expr: &str) -> Result<Vec<f64>, RuleError> {
+        let parts: Vec<&str> = expr.split('[').collect();
+        let name = parts[0];
+
+        if parts.len() == 1 {
+            return Ok(self
+                .variables
+                .get(name)
+                .ok_or_else(|| RuleError {
+                    message: format!("Variable {} not found", name),
+                })?
+                .clone()
+                .into());
+        }
+
+        let buffer = self.variables.get(name).ok_or_else(|| RuleError {
+            message: format!("Variable {} not found", name),
+        })?;
+
+        let range_str = parts[1].trim_end_matches(']');
+        let mut range_parts = range_str.split("..");
+
+        let begin_str = range_parts.next().unwrap();
+        let end_str = range_parts.next().ok_or_else(|| RuleError {
+            message: "Missing '..' in range".to_string(),
+        })?;
+
+        let start = begin_str.parse::<usize>().map_err(|_| RuleError {
+            message: format!("Invalid start index: {}", begin_str),
+        })?;
+
+        let end_inclusive = end_str.parse::<usize>().map_err(|_| RuleError {
+            message: format!("Invalid end index: {}", end_str),
+        })?;
+        let end = end_inclusive + 1; // vì người dùng thường muốn inclusive
+
+        if start >= buffer.len() || end > buffer.len() || start > end {
+            return Err(RuleError {
+                message: format!(
+                    "Range {}..{} out of bounds (len={})",
+                    start,
+                    end_inclusive,
+                    buffer.len()
+                ),
+            });
+        }
+
+        Ok(buffer.range(start..end).copied().collect())
     }
 
     pub fn last(&self, name: &str) -> Result<f64, RuleError> {

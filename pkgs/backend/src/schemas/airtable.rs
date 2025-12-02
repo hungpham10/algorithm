@@ -98,7 +98,7 @@ impl Portal {
             if let Some(client) = self.redis.as_ref() {
                 if let Ok(mut conn) = client.get_multiplexed_tokio_connection().await {
                     if let Ok(json) = serde_json::to_string(&records) {
-                        conn.set_ex(format!("airtable:{}", WATCHLIST), json, self.ttl)
+                        conn.set_ex::<_, _, ()>(format!("airtable:{}", WATCHLIST), json, self.ttl)
                             .await
                             .map_err(|error| anyhow::anyhow!("Failed to update cache {}", error))?;
                     }
@@ -147,7 +147,7 @@ impl Portal {
             if let Some(client) = self.redis.as_ref() {
                 if let Ok(mut conn) = client.get_multiplexed_tokio_connection().await {
                     if let Ok(json) = serde_json::to_string(&records) {
-                        conn.set_ex(format!("airtable:{}", CRONJOB), json, self.ttl)
+                        conn.set_ex::<_, _, ()>(format!("airtable:{}", CRONJOB), json, self.ttl)
                             .await
                             .map_err(|error| anyhow::anyhow!("Failed to update cache {}", error))?;
                     }
