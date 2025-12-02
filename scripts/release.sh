@@ -84,6 +84,7 @@ function boot() {
   # Setup woocommerce backend
   sed -i "s/%%HTTP_SERVER%%/$HTTP_SERVER/g" ${NGINX_DIR}/http.d/default.conf
   sed -i "s/%%HTTP_PORT%%/$HTTP_PORT/g" ${NGINX_DIR}/http.d/default.conf
+  sed -i "s#%%WOOCOMMERCE_PROTOCOL%%#$WOOCOMMERCE_PROTOCOL#g" ${NGINX_DIR}/http.d/default.conf
   sed -i "s#%%WOOCOMMERCE_SERVER%%#$WOOCOMMERCE_SERVER#g" ${NGINX_DIR}/http.d/default.conf
 
   # Setup command for the backend
