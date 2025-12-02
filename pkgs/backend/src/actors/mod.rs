@@ -48,6 +48,13 @@ pub struct GetVariableCommand {
     pub variable: String,
 }
 
+#[derive(Message)]
+#[rtype(result = "Result<Vec<f64>, ActorError>")]
+pub struct GetTimeserieCommand {
+    pub symbol: String,
+    pub variable: String,
+}
+
 pub async fn list_active_stocks() -> Vec<String> {
     list_of_vn30().await
 }

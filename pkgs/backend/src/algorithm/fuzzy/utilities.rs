@@ -99,7 +99,7 @@ pub async fn replay(
             for label in &labels {
                 inputs.insert(
                     label.to_string(),
-                    vars.get_by_expr(label).map_err(|e| RuleError {
+                    vars.get_by_selected_expr(label).map_err(|e| RuleError {
                         message: format!("Failed to get variable {}: {}", label, e),
                     })?,
                 );

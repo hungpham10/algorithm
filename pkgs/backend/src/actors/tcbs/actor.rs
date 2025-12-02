@@ -714,9 +714,10 @@ impl Handler<GetVariableCommand> for TcbsActor {
             })?;
             let var_name = format!("{}.{}", msg.symbol, msg.variable);
 
-            vars.get_by_expr(&var_name).map_err(|e| ActorError {
-                message: format!("Failed to get variable {}: {}", var_name, e),
-            })
+            vars.get_by_selected_expr(&var_name)
+                .map_err(|e| ActorError {
+                    message: format!("Failed to get variable {}: {}", var_name, e),
+                })
         })
     }
 }

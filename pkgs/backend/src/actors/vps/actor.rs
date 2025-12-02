@@ -17,7 +17,8 @@ use actix::prelude::*;
 use actix::Addr;
 
 use crate::actors::{
-    ActorError, FlushVariablesCommand, GetVariableCommand, HealthCommand, UpdateStocksCommand,
+    ActorError, FlushVariablesCommand, GetTimeserieCommand, GetVariableCommand, HealthCommand,
+    UpdateStocksCommand,
 };
 use crate::algorithm::fuzzy::Variables;
 
@@ -489,7 +490,27 @@ impl Handler<GetVariableCommand> for VpsActor {
             })?;
             let var_name = format!("{}.{}", msg.symbol, msg.variable);
 
-            vars.get_by_expr(&var_name).map_err(|e| ActorError {
+            vars.get_by_selected_expr(&var_name)
+                .map_err(|e| ActorError {
+                    message: format!("Failed to get variable {}: {}", var_name, e),
+                })
+        })
+    }
+}
+
+impl Handler<GetTimeserieCommand> for VpsActor {
+    type Result = ResponseFuture<Result<Vec<f64>, ActorError>>;
+
+    fn handle(&mut self, msg: GetTimeserieCommand, _: &mut Self::Context) -> Self::Result {
+        let variables = self.variables.clone();
+
+        Box::pin(async move {
+            let vars = variables.lock().map_err(|e| ActorError {
+                message: format!("Failed to acquire lock: {}", e),
+            })?;
+            let var_name = format!("{}.{}", msg.symbol, msg.variable);
+
+            vars.get_by_range_expr(&var_name).map_err(|e| ActorError {
                 message: format!("Failed to get variable {}: {}", var_name, e),
             })
         })

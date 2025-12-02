@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use vnscope::actors::price::{GetOHCLCommand, UpdateOHCLToCacheCommand};
 use vnscope::actors::{
     list_crypto, list_cw, list_futures, list_of_etf, list_of_hose, list_of_industry,
-    list_of_midcap, list_of_penny, list_of_vn100, list_of_vn30, CWInfo,
+    list_of_midcap, list_of_penny, list_of_vn100, list_of_vn30, CWInfo, GetTimeserieCommand,
 };
 use vnscope::algorithm::VolumeProfile;
 use vnscope::schemas::CandleStick;
@@ -23,6 +23,24 @@ pub struct HeatmapResponse {
     heatmap: Vec<Vec<f64>>,
     levels: Vec<f64>,
     ranges: Vec<(usize, usize, usize)>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RecapResponse {
+    price: Vec<f64>,
+    volume: Vec<f64>,
+    price_plus1: Vec<f64>,
+    price_plus2: Vec<f64>,
+    price_plus3: Vec<f64>,
+    volume_plus1: Vec<f64>,
+    volume_plus2: Vec<f64>,
+    volume_plus3: Vec<f64>,
+    price_minus1: Vec<f64>,
+    price_minus2: Vec<f64>,
+    price_minus3: Vec<f64>,
+    volume_minus1: Vec<f64>,
+    volume_minus2: Vec<f64>,
+    volume_minus3: Vec<f64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -38,6 +56,9 @@ pub struct OhclResponse {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolutions: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recap: Option<RecapResponse>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub brokers: Option<Vec<String>>,
@@ -69,6 +90,7 @@ impl Default for OhclResponse {
             heatmap: None,
             ohcl: None,
             resolutions: None,
+            recap: None,
             brokers: None,
             products: None,
             symbols: None,
@@ -659,5 +681,362 @@ pub async fn get_list_of_symbols_by_product(
         Err(ErrorInternalServerError(response))
     } else {
         Ok(HttpResponse::Ok().json(response))
+    }
+}
+
+pub async fn get_recap_data_from_broker(
+    appstate: Data<Arc<AppState>>,
+    path: Path<(String, String)>,
+) -> Result<HttpResponse> {
+    let (broker, symbol) = path.into_inner();
+
+    if broker == "stock" {
+        let price = match appstate
+            .vps
+            .send(GetTimeserieCommand {
+                symbol: symbol.clone(),
+                variable: "price".to_string(),
+            })
+            .await
+        {
+            Err(error) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(format!("Failed to fetch board data from cache: {}", error)),
+                    ..Default::default()
+                }))
+            }
+            Ok(Err(error)) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(error.message),
+                    ..Default::default()
+                }))
+            }
+            Ok(Ok(price)) => price,
+        };
+
+        let volume = match appstate
+            .vps
+            .send(GetTimeserieCommand {
+                symbol: symbol.clone(),
+                variable: "volume".to_string(),
+            })
+            .await
+        {
+            Err(error) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(format!("Failed to fetch board data from cache: {}", error)),
+                    ..Default::default()
+                }))
+            }
+            Ok(Err(error)) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(error.message),
+                    ..Default::default()
+                }))
+            }
+            Ok(Ok(price)) => price,
+        };
+
+        let price_plus1 = match appstate
+            .vps
+            .send(GetTimeserieCommand {
+                symbol: symbol.clone(),
+                variable: "price_plus1".to_string(),
+            })
+            .await
+        {
+            Err(error) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(format!("Failed to fetch board data from cache: {}", error)),
+                    ..Default::default()
+                }))
+            }
+            Ok(Err(error)) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(error.message),
+                    ..Default::default()
+                }))
+            }
+            Ok(Ok(price)) => price,
+        };
+
+        let volume_plus1 = match appstate
+            .vps
+            .send(GetTimeserieCommand {
+                symbol: symbol.clone(),
+                variable: "volume_plus1".to_string(),
+            })
+            .await
+        {
+            Err(error) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(format!("Failed to fetch board data from cache: {}", error)),
+                    ..Default::default()
+                }))
+            }
+            Ok(Err(error)) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(error.message),
+                    ..Default::default()
+                }))
+            }
+            Ok(Ok(price)) => price,
+        };
+
+        let price_plus2 = match appstate
+            .vps
+            .send(GetTimeserieCommand {
+                symbol: symbol.clone(),
+                variable: "price_plus2".to_string(),
+            })
+            .await
+        {
+            Err(error) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(format!("Failed to fetch board data from cache: {}", error)),
+                    ..Default::default()
+                }))
+            }
+            Ok(Err(error)) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(error.message),
+                    ..Default::default()
+                }))
+            }
+            Ok(Ok(price)) => price,
+        };
+
+        let volume_plus2 = match appstate
+            .vps
+            .send(GetTimeserieCommand {
+                symbol: symbol.clone(),
+                variable: "volume_plus2".to_string(),
+            })
+            .await
+        {
+            Err(error) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(format!("Failed to fetch board data from cache: {}", error)),
+                    ..Default::default()
+                }))
+            }
+            Ok(Err(error)) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(error.message),
+                    ..Default::default()
+                }))
+            }
+            Ok(Ok(price)) => price,
+        };
+
+        let price_plus3 = match appstate
+            .vps
+            .send(GetTimeserieCommand {
+                symbol: symbol.clone(),
+                variable: "price_plus3".to_string(),
+            })
+            .await
+        {
+            Err(error) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(format!("Failed to fetch board data from cache: {}", error)),
+                    ..Default::default()
+                }))
+            }
+            Ok(Err(error)) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(error.message),
+                    ..Default::default()
+                }))
+            }
+            Ok(Ok(price)) => price,
+        };
+
+        let volume_plus3 = match appstate
+            .vps
+            .send(GetTimeserieCommand {
+                symbol: symbol.clone(),
+                variable: "volume_plus3".to_string(),
+            })
+            .await
+        {
+            Err(error) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(format!("Failed to fetch board data from cache: {}", error)),
+                    ..Default::default()
+                }))
+            }
+            Ok(Err(error)) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(error.message),
+                    ..Default::default()
+                }))
+            }
+            Ok(Ok(price)) => price,
+        };
+
+        let price_minus1 = match appstate
+            .vps
+            .send(GetTimeserieCommand {
+                symbol: symbol.clone(),
+                variable: "price_minus1".to_string(),
+            })
+            .await
+        {
+            Err(error) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(format!("Failed to fetch board data from cache: {}", error)),
+                    ..Default::default()
+                }))
+            }
+            Ok(Err(error)) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(error.message),
+                    ..Default::default()
+                }))
+            }
+            Ok(Ok(price)) => price,
+        };
+
+        let volume_minus1 = match appstate
+            .vps
+            .send(GetTimeserieCommand {
+                symbol: symbol.clone(),
+                variable: "volume_minus1".to_string(),
+            })
+            .await
+        {
+            Err(error) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(format!("Failed to fetch board data from cache: {}", error)),
+                    ..Default::default()
+                }))
+            }
+            Ok(Err(error)) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(error.message),
+                    ..Default::default()
+                }))
+            }
+            Ok(Ok(price)) => price,
+        };
+
+        let price_minus2 = match appstate
+            .vps
+            .send(GetTimeserieCommand {
+                symbol: symbol.clone(),
+                variable: "price_minus2".to_string(),
+            })
+            .await
+        {
+            Err(error) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(format!("Failed to fetch board data from cache: {}", error)),
+                    ..Default::default()
+                }))
+            }
+            Ok(Err(error)) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(error.message),
+                    ..Default::default()
+                }))
+            }
+            Ok(Ok(price)) => price,
+        };
+
+        let volume_minus2 = match appstate
+            .vps
+            .send(GetTimeserieCommand {
+                symbol: symbol.clone(),
+                variable: "volume_minus2".to_string(),
+            })
+            .await
+        {
+            Err(error) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(format!("Failed to fetch board data from cache: {}", error)),
+                    ..Default::default()
+                }))
+            }
+            Ok(Err(error)) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(error.message),
+                    ..Default::default()
+                }))
+            }
+            Ok(Ok(price)) => price,
+        };
+
+        let price_minus3 = match appstate
+            .vps
+            .send(GetTimeserieCommand {
+                symbol: symbol.clone(),
+                variable: "price_minus3".to_string(),
+            })
+            .await
+        {
+            Err(error) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(format!("Failed to fetch board data from cache: {}", error)),
+                    ..Default::default()
+                }))
+            }
+            Ok(Err(error)) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(error.message),
+                    ..Default::default()
+                }))
+            }
+            Ok(Ok(price)) => price,
+        };
+
+        let volume_minus3 = match appstate
+            .vps
+            .send(GetTimeserieCommand {
+                symbol: symbol.clone(),
+                variable: "volume_minus3".to_string(),
+            })
+            .await
+        {
+            Err(error) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(format!("Failed to fetch board data from cache: {}", error)),
+                    ..Default::default()
+                }))
+            }
+            Ok(Err(error)) => {
+                return Err(ErrorInternalServerError(OhclResponse {
+                    error: Some(error.message),
+                    ..Default::default()
+                }))
+            }
+            Ok(Ok(price)) => price,
+        };
+
+        // Return response
+        Ok(HttpResponse::Ok().json(OhclResponse {
+            recap: Some(RecapResponse {
+                price,
+                volume,
+                price_plus1,
+                price_plus2,
+                price_plus3,
+                volume_plus1,
+                volume_plus2,
+                volume_plus3,
+                price_minus1,
+                price_minus2,
+                price_minus3,
+                volume_minus1,
+                volume_minus2,
+                volume_minus3,
+            }),
+            ..Default::default()
+        }))
+    } else {
+        Err(ErrorInternalServerError(OhclResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
     }
 }
