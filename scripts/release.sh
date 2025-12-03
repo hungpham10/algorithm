@@ -72,6 +72,10 @@ function boot() {
     sed -i '/HTTP_X_FORWARDED_PORT/d' ${NGINX_DIR}/http.d/default.conf
     HTTP_PROTOCOL="http"
   fi
+
+  # Setup log
+  sed -i "s/%%NGINX_LOG%%/$NGINX_LOG/g" ${NGINX_DIR}/nginx.conf
+
   # Setup S3 backend
   sed -i "s#%%CDN_ENDPOINT%%#$CDN_ENDPOINT#g" ${NGINX_DIR}/http.d/default.conf
   sed -i "s#%%CDN_BUCKET%%#$CDN_BUCKET#g" ${NGINX_DIR}/http.d/default.conf
