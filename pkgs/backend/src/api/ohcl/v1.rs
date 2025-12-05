@@ -23,6 +23,7 @@ pub struct HeatmapResponse {
     heatmap: Vec<Vec<f64>>,
     levels: Vec<f64>,
     ranges: Vec<(usize, usize, usize)>,
+    timelines: Vec<Vec<Vec<(usize, usize)>>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -344,6 +345,7 @@ pub async fn get_heatmap_from_broker(
                                                 heatmap,
                                                 levels: vp.levels().clone(),
                                                 ranges: vp.ranges().clone(),
+                                                timelines: vp.timelines().clone(),
                                             }),
                                             ..Default::default()
                                         }))
@@ -395,6 +397,7 @@ pub async fn get_heatmap_from_broker(
                                 }
                                 Ok(HttpResponse::Ok().json(OhclResponse {
                                     heatmap: Some(HeatmapResponse {
+                                        timelines: vp.timelines().clone(),
                                         heatmap: vp.heatmap().clone(),
                                         levels: vp.levels().clone(),
                                         ranges: vp.ranges().clone(),

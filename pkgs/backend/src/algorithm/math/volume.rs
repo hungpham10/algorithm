@@ -10,7 +10,7 @@ pub struct VolumeProfile {
     heatmap: Vec<Vec<f64>>,
     levels: Vec<f64>,
     ranges: Vec<(usize, usize, usize)>,
-    timelines: Vec<(usize, usize)>,
+    timelines: Vec<Vec<Vec<(usize, usize)>>>,
 }
 
 impl VolumeProfile {
@@ -71,7 +71,7 @@ impl VolumeProfile {
         &self.ranges
     }
 
-    pub fn timelines(&self) -> &Vec<(usize, usize)> {
+    pub fn timelines(&self) -> &Vec<Vec<Vec<(usize, usize)>>> {
         &self.timelines
     }
 
@@ -100,26 +100,22 @@ impl VolumeProfile {
     pub fn calculate_cumulate_volume_timeline(
         heatmap: &Vec<Vec<f64>>,
         ranges: &Vec<(usize, usize, usize)>,
-    ) -> Result<Vec<(usize, usize)>> {
+    ) -> Result<Vec<Vec<Vec<(usize, usize)>>>> {
         Ok(ranges
             .iter()
             .map(|(_, l_beg, l_end)| {
-                let footprints = (*l_beg..*l_end)
+                (*l_beg..*l_end)
                     .map(|col| {
+                        let mut ret = Vec::new();
                         let mut t_beg = heatmap[0].len();
                         let mut t_end = heatmap[0].len();
-                        let mut t_cur = 0;
 
                         for _ in 0..heatmap.len() {
                             let mut found = false;
 
                             for (i, row) in heatmap.iter().enumerate() {
-                                if i >= t_cur && row[col] > 0.0 {
-                                    if t_beg == heatmap[0].len() {
-                                        t_beg = i;
-                                    }
-
-                                    t_cur = i;
+                                if i >= t_beg && row[col] > 0.0 {
+                                    t_beg = i;
                                     found = true;
                                     break;
                                 }
@@ -129,9 +125,9 @@ impl VolumeProfile {
                                 found = false;
 
                                 for (i, row) in heatmap.iter().enumerate() {
-                                    if i > t_cur && row[col] <= 0.0 {
+                                    if i > t_beg && row[col] <= 0.0 {
                                         t_end = i;
-                                        t_cur = i;
+                                        t_beg = i;
                                         found = true;
                                         break;
                                     }
@@ -141,18 +137,15 @@ impl VolumeProfile {
                             if !found {
                                 break;
                             }
+
+                            ret.push((t_beg, t_end));
                         }
 
-                        (t_beg, t_end)
+                        ret
                     })
-                    .collect::<Vec<_>>();
-
-                (
-                    footprints.first().unwrap_or(&(0 as usize, 0 as usize)).0,
-                    footprints.last().unwrap_or(&(0 as usize, 0 as usize)).1,
-                )
+                    .collect::<Vec<_>>()
             })
-            .collect())
+            .collect::<Vec<_>>())
     }
 
     #[inline]
