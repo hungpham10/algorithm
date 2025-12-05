@@ -127,7 +127,6 @@ impl VolumeProfile {
                                 for (i, row) in heatmap.iter().enumerate() {
                                     if i > t_beg && row[col] <= 0.0 {
                                         t_end = i;
-                                        t_beg = i;
                                         found = true;
                                         break;
                                     }
@@ -139,6 +138,7 @@ impl VolumeProfile {
                             }
 
                             ret.push((t_beg, t_end));
+                            t_beg = t_end;
                         }
 
                         ret
