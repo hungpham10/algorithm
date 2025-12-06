@@ -152,9 +152,12 @@ class ClassifyVolumeProfile:
         # Here, we'll let mpf.plot create its own figure for candlestick +
         # volume, and plot heatmap separately if enabled
         if enable_heatmap:
-            fig_heatmap, ax_heatmap = plt.subplots(
-                figsize=(60, 24)
-            )  # Increased size for heatmap
+            # Increased size for heatmap
+            fig_heatmap, ax_heatmap = plt.subplots(figsize=(60, 24))
+
+            # Calculate correct shape
+            consolidated = np.flip(consolidated.T[::-1], axis=1)
+
             # Plot heatmap with imshow
             im = ax_heatmap.imshow(
                 consolidated,

@@ -107,8 +107,8 @@ impl VolumeProfile {
                 (*l_beg..*l_end)
                     .map(|col| {
                         let mut ret = Vec::new();
-                        let mut t_beg = heatmap[0].len();
-                        let mut t_end = heatmap[0].len();
+                        let mut t_beg = 0;
+                        let mut t_end = 0;
 
                         for _ in 0..heatmap.len() {
                             let mut found = false;
@@ -125,7 +125,7 @@ impl VolumeProfile {
                                 found = false;
 
                                 for (i, row) in heatmap.iter().enumerate() {
-                                    if i > t_beg && row[col] <= 0.0 {
+                                    if i >= t_beg && row[col] <= 0.0 {
                                         t_end = i;
                                         found = true;
                                         break;
