@@ -240,7 +240,21 @@ class Symbols:
             if len(r) == 3
         ]
         timelines = [
-            (int(r[0]), int(r[1])) for r in data.get("timelines", []) if len(r) == 2
+            (
+                min(
+                    [
+                        block[0][0] - overlap if len(block) > 0 else 0
+                        for block in timeline
+                    ]
+                ),
+                max(
+                    [
+                        block[0][1] - overlap if len(block) > 0 else 0
+                        for block in timeline
+                    ]
+                ),
+            )
+            for timeline in data.get("timelines", [])
         ]
         return (
             data_arr,
