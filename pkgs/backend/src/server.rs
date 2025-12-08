@@ -190,7 +190,7 @@ pub async fn run() -> std::io::Result<()> {
                     )
                     .route(
                         "/v1/wms/sales/online",
-                        get().to(crate::api::wms::v1::process_online_sale),
+                        post().to(crate::api::wms::v1::process_online_sale),
                     )
                     .route(
                         "/v1/wms/stock/barcode/{barcode}",

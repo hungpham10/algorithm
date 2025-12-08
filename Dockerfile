@@ -53,7 +53,7 @@ COPY sql ./sql
 COPY scripts/release.sh /app/endpoint.sh
 
 # Install runtime dependencies
-RUN apt update && 											\
+RUN apt update && 												\
 	apt install -y supervisor curl git
 
 # Create supervisor configuration directory
@@ -67,46 +67,46 @@ COPY conf/nginx/http.conf /usr/local/openresty/nginx/conf/nginx.conf
 COPY conf/nginx/www.conf /usr/local/openresty/nginx/conf/http.d/default.conf
 
 # Setup openresty modules
-RUN if git clone https://github.com/zmartzone/lua-resty-openidc.git /tmp/openidc; then 			\
-    cp -av /tmp/openidc/lib/resty/* /usr/local/openresty/lualib/resty/; 				\
-    rm -fr /tmp/openidc;										\
+RUN if git clone https://github.com/zmartzone/lua-resty-openidc.git /tmp/openidc; then 				\
+    cp -av /tmp/openidc/lib/resty/* /usr/local/openresty/lualib/resty/; 					\
+    rm -fr /tmp/openidc;											\
   fi
-RUN if git clone https://github.com/fffonion/lua-resty-openssl.git /tmp/openssl; then			\
-    cp -av /tmp/openssl/lib/resty/* /usr/local/openresty/lualib/resty/;					\
-    rm -fr /tmp/openssl;										\
+RUN if git clone https://github.com/fffonion/lua-resty-openssl.git /tmp/openssl; then				\
+    cp -av /tmp/openssl/lib/resty/* /usr/local/openresty/lualib/resty/;						\
+    rm -fr /tmp/openssl;											\
   fi
-RUN if git clone https://github.com/anvouk/lua-resty-jwt-verification.git /tmp/jwt; then		\
-    cp -av /tmp/jwt/lib/resty/* /usr/local/openresty/lualib/resty/;					\
-    rm -fr /tmp/jwt;											\
+RUN if git clone https://github.com/anvouk/lua-resty-jwt-verification.git /tmp/jwt; then			\
+    cp -av /tmp/jwt/lib/resty/* /usr/local/openresty/lualib/resty/;						\
+    rm -fr /tmp/jwt;												\
   fi
-RUN if git clone https://github.com/jkeys089/lua-resty-hmac.git /tmp/hmac; then				\
-    cp -av /tmp/hmac/lib/resty/* /usr/local/openresty/lualib/resty/;					\
-    rm -fr /tmp/hmac;											\
+RUN if git clone https://github.com/jkeys089/lua-resty-hmac.git /tmp/hmac; then					\
+    cp -av /tmp/hmac/lib/resty/* /usr/local/openresty/lualib/resty/;						\
+    rm -fr /tmp/hmac;												\
   fi
-RUN if git clone https://github.com/cdbattags/lua-resty-jwt.git /tmp/jwt; then				\
-    cp -av /tmp/jwt/lib/resty/* /usr/local/openresty/lualib/resty/;					\
-    rm -fr /tmp/jwt;											\
+RUN if git clone https://github.com/cdbattags/lua-resty-jwt.git /tmp/jwt; then					\
+    cp -av /tmp/jwt/lib/resty/* /usr/local/openresty/lualib/resty/;						\
+    rm -fr /tmp/jwt;												\
   fi
-RUN if git clone https://github.com/bungle/lua-resty-session.git /tmp/session; then			\
-    cp -av /tmp/session/lib/resty/* /usr/local/openresty/lualib/resty/;					\
-    rm -fr /tmp/session;										\
+RUN if git clone https://github.com/bungle/lua-resty-session.git /tmp/session; then				\
+    cp -av /tmp/session/lib/resty/* /usr/local/openresty/lualib/resty/;						\
+    rm -fr /tmp/session;											\
   fi
-RUN if git clone https://github.com/ledgetech/lua-resty-http.git /tmp/http; then			\
-    cp -av /tmp/http/lib/resty/* /usr/local/openresty/lualib/resty/;					\
-    rm -fr /tmp/http;											\
+RUN if git clone https://github.com/ledgetech/lua-resty-http.git /tmp/http; then				\
+    cp -av /tmp/http/lib/resty/* /usr/local/openresty/lualib/resty/;						\
+    rm -fr /tmp/http;												\
   fi
-RUN if git clone https://github.com/hamishforbes/lua-ffi-zlib.git /tmp/ffi-zlib; then			\
-    cp -av /tmp/ffi-zlib/lib/* /usr/local/openresty/lualib/resty/;					\
-    rm -fr /tmp/ffi-zlib;										\
+RUN if git clone https://github.com/hamishforbes/lua-ffi-zlib.git /tmp/ffi-zlib; then				\
+    cp -av /tmp/ffi-zlib/lib/* /usr/local/openresty/lualib/resty/;						\
+    rm -fr /tmp/ffi-zlib;											\
   fi
-RUN if git clone https://github.com/openresty/lua-resty-redis.git /tmp/redis; then			\
-    cp -av /tmp/redis/lib/resty/* /usr/local/openresty/lualib/resty/;					\
-    rm -fr /tmp/redis;											\
+RUN if git clone https://github.com/openresty/lua-resty-redis.git /tmp/redis; then				\
+    cp -av /tmp/redis/lib/resty/* /usr/local/openresty/lualib/resty/;						\
+    rm -fr /tmp/redis;												\
   fi
 
-RUN useradd nginx &&											\
-	mkdir /var/log/nginx && 									\
-	chown -R nginx:nginx /var/log/nginx && 								\
+RUN useradd nginx &&												\
+	mkdir /var/log/nginx && 										\
+	chown -R nginx:nginx /var/log/nginx && 									\
 	chmod -R 755 /var/log/nginx
 
 ENTRYPOINT ["/app/endpoint.sh", "/usr/bin/supervisord", "/sql", "-n"]

@@ -58,10 +58,10 @@ function localtonet() {
 function boot() {
   local cmd=$1
 
-  if [ "${USE_TAILSCALE}" = "true" ]; then
-    rm -fr ${SUPERVISOR_DIR}/without-tailscale.conf
+  if [ "${USE_CLOUDFLARE_TUNNEL}" = "true" ]; then
+    rm -fr ${SUPERVISOR_DIR}/without-cloudflare-tunnel.conf
   else
-    rm -fr ${SUPERVISOR_DIR}/with-tailscale.conf
+    rm -fr ${SUPERVISOR_DIR}/with-cloudflare-tunnel.conf
   fi
 
   if [ "${HTTP_PROTOCOL}" = "https" ]; then
@@ -92,10 +92,10 @@ function boot() {
   sed -i "s#%%WOOCOMMERCE_SERVER%%#$WOOCOMMERCE_SERVER#g" ${NGINX_DIR}/http.d/default.conf
 
   # Setup command for the backend
-  if [ "${USE_TAILSCALE}" = "true" ]; then
-    sed -i "s/%%COMMAND%%/$COMMAND/g" ${SUPERVISOR_DIR}/with-tailscale.conf
+  if [ "${USE_CLOUDFLARE_TUNNEL}" = "true" ]; then
+    sed -i "s/%%COMMAND%%/$COMMAND/g" ${SUPERVISOR_DIR}/with-cloudflare-tunnel.conf
   else
-    sed -i "s/%%COMMAND%%/$COMMAND/g" ${SUPERVISOR_DIR}/without-tailscale.conf
+    sed -i "s/%%COMMAND%%/$COMMAND/g" ${SUPERVISOR_DIR}/without-cloudflare-tunnel.conf
   fi
 
   shift
