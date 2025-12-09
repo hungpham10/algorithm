@@ -1,6 +1,6 @@
 [package]
 name = "backend"
-version = "1.0.57"
+version = "1.0.58"
 edition = "2021"
 
 [[bin]]
@@ -31,6 +31,7 @@ crawl = [
 default = [
 	"airtable-api",
 	"redis",
+	"sentry",
 	"actix-web",
 	"async-graphql",
 	"async-graphql-actix-web",
@@ -112,6 +113,7 @@ hex = { version = "0.4.3", optional = true }
 sha2 = { version = "0.10", optional = true }
 quick-xml = { version = "0.31", optional = true }
 actix-web = { version = "4.3.1", optional = true }
+sentry = { version = "0.46.0", features = ["actix"], optional = true }
 redis = { version = "0.32.5", optional = true, features = ["aio", "tokio-comp"] }
 env_logger = { version = "0.8.2" }
 

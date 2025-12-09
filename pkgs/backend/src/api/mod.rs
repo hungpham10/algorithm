@@ -5,8 +5,6 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use log::info;
-
 use actix::Addr;
 use actix_web::web::Data;
 use actix_web::{HttpResponse, Result as HttpResult};
@@ -306,6 +304,7 @@ impl AppState {
             }
             Err(_) => {}
         }
+
         match get_secret_from_infisical(&infisical_client, "AWS_SECRET_ACCESS_KEY", "/").await {
             Ok(secret_key) => {
                 std::env::set_var("AWS_SECRET_ACCESS_KEY", &secret_key);

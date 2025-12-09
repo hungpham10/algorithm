@@ -89,7 +89,14 @@ function boot() {
   sed -i "s/%%HTTP_SERVER%%/$HTTP_SERVER/g" ${NGINX_DIR}/http.d/default.conf
   sed -i "s/%%HTTP_PORT%%/$HTTP_PORT/g" ${NGINX_DIR}/http.d/default.conf
   sed -i "s#%%WOOCOMMERCE_PROTOCOL%%#$WOOCOMMERCE_PROTOCOL#g" ${NGINX_DIR}/http.d/default.conf
+  sed -i "s#%%WOOCOMMERCE_TOKEN%%#$WOOCOMMERCE_TOKEN#g" ${NGINX_DIR}/http.d/default.conf
   sed -i "s#%%WOOCOMMERCE_SERVER%%#$WOOCOMMERCE_SERVER#g" ${NGINX_DIR}/http.d/default.conf
+  sed -i "s#%%WOOCOMMERCE_HOSTNAME%%#$WOOCOMMERCE_HOSTNAME#g" ${NGINX_DIR}/http.d/default.conf
+
+  if [ "${WOOCOMMERCE_PROTOCOL}" != "http" ]; then
+    sed -i '/proxy_ssl_server_name/d' ${NGINX_DIR}/http.d/default.conf
+    sed -i '/proxy_ssl_verify/d' ${NGINX_DIR}/http.d/default.conf
+  fi
 
   # Setup command for the backend
   if [ "${USE_CLOUDFLARE_TUNNEL}" = "true" ]; then
