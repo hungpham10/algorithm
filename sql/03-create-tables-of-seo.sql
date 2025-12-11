@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS `seo_articlemap` (
   `loc` text,
   `title` text,
   `language` varchar(100),
-  `keywords` text,
+  `keywords` text
 );
 
 CREATE TABLE IF NOT EXISTS `seo_tenant` (
