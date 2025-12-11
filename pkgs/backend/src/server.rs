@@ -14,6 +14,23 @@ use log::{error, info};
 use crate::api::{flush, health, lock, synchronize, unlock, AppState};
 
 pub async fn run() -> std::io::Result<()> {
+    // @NOTE: sentry configuration
+    let _ = sentry::init((
+        std::env::var("SENTRY_DSN")
+            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid SENTRY_DSN"))?,
+        sentry::ClientOptions {
+            release: sentry::release_name!(),
+            // Capture all traces and spans. Set to a lower value in production
+            traces_sample_rate: 1.0,
+            // Capture user IPs and potentially sensitive headers when using HTTP server integrations
+            // see https://docs.sentry.io/platforms/rust/data-management/data-collected for more info
+            send_default_pii: true,
+            // Capture all HTTP request bodies, regardless of size
+            max_request_body_size: sentry::MaxRequestBodySize::Always,
+            ..Default::default()
+        },
+    ));
+
     // @NOTE: server configuration
     let host = std::env::var("SERVER_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port = std::env::var("SERVER_PORT")
@@ -68,8 +85,15 @@ pub async fn run() -> std::io::Result<()> {
     // @NOTE: spawn new http server
     let server = HttpServer::new(move || {
         App::new()
+            // @NOTE: monitoring
             .wrap(appstate_for_control.prometheus().clone())
             .wrap(Logger::default())
+            .wrap(
+                sentry::integrations::actix::Sentry::builder()
+                    .capture_server_errors(true) // Capture server errors
+                    .start_transaction(true) // Start a transaction (Sentry root span) for each request
+                    .finish(),
+            )
             // @NOTE: health-check
             .route("/health", get().to(health))
             // @NOTE: APIs for configuration
@@ -85,7 +109,8 @@ pub async fn run() -> std::io::Result<()> {
                         get().to(crate::api::seo::tenant_id),
                     )
                     .route("/v1/seo/features", get().to(crate::api::seo::features))
-                    .route("/v1/seo/sitemap", get().to(crate::api::seo::sitemap)),
+                    .route("/v1/seo/sitemap", get().to(crate::api::seo::sitemap))
+                    .route("/v1/seo/news", get().to(crate::api::seo::news)),
             )
             // @NOTE: APIs of Chat
             .service(

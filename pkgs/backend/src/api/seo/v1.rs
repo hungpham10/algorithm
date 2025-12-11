@@ -37,11 +37,13 @@ pub async fn tenant_id(appstate: Data<Arc<AppState>>, path: Path<String>) -> Res
     if let Some(entity) = appstate.seo_entity() {
         match entity.get_tenant_id(&host).await {
             Ok(id) => Ok(HttpResponse::Ok().body(format!("{}", id))),
-            Err(error) => Ok(HttpResponse::InternalServerError()
-                .body(format!("Failed resolve tenant id: {}", error))),
+            Err(error) => Err(ErrorInternalServerError(format!(
+                "Failed resolve tenant id: {}",
+                error
+            ))),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().body(format!("Not implemented")))
+        Err(ErrorInternalServerError(format!("Not implemented")))
     }
 }
 
@@ -141,17 +143,176 @@ pub async fn sitemap(appstate: Data<Arc<AppState>>, headers: SeoHeaders) -> Resu
                             .map_err(|e| ErrorInternalServerError(e))?,
                     ))
                 } else {
-                    Ok(HttpResponse::InternalServerError().body(format!(
+                    Err(ErrorInternalServerError(format!(
                         "Sitemap is empty for tenant_id {}, host {}",
                         headers.tenant_id, headers.host
                     )))
                 }
             }
-            Err(error) => Ok(HttpResponse::InternalServerError()
-                .body(format!("Failed to get sitemap.xml: {}", error))),
+            Err(error) => Err(ErrorInternalServerError(format!(
+                "Failed to get sitemap.xml: {}",
+                error
+            ))),
         }
     } else {
-        Ok(HttpResponse::InternalServerError().body(format!("Not implemented")))
+        Err(ErrorInternalServerError(format!("Not implemented")))
+    }
+}
+
+pub async fn news(appstate: Data<Arc<AppState>>, headers: SeoHeaders) -> Result<HttpResponse> {
+    if let Some(entity) = appstate.seo_entity() {
+        match entity.list_articles(headers.tenant_id).await {
+            Ok(articles) if !articles.is_empty() => {
+                let mut buffer = Cursor::new(Vec::new());
+                let mut writer = Writer::new(&mut buffer);
+
+                // <?xml version="1.0" encoding="UTF-8"?>
+                writer
+                    .write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None)))
+                    .map_err(ErrorInternalServerError)?;
+
+                // <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+                //         xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
+                let mut urlset = BytesStart::new("urlset");
+                urlset.push_attribute(("xmlns", "http://www.sitemaps.org/schemas/sitemap/0.9"));
+                urlset.push_attribute((
+                    "xmlns:news",
+                    "http://www.google.com/schemas/sitemap-news/0.9",
+                ));
+                writer
+                    .write_event(Event::Start(urlset))
+                    .map_err(ErrorInternalServerError)?;
+
+                for article in articles {
+                    writer
+                        .write_event(Event::Start(BytesStart::new("url")))
+                        .map_err(ErrorInternalServerError)?;
+
+                    // <loc>
+                    writer
+                        .write_event(Event::Start(BytesStart::new("loc")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::Text(BytesText::new(article.loc.as_str())))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::End(BytesEnd::new("loc")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+
+                    // <news>
+                    let mut news_tag = BytesStart::new("news");
+                    news_tag.push_attribute(("news", "news")); // dummy để dễ mở
+                    writer
+                        .write_event(Event::Start(BytesStart::new("news")))
+                        .map_err(ErrorInternalServerError)?;
+
+                    // <publication>
+                    writer
+                        .write_event(Event::Start(BytesStart::new("publication")))
+                        .map_err(ErrorInternalServerError)?;
+
+                    // <name>
+                    writer
+                        .write_event(Event::Start(BytesStart::new("name")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::Text(BytesText::new(article.name.as_str())))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::End(BytesEnd::new("name")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+
+                    // <language>
+                    writer
+                        .write_event(Event::Start(BytesStart::new("language")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::Text(BytesText::new(article.language.as_str())))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::End(BytesEnd::new("language")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+
+                    writer
+                        .write_event(Event::End(BytesEnd::new("publication")))
+                        .map_err(ErrorInternalServerError)?;
+
+                    // <publication_date> - format ISO 8601
+                    let date_str = article
+                        .published_at
+                        .format("%Y-%m-%d")
+                        .to_string();
+                    writer
+                        .write_event(Event::Start(BytesStart::new("publication_date")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::Text(BytesText::new(date_str.as_str())))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::End(BytesEnd::new("publication_date")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+
+                    // <title>
+                    writer
+                        .write_event(Event::Start(BytesStart::new("title")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::Text(BytesText::new(article.title.as_str())))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+                    writer
+                        .write_event(Event::End(BytesEnd::new("title")))
+                        .map_err(|e| ErrorInternalServerError(e))?;
+
+                    // <keywords> (nếu có)
+                    if let Some(keywords) = article.keywords {
+                        writer
+                            .write_event(Event::Start(BytesStart::new("keywords")))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+                        writer
+                            .write_event(Event::Text(BytesText::new(keywords.as_str())))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+                        writer
+                            .write_event(Event::End(BytesEnd::new("keywords")))
+                            .map_err(|e| ErrorInternalServerError(e))?;
+                    }
+
+                    writer
+                        .write_event(Event::End(BytesEnd::new("news")))
+                        .map_err(ErrorInternalServerError)?;
+
+                    writer
+                        .write_event(Event::End(BytesEnd::new("url")))
+                        .map_err(ErrorInternalServerError)?;
+                }
+
+                // </urlset>
+                writer
+                    .write_event(Event::End(BytesEnd::new("urlset")))
+                    .map_err(ErrorInternalServerError)?;
+
+                let xml = String::from_utf8(buffer.into_inner())
+                    .map_err(ErrorInternalServerError)?;
+
+                Ok(HttpResponse::Ok()
+                    .content_type("application/xml; charset=utf-8")
+                    .body(xml))
+            }
+
+            Ok(_) => {
+                Ok(HttpResponse::Ok()
+                    .content_type("application/xml; charset=utf-8")
+                    .body("<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\" xmlns:news=\"http://www.google.com/schemas/sitemap-news/0.9\" />"))
+            }
+
+            Err(error) => Err(ErrorInternalServerError(format!(
+                "Failed to generate news sitemap for tenant {}: {}",
+                headers.tenant_id, error
+            ))),
+        }
+    } else {
+        Err(ErrorInternalServerError(
+            "SEO entity not implemented".to_string(),
+        ))
     }
 }
 

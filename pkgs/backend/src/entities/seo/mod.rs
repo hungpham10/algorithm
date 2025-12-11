@@ -1,6 +1,8 @@
+mod articlemap;
 mod sitemap;
 mod tenant;
 
+pub use articlemap::Entity as Articlemap;
 pub use sitemap::Entity as Sitemap;
 pub use tenant::Entity as Tenant;
 
@@ -15,6 +17,16 @@ use serde::{Deserialize, Serialize};
 
 pub struct Seo {
     db: Vec<Arc<DatabaseConnection>>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Article {
+    pub title: String,
+    pub loc: String,
+    pub name: String,
+    pub language: String,
+    pub keywords: Option<String>,
+    pub published_at: DateTime<Utc>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -69,6 +81,40 @@ impl Seo {
                 priority: *priority,
                 lastmod: *lastmod,
             })
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn list_articles(&self, tenant_id: i32) -> Result<Vec<Article>, DbErr> {
+        Ok(Articlemap::find()
+            .filter(articlemap::Column::TenantId.eq(tenant_id))
+            .select_only()
+            .column(articlemap::Column::Loc)
+            .column(articlemap::Column::Name)
+            .column(articlemap::Column::Title)
+            .column(articlemap::Column::Language)
+            .column(articlemap::Column::Keywords)
+            .column(articlemap::Column::CreatedAt)
+            .into_tuple::<(
+                String,
+                String,
+                String,
+                String,
+                Option<String>,
+                DateTime<Utc>,
+            )>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .iter()
+            .map(
+                |(loc, name, title, language, keywords, published_at)| Article {
+                    loc: loc.clone(),
+                    name: name.clone(),
+                    title: title.clone(),
+                    language: language.clone(),
+                    keywords: keywords.clone(),
+                    published_at: *published_at,
+                },
+            )
             .collect::<Vec<_>>())
     }
 }
