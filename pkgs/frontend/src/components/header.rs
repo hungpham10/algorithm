@@ -1,16 +1,20 @@
 use leptos::prelude::*;
+use serde::{Deserialize, Serialize};
 use web_sys::*;
 
-use super::contents::Contents;
-use super::logo::Logo;
-use super::menu::Menu;
-use super::search::Search;
-use super::Features;
+use super::menu::{Context as MenuContext, Menu};
+use super::Padding;
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Signal {
+    pub menu: MenuContext,
+    pub padding: Padding,
+}
 
 #[component]
 pub fn Header(
     orientation: ReadSignal<OrientationType>,
-    features: ReadSignal<Features>,
+    features: ReadSignal<Signal>,
 ) -> impl IntoView {
     view! {
         <header class="header">
@@ -20,21 +24,7 @@ pub fn Header(
                     features.get().padding.page,
                 )
             }>
-                <div class="container-fluid d-flex align-items-center gap-5">
-                    <Logo features=features/>
-                    {move ||
-                        if orientation.get() == OrientationType::LandscapePrimary {
-                            view! {
-                                <Contents features=features/>
-                                <Search features=features/>
-                            }
-                            .into_any()
-                        } else {
-                            view! { }.into_any()
-                        }
-                    }
-                    <Menu features=features/>
-                </div>
+                <Menu orientation=orientation features=features/>
             </nav>
             <div class="line-gradient rounded-pill"></div>
         </header>
