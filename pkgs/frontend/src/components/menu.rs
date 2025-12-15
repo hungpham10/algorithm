@@ -1,32 +1,57 @@
 use leptos::prelude::*;
+use serde::{Deserialize, Serialize};
+use web_sys::*;
 
-use super::Features;
+use super::dropdown::{Context as DropdownContext, Dropdown};
+use super::header::Signal as HeaderFeatures;
+use super::logo::{Context as LogoContext, Logo};
+use super::search::{Context as SearchContext, Search};
+use super::vertical::{Context as VerticalContext, Vertical};
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Context {
+    pub logo: LogoContext,
+    pub search: Option<SearchContext>,
+    pub dropdown: Option<DropdownContext>,
+    pub vertical: Option<VerticalContext>,
+}
 
 #[component]
-pub fn Menu(features: ReadSignal<Features>) -> impl IntoView {
+pub fn Menu(
+    orientation: ReadSignal<OrientationType>,
+    features: ReadSignal<HeaderFeatures>,
+) -> impl IntoView {
     view! {
-        {
-            if features.get().menu.len() > 0 {
-                view! {
-                    <div class="dropdown">
-                        <div class="dropdown-button">"|||"</div>
-                        <div class="dropdown-content" aria-labelledby="categoriesDropdown">
-                        {
-                            features.get().menu.into_iter()
-                                .map(|item| view! {
-                                    <div class="header-shadow-div border-1 rounded-5 w-45">
-                                        <div class="px-3 pb-2 pt-2">{item}</div>
-                                    </div>
-                                })
-                                .collect::<Vec<_>>()
+        <div class="container-fluid d-flex align-items-center gap-5">
+            <Logo features=features/>
+            {move ||
+                if features.get().menu.vertical.is_some() {
+                    if orientation.get() == OrientationType::LandscapePrimary {
+                        view! {
+                            <Search features=features/>
+                            <Vertical features=features/>
                         }
-                        </div>
-                    </div>
+                        .into_any()
+                    } else {
+                        view! {
+                            <Vertical features=features/>
+                        }
+                        .into_any()
+                    }
+                } else {
+                    view! { }.into_any()
                 }
-                .into_any()
-            } else {
-                view! { }.into_any()
             }
-        }
+            {move ||
+                if features.get().menu.dropdown.is_some() {
+                    view! {
+                        <Dropdown features=features/>
+                    }
+                    .into_any()
+                } else {
+                    view! { }.into_any()
+                }
+            }
+        </div>
     }
 }
