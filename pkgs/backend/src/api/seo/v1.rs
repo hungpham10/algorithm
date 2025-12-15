@@ -321,8 +321,23 @@ pub async fn file(
     path: Path<String>,
     headers: SeoHeaders,
 ) -> Result<HttpResponse> {
-    // Extract kind and id from the path
-    let path_in_str = format!("{}/{}", headers.host, path.into_inner());
+    let path = path.into_inner();
+    let key = format!("seo_file:{}:{}", headers.host, path);
+
+    let path_in_str = match appstate.get(&key).await {
+        Ok(value) => value,
+        Err(_) => {
+            if let Some(entity) = appstate.seo_entity() {
+                if let Ok(path) = entity.get_full_path(headers.tenant_id, &path).await {
+                    format!("{}/{}", headers.host, path)
+                } else {
+                    format!("{}/{}", headers.host, path)
+                }
+            } else {
+                format!("{}/{}", headers.host, path)
+            }
+        }
+    };
 
     // @TODO: to support A/B testing, must design muxing here to do that
 
@@ -352,6 +367,10 @@ pub async fn file(
             )
         }
     };
+
+    if let Err(e) = appstate.set(&key, &path_in_str, 86400).await {
+        log::warn!("Failed to cache response for key {}: {}", key, e);
+    }
 
     // Build the streaming response
     Ok(HttpResponse::Ok().streaming(Stream(response.body)))
