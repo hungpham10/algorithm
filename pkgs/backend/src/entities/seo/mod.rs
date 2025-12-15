@@ -1,8 +1,10 @@
 mod articlemap;
+mod filemap;
 mod sitemap;
 mod tenant;
 
 pub use articlemap::Entity as Articlemap;
+pub use filemap::Entity as Filemap;
 pub use sitemap::Entity as Sitemap;
 pub use tenant::Entity as Tenant;
 
@@ -59,6 +61,24 @@ impl Seo {
             None => Err(DbErr::Query(RuntimeErr::Internal(format!(
                 "Not found host {}",
                 host,
+            )))),
+        }
+    }
+
+    pub async fn get_full_path(&self, tenant_id: i32, path: &String) -> Result<String, DbErr> {
+        match Filemap::find()
+            .filter(filemap::Column::TenantId.eq(tenant_id))
+            .filter(filemap::Column::Src.eq(path))
+            .select_only()
+            .column(filemap::Column::Dest)
+            .into_tuple::<String>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some(dest) => Ok(dest),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Not found path {}",
+                path,
             )))),
         }
     }
