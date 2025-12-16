@@ -27,9 +27,7 @@ CREATE TABLE IF NOT EXISTS `seo_filemap` (
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `src` varchar(2048) NOT NULL,
   `dest` varchar(2048) NOT NULL,
-  UNIQUE KEY `uk_tenant_src` (`tenant_id`, `src`(255)),
   INDEX `idx_tenant_id` (`tenant_id`),
-  FOREIGN KEY (`tenant_id`) REFERENCES `seo_tenant`(`id`)
 );
 
 CREATE TABLE IF NOT EXISTS `seo_tenant` (

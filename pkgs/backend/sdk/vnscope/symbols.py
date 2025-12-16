@@ -242,16 +242,10 @@ class Symbols:
         timelines = [
             (
                 min(
-                    [
-                        block[0][0] - overlap if len(block) > 0 else 0
-                        for block in timeline
-                    ]
+                    [block[0][0] if len(block) > 0 else 0 for block in timeline] or [0]
                 ),
                 max(
-                    [
-                        block[0][1] - overlap if len(block) > 0 else 0
-                        for block in timeline
-                    ]
+                    [block[0][1] if len(block) > 0 else 0 for block in timeline] or [0]
                 ),
             )
             for timeline in data.get("timelines", [])
