@@ -1383,7 +1383,7 @@ dependencies = [
 
 [[package]]
 name = "backend"
-version = "1.0.58"
+version = "1.0.59"
 dependencies = [
  "actix",
  "actix-rt",
@@ -3017,7 +3017,6 @@ dependencies = [
  "gloo-events",
  "gtag-js",
  "leptos",
- "leptos_router",
  "log",
  "reqwest 0.12.23",
  "serde",
@@ -4528,42 +4527,6 @@ dependencies = [
  "server_fn_macro",
  "syn 2.0.106",
  "uuid 1.18.1",
-]
-
-[[package]]
-name = "leptos_router"
-version = "0.8.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfd675546710e67855983437202e09b137ea60588dbb86e7fc0671f618577b73"
-dependencies = [
- "any_spawner",
- "either_of",
- "futures",
- "gloo-net",
- "js-sys",
- "leptos",
- "leptos_router_macro",
- "or_poisoned",
- "reactive_graph",
- "rustc_version",
- "send_wrapper",
- "tachys",
- "thiserror 2.0.17",
- "url",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
-name = "leptos_router_macro"
-version = "0.8.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "409c0bd99f986c3cfa1a4db2443c835bc602ded1a12784e22ecb28c3ed5a2ae2"
-dependencies = [
- "proc-macro-error2",
- "proc-macro2",
- "quote",
- "syn 2.0.106",
 ]
 
 [[package]]
