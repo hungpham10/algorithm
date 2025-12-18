@@ -495,36 +495,75 @@ pub async fn get_list_of_symbols(
     path: Path<(String,)>,
 ) -> Result<HttpResponse> {
     let (broker,) = path.into_inner();
-    if let Some(entity) = appstate.ohcl_entity() {
+    let key = format!("symbols_list:{}", broker);
+
+    match appstate.get(&key).await {
+        Ok(value) if !value.is_empty() => match serde_json::from_str::<OhclResponse>(&value) {
+            Ok(response) => {
+                if response.error.is_none() {
+                    return Ok(HttpResponse::Ok().json(response));
+                }
+            }
+            Err(_) => {}
+        },
+        Err(_) => {}
+        _ => {}
+    }
+
+    let response = if let Some(entity) = appstate.ohcl_entity() {
         match entity.is_broker_enabled(&broker).await {
             Ok(ok) => {
                 if ok {
-                    return match broker.as_str() {
-                        "stock" => Ok(HttpResponse::Ok().json(OhclResponse {
+                    match broker.as_str() {
+                        "stock" => OhclResponse {
                             symbols: Some(list_of_hose().await),
                             ..Default::default()
-                        })),
-                        "crypto" => Ok(HttpResponse::Ok().json(OhclResponse {
+                        },
+                        "crypto" => OhclResponse {
                             symbols: Some(list_crypto().await),
                             ..Default::default()
-                        })),
-                        &_ => Err(ErrorInternalServerError(OhclResponse {
+                        },
+                        &_ => OhclResponse {
                             error: Some(format!("Broker {} is not exist", broker)),
                             ..Default::default()
-                        })),
-                    };
+                        },
+                    }
+                } else {
+                    OhclResponse {
+                        error: Some(format!("Broker {} has been blocked", broker)),
+                        ..Default::default()
+                    }
                 }
             }
-            Err(error) => {
-                error!("Fail to perform in db: {}", error);
+            Err(error) => OhclResponse {
+                error: Some(format!("Broker {} return error: {}", broker, error)),
+                ..Default::default()
+            },
+        }
+    } else {
+        OhclResponse {
+            error: Some(format!("Database is not configured")),
+            ..Default::default()
+        }
+    };
+
+    // Cache successful responses only (TTL: 1 day = 86400 seconds)
+    if response.error.is_none() {
+        if let Ok(json_str) = serde_json::to_string(&response) {
+            if let Err(e) = appstate.set(&key, &json_str, 86400).await {
+                log::warn!("Failed to cache response for key {}: {}", key, e);
             }
+        } else {
+            log::warn!("Failed to serialize response for caching");
         }
     }
 
-    Err(ErrorInternalServerError(OhclResponse {
-        error: Some(format!("Broker {} has been blocked", broker)),
-        ..Default::default()
-    }))
+    // Return response
+    if response.error.is_some() {
+        Err(ErrorInternalServerError(response))
+    } else {
+        Ok(HttpResponse::Ok().json(response))
+    }
 }
 
 pub async fn get_list_of_product_by_broker(
