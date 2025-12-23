@@ -43,6 +43,7 @@ default = [
 	"hex",
 	"sha2",
 	"infisical",
+	"aes-gcm",
 	"clap",
 	"clap_derive",
 ]
@@ -113,6 +114,7 @@ hex = { version = "0.4.3", optional = true }
 sha2 = { version = "0.10", optional = true }
 quick-xml = { version = "0.31", optional = true }
 actix-web = { version = "4.3.1", optional = true }
+aes-gcm = { version = "0.10.3", optional = true }
 sentry = { version = "0.46.0", features = ["actix"], optional = true }
 redis = { version = "0.32.5", optional = true, features = ["aio", "tokio-comp"] }
 env_logger = { version = "0.8.2" }
