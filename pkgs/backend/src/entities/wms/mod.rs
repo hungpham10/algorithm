@@ -17,7 +17,6 @@ use stock_shelves::Entity as StockShelves;
 use stocks::Entity as Stocks;
 
 use std::collections::{HashMap, HashSet};
-use std::convert::TryFrom;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::sync::Arc;
 
@@ -66,8 +65,10 @@ impl Default for Stock {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(i32)]
-enum LotStatus {
+pub enum LotStatus {
+    Unknown,
     Unavailable,
     Planing,
     Transporting,
@@ -76,41 +77,57 @@ enum LotStatus {
     Returned,
 }
 
-impl TryFrom<i32> for LotStatus {
-    type Error = String;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
+impl From<i32> for LotStatus {
+    fn from(value: i32) -> Self {
         match value {
-            0 => Ok(LotStatus::Unavailable),
-            1 => Ok(LotStatus::Planing),
-            2 => Ok(LotStatus::Transporting),
-            3 => Ok(LotStatus::Available),
-            4 => Ok(LotStatus::Outdated),
-            5 => Ok(LotStatus::Returned),
-            _ => Err(format!("Invalid state({}) for lot", value)),
+            0 => LotStatus::Unavailable,
+            1 => LotStatus::Planing,
+            2 => LotStatus::Transporting,
+            3 => LotStatus::Available,
+            4 => LotStatus::Outdated,
+            5 => LotStatus::Returned,
+            _ => LotStatus::Unknown,
         }
     }
 }
 
-impl TryFrom<String> for LotStatus {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
+impl From<String> for LotStatus {
+    fn from(value: String) -> Self {
         match value.as_str() {
-            "Unavailable" => Ok(LotStatus::Unavailable),
-            "On planing" => Ok(LotStatus::Planing),
-            "On transporting" => Ok(LotStatus::Transporting),
-            "Available" => Ok(LotStatus::Available),
-            "Outdated" => Ok(LotStatus::Outdated),
-            "Being returned" => Ok(LotStatus::Returned),
-            _ => Err(format!("Invalid state({}) for lot", value)),
+            "Unavailable" => LotStatus::Unavailable,
+            "On planing" => LotStatus::Planing,
+            "On transporting" => LotStatus::Transporting,
+            "Available" => LotStatus::Available,
+            "Outdated" => LotStatus::Outdated,
+            "Being returned" => LotStatus::Returned,
+            _ => LotStatus::Unknown,
         }
+    }
+}
+
+impl serde::Serialize for LotStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for LotStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(LotStatus::from(s))
     }
 }
 
 impl Display for LotStatus {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
+            LotStatus::Unknown => write!(f, "Error"),
             LotStatus::Unavailable => write!(f, "Unavailable"),
             LotStatus::Planing => write!(f, "On planing"),
             LotStatus::Transporting => write!(f, "On transporting"),
@@ -136,7 +153,7 @@ pub struct Lot {
     pub cost_price: Option<f64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
+    pub status: Option<LotStatus>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub supplier: Option<String>,
@@ -182,9 +199,12 @@ impl Default for Shelf {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(i32)]
-enum ItemStatus {
+pub enum ItemStatus {
+    Unknown,
     Unavailable,
+    Plan,
     Available,
     Damaged,
     Outdated,
@@ -192,40 +212,60 @@ enum ItemStatus {
     Returned,
 }
 
-impl TryFrom<i32> for ItemStatus {
-    type Error = String;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
+impl From<i32> for ItemStatus {
+    fn from(value: i32) -> Self {
         match value {
-            0 => Ok(ItemStatus::Unavailable),
-            1 => Ok(ItemStatus::Available),
-            2 => Ok(ItemStatus::Damaged),
-            3 => Ok(ItemStatus::Outdated),
-            4 => Ok(ItemStatus::Saled),
-            5 => Ok(ItemStatus::Returned),
-            _ => Err(format!("Invalid state({}) for item", value)),
+            0 => ItemStatus::Unavailable,
+            1 => ItemStatus::Plan,
+            2 => ItemStatus::Available,
+            3 => ItemStatus::Damaged,
+            4 => ItemStatus::Outdated,
+            5 => ItemStatus::Saled,
+            6 => ItemStatus::Returned,
+            _ => ItemStatus::Unknown,
         }
     }
 }
 
-impl TryFrom<String> for ItemStatus {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
+impl From<String> for ItemStatus {
+    fn from(value: String) -> Self {
         match value.as_str() {
-            "Unavailable" => Ok(ItemStatus::Unavailable),
-            "Available" => Ok(ItemStatus::Available),
-            "Being damaged" => Ok(ItemStatus::Damaged),
-            "Being saled" => Ok(ItemStatus::Saled),
-            "Being returned" => Ok(ItemStatus::Returned),
-            "Outdated" => Ok(ItemStatus::Outdated),
-            _ => Err(format!("Invalid state({}) for lot", value)),
+            "Unavailable" => ItemStatus::Unavailable,
+            "Available" => ItemStatus::Available,
+            "Being damaged" => ItemStatus::Damaged,
+            "Being saled" => ItemStatus::Saled,
+            "Being returned" => ItemStatus::Returned,
+            "Outdated" => ItemStatus::Outdated,
+            "Being planed" => ItemStatus::Plan,
+            _ => ItemStatus::Unknown,
         }
     }
 }
+
+impl<'de> Deserialize<'de> for ItemStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(ItemStatus::from(s))
+    }
+}
+
+impl serde::Serialize for ItemStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
 impl Display for ItemStatus {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
+            ItemStatus::Unknown => write!(f, "Errored"),
+            ItemStatus::Plan => write!(f, "Being planed"),
             ItemStatus::Unavailable => write!(f, "Unavailable"),
             ItemStatus::Available => write!(f, "Available"),
             ItemStatus::Damaged => write!(f, "Being damaged"),
@@ -260,7 +300,7 @@ pub struct Item {
     pub barcode: Option<String>,
 
     pub cost_price: f64,
-    pub status: String,
+    pub status: ItemStatus,
 }
 
 impl Default for Item {
@@ -274,7 +314,7 @@ impl Default for Item {
             stock_id: None,
             barcode: None,
             cost_price: 0.0,
-            status: ItemStatus::Unavailable.to_string(),
+            status: ItemStatus::Unavailable,
         }
     }
 }
@@ -306,8 +346,10 @@ impl Default for Sale {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(i32)]
 enum SaleStatus {
+    Unknown,
     Failed,
     Paid,
     Delivered,
@@ -316,25 +358,57 @@ enum SaleStatus {
     Done,
 }
 
-impl TryFrom<i32> for SaleStatus {
-    type Error = String;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
+impl From<i32> for SaleStatus {
+    fn from(value: i32) -> Self {
         match value {
-            0 => Ok(SaleStatus::Failed),
-            1 => Ok(SaleStatus::Done),
-            2 => Ok(SaleStatus::Paid),
-            3 => Ok(SaleStatus::Delivered),
-            4 => Ok(SaleStatus::Returned),
-            5 => Ok(SaleStatus::Refunded),
-            _ => Err(format!("Invalid state({}) for item", value)),
+            0 => SaleStatus::Failed,
+            1 => SaleStatus::Done,
+            2 => SaleStatus::Paid,
+            3 => SaleStatus::Delivered,
+            4 => SaleStatus::Returned,
+            5 => SaleStatus::Refunded,
+            _ => SaleStatus::Unknown,
         }
+    }
+}
+
+impl From<String> for SaleStatus {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "Failed" => SaleStatus::Failed,
+            "Done" => SaleStatus::Done,
+            "Paid" => SaleStatus::Paid,
+            "Delivered" => SaleStatus::Delivered,
+            "Returned" => SaleStatus::Returned,
+            "Refunded" => SaleStatus::Refunded,
+            _ => SaleStatus::Unknown,
+        }
+    }
+}
+
+impl serde::Serialize for SaleStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for SaleStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(SaleStatus::from(s))
     }
 }
 
 impl Display for SaleStatus {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
+            SaleStatus::Unknown => write!(f, "Error"),
             SaleStatus::Failed => write!(f, "Failed"),
             SaleStatus::Done => write!(f, "Done"),
             SaleStatus::Paid => write!(f, "Paid"),
@@ -343,6 +417,98 @@ impl Display for SaleStatus {
             SaleStatus::Refunded => write!(f, "Refunded"),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[repr(i32)]
+enum OrderType {
+    Unknown,
+    Online,
+    Offline,
+}
+
+impl From<String> for OrderType {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "online" => OrderType::Online,
+            "store" => OrderType::Offline,
+            _ => OrderType::Unknown,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for OrderType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(OrderType::from(s))
+    }
+}
+
+impl Display for OrderType {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            OrderType::Online => write!(f, "online"),
+            OrderType::Offline => write!(f, "store"),
+            OrderType::Unknown => write!(f, "unkknow"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[repr(i32)]
+enum OrderStatus {
+    Unknown,
+    Picking,
+    Packing,
+    Shiping,
+    Returning,
+    Done,
+}
+
+impl From<String> for OrderStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "picking" => OrderStatus::Picking,
+            "packing" => OrderStatus::Packing,
+            "shiping" => OrderStatus::Shiping,
+            "returing" => OrderStatus::Returning,
+            "done" => OrderStatus::Done,
+            _ => OrderStatus::Unknown,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for OrderStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(OrderStatus::from(s))
+    }
+}
+
+impl Display for OrderStatus {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            OrderStatus::Unknown => write!(f, "unknown"),
+            OrderStatus::Picking => write!(f, "picking"),
+            OrderStatus::Packing => write!(f, "packing"),
+            OrderStatus::Shiping => write!(f, "shipping"),
+            OrderStatus::Returning => write!(f, "returning"),
+            OrderStatus::Done => write!(f, "done"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Order {
+    order_id: i32,
+    from: OrderType,
+    status: OrderStatus,
 }
 
 pub struct Wms {
@@ -457,18 +623,7 @@ impl Wms {
                 entry_date: Set(l.entry_date.unwrap_or_else(chrono::Utc::now)),
                 cost_price: Set(l.cost_price),
                 status: Set(Some(
-                    LotStatus::try_from(
-                        l.status
-                            .clone()
-                            .unwrap_or(LotStatus::Unavailable.to_string()),
-                    )
-                    .map_err(|error| {
-                        DbErr::Custom(format!(
-                            "Fail with status of lot {}: {}",
-                            l.lot_number.clone(),
-                            error
-                        ))
-                    })? as i32,
+                    LotStatus::from(l.status.clone().unwrap_or(LotStatus::Unavailable)) as i32,
                 )),
                 ..Default::default()
             })
@@ -627,9 +782,7 @@ impl Wms {
                 id: Some(id),
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
-                status: ItemStatus::try_from(status)
-                    .map_err(|error| DbErr::Custom(format!("Invalid status: {:?}", error,)))?
-                    .to_string(),
+                status: ItemStatus::from(status),
                 ..Default::default()
             });
         }
@@ -681,9 +834,7 @@ impl Wms {
                 item_id
             )))?];
             let stock_id = item.stock_id;
-            let status = ItemStatus::try_from(item.status.clone())
-                .map_err(|error| DbErr::Custom(format!("Failed to parse item status: {}", error)))?
-                as i32;
+            let status = ItemStatus::from(item.status.clone()) as i32;
 
             if valid_items.contains(&item_id) {
                 let mut update_query =
@@ -913,16 +1064,7 @@ impl Wms {
                     entry_date: None,
                     expired_date: None,
                     cost_price: Some(cost_price),
-                    status: Some(
-                        LotStatus::try_from(lot_status)
-                            .map_err(|error| {
-                                DbErr::Query(RuntimeErr::Internal(format!(
-                                    "Lot with id {} face issue: {}",
-                                    lot_id, error,
-                                )))
-                            })?
-                            .to_string(),
-                    ),
+                    status: Some(LotStatus::from(lot_status)),
                     supplier: lot_supplier.clone(),
                     lot_number,
                     quantity: stock_entry_quantity,
@@ -1004,12 +1146,7 @@ impl Wms {
             .await?;
 
         if let Some(result) = result {
-            let status = LotStatus::try_from(result.status.unwrap_or(0)).map_err(|error| {
-                DbErr::Query(RuntimeErr::Internal(format!(
-                    "Lot with id {} face issue: {}",
-                    lot_id, error,
-                )))
-            })?;
+            let status = LotStatus::from(result.status.unwrap_or(0));
 
             Ok(Lot {
                 id: Some(result.id),
@@ -1019,7 +1156,7 @@ impl Wms {
                 quantity: result.quantity,
                 cost_price: result.cost_price,
                 supplier: result.supplier.clone(),
-                status: Some(status.to_string()),
+                status: Some(status),
             })
         } else {
             Err(DbErr::Query(RuntimeErr::Internal(format!(
@@ -1095,7 +1232,11 @@ impl Wms {
                     entry_date: Some(entry_date),
                     expired_date: None,
                     cost_price: Some(cost_price),
-                    status: status,
+                    status: if let Some(status) = status {
+                        Some(LotStatus::from(status))
+                    } else {
+                        None
+                    },
                     supplier: supplier,
                     lot_number: lot_number,
                     quantity: quantity,
@@ -1274,12 +1415,11 @@ impl Wms {
 
                 id: Some(id),
                 barcode: Some(barcode.clone()),
-                status: (if order_id.is_none() {
-                    "in-stock"
+                status: if order_id.is_none() {
+                    ItemStatus::Available
                 } else {
-                    "sold-out"
-                })
-                .to_string(),
+                    ItemStatus::Saled
+                },
             })
         } else {
             Err(DbErr::Query(RuntimeErr::Internal(format!(
@@ -1555,7 +1695,7 @@ mod tests {
             entry_date: Some(Utc::now()),
             expired_date: None,
             cost_price: Some(15.0),
-            status: Some("Available".to_string()),
+            status: Some(LotStatus::Available),
             supplier: Some("Supplier 1".to_string()),
             lot_number: "LOT001".to_string(),
             quantity: 100,
@@ -1586,7 +1726,7 @@ mod tests {
             entry_date: Some(Utc::now()),
             expired_date: None,
             cost_price: Some(15.0),
-            status: Some("Available".to_string()),
+            status: Some(LotStatus::Available),
             supplier: Some("Supplier 1".to_string()),
             lot_number: "LOT001".to_string(),
             quantity: 100,
@@ -1597,7 +1737,7 @@ mod tests {
         let fetched = wms.get_lot(tenant_id, lot_id).await.unwrap();
         assert_eq!(fetched.lot_number, "LOT001");
         assert_eq!(fetched.quantity, 100);
-        assert_eq!(fetched.status.unwrap(), "Available");
+        assert_eq!(fetched.status.unwrap(), LotStatus::Available);
     }
 
     #[tokio::test]
@@ -1625,7 +1765,7 @@ mod tests {
             entry_date: Some(Utc::now()),
             expired_date: None,
             cost_price: Some(15.0),
-            status: Some("Available".to_string()),
+            status: Some(LotStatus::Available),
             supplier: Some("Supplier".to_string()),
             lot_number: "LOT001".to_string(),
             quantity: 100,
@@ -1664,7 +1804,7 @@ mod tests {
             entry_date: Some(Utc::now()),
             expired_date: None,
             cost_price: Some(10.0),
-            status: Some("Available".to_string()),
+            status: Some(LotStatus::Available),
             supplier: Some("Supplier".to_string()),
             lot_number: "LOT001".to_string(),
             quantity: 5,
@@ -1682,7 +1822,7 @@ mod tests {
                 stock_id: Some(stock_id),
                 barcode: Some("BAR001".to_string()),
                 cost_price: 10.0,
-                status: "plan".to_string(),
+                status: ItemStatus::Plan,
             };
             3
         ];
@@ -1750,7 +1890,7 @@ mod tests {
                     entry_date: Some(Utc::now()),
                     expired_date: None,
                     cost_price: Some(10.0),
-                    status: Some("Available".to_string()),
+                    status: Some(LotStatus::Available),
                     supplier: Some("Supp".to_string()),
                     lot_number: "LOT001".to_string(),
                     quantity: 3,
@@ -1769,7 +1909,7 @@ mod tests {
                 stock_id: Some(stock_id),
                 barcode: None,
                 cost_price: 10.0,
-                status: "plan".to_string(),
+                status: ItemStatus::Plan,
             };
             3
         ];
@@ -1783,7 +1923,7 @@ mod tests {
         for (i, item) in import_items.iter_mut().enumerate() {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
-            item.status = ItemStatus::Available.to_string();
+            item.status = ItemStatus::Available;
             item.barcode = Some(format!("BAR{:03}", i + 1));
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
@@ -1853,7 +1993,7 @@ mod tests {
                     entry_date: Some(Utc::now()),
                     expired_date: None,
                     cost_price: Some(10.0),
-                    status: Some("Available".to_string()),
+                    status: Some(LotStatus::Available),
                     supplier: Some("Supp".to_string()),
                     lot_number: "LOT001".to_string(),
                     quantity: 2,
@@ -1872,7 +2012,7 @@ mod tests {
                 stock_id: Some(stock_id),
                 barcode: Some("BAR001".to_string()),
                 cost_price: 10.0,
-                status: "available".to_string(),
+                status: ItemStatus::Available,
             };
             2
         ];
@@ -1883,7 +2023,7 @@ mod tests {
         for (i, item) in import_items.iter_mut().enumerate() {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
-            item.status = ItemStatus::Available.to_string();
+            item.status = ItemStatus::Available;
             item.barcode = Some(format!("BAR{:03}", i + 1));
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
@@ -1953,7 +2093,7 @@ mod tests {
                     entry_date: Some(Utc::now()),
                     expired_date: None,
                     cost_price: Some(10.0),
-                    status: Some("Available".to_string()),
+                    status: Some(LotStatus::Available),
                     supplier: Some("Supp".to_string()),
                     lot_number: "LOT001".to_string(),
                     quantity: 1,
@@ -1982,7 +2122,7 @@ mod tests {
             stock_id: Some(stock_id),
             barcode: Some("BAR123".to_string()),
             cost_price: 10.0,
-            status: "in-stock".to_string(),
+            status: ItemStatus::Available,
         };
         let created_items = wms
             .plan_import_new_items(tenant_id, &[item.clone()])
@@ -1993,7 +2133,7 @@ mod tests {
         for (i, item) in import_items.iter_mut().enumerate() {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
-            item.status = ItemStatus::Available.to_string();
+            item.status = ItemStatus::Available;
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
 
@@ -2010,7 +2150,7 @@ mod tests {
             .unwrap();
         assert_eq!(fetched.barcode.unwrap(), "BAR123");
         assert_eq!(fetched.lot_number.unwrap(), "LOT001");
-        assert_eq!(fetched.status, "in-stock");
+        assert_eq!(fetched.status, ItemStatus::Available);
     }
 
     #[tokio::test]
@@ -2062,7 +2202,7 @@ mod tests {
                     entry_date: Some(Utc::now()),
                     expired_date: None,
                     cost_price: Some(10.0),
-                    status: Some("Available".to_string()),
+                    status: Some(LotStatus::Available),
                     supplier: Some("Supp".to_string()),
                     lot_number: "LOT001".to_string(),
                     quantity: 2,
@@ -2081,7 +2221,7 @@ mod tests {
                 stock_id: Some(stock_id),
                 barcode: Some("BAR001".to_string()),
                 cost_price: 10.0,
-                status: ItemStatus::Available.to_string(),
+                status: ItemStatus::Available,
             },
             Item {
                 id: None,
@@ -2092,7 +2232,7 @@ mod tests {
                 stock_id: Some(stock_id),
                 barcode: Some("BAR002".to_string()),
                 cost_price: 10.0,
-                status: ItemStatus::Available.to_string(),
+                status: ItemStatus::Available,
             },
         ];
         let created_items = wms.plan_import_new_items(tenant_id, &items).await.unwrap();
@@ -2102,7 +2242,7 @@ mod tests {
         for (i, item) in import_items.iter_mut().enumerate() {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
-            item.status = ItemStatus::Available.to_string();
+            item.status = ItemStatus::Available;
             item.barcode = Some(format!("BAR{:03}", i + 1));
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
@@ -2130,8 +2270,7 @@ mod tests {
             .unwrap();
         assert!(fetched_items
             .iter()
-            .all(|i| ItemStatus::try_from(i.status).unwrap().to_string()
-                == ItemStatus::Saled.to_string()));
+            .all(|i| ItemStatus::from(i.status) == ItemStatus::Saled));
         assert!(fetched_items.iter().all(|i| i.order_id == Some(123)));
     }
 
@@ -2278,7 +2417,7 @@ mod tests {
                 lot_number: "LOT001".to_string(),
                 quantity: 50,
                 cost_price: Some(10.0),
-                status: Some("Available".to_string()),
+                status: Some(LotStatus::Available),
                 supplier: Some("Supplier A".to_string()),
                 entry_date: Some(Utc::now()),
                 ..Default::default()
@@ -2287,7 +2426,7 @@ mod tests {
                 lot_number: "LOT002".to_string(),
                 quantity: 30,
                 cost_price: Some(15.0),
-                status: Some("Available".to_string()),
+                status: Some(LotStatus::Available),
                 supplier: Some("Supplier B".to_string()),
                 entry_date: Some(Utc::now()),
                 ..Default::default()
@@ -2302,7 +2441,7 @@ mod tests {
                 stock_id: Some(stock1_id),
                 lot_id: Some(lot1_id),
                 cost_price: 10.0,
-                status: "plan".to_string(),
+                status: ItemStatus::Plan,
                 ..Default::default()
             };
             20  // Part of lot1 for stock1
@@ -2311,7 +2450,7 @@ mod tests {
         let mut import_items1 = created_items1.clone();
         for item in import_items1.iter_mut() {
             item.shelf = Some("Shelf A".to_string());
-            item.status = ItemStatus::Available.to_string();
+            item.status = ItemStatus::Available;
             item.barcode = Some("BAR1".to_string());
         }
         wms.import_real_items(tenant_id, lot1_id, &import_items1)
@@ -2325,7 +2464,7 @@ mod tests {
                 stock_id: Some(stock2_id),
                 lot_id: Some(lot2_id),
                 cost_price: 15.0,
-                status: "plan".to_string(),
+                status: ItemStatus::Plan,
                 ..Default::default()
             };
             10  // Part of lot2 for stock2
@@ -2334,7 +2473,7 @@ mod tests {
         let mut import_items2 = created_items2.clone();
         for item in import_items2.iter_mut() {
             item.shelf = Some("Shelf B".to_string());
-            item.status = ItemStatus::Available.to_string();
+            item.status = ItemStatus::Available;
             item.barcode = Some("BAR2".to_string());
         }
         wms.import_real_items(tenant_id, lot2_id, &import_items2)

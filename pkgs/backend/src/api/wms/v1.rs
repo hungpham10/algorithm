@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::api::AppState;
-use crate::entities::wms::{Item, Lot, Sale, Shelf, Stock};
+use crate::entities::wms::{Item, ItemStatus, Lot, Sale, Shelf, Stock};
 
 use super::WmsHeaders;
 
@@ -553,7 +553,7 @@ pub async fn plan_item_for_new_lot(
                                 stock_id: it.id,
                                 lot_id: Some(lot_id),
                                 cost_price: it.cost_price.unwrap_or(0.0),
-                                status: "plan".to_string(),
+                                status: ItemStatus::Plan,
                                 barcode: None,
                             })
                             .collect::<Vec<_>>(),
@@ -708,6 +708,23 @@ pub async fn get_item_by_barcode(
             ..Default::default()
         }))
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UpdateItemStatusRequest {}
+
+pub async fn update_healthy_status_of_item(
+    path: Path<(i64, String)>,
+    report: Json<UpdateItemStatusRequest>,
+    appstate: Data<Arc<AppState>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    let (shelf_id, barcode) = path.into_inner();
+
+    Err(ErrorInternalServerError(WmsResponse {
+        error: Some(format!("Not implemented")),
+        ..Default::default()
+    }))
 }
 
 pub async fn process_offline_sale(
