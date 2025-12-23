@@ -2,7 +2,7 @@ use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 
 use actix_web::middleware::Logger;
-use actix_web::web::{get, post, put, scope, Data};
+use actix_web::web::{get, patch, post, put, scope, Data};
 use actix_web::{App, HttpServer};
 
 use tokio::signal::unix::{signal, SignalKind};
@@ -195,6 +195,10 @@ pub async fn run() -> std::io::Result<()> {
                     )
                     .route(
                         "/v1/wms/shelves",
+                        post().to(crate::api::wms::v1::create_shelves),
+                    )
+                    .route(
+                        "/v1/wms/shelves",
                         get().to(crate::api::wms::v1::list_shelves),
                     )
                     .route(
@@ -206,8 +210,8 @@ pub async fn run() -> std::io::Result<()> {
                         post().to(crate::api::wms::v1::assign_item_to_shelf),
                     )
                     .route(
-                        "/v1/wms/shelves",
-                        post().to(crate::api::wms::v1::create_shelves),
+                        "/v1/wms/shelves/{shelve_id}/item/{barcode}",
+                        patch().to(crate::api::wms::v1::update_healthy_status_of_item),
                     )
                     .route(
                         "/v1/wms/sales/offline",
