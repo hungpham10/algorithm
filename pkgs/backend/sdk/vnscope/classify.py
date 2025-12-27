@@ -53,6 +53,8 @@ class ClassifyVolumeProfile:
         enable_inverst_ranges=False,
         fill_ranges=True,
         show_poc_only=False,
+        max_breaking_trend=4,
+        max_thush_trend=2,
     ):
         import pandas as pd
         import numpy as np
@@ -70,6 +72,7 @@ class ClassifyVolumeProfile:
         candlesticks = self.symbols.price(
             symbol, broker, self.resolution, from_time, to_time
         ).to_pandas()
+
         consolidated, levels, ranges, timelines = self.symbols.heatmap(
             symbol,
             broker,
@@ -107,6 +110,7 @@ class ClassifyVolumeProfile:
         price_df["Marker"] = np.where(
             price_df["High_Vol"], price_df["High"] * 1.01, np.nan
         )
+
         max_idx = price_df[price_df["High_Vol"]]["Volume"].idxmax()
         price_df["Max_Marker"] = np.nan
         if pd.notna(max_idx):
@@ -145,11 +149,8 @@ class ClassifyVolumeProfile:
                 continue
 
             col_start, col_end = timelines[i]
-            try:
-                nominal_start = heatmap_dates[col_start]  # chỉ để tham khảo
-                nominal_end = heatmap_dates[col_end]
-            except IndexError:
-                continue
+            nominal_start = heatmap_dates[col_start]
+            nominal_end = heatmap_dates[col_end]
 
             val = levels[low_idx]
             vah = levels[high_idx]
@@ -157,49 +158,81 @@ class ClassifyVolumeProfile:
             color = colors[i]
 
             # === TÌM NGÀY ĐẦU TIÊN GIÁ CHẠM VÀO VÙNG (first touch) ===
-            # Tìm trong toàn bộ lịch sử có sẵn (từ đầu dữ liệu đến nominal_end)
-            past_data = price_df[
+            data_initial = price_df[
                 (price_df.index >= nominal_start) & (price_df.index <= nominal_end)
             ]
-            in_range = (past_data["High"] <= vah) & (past_data["Low"] >= val)
-            if in_range.any():
-                actual_start_date = past_data[in_range].index[0]  # ngày đầu tiên chạm
-            else:
-                actual_start_date = nominal_start  # fallback nếu kỳ lạ
+            touch_initial = (data_initial["High"] >= val) & (data_initial["Low"] <= vah)
+            actual_start_date = (
+                data_initial[touch_initial].index[0]
+                if touch_initial.any()
+                else nominal_start
+            )
 
-            # === TÌM NGÀY CUỐI CÙNG GIÁ CÒN TRONG VÙNG (nếu extend until broken) ===
-            actual_end_date = nominal_end
-            future_data = price_df[price_df.index < nominal_end]
-            if len(future_data) > 0:
-                still_in_range = (future_data["High"] <= vah) & (
-                    future_data["Low"] >= val
-                )
-                if still_in_range.any():
-                    # Còn chạm → kéo đến hiện tại
-                    actual_end_date = price_df.index[-1]
-                else:
-                    # Đã rời bỏ → tìm ngày cuối cùng còn chạm
-                    last_touch = price_df[
-                        (price_df["High"] <= vah) & (price_df["Low"] >= val)
-                    ]
-                    if not last_touch.empty:
-                        actual_end_date = last_touch.index[-1]
+            # === TÌM NGÀY CUỐI CÙNG GIÁ CÒN TRONG/CHẠM VÙNG ===
+            data_from_start = price_df[price_df.index >= actual_start_date]
+
+            # Ưu tiên: nếu còn nến nằm HOÀN TOÀN trong VA → kéo đến hiện tại
+            fully_inside = (data_from_start["Low"] >= val) & (
+                data_from_start["High"] <= vah
+            )
+
+            if fully_inside.any():
+                actual_end_date = price_df.index[-1]
+                inc_thush_trend = max_thush_trend
+                values = fully_inside.values
+                dates = fully_inside.index
+                sideway = values[0]
+                thrush = 0
+                cnt = 0
+
+                for j in range(len(values)):
+                    if values[j] != sideway:
+                        cnt += 1
+
+                        if cnt >= max_breaking_trend:
+                            sideway = values[j]
+                            cnt = max_breaking_trend
+                            thrush = 0
                     else:
-                        # Hoặc ngày cuối cùng trước khi rời
-                        broken_candle = future_data[~still_in_range].index[0]
-                        actual_end_date = broken_candle - pd.Timedelta(days=1)
+                        is_thrused = False
+
+                        for k in range(cnt):
+                            if data_from_start["Low"].values[j - cnt] <= val:
+                                is_thrused = True
+                            elif data_from_start["High"].values[j] >= vah:
+                                is_thrused = True
+                            else:
+                                continue
+                            break
+
+                        if cnt > 0 and is_thrused:
+                            thrush += 1
+                        cnt = 0
+
+                    if sideway and thrush >= inc_thush_trend:
+                        inc_thush_trend += 1
+                        actual_end_date = dates[j]
+            else:
+                # Nếu không còn nằm gọn → lấy ngày cuối cùng còn CHẠM vùng
+                touch_mask = (data_from_start["High"] >= val) & (
+                    data_from_start["Low"] <= vah
+                )
+
+                if touch_mask.any():
+                    actual_end_date = data_from_start[touch_mask].index[-1]
+                else:
+                    actual_end_date = nominal_end  # fallback hiếm gặp
 
             # === Tạo mask thời gian thực tế để vẽ ===
             final_mask = (price_df.index >= actual_start_date) & (
                 price_df.index <= actual_end_date
             )
-
             if not final_mask.any():
                 continue
 
             x_dates = price_df.index[final_mask]
 
-            # === Tô vùng Value Area chính xác từ lúc vào đến lúc rời ===
+            # === Tô vùng Value Area ===
             if fill_ranges:
                 fill_artists.append(
                     {
@@ -217,7 +250,11 @@ class ClassifyVolumeProfile:
             poc_series[final_mask] = poc
             apds.append(
                 mpf.make_addplot(
-                    poc_series, color=color, alpha=0.95, label=f"POC {i + 1}"
+                    poc_series,
+                    color=color,
+                    alpha=0.95,
+                    width=2,
+                    label=f"POC {i + 1}",
                 )
             )
 
@@ -227,7 +264,12 @@ class ClassifyVolumeProfile:
                     line = pd.Series(np.nan, index=price_df.index)
                     line[final_mask] = price
                     apds.append(
-                        mpf.make_addplot(line, color=color, alpha=0.8, linestyle=style)
+                        mpf.make_addplot(
+                            line,
+                            color=color,
+                            alpha=0.8,
+                            linestyle=style,
+                        )
                     )
 
         # === 4. Vẽ biểu đồ ===
@@ -242,7 +284,7 @@ class ClassifyVolumeProfile:
             figsize=(21, 11),
             tight_layout=True,
             show_nontrading=False,
-            title=f"{symbol} • Smart Volume Profile Ranges (First Touch → Broken)",
+            title=f"{symbol} • Smart Volume Profile Ranges (First Touch → Broken/Current)",
             returnfig=True,
         )
 
@@ -259,7 +301,7 @@ class ClassifyVolumeProfile:
                 label=art["label"],
             )
 
-        # Legend đẹp, không trùng
+        # Legend đẹp, loại bỏ trùng lặp
         handles, labels = ax.get_legend_handles_labels()
         by_label = dict(zip(labels, handles))
         ax.legend(
