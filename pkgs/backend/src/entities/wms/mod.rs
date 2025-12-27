@@ -1,20 +1,26 @@
 mod items;
 mod lots;
+mod nodes;
+mod paths;
 mod sale_events;
 mod sales;
 mod shelves;
 mod stock_entries;
 mod stock_shelves;
 mod stocks;
+mod zones;
 
 use items::Entity as Items;
 use lots::Entity as Lots;
+use nodes::Entity as Nodes;
+use paths::Entity as Paths;
 use sale_events::Entity as SaleEvents;
 use sales::Entity as Sales;
 use shelves::Entity as Shelves;
 use stock_entries::Entity as StockEntries;
 use stock_shelves::Entity as StockShelves;
 use stocks::Entity as Stocks;
+use zones::Entity as Zones;
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter, Result as FmtResult};
@@ -421,45 +427,7 @@ impl Display for SaleStatus {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[repr(i32)]
-enum OrderType {
-    Unknown,
-    Online,
-    Offline,
-}
-
-impl From<String> for OrderType {
-    fn from(s: String) -> Self {
-        match s.as_str() {
-            "online" => OrderType::Online,
-            "store" => OrderType::Offline,
-            _ => OrderType::Unknown,
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for OrderType {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        Ok(OrderType::from(s))
-    }
-}
-
-impl Display for OrderType {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        match self {
-            OrderType::Online => write!(f, "online"),
-            OrderType::Offline => write!(f, "store"),
-            OrderType::Unknown => write!(f, "unkknow"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[repr(i32)]
-enum OrderStatus {
+pub enum OrderStatus {
     Unknown,
     Picking,
     Packing,
@@ -506,9 +474,118 @@ impl Display for OrderStatus {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Order {
-    order_id: i32,
-    from: OrderType,
-    status: OrderStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<OrderStatus>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime<Utc>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<Item>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Zone {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_x: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_y: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[repr(i32)]
+pub enum NodeStatus {
+    Unknown,
+    DamageLeft,
+    DamageRight,
+    Block,
+    Available,
+}
+
+impl From<i32> for NodeStatus {
+    fn from(i: i32) -> Self {
+        match i {
+            1 => NodeStatus::Available,
+            2 => NodeStatus::Block,
+            3 => NodeStatus::DamageLeft,
+            4 => NodeStatus::DamageRight,
+            _ => NodeStatus::Unknown,
+        }
+    }
+}
+
+impl From<String> for NodeStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "damaging left block" => NodeStatus::DamageLeft,
+            "damaging right block" => NodeStatus::DamageRight,
+            "routing is blocked" => NodeStatus::Block,
+            "available" => NodeStatus::Available,
+            _ => NodeStatus::Unknown,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for NodeStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(NodeStatus::from(s))
+    }
+}
+
+impl Display for NodeStatus {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            NodeStatus::Unknown => write!(f, "unknown"),
+            NodeStatus::DamageLeft => write!(f, "damaging left block"),
+            NodeStatus::DamageRight => write!(f, "damaging right block"),
+            NodeStatus::Block => write!(f, "routing is blocked"),
+            NodeStatus::Available => write!(f, "available"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Node {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zone_id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<NodeStatus>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_x: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_y: Option<f64>,
 }
 
 pub struct Wms {
@@ -737,7 +814,7 @@ impl Wms {
             .map(|item| (item.stock_id.unwrap_or(0), item.lot_id.unwrap_or(0)))
             .collect::<HashSet<_>>();
 
-        items::Entity::insert_many(items.iter().map(|item| items::ActiveModel {
+        Items::insert_many(items.iter().map(|item| items::ActiveModel {
             tenant_id: Set(tenant_id),
             stock_id: Set(item.stock_id.unwrap_or(0)),
             lot_id: Set(item.lot_id.unwrap_or(0)),
@@ -750,7 +827,7 @@ impl Wms {
         .await?;
         txn.commit().await?;
 
-        let collected_items = items::Entity::find()
+        let collected_items = Items::find()
             .select_only()
             .column(items::Column::Id)
             .column(items::Column::StockId)
@@ -807,7 +884,7 @@ impl Wms {
             .map(|shelf| (shelf.name, shelf.id))
             .collect::<HashMap<_, _>>();
 
-        let valid_items = items::Entity::find()
+        let valid_items = Items::find()
             .filter(items::Column::TenantId.eq(tenant_id))
             .filter(items::Column::LotId.eq(lot_id))
             .filter(
@@ -837,8 +914,7 @@ impl Wms {
             let status = ItemStatus::from(item.status.clone()) as i32;
 
             if valid_items.contains(&item_id) {
-                let mut update_query =
-                    items::Entity::update_many().filter(items::Column::Id.eq(item_id));
+                let mut update_query = Items::update_many().filter(items::Column::Id.eq(item_id));
 
                 if let Some(barcode) = &item.barcode {
                     update_query =
@@ -857,12 +933,9 @@ impl Wms {
                     .exec(&txn)
                     .await?;
 
-                items::Entity::find_by_id(item_id)
-                    .one(&txn)
-                    .await?
-                    .ok_or_else(|| {
-                        DbErr::Custom(format!("Item with id {} not found after update", item_id))
-                    })?;
+                Items::find_by_id(item_id).one(&txn).await?.ok_or_else(|| {
+                    DbErr::Custom(format!("Item with id {} not found after update", item_id))
+                })?;
 
                 count_stock_entries
                     .entry(shelf_id)
@@ -927,7 +1000,7 @@ impl Wms {
             return Ok(());
         }
 
-        let update_result = items::Entity::update_many()
+        let update_result = Items::update_many()
             .col_expr(items::Column::ShelfId, Expr::value(Some(shelf_id)))
             .filter(items::Column::Id.is_in(items.iter().map(|item| item.id).collect::<Vec<_>>()))
             .filter(items::Column::TenantId.eq(tenant_id))
@@ -1187,7 +1260,7 @@ impl Wms {
             )
             .join_rev(
                 JoinType::InnerJoin,
-                items::Entity::belongs_to(Lots)
+                Items::belongs_to(Lots)
                     .from(items::Column::LotId)
                     .to(lots::Column::Id)
                     .into(),
@@ -1510,6 +1583,339 @@ impl Wms {
                 "Missing field `stocks`"
             )))),
         }
+    }
+
+    pub async fn get_zone(&self, tenant_id: i32, zone_id: i32) -> Result<Zone, DbErr> {
+        let result = Zones::find()
+            .filter(zones::Column::TenantId.eq(tenant_id))
+            .filter(zones::Column::Id.eq(zone_id))
+            .one(self.dbt(tenant_id))
+            .await?;
+
+        if let Some(result) = result {
+            Ok(Zone {
+                id: Some(result.id),
+                name: Some(result.name),
+                description: Some(result.description),
+                pos_x: Some(result.pos_x),
+                pos_y: Some(result.pos_y),
+                height: Some(result.height),
+                width: Some(result.width),
+            })
+        } else {
+            Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Zone with id {}, not exist",
+                zone_id
+            ))))
+        }
+    }
+
+    pub async fn get_order_detail(&self, tenant_id: i32, order_id: i32) -> Result<Order, DbErr> {
+        match Sales::find()
+            .select_only()
+            .column(sales::Column::Status)
+            .filter(sales::Column::TenantId.eq(tenant_id))
+            .filter(sales::Column::OrderId.eq(order_id))
+            .into_tuple::<(i32, DateTime<Utc>)>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some((status, created_at)) => Ok(Order {
+                order_id: Some(order_id),
+                status: Some(if SaleStatus::from(status) == SaleStatus::Done {
+                    OrderStatus::Done
+                } else {
+                    OrderStatus::Unknown
+                }),
+                created_at: Some(created_at),
+                items: Some(if SaleStatus::from(status) == SaleStatus::Done {
+                    Items::find()
+                        .select_only()
+                        .filter(items::Column::TenantId.eq(tenant_id))
+                        .filter(items::Column::OrderId.eq(Some(order_id)))
+                        .into_tuple::<(i32, i32, i32, i32, f64, Option<String>)>()
+                        .all(self.dbt(tenant_id))
+                        .await?
+                        .into_iter()
+                        .map(|(id, lot_id, stock_id, status, cost_price, barcode)| Item {
+                            id: Some(id),
+                            lot_id: Some(lot_id),
+                            stock_id: Some(stock_id),
+                            status: ItemStatus::from(status),
+                            cost_price,
+                            barcode,
+                            ..Default::default()
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                }),
+            }),
+            None => Err(DbErr::RecordNotFound("Order not found".to_string())),
+        }
+    }
+
+    pub async fn list_paginated_zones(
+        &self,
+        tenant_id: i32,
+        after: i32,
+        limit: u64,
+    ) -> Result<Vec<Zone>, DbErr> {
+        Ok(Zones::find()
+            .select_only()
+            .column(zones::Column::Id)
+            .column(zones::Column::Name)
+            .column(zones::Column::Description)
+            .column(zones::Column::PosX)
+            .column(zones::Column::PosY)
+            .column(zones::Column::Height)
+            .column(zones::Column::Width)
+            .filter(zones::Column::TenantId.eq(tenant_id))
+            .filter(zones::Column::Id.gt(after))
+            .limit(limit)
+            .into_tuple::<(i32, String, String, f64, f64, f64, f64)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(
+                |(id, name, description, pos_x, pos_y, height, width)| Zone {
+                    id: Some(id),
+                    name: Some(name),
+                    description: Some(description),
+                    pos_x: Some(pos_x),
+                    pos_y: Some(pos_y),
+                    height: Some(height),
+                    width: Some(width),
+                },
+            )
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn get_node_by_id(
+        &self,
+        tenant_id: i32,
+        zone_id: i32,
+        node_id: i32,
+    ) -> Result<Node, DbErr> {
+        match Nodes::find()
+            .select_only()
+            .column(nodes::Column::Name)
+            .column(nodes::Column::Status)
+            .column(nodes::Column::PosX)
+            .column(nodes::Column::PosY)
+            .filter(nodes::Column::TenantId.eq(tenant_id))
+            .filter(nodes::Column::ZoneId.eq(zone_id))
+            .filter(nodes::Column::Id.eq(node_id))
+            .into_tuple::<(String, i32, f64, f64)>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some((name, status, pos_x, pos_y)) => Ok(Node {
+                node_id: Some(node_id),
+                zone_id: Some(zone_id),
+                name: Some(name),
+                pos_x: Some(pos_x),
+                pos_y: Some(pos_y),
+                status: Some(NodeStatus::from(status)),
+            }),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Node with id {} in zone {}, not exist",
+                node_id, zone_id,
+            )))),
+        }
+    }
+
+    pub async fn list_paginated_nodes(
+        &self,
+        tenant_id: i32,
+        zone_id: i32,
+        after: i32,
+        limit: u64,
+    ) -> Result<Vec<Node>, DbErr> {
+        Ok(Nodes::find()
+            .select_only()
+            .column(nodes::Column::Id)
+            .column(nodes::Column::Name)
+            .column(nodes::Column::Status)
+            .column(nodes::Column::PosX)
+            .column(nodes::Column::PosY)
+            .filter(nodes::Column::TenantId.eq(tenant_id))
+            .filter(nodes::Column::ZoneId.eq(zone_id))
+            .filter(nodes::Column::Id.gt(after))
+            .limit(limit)
+            .into_tuple::<(i32, String, i32, f64, f64)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|(node_id, name, status, pos_x, pos_y)| Node {
+                node_id: Some(node_id),
+                zone_id: Some(zone_id),
+                pos_x: Some(pos_x),
+                pos_y: Some(pos_y),
+                status: Some(NodeStatus::from(status)),
+                name: Some(name),
+            })
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn create_zones(&self, tenant_id: i32, zones: &Vec<Zone>) -> Result<Vec<i32>, DbErr> {
+        if zones.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut active_models = Vec::new();
+        for zone in zones {
+            active_models.push(zones::ActiveModel {
+                tenant_id: Set(tenant_id),
+                name: Set(zone
+                    .name
+                    .clone()
+                    .ok_or_else(|| DbErr::Custom("Name is missing".to_string()))?),
+                description: Set(zone.description.clone().unwrap_or_default()),
+                pos_x: Set(zone
+                    .pos_x
+                    .ok_or_else(|| DbErr::Custom("pos_x is missing".to_string()))?),
+                pos_y: Set(zone
+                    .pos_y
+                    .ok_or_else(|| DbErr::Custom("pos_y is missing".to_string()))?),
+                height: Set(zone
+                    .height
+                    .ok_or_else(|| DbErr::Custom("height is missing".to_string()))?),
+                width: Set(zone
+                    .width
+                    .ok_or_else(|| DbErr::Custom("width is missing".to_string()))?),
+                ..Default::default()
+            });
+        }
+
+        zones::Entity::insert_many(active_models)
+            .exec(self.dbt(tenant_id))
+            .await?;
+
+        Ok(zones::Entity::find()
+            .select_only()
+            .column(zones::Column::Id)
+            .filter(zones::Column::TenantId.eq(tenant_id))
+            .filter(
+                zones::Column::Name.is_in(
+                    zones
+                        .iter()
+                        .map(|zone| zone.name.clone())
+                        .collect::<Vec<_>>(),
+                ),
+            )
+            .into_tuple::<(i32,)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|(id,)| id)
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn create_nodes(
+        &self,
+        tenant_id: i32,
+        zone_id: Option<i32>,
+        nodes: &Vec<Node>,
+    ) -> Result<Vec<i32>, DbErr> {
+        if nodes.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let txn = self.dbt(tenant_id).begin().await?;
+        let mut active_models = Vec::new();
+
+        if zone_id.is_none() {
+            let zone_ids = nodes
+                .iter()
+                .filter_map(|node| node.zone_id)
+                .collect::<HashSet<_>>();
+
+            let valid_zones = zones::Entity::find()
+                .filter(zones::Column::Id.is_in(zone_ids.clone()))
+                .filter(zones::Column::TenantId.eq(tenant_id))
+                .all(&txn)
+                .await?
+                .into_iter()
+                .map(|zone| zone.id)
+                .collect::<HashSet<i32>>();
+
+            if valid_zones.len() != zone_ids.len() {
+                let invalid_ids: Vec<i32> = zone_ids.difference(&valid_zones).copied().collect();
+
+                return Err(DbErr::Custom(format!(
+                    "Invalid zone IDs: {:?}",
+                    invalid_ids
+                )));
+            }
+
+            for node in nodes {
+                active_models.push(nodes::ActiveModel {
+                    tenant_id: Set(tenant_id),
+                    zone_id: Set(node
+                        .zone_id
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("zone_id is missing")))?),
+                    name: Set(node
+                        .name
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("name is missing")))?),
+                    status: Set(node.status.clone().unwrap_or(NodeStatus::Unknown) as i32),
+                    pos_x: Set(node
+                        .pos_x
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("pos_x is missing")))?),
+                    pos_y: Set(node
+                        .pos_y
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("pos_y is missing")))?),
+                    ..Default::default()
+                });
+            }
+        } else {
+            for node in nodes {
+                active_models.push(nodes::ActiveModel {
+                    tenant_id: Set(tenant_id),
+                    zone_id: Set(zone_id.unwrap()),
+                    name: Set(node
+                        .name
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("name is missing")))?),
+                    status: Set(node.status.clone().unwrap_or(NodeStatus::Unknown) as i32),
+                    pos_x: Set(node
+                        .pos_x
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("pos_x is missing")))?),
+                    pos_y: Set(node
+                        .pos_y
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("pos_y is missing")))?),
+                    ..Default::default()
+                });
+            }
+        }
+
+        Nodes::insert_many(active_models).exec(&txn).await?;
+
+        txn.commit().await?;
+
+        Ok(nodes::Entity::find()
+            .select_only()
+            .column(nodes::Column::Id)
+            .filter(
+                nodes::Column::Name.is_in(
+                    nodes
+                        .iter()
+                        .map(|node| node.name.clone())
+                        .collect::<Vec<_>>(),
+                ),
+            )
+            .into_tuple::<(i32,)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|(id,)| id)
+            .collect::<Vec<_>>())
     }
 }
 
