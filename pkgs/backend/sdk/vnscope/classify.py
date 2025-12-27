@@ -51,26 +51,31 @@ class ClassifyVolumeProfile:
         top_n=3,
         enable_heatmap=False,
         enable_inverst_ranges=False,
+        fill_ranges=True,
+        show_poc_only=False,
+        max_breaking_trend=4,
+        max_thush_trend=2,
     ):
-        from datetime import datetime, timedelta
+        import pandas as pd
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import mplfinance as mpf
+        import seaborn as sns
+        from datetime import datetime
 
-        # Estimate time range
+        # === 1. Lấy dữ liệu ===
         from_time = datetime.fromtimestamp(
-            self.now - self.lookback * 24 * 60 * 60,
+            self.now - self.lookback * 24 * 60 * 60
         ).strftime("%Y-%m-%d")
         to_time = datetime.fromtimestamp(self.now).strftime("%Y-%m-%d")
 
-        # Collect data using Symbols class
         candlesticks = self.symbols.price(
-            symbol,
-            broker,
-            self.resolution,
-            from_time,
-            to_time,
+            symbol, broker, self.resolution, from_time, to_time
         ).to_pandas()
+
         consolidated, levels, ranges, timelines = self.symbols.heatmap(
             symbol,
-            broker,  # Use provided broker
+            broker,
             self.resolution,
             self.now,
             self.lookback,
@@ -79,196 +84,236 @@ class ClassifyVolumeProfile:
             self.interval_in_hour,
         )
 
-        # Convert from_time and to_time to datetime for time axis
-        start_date = datetime.strptime(from_time, "%Y-%m-%d")
-
-        # Create time axis for heatmap (starting from the overlap_days to match
-        # overlap)
-        heatmap_dates = pd.date_range(
-            start=start_date + timedelta(days=overlap_days),
-            periods=consolidated.shape[1],
-            freq="D",
-        )
-
-        # Create full time axis for price data
-        price_dates = pd.date_range(
-            start=start_date,
-            periods=len(candlesticks),
-            freq="D",
-        )
-
-        # Invert levels for low to high order on y-axis
-        consolidated = np.flipud(consolidated)
-
-        # Prepare candlestick data
         price_df = candlesticks.copy()
         price_df["Date"] = pd.to_datetime(price_df["Date"])
         price_df.set_index("Date", inplace=True)
+        price_df = price_df.sort_index()
 
-        # Calculate Bollinger Bands
+        if len(price_df) < overlap_days:
+            print("Không đủ dữ liệu")
+            return
+
+        heatmap_dates = price_df.index[-consolidated.shape[0] :]  # để map timeline
+
+        # === 2. Indicators cơ bản ===
         period = overlap_days
-        price_df["SMA"] = price_df["Close"].rolling(window=period).mean()
-        price_df["STD"] = price_df["Close"].rolling(window=period).std()
-        price_df["Upper Band"] = price_df["SMA"] + (price_df["STD"] * 2)
-        price_df["Lower Band"] = price_df["SMA"] - (price_df["STD"] * 2)
-
-        # Calculate MA of Volume
-        volume_ma_period = overlap_days
-        price_df["Volume_MA"] = (
-            price_df["Volume"].rolling(window=volume_ma_period).mean()
+        price_df["SMA"] = price_df["Close"].rolling(period).mean()
+        price_df["Upper"] = (
+            price_df["SMA"] + price_df["Close"].rolling(period).std() * 2
         )
-
-        # Identify candles where Volume > Volume_MA
-        price_df["High_Volume"] = price_df["Volume"] > price_df["Volume_MA"] * excessive
-
-        # Calculate deviation of Volume from Volume_MA
-        price_df["Volume_Deviation"] = price_df["Volume"] - price_df["Volume_MA"]
-
-        # Find the point with the maximum deviation where Volume > Volume_MA
-        max_deviation_idx = price_df[price_df["High_Volume"]][
-            "Volume_Deviation"
-        ].idxmax()
-        max_deviation_value = (
-            price_df.loc[max_deviation_idx, "Volume_Deviation"]
-            if pd.notna(max_deviation_idx)
-            else None
+        price_df["Lower"] = (
+            price_df["SMA"] - price_df["Close"].rolling(period).std() * 2
         )
-
-        # Create a series for markers (place markers above the high of candles
-        # where volume > MA)
+        price_df["High_Vol"] = (
+            price_df["Volume"] > price_df["Volume"].rolling(period).mean() * excessive
+        )
         price_df["Marker"] = np.where(
-            price_df["High_Volume"], price_df["High"] * 1.01, np.nan
+            price_df["High_Vol"], price_df["High"] * 1.01, np.nan
         )
 
-        # Create a series for the max deviation marker
-        price_df["Max_Deviation_Marker"] = np.nan
-        if pd.notna(max_deviation_idx):
-            price_df.loc[max_deviation_idx, "Max_Deviation_Marker"] = (
-                price_df.loc[max_deviation_idx, "High"] * 1.02
-            )  # Slightly higher for visibility
+        max_idx = price_df[price_df["High_Vol"]]["Volume"].idxmax()
+        price_df["Max_Marker"] = np.nan
+        if pd.notna(max_idx):
+            price_df.loc[max_idx, "Max_Marker"] = price_df.loc[max_idx, "High"] * 1.025
 
-        # For integrated plotting, mpf.plot creates its own figure. To integrate
-        # heatmap, plot separately or use returnfig=True
-        # Here, we'll let mpf.plot create its own figure for candlestick +
-        # volume, and plot heatmap separately if enabled
-        if enable_heatmap:
-            # Increased size for heatmap
-            fig_heatmap, ax_heatmap = plt.subplots(figsize=(60, 24))
-
-            # Calculate correct shape
-            consolidated = np.flip(consolidated.T[::-1], axis=1)
-
-            # Plot heatmap with imshow
-            im = ax_heatmap.imshow(
-                consolidated,
-                aspect="auto",
-                interpolation="nearest",
-                extent=[0, consolidated.shape[1] - 1, 0, len(levels) - 1],
-            )
-            ytick_indices = range(0, len(levels), 5)  # Show every 5th label
-            ax_heatmap.set_yticks(ytick_indices)
-            ax_heatmap.set_yticklabels(np.round(levels, 5)[ytick_indices])
-            ax_heatmap.set_title(
-                "Volume Profile Heatmap for {} ({})".format(symbol, self.resolution)
-            )
-            ax_heatmap.set_ylabel("Price Levels")
-            ax_heatmap.set_xticks(
-                range(0, len(heatmap_dates), max(1, len(heatmap_dates) // 10))
-            )
-            ax_heatmap.set_xticklabels([])
-            plt.colorbar(im, ax=ax_heatmap, label="Volume")
-            plt.tight_layout()  # Improve spacing
-            plt.show()
-
-        # Create a colormap for price range lines
-        colors = sns.color_palette("husl", n_colors=top_n)
-
-        # Add horizontal lines for Bollinger Bands and markers (with
-        # consolidated labels to reduce legend clutter)
         apds = [
-            mpf.make_addplot(price_df["SMA"], color="blue", width=1, label="SMA"),
-            mpf.make_addplot(
-                price_df["Upper Band"], color="red", width=1, label="Upper Band"
-            ),
-            mpf.make_addplot(
-                price_df["Lower Band"],
-                color="green",
-                width=1,
-                label="Lower Band",
-            ),
+            mpf.make_addplot(price_df["SMA"], color="blue", width=1.2),
+            mpf.make_addplot(price_df["Upper"], color="red", alpha=0.5),
+            mpf.make_addplot(price_df["Lower"], color="green", alpha=0.5),
             mpf.make_addplot(
                 price_df["Marker"],
                 type="scatter",
                 marker="^",
-                color="green",
-                markersize=10,
-                label="High Volume",
+                markersize=80,
+                color="lime",
             ),
             mpf.make_addplot(
-                price_df["Max_Deviation_Marker"],
+                price_df["Max_Marker"],
                 type="scatter",
                 marker="*",
+                markersize=220,
                 color="red",
-                markersize=10,
-                label="Max Volume Deviation",
             ),
         ]
 
+        # === 3. Xử lý từng range - chuẩn pro ===
         if enable_inverst_ranges:
             ranges.reverse()
+            timelines.reverse()
 
-        # Add price range lines (begin, center, end), but only over the specific
-        # timeline periods for each range
-        for i, (center, begin, end) in enumerate(ranges):
-            if i >= top_n:
-                break
-            color = colors[i % len(colors)]  # Select color from palette
+        colors = sns.color_palette("husl", top_n)
+        fill_artists = []
 
-            apds.extend(
-                [
-                    mpf.make_addplot(
-                        pd.Series(levels[begin], index=price_df.index),
-                        color=color,
-                        linestyle="--",
-                        width=0.5,
-                        label=f"Range {i+1}",
-                    ),
-                    mpf.make_addplot(
-                        pd.Series(levels[center], index=price_df.index),
-                        color=color,
-                        linestyle="--",
-                        width=1.0,
-                        label=f"Range {i+1} Center",
-                    ),
-                    mpf.make_addplot(
-                        pd.Series(levels[end], index=price_df.index),
-                        color=color,
-                        linestyle="--",
-                        width=0.5,
-                        label=f"Range {i+1} End",
-                    ),
-                ]
+        for i, (poc_idx, low_idx, high_idx) in enumerate(ranges[:top_n]):
+            if i >= len(timelines):
+                continue
+
+            col_start, col_end = timelines[i]
+            nominal_start = heatmap_dates[col_start]
+            nominal_end = heatmap_dates[col_end]
+
+            val = levels[low_idx]
+            vah = levels[high_idx]
+            poc = levels[poc_idx]
+            color = colors[i]
+
+            # === TÌM NGÀY ĐẦU TIÊN GIÁ CHẠM VÀO VÙNG (first touch) ===
+            data_initial = price_df[
+                (price_df.index >= nominal_start) & (price_df.index <= nominal_end)
+            ]
+            touch_initial = (data_initial["High"] >= val) & (data_initial["Low"] <= vah)
+            actual_start_date = (
+                data_initial[touch_initial].index[0]
+                if touch_initial.any()
+                else nominal_start
             )
 
-        # Plot candlestick with Bollinger Bands and horizontal lines (increased
-        # figsize, adjusted volume panel, legend position)
-        mpf.plot(
+            # === TÌM NGÀY CUỐI CÙNG GIÁ CÒN TRONG/CHẠM VÙNG ===
+            data_from_start = price_df[price_df.index >= actual_start_date]
+
+            # Ưu tiên: nếu còn nến nằm HOÀN TOÀN trong VA → kéo đến hiện tại
+            fully_inside = (data_from_start["Low"] >= val) & (
+                data_from_start["High"] <= vah
+            )
+
+            if fully_inside.any():
+                actual_end_date = price_df.index[-1]
+                inc_thush_trend = max_thush_trend
+                values = fully_inside.values
+                dates = fully_inside.index
+                sideway = values[0]
+                thrush = 0
+                cnt = 0
+
+                for j in range(len(values)):
+                    if values[j] != sideway:
+                        cnt += 1
+
+                        if cnt >= max_breaking_trend:
+                            sideway = values[j]
+                            cnt = max_breaking_trend
+                            thrush = 0
+                    else:
+                        is_thrused = False
+
+                        for k in range(cnt):
+                            if data_from_start["Low"].values[j - cnt] <= val:
+                                is_thrused = True
+                            elif data_from_start["High"].values[j] >= vah:
+                                is_thrused = True
+                            else:
+                                continue
+                            break
+
+                        if cnt > 0 and is_thrused:
+                            thrush += 1
+                        cnt = 0
+
+                    if sideway and thrush >= inc_thush_trend:
+                        inc_thush_trend += 1
+                        actual_end_date = dates[j]
+            else:
+                # Nếu không còn nằm gọn → lấy ngày cuối cùng còn CHẠM vùng
+                touch_mask = (data_from_start["High"] >= val) & (
+                    data_from_start["Low"] <= vah
+                )
+
+                if touch_mask.any():
+                    actual_end_date = data_from_start[touch_mask].index[-1]
+                else:
+                    actual_end_date = nominal_end  # fallback hiếm gặp
+
+            # === Tạo mask thời gian thực tế để vẽ ===
+            final_mask = (price_df.index >= actual_start_date) & (
+                price_df.index <= actual_end_date
+            )
+            if not final_mask.any():
+                continue
+
+            x_dates = price_df.index[final_mask]
+
+            # === Tô vùng Value Area ===
+            if fill_ranges:
+                fill_artists.append(
+                    {
+                        "x": x_dates,
+                        "y1": val,
+                        "y2": vah,
+                        "color": color,
+                        "alpha": 0.25,
+                        "label": f"VA {i + 1} ({actual_start_date.date()} → {actual_end_date.date()})",
+                    }
+                )
+
+            # === Vẽ POC kéo dài ===
+            poc_series = pd.Series(np.nan, index=price_df.index)
+            poc_series[final_mask] = poc
+            apds.append(
+                mpf.make_addplot(
+                    poc_series,
+                    color=color,
+                    alpha=0.95,
+                    width=2,
+                    label=f"POC {i + 1}",
+                )
+            )
+
+            # === Vẽ VAL / VAH (nếu không chỉ POC) ===
+            if not show_poc_only:
+                for price, style in [(val, "--"), (vah, "--")]:
+                    line = pd.Series(np.nan, index=price_df.index)
+                    line[final_mask] = price
+                    apds.append(
+                        mpf.make_addplot(
+                            line,
+                            color=color,
+                            alpha=0.8,
+                            linestyle=style,
+                        )
+                    )
+
+        # === 4. Vẽ biểu đồ ===
+        fig, axes = mpf.plot(
             price_df,
             type="candle",
             style="charles",
-            show_nontrading=False,
-            addplot=apds,  # Add Bollinger Bands and horizontal lines
+            addplot=apds,
             volume=True,
-            volume_panel=1,  # Use panel 1 for volume
-            panel_ratios=(3, 1),  # Allocate more space to main chart vs volume
-            figsize=(12, 7),  # Increased figure size
-            tight_layout=True,  # Improve overall spacing
-            returnfig=False,
+            volume_panel=1,
+            panel_ratios=(5, 1),
+            figsize=(21, 11),
+            tight_layout=True,
+            show_nontrading=False,
+            title=f"{symbol} • Smart Volume Profile Ranges (First Touch → Broken/Current)",
+            returnfig=True,
         )
 
-        # Note: For full integration with custom subplots, consider using
-        # mpf.plot with returnfig=True and manual subplot addition. This version
-        # plots heatmap separately if enabled, and candlestick in its own figure
+        ax = axes[0]
+
+        # Vẽ vùng VA thông minh
+        for art in fill_artists:
+            ax.fill_between(
+                art["x"],
+                art["y1"],
+                art["y2"],
+                color=art["color"],
+                alpha=art["alpha"],
+                label=art["label"],
+            )
+
+        # Legend đẹp, loại bỏ trùng lặp
+        handles, labels = ax.get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        ax.legend(
+            by_label.values(),
+            by_label.keys(),
+            loc="upper left",
+            fontsize=10,
+            framealpha=0.9,
+            ncol=1,
+        )
+
+        plt.show()
 
     def calculate_beta_between_index_and_symbols(
         self,
@@ -497,6 +542,35 @@ class ClassifyVolumeProfile:
                 ]
             )
 
+        def calculate_bollinger_bank(symbol, window=20, std_multiplier=2.0):
+            from datetime import datetime, timedelta
+
+            # Estimate time range
+            from_time = datetime.fromtimestamp(
+                self.now - self.lookback * 24 * 60 * 60,
+            ).strftime("%Y-%m-%d")
+            to_time = datetime.fromtimestamp(self.now).strftime("%Y-%m-%d")
+
+            price_df = self.symbols.price(
+                symbol,
+                broker,
+                self.resolution,
+                from_time,
+                to_time,
+            ).to_pandas()
+            price_df["Date"] = pd.to_datetime(price_df["Date"])
+            price_df = price_df.sort_values("Date").reset_index(drop=True)
+            price_df.set_index("Date", inplace=True)
+
+            price_df["SMA"] = (
+                price_df["Close"].rolling(window=window, min_periods=1).mean()
+            )
+            price_df["STD"] = (
+                price_df["Close"].rolling(window=window, min_periods=1).std()
+            )
+
+            return (2.0 * std_multiplier * price_df["STD"] / price_df["SMA"]).to_list()
+
         return (
             market(symbols)[("symbol", "price")]
             .with_columns(
@@ -514,6 +588,13 @@ class ClassifyVolumeProfile:
                     ),
                 )
                 .alias("heatmap"),
+                pl.col("symbol")
+                .map_elements(
+                    calculate_bollinger_bank,
+                    strategy="threading",
+                    return_dtype=pl.List(pl.Float64),
+                )
+                .alias("bolingger_width"),
             )
             .with_columns(
                 pl.struct(["price", "heatmap"])

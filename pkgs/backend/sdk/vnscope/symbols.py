@@ -8,10 +8,28 @@ from .models import CandleStick
 
 
 class Symbols:
+    from urllib3.util import Retry
+    from requests.adapters import HTTPAdapter
+
     _session: rq.Session = rq.Session()
     _base_url: str = (
         "https://lighttrading.pp.ua"  # Default; can be set via class method or instance
     )
+
+    # Cấu hình cơ chế tự động thử lại
+    _retry_strategy = Retry(
+        total=3,  # Thử lại tối đa 3 lần
+        backoff_factor=1,  # Đợi 1s, 2s, 4s giữa các lần thử
+        status_forcelist=[429, 500, 502, 503, 504],  # Các lỗi HTTP cần thử lại
+        allowed_methods=[
+            "HEAD",
+            "GET",
+            "OPTIONS",
+        ],  # Chỉ thử lại với các method an toàn
+    )
+    _adapter = HTTPAdapter(max_retries=_retry_strategy)
+    _session.mount("https://", _adapter)
+    _session.mount("http://", _adapter)
 
     @classmethod
     def configure_base_url(cls, url: str) -> None:
@@ -20,6 +38,15 @@ class Symbols:
     def __init__(self, base_url: str = None):
         if base_url:
             self._base_url = base_url
+        self._session.headers.update({"Connection": "keep-alive"})
+
+    def _safe_get(self, url):
+        try:
+            return self._session.get(url)
+        except (rq.exceptions.ConnectionError, rq.exceptions.Timeout):
+            # Nếu đứt, tạo session mới và thử lại một lần nữa
+            self._session = rq.Session()
+            return self._session.get(url)
 
     def _get_symbols(self, broker: str, product: str) -> tp.List[str]:
         base_url = getattr(self, "_base_url", self._base_url)
@@ -28,7 +55,7 @@ class Symbols:
         if len(product) > 0:
             full_url = f"{base_url}/api/investing/v1/ohcl/symbols/{broker}/{product}"
 
-        resp = self._session.get(full_url)
+        resp = self._safe_get(full_url)
         if resp.status_code == 200:
             data = resp.json()
             return data.get("symbols", [])
@@ -38,7 +65,7 @@ class Symbols:
         self, broker: str, symbol: str, resolution: str, from_ts: int, to_ts: int
     ) -> tp.List[CandleStick]:
         base_url = getattr(self, "_base_url", self._base_url)
-        resp = self._session.get(
+        resp = self._safe_get(
             f"{base_url}/api/investing/v1/ohcl/{broker}/{symbol}/candles?resolution={resolution}&from={from_ts}&to={to_ts}&limit=0"
         )
         if resp.status_code != 200:
@@ -95,7 +122,7 @@ class Symbols:
 
     def cw(self) -> pl.DataFrame:
         base_url = getattr(self, "_base_url", self._base_url)
-        resp = self._session.get(f"{base_url}/api/investing/v1/ohcl/symbols/stock/cw")
+        resp = self._safe_get(f"{base_url}/api/investing/v1/ohcl/symbols/stock/cw")
         if resp.status_code == 200:
             data = resp.json().get("cws")
             data = resp.json()
@@ -223,7 +250,7 @@ class Symbols:
             f"overlap={overlap}&number_of_levels={number_of_levels}&"
             f"interval_in_hour={interval_in_hour}"
         )
-        resp = self._session.get(url)
+        resp = self._safe_get(url)
         if resp.status_code != 200:
             raise ValueError(f"HTTP {resp.status_code}: {resp.text}")
         data = resp.json()
