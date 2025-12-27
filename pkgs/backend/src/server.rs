@@ -222,8 +222,42 @@ pub async fn run() -> std::io::Result<()> {
                         post().to(crate::api::wms::v1::process_online_sale),
                     )
                     .route(
+                        "/v1/wms/sales/orders/{order_id}",
+                        get().to(crate::api::wms::v1::get_order_detail),
+                    )
+                    .route("/v1/wms/zone", get().to(crate::api::wms::v1::list_zones))
+                    .route("/v1/wms/zone", post().to(crate::api::wms::v1::create_zones))
+                    .route(
+                        "/v1/wms/zone/{zone_id}",
+                        post().to(crate::api::wms::v1::get_zone),
+                    )
+                    .route(
+                        "/v1/wms/zone/{zone_id}/paths",
+                        post().to(crate::api::wms::v1::list_paths),
+                    )
+                    .route(
+                        "/v1/wms/zone/{zone_id}/paths/{path_id}",
+                        post().to(crate::api::wms::v1::get_path_by_id),
+                    )
+                    .route(
+                        "/v1/wms/zone/{zone_id}/nodes",
+                        get().to(crate::api::wms::v1::list_nodes),
+                    )
+                    .route(
+                        "/v1/wms/zone/{zone_id}/nodes",
+                        post().to(crate::api::wms::v1::create_nodes),
+                    )
+                    .route(
+                        "/v1/wms/zone/{zone_id}/nodes/{node_id}",
+                        post().to(crate::api::wms::v1::get_node_by_id),
+                    )
+                    .route(
                         "/v1/wms/stock/barcode/{barcode}",
                         get().to(crate::api::wms::v1::get_item_by_barcode),
+                    )
+                    .route(
+                        "/v1/wms/picking/wave",
+                        post().to(crate::api::wms::v1::setup_picking_wave),
                     )
                     .route("/v1/wms/sync", post().to(crate::api::wms::v1::sync_data))
                     .route(
