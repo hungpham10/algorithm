@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::api::AppState;
-use crate::entities::wms::{Item, ItemStatus, Lot, Sale, Shelf, Stock};
+use crate::entities::wms::{Item, ItemStatus, Lot, Node, Order, Sale, Shelf, Stock, Zone};
 
 use super::WmsHeaders;
 
@@ -58,6 +58,22 @@ pub struct ListItemsResponse {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ListZonesResponse {
+    data: Vec<Zone>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_after: Option<i32>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ListNodesResponse {
+    data: Vec<Node>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_after: Option<i32>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WmsResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     stocks: Option<ListStocksResponse>,
@@ -87,6 +103,21 @@ pub struct WmsResponse {
     sale: Option<Sale>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    order: Option<Order>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    zones: Option<ListZonesResponse>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    zone: Option<Zone>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nodes: Option<ListNodesResponse>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    node: Option<Node>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
 
@@ -109,6 +140,11 @@ impl Default for WmsResponse {
             items: None,
             item: None,
             sale: None,
+            order: None,
+            zones: None,
+            zone: None,
+            nodes: None,
+            node: None,
             error: None,
         }
     }
@@ -721,6 +757,304 @@ pub async fn update_healthy_status_of_item(
 ) -> Result<HttpResponse> {
     let (shelf_id, barcode) = path.into_inner();
 
+    Err(ErrorInternalServerError(WmsResponse {
+        error: Some(format!("Not implemented")),
+        ..Default::default()
+    }))
+}
+
+pub async fn get_order_detail(
+    path: Path<i32>,
+    appstate: Data<Arc<AppState>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    let order_id = path.into_inner();
+
+    if let Some(entity) = appstate.wms_entity() {
+        match entity.get_order_detail(headers.tenant_id, order_id).await {
+            Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
+                order: Some(data),
+                ..Default::default()
+            })),
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!("Fail to query order {}: {}", order_id, error)),
+                ..Default::default()
+            })),
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
+}
+
+pub async fn create_zones(
+    appstate: Data<Arc<AppState>>,
+    zones: Json<Vec<Zone>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    if let Some(entity) = appstate.wms_entity() {
+        let zones = zones.into_inner();
+
+        match entity.create_zones(headers.tenant_id, &zones).await {
+            Ok(ids) => Ok(HttpResponse::Ok().json(WmsResponse {
+                zones: Some(ListZonesResponse {
+                    data: ids
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &id)| Zone {
+                            id: Some(id),
+                            name: zones[i].name.clone(),
+                            pos_x: zones[i].pos_x,
+                            pos_y: zones[i].pos_y,
+                            height: zones[i].height,
+                            width: zones[i].width,
+                            description: zones[i].description.clone(),
+                        })
+                        .collect::<Vec<_>>(),
+                    next_after: None,
+                }),
+                ..Default::default()
+            })),
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!("Fail to create new zone: {}", error)),
+                ..Default::default()
+            })),
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
+}
+
+pub async fn list_zones(
+    appstate: Data<Arc<AppState>>,
+    query: Query<QueryPagingInput>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    if let Some(entity) = appstate.wms_entity() {
+        let after = query.after.unwrap_or(0);
+        let limit = query.limit.unwrap_or(10);
+
+        if limit > 100 {
+            Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!(
+                    "Maximum item per page does not exceed 100, currently is {}",
+                    limit
+                )),
+                ..Default::default()
+            }))
+        } else {
+            match entity
+                .list_paginated_zones(headers.tenant_id, after, limit)
+                .await
+            {
+                Ok(data) => {
+                    let next_after = if data.len() == limit as usize {
+                        data.last().unwrap().id
+                    } else {
+                        None
+                    };
+
+                    Ok(HttpResponse::Ok().json(WmsResponse {
+                        zones: Some(ListZonesResponse { data, next_after }),
+                        ..Default::default()
+                    }))
+                }
+                Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                    error: Some(format!("Fail to list zones: {}", error)),
+                    ..Default::default()
+                })),
+            }
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
+}
+
+pub async fn get_zone(
+    path: Path<i32>,
+    appstate: Data<Arc<AppState>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    let zone_id = path.into_inner();
+
+    if let Some(entity) = appstate.wms_entity() {
+        match entity.get_zone(headers.tenant_id, zone_id).await {
+            Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
+                zone: Some(data),
+                ..Default::default()
+            })),
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!("Fail to get zone {}: {}", zone_id, error)),
+                ..Default::default()
+            })),
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
+}
+
+pub async fn create_nodes(
+    path: Path<i32>,
+    appstate: Data<Arc<AppState>>,
+    nodes: Json<Vec<Node>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    if let Some(entity) = appstate.wms_entity() {
+        let nodes = nodes.into_inner();
+        let zone_id = path.into_inner();
+
+        match entity
+            .create_nodes(headers.tenant_id, Some(zone_id), &nodes)
+            .await
+        {
+            Ok(ids) => Ok(HttpResponse::Ok().json(WmsResponse {
+                nodes: Some(ListNodesResponse {
+                    data: ids
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &node_id)| Node {
+                            node_id: Some(node_id),
+                            zone_id: nodes[i].zone_id,
+                            pos_x: nodes[i].pos_x,
+                            pos_y: nodes[i].pos_y,
+                            status: nodes[i].status.clone(),
+                            name: nodes[i].name.clone(),
+                        })
+                        .collect::<Vec<_>>(),
+                    next_after: None,
+                }),
+                ..Default::default()
+            })),
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!("Fail to create new zone: {}", error)),
+                ..Default::default()
+            })),
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
+}
+
+pub async fn list_nodes(
+    appstate: Data<Arc<AppState>>,
+    path: Path<i32>,
+    query: Query<QueryPagingInput>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    if let Some(entity) = appstate.wms_entity() {
+        let zone_id = path.into_inner();
+        let after = query.after.unwrap_or(0);
+        let limit = query.limit.unwrap_or(10);
+
+        if limit > 100 {
+            Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!(
+                    "Maximum item per page does not exceed 100, currently is {}",
+                    limit
+                )),
+                ..Default::default()
+            }))
+        } else {
+            match entity
+                .list_paginated_nodes(headers.tenant_id, zone_id, after, limit)
+                .await
+            {
+                Ok(data) => {
+                    let next_after = if data.len() == limit as usize {
+                        data.last().unwrap().node_id
+                    } else {
+                        None
+                    };
+
+                    Ok(HttpResponse::Ok().json(WmsResponse {
+                        nodes: Some(ListNodesResponse { data, next_after }),
+                        ..Default::default()
+                    }))
+                }
+                Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                    error: Some(format!("Fail to list zones: {}", error)),
+                    ..Default::default()
+                })),
+            }
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
+}
+
+pub async fn get_node_by_id(
+    path: Path<(i32, i32)>,
+    appstate: Data<Arc<AppState>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    let (zone_id, node_id) = path.into_inner();
+
+    if let Some(entity) = appstate.wms_entity() {
+        match entity
+            .get_node_by_id(headers.tenant_id, zone_id, node_id)
+            .await
+        {
+            Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
+                node: Some(data),
+                ..Default::default()
+            })),
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!("Fail to get zone {}: {}", zone_id, error)),
+                ..Default::default()
+            })),
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
+}
+
+pub async fn list_paths(
+    appstate: Data<Arc<AppState>>,
+    path: Path<i32>,
+    query: Query<QueryPagingInput>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    Err(ErrorInternalServerError(WmsResponse {
+        error: Some(format!("Not implemented")),
+        ..Default::default()
+    }))
+}
+
+pub async fn get_path_by_id(
+    path: Path<(i32, i32)>,
+    appstate: Data<Arc<AppState>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    Err(ErrorInternalServerError(WmsResponse {
+        error: Some(format!("Not implemented")),
+        ..Default::default()
+    }))
+}
+
+pub async fn setup_picking_wave(
+    appstate: Data<Arc<AppState>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
     Err(ErrorInternalServerError(WmsResponse {
         error: Some(format!("Not implemented")),
         ..Default::default()
