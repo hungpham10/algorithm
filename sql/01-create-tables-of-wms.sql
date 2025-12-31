@@ -102,6 +102,44 @@ CREATE TABLE IF NOT EXISTS  `wms_items` (
   `barcode` varchar(255)
 );
 
+CREATE TABLE `wms_zones` (
+  `id` integer PRIMARY KEY AUTO_INCREMENT,
+  `tenant_id` integer NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `name` varchar(255) NOT NULL,
+  `description` text,
+  `pos_x` float NOT NULL DEFAULT 0,
+  `pos_y` float NOT NULL DEFAULT 0,
+  `height` float NOT NULL,
+  `width` float NOT NULL
+);
+
+CREATE TABLE `wms_nodes` (
+  `id` integer PRIMARY KEY AUTO_INCREMENT,
+  `tenant_id` integer NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `zone_id` integer,
+  `name` varchar(255),
+  `kind` integer NOT NULL DEFAULT 0,
+  `pos_x` float NOT NULL DEFAULT 0,
+  `pos_y` float NOT NULL DEFAULT 0
+);
+
+CREATE TABLE `wms_paths` (
+  `id` integer PRIMARY KEY AUTO_INCREMENT,
+  `tenant_id` integer NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `from_node_id` integer,
+  `to_node_id` integer,
+  `distance` float,
+  `is_one_way` boolean DEFAULT false,
+  `waypoints` json,
+  `status` integer NOT NULL DEFAULT 0
+);
+
 DELIMITER $$
 CREATE EVENT IF NOT EXISTS manage_wms_sales_partitions
 ON SCHEDULE EVERY 1 MONTH
