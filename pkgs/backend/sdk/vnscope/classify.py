@@ -93,7 +93,7 @@ class ClassifyVolumeProfile:
             print("Không đủ dữ liệu")
             return
 
-        heatmap_dates = price_df.index[-consolidated.shape[0] :]  # để map timeline
+        heatmap_dates = price_df.index[0 : max(0, len(price_df) - overlap_days)]
 
         # === 2. Indicators cơ bản ===
         period = overlap_days

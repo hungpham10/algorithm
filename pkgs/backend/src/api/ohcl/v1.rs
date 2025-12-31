@@ -261,6 +261,7 @@ pub async fn get_heatmap_from_broker(
     let (broker, symbol) = path.into_inner();
     let to = args.now;
     let from = match args.resolution.as_str() {
+        "1H" => to - 60 * 60 * args.lookback,
         "1D" => to - 24 * 60 * 60 * args.lookback,
         "1W" => to - 7 * 24 * 60 * 60 * args.lookback,
         _ => {
@@ -272,6 +273,7 @@ pub async fn get_heatmap_from_broker(
     };
 
     let resolution = match args.resolution.as_str() {
+        "1H" => "1m",
         "1D" => "1H",
         "1W" => "1D",
         _ => {
@@ -435,6 +437,19 @@ pub async fn get_heatmap_from_broker(
             ..Default::default()
         }))
     }
+}
+
+pub async fn get_swing_point_from_broker(
+    appstate: Data<Arc<AppState>>,
+    path: Path<(String, String)>,
+    args: Query<HeatmapRequest>,
+) -> Result<HttpResponse> {
+    let (broker, symbol) = path.into_inner();
+
+    Err(ErrorInternalServerError(OhclResponse {
+        error: Some(format!("Not implemented")),
+        ..Default::default()
+    }))
 }
 
 pub async fn get_list_of_resolutions(appstate: Data<Arc<AppState>>) -> Result<HttpResponse> {
