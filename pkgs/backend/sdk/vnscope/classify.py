@@ -63,9 +63,18 @@ class ClassifyVolumeProfile:
         import seaborn as sns
         from datetime import datetime
 
+        if self.resolution == "1D":
+            interval = 24 * 60 * 60
+        elif self.resolution == "1H":
+            interval = 60 * 60
+        elif self.resolution == "1W":
+            interval = 7 * 27 * 60 * 60
+        else:
+            return None
+
         # === 1. Lấy dữ liệu ===
         from_time = datetime.fromtimestamp(
-            self.now - self.lookback * 24 * 60 * 60
+            self.now - self.lookback * interval
         ).strftime("%Y-%m-%d")
         to_time = datetime.fromtimestamp(self.now).strftime("%Y-%m-%d")
 
