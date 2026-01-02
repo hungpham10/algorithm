@@ -116,32 +116,73 @@ class ClassifyVolumeProfile:
         price_df["High_Vol"] = (
             price_df["Volume"] > price_df["Volume"].rolling(period).mean() * excessive
         )
-        price_df["Marker"] = np.where(
+        price_df["Vol_Marker"] = np.where(
             price_df["High_Vol"], price_df["High"] * 1.01, np.nan
         )
 
         max_idx = price_df[price_df["High_Vol"]]["Volume"].idxmax()
-        price_df["Max_Marker"] = np.nan
-        if pd.notna(max_idx):
-            price_df.loc[max_idx, "Max_Marker"] = price_df.loc[max_idx, "High"] * 1.025
+
+        # Tính tỷ lệ Volume / Spread (Cường độ nỗ lực)
+        spread = np.abs(price_df["High"] - price_df["Low"]).replace(0, 0.001)
+        price_df["VSA_Intensity"] = price_df["Volume"] / spread
+
+        # Xác định ngưỡng bất thường (ví dụ: top 10% cao nhất và 10% thấp nhất)
+        q_high = price_df["VSA_Intensity"].quantile(0.90)
+        q_low = price_df["VSA_Intensity"].quantile(0.10)
+
+        # Marker 1: Nỗ lực lớn - Kết quả ít (Vol to, nến bé) -> Dấu hiệu đảo chiều/hấp thụ
+        price_df["Effort_Marker"] = np.where(
+            price_df["VSA_Intensity"] >= q_high, price_df["High"] * 1.015, np.nan
+        )
+
+        # Marker 2: Thiếu thanh khoản (Vol nhỏ, nến dài) -> Dấu hiệu cạn kiệt/đẩy giá ảo
+        price_df["Lack_Marker"] = np.where(
+            price_df["VSA_Intensity"] <= q_low, price_df["Low"] * 0.985, np.nan
+        )
+
+        spread = (price_df["High"] - price_df["Low"]).replace(0, 0.001)
+        price_df["Intensity"] = price_df["Volume"] / spread
+
+        # Lấy ngưỡng 80% (Vol rất to nến rất bé) và 20% (Vol rất nhỏ nến rất to)
+        q_high = price_df["Intensity"].quantile(0.80)
+        q_low = price_df["Intensity"].quantile(0.20)
+
+        def get_custom_color(row):
+            is_up = row["Close"] >= row["Open"]
+            if row["Intensity"] >= q_high:
+                return "#1B5E20" if is_up else "#B71C1C"  # Xanh lá đậm / Đỏ đậm đặc
+            elif row["Intensity"] <= q_low:
+                return "#B2DFDB" if is_up else "#FFCDD2"  # Xanh nhạt / Đỏ cực nhạt
+            return "#26a69a" if is_up else "#ef5350"  # Màu mặc định
+
+        # Tạo danh sách màu cho từng cây nến
+        candle_colors = [get_custom_color(row) for _, row in price_df.iterrows()]
+        # --------------------------------------------------
 
         apds = [
             mpf.make_addplot(price_df["SMA"], color="blue", width=1.2),
             mpf.make_addplot(price_df["Upper"], color="red", alpha=0.5),
             mpf.make_addplot(price_df["Lower"], color="green", alpha=0.5),
             mpf.make_addplot(
-                price_df["Marker"],
+                price_df["Effort_Marker"],
+                type="scatter",
+                marker="v",
+                markersize=100,
+                color="purple",
+            ),
+            mpf.make_addplot(
+                price_df["Lack_Marker"],
+                type="scatter",
+                marker="o",
+                markersize=50,
+                color="orange",
+            ),
+            mpf.make_addplot(
+                price_df["Vol_Marker"],
                 type="scatter",
                 marker="^",
                 markersize=80,
                 color="lime",
-            ),
-            mpf.make_addplot(
-                price_df["Max_Marker"],
-                type="scatter",
-                marker="*",
-                markersize=220,
-                color="red",
             ),
         ]
 
