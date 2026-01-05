@@ -1,12 +1,18 @@
 use anyhow::{anyhow, Result};
+
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 use web_sys::{window, OrientationType};
 
 use super::footer::Footer;
-use super::header::Header;
-use super::main::Main;
-use super::{Features, Padding};
+use super::header::{Header, Signal as HeaderFeatures};
+use super::logo::Context as LogoContext;
+use super::main::{Main, Signal as MainFeatures};
+use super::menu::Context as MenuContext;
+use super::vertical::{
+    Classes as VerticalClasses, Context as VerticalContext, Item as VerticalItem,
+};
+use super::Padding;
 
 fn get_orientation() -> Result<OrientationType> {
     Ok(window()
@@ -23,14 +29,50 @@ pub fn Application() -> impl IntoView {
     let (orientation, set_orientation) =
         signal(get_orientation().unwrap_or(OrientationType::LandscapePrimary));
 
-    let (features, _) = signal(Features {
-        searchable: false,
-        menu: vec![],
-        logo: "https://via.placeholder.com/150".to_string(),
-        contents: vec!["Bán chạy", "Tất cả sản phẩm", "Về chúng mình"]
-            .iter()
-            .map(|it| it.to_string())
-            .collect::<Vec<_>>(),
+    let (header, _) = signal(HeaderFeatures {
+        menu: MenuContext {
+            logo: LogoContext {
+                link: "https://via.placeholder.com/150".to_string(),
+            },
+            search: None,
+            dropdown: None,
+            vertical: Some(VerticalContext {
+                items: vec![
+                    VerticalItem {
+                        name: "Bán chạy".to_string(),
+                        link: "/best-sellers".to_string(),
+                    },
+                    VerticalItem {
+                        name: "Tất cả sản phẩm".to_string(),
+                        link: "/products".to_string(),
+                    },
+                    VerticalItem {
+                        name: "Về chúng mình".to_string(),
+                        link: "/about-us".to_string(),
+                    },
+                ],
+                classes: VerticalClasses {
+                    button: vec!["btn", "px-3", "pb-2", "pt-2"]
+                        .iter()
+                        .map(|it| it.to_string())
+                        .collect::<Vec<_>>(),
+                    highlight: vec!["text-decoration-underline", "fw-bold"]
+                        .iter()
+                        .map(|it| it.to_string())
+                        .collect::<Vec<_>>(),
+                    bounder: vec!["rounded-lg", "overflow-hidden"]
+                        .iter()
+                        .map(|it| it.to_string())
+                        .collect::<Vec<_>>(),
+                },
+            }),
+        },
+        padding: Padding {
+            page: "px-page".to_string(),
+        },
+    });
+
+    let (main, _) = signal(MainFeatures {
         padding: Padding {
             page: "px-page".to_string(),
         },
@@ -53,8 +95,8 @@ pub fn Application() -> impl IntoView {
     });
 
     view! {
-        <Header orientation=orientation features=features/>
-        <Main features=features/>
-        <Footer/>
+        <Header orientation=orientation features=header/>
+        <Main features=main/>
+        <Footer />
     }
 }
