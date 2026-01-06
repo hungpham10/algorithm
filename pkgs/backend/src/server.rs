@@ -15,7 +15,7 @@ use crate::api::{flush, health, lock, synchronize, unlock, AppState};
 
 pub async fn run() -> std::io::Result<()> {
     // @NOTE: sentry configuration
-    let _ = sentry::init((
+    let _guard = sentry::init((
         std::env::var("SENTRY_DSN")
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid SENTRY_DSN"))?,
         sentry::ClientOptions {
@@ -232,11 +232,11 @@ pub async fn run() -> std::io::Result<()> {
                         post().to(crate::api::wms::v1::get_zone),
                     )
                     .route(
-                        "/v1/wms/zone/{zone_id}/paths",
-                        post().to(crate::api::wms::v1::list_paths),
+                        "/v1/wms/zone/{zone_id}/nodes/{node_id}/pathways",
+                        post().to(crate::api::wms::v1::list_paths_by_node),
                     )
                     .route(
-                        "/v1/wms/zone/{zone_id}/paths/{path_id}",
+                        "/v1/wms/zone/{zone_id}/nodes/{node_id}/pathways/{path_id}",
                         post().to(crate::api::wms::v1::get_path_by_id),
                     )
                     .route(

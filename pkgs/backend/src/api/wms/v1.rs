@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::api::AppState;
-use crate::entities::wms::{Item, ItemStatus, Lot, Node, Order, Sale, Shelf, Stock, Zone};
+use crate::entities::wms::{Item, ItemStatus, Lot, Node, Order, PathWay, Sale, Shelf, Stock, Zone};
 
 use super::WmsHeaders;
 
@@ -74,6 +74,14 @@ pub struct ListNodesResponse {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ListPathsResponse {
+    data: Vec<PathWay>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_after: Option<i32>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WmsResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     stocks: Option<ListStocksResponse>,
@@ -116,6 +124,12 @@ pub struct WmsResponse {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     node: Option<Node>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    paths: Option<ListPathsResponse>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<PathWay>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
@@ -1028,37 +1042,135 @@ pub async fn get_node_by_id(
     }
 }
 
-pub async fn list_paths(
+pub async fn list_paths_by_node(
     appstate: Data<Arc<AppState>>,
-    path: Path<i32>,
+    path: Path<(i32, i32)>,
     query: Query<QueryPagingInput>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
-    Err(ErrorInternalServerError(WmsResponse {
-        error: Some(format!("Not implemented")),
-        ..Default::default()
-    }))
+    let (zone_id, node_id) = path.into_inner();
+
+    if let Some(entity) = appstate.wms_entity() {
+        let include_details = query.include_details.unwrap_or(false);
+        let after = query.after.unwrap_or(0);
+        let limit = query.limit.unwrap_or(10);
+
+        if limit > 100 {
+            Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!(
+                    "Maximum item per page does not exceed 100, currently is {}",
+                    limit
+                )),
+                ..Default::default()
+            }))
+        } else {
+            match entity
+                .list_paginated_paths_by_node(headers.tenant_id, zone_id, node_id, after, limit)
+                .await
+            {
+                Ok(data) => {
+                    let next_after = if data.len() == limit as usize {
+                        data.last().unwrap().path_id
+                    } else {
+                        None
+                    };
+
+                    Ok(HttpResponse::Ok().json(WmsResponse {
+                        paths: Some(ListPathsResponse { data, next_after }),
+                        ..Default::default()
+                    }))
+                }
+                Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                    error: Some(format!(
+                        "Fail to list path zone {}, node {}: {}",
+                        zone_id, node_id, error
+                    )),
+                    ..Default::default()
+                })),
+            }
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
 }
 
 pub async fn get_path_by_id(
-    path: Path<(i32, i32)>,
+    path: Path<(i32, i32, i32)>,
     appstate: Data<Arc<AppState>>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
-    Err(ErrorInternalServerError(WmsResponse {
-        error: Some(format!("Not implemented")),
-        ..Default::default()
-    }))
+    let (zone_id, node_id, path_id) = path.into_inner();
+
+    if let Some(entity) = appstate.wms_entity() {
+        match entity
+            .get_path_by_id(headers.tenant_id, zone_id, node_id, path_id)
+            .await
+        {
+            Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
+                path: Some(data),
+                ..Default::default()
+            })),
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!(
+                    "Fail to list path zone {}, node {}: {}",
+                    zone_id, node_id, error
+                )),
+                ..Default::default()
+            })),
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
+}
+
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+pub struct PickingNodeScope {
+    zone: i32,
+    node: i32,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+pub struct PickingScope {
+    zones: Vec<i32>,
+    nodes: Vec<PickingNodeScope>,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+pub struct SetupPickingWaveRequest {
+    orders: Vec<Order>,
+    scope: Option<PickingScope>,
 }
 
 pub async fn setup_picking_wave(
     appstate: Data<Arc<AppState>>,
+    config: SetupPickingWaveRequest,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
-    Err(ErrorInternalServerError(WmsResponse {
-        error: Some(format!("Not implemented")),
-        ..Default::default()
-    }))
+    if let Some(entity) = appstate.wms_entity() {
+        match entity
+            .create_picking_wave_session(headers.tenant_id, &config.orders)
+            .await
+        {
+            Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
+                ..Default::default()
+            })),
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!("Fail setup wave orders: {}", error)),
+                ..Default::default()
+            })),
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
 }
 
 pub async fn process_offline_sale(
