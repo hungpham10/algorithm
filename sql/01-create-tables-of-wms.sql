@@ -134,6 +134,7 @@ CREATE TABLE `wms_paths` (
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `from_node_id` integer,
   `to_node_id` integer,
+  `zone_id` integer,
   `distance` float,
   `is_one_way` boolean DEFAULT false,
   `waypoints` json,

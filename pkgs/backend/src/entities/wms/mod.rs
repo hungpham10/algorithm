@@ -588,6 +588,82 @@ pub struct Node {
     pub pos_y: Option<f64>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[repr(i32)]
+pub enum PathStatus {
+    Unknown,
+    Damage,
+    Block,
+    Available,
+}
+
+impl From<i32> for PathStatus {
+    fn from(i: i32) -> Self {
+        match i {
+            1 => PathStatus::Available,
+            2 => PathStatus::Block,
+            3 => PathStatus::Damage,
+            _ => PathStatus::Unknown,
+        }
+    }
+}
+
+impl From<String> for PathStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "path is damaging" => PathStatus::Damage,
+            "routing is blocked" => PathStatus::Block,
+            "available" => PathStatus::Available,
+            _ => PathStatus::Unknown,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PathStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(PathStatus::from(s))
+    }
+}
+
+impl Display for PathStatus {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            PathStatus::Unknown => write!(f, "unknown"),
+            PathStatus::Damage => write!(f, "path is damaging"),
+            PathStatus::Block => write!(f, "routing is blocked"),
+            PathStatus::Available => write!(f, "available"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PathWay {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zone_id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_node: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to_node: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<PathStatus>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_one_way: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sharp: Option<Vec<(f64, f64)>>,
+}
+
 pub struct Wms {
     db: Vec<Arc<DatabaseConnection>>,
 }
@@ -1916,6 +1992,86 @@ impl Wms {
             .into_iter()
             .map(|(id,)| id)
             .collect::<Vec<_>>())
+    }
+
+    pub async fn get_path_by_id(
+        &self,
+        tenant_id: i32,
+        zone_id: i32,
+        from_node_id: i32,
+        path_id: i32,
+    ) -> Result<PathWay, DbErr> {
+        match Paths::find()
+            .select_only()
+            .column(paths::Column::Id)
+            .column(paths::Column::ToNodeId)
+            .column(paths::Column::Status)
+            .column(paths::Column::IsOneWay)
+            .filter(paths::Column::FromNodeId.eq(from_node_id))
+            .filter(paths::Column::TenantId.eq(tenant_id))
+            .filter(paths::Column::ZoneId.eq(zone_id))
+            .filter(paths::Column::Id.eq(path_id))
+            .into_tuple::<(i32, i32, i32, bool)>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some((path_id, to_node_id, status, is_one_way)) => Ok(PathWay {
+                path_id: Some(path_id),
+                zone_id: Some(zone_id),
+                from_node: Some(from_node_id),
+                to_node: Some(to_node_id),
+                is_one_way: Some(is_one_way),
+                status: Some(PathStatus::from(status)),
+                sharp: None,
+            }),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Path with id {} in zone {} from node {}, not exist",
+                path_id, zone_id, from_node_id,
+            )))),
+        }
+    }
+
+    pub async fn list_paginated_paths_by_node(
+        &self,
+        tenant_id: i32,
+        zone_id: i32,
+        from_node_id: i32,
+        after: i32,
+        limit: u64,
+    ) -> Result<Vec<PathWay>, DbErr> {
+        Ok(Paths::find()
+            .select_only()
+            .column(paths::Column::Id)
+            .column(paths::Column::ToNodeId)
+            .column(paths::Column::Status)
+            .column(paths::Column::IsOneWay)
+            .filter(paths::Column::FromNodeId.eq(from_node_id))
+            .filter(paths::Column::TenantId.eq(tenant_id))
+            .filter(paths::Column::ZoneId.eq(zone_id))
+            .filter(paths::Column::Id.gt(after))
+            .limit(limit)
+            .into_tuple::<(i32, i32, i32, bool)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|(path_id, to_node_id, status, is_one_way)| PathWay {
+                path_id: Some(path_id),
+                zone_id: Some(zone_id),
+                from_node: Some(from_node_id),
+                to_node: Some(to_node_id),
+                is_one_way: Some(is_one_way),
+                status: Some(PathStatus::from(status)),
+                sharp: None,
+            })
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn create_picking_wave_session(
+        &self,
+        tenant_id: i32,
+        orders: &Vec<Order>,
+    ) -> Result<Vec<i32>, DbErr> {
+        Ok(Vec::new())
     }
 }
 

@@ -9,6 +9,7 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
     pub tenant_id: i32,
+    pub zone_id: i32,
     pub from_node_id: i32,
     pub to_node_id: i32,
     pub created_at: DateTimeUtc,
