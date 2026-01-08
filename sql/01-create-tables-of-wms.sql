@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS  `wms_shelves` (
   `name` varchar(255) NOT NULL,
   `publish` BOOLEAN DEFAULT FALSE,
   `description` varchar(255),
+  `node` INTEGER DEFAULT 0,
+  `zone` INTEGER DEFAULT 0,
+  `is_left` BOOLEAN DEFAULT FALSE,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY `unique_tenant_name` (`tenant_id`, `name`)
@@ -102,6 +105,95 @@ CREATE TABLE IF NOT EXISTS  `wms_items` (
   `barcode` varchar(255)
 );
 
+CREATE TABLE `wms_zones` (
+  `id` integer PRIMARY KEY AUTO_INCREMENT,
+  `tenant_id` integer NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `name` varchar(255) NOT NULL,
+  `description` text,
+  `pos_x` float NOT NULL DEFAULT 0,
+  `pos_y` float NOT NULL DEFAULT 0,
+  `height` float NOT NULL,
+  `width` float NOT NULL
+);
+
+CREATE TABLE `wms_nodes` (
+  `id` integer PRIMARY KEY AUTO_INCREMENT,
+  `tenant_id` integer NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `zone_id` integer,
+  `name` varchar(255),
+  `kind` integer NOT NULL DEFAULT 0,
+  `pos_x` float NOT NULL DEFAULT 0,
+  `pos_y` float NOT NULL DEFAULT 0
+);
+
+CREATE TABLE `wms_paths` (
+  `id` integer PRIMARY KEY AUTO_INCREMENT,
+  `tenant_id` integer NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `from_node_id` integer,
+  `to_node_id` integer,
+  `zone_id` integer,
+  `distance` float,
+  `is_one_way` boolean DEFAULT false,
+  `waypoints` json,
+  `status` integer NOT NULL DEFAULT 0
+);
+
+CREATE TABLE `wms_picking_plans` (
+  `id` integer PRIMARY KEY AUTO_INCREMENT,
+  `tenant_id` integer NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `status` integer
+);
+
+CREATE TABLE `wms_picking_routes` (
+  `id` integer PRIMARY KEY AUTO_INCREMENT,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `tenant_id` integer NOT NULL,
+  `depend_id` integer,
+  `picking_id` integer,
+  `status` integer,
+  `paths` json
+);
+
+CREATE TABLE `wms_picking_goods` (
+  `id` integer PRIMARY KEY AUTO_INCREMENT,
+  `tenant_id` integer NOT NULL,
+  `sale_id` integer,
+  `route_id` integer,
+  `event_id` integer,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `status` integer,
+  `is_ready_to_pack` bool
+);
+
+CREATE TABLE `wms_picking_events` (
+  `id` integer PRIMARY KEY AUTO_INCREMENT,
+  `tenant_id` integer NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `actor_id` integer,
+  `route_id` integer
+);
+
+CREATE TABLE `wms_picking_items` (
+  `id` integer PRIMARY KEY AUTO_INCREMENT,
+  `tenant_id` integer NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `item_id` integer,
+  `event_id` integer,
+  `ledger_id` integer
+);
+
 DELIMITER $$
 CREATE EVENT IF NOT EXISTS manage_wms_sales_partitions
 ON SCHEDULE EVERY 1 MONTH
@@ -149,6 +241,136 @@ BEGIN
     -- 2️⃣ Tháng quá hạn (>6 tháng): drop partition cũ
     SET old_month = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 6 MONTH), '%Y%m');
     SET @sql_drop = CONCAT('ALTER TABLE wms_sale_events DROP PARTITION IF EXISTS p', old_month);
+    PREPARE stmt_drop FROM @sql_drop;
+    EXECUTE stmt_drop;
+    DEALLOCATE PREPARE stmt_drop;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE EVENT IF NOT EXISTS manage_wms_picking_plans_partitions
+ON SCHEDULE EVERY 1 MONTH
+STARTS CURRENT_TIMESTAMP
+DO
+BEGIN
+    DECLARE next_month INT;
+    DECLARE old_month INT;
+
+    -- 1️⃣ Tháng tiếp theo: thêm partition mới
+    SET next_month = DATE_FORMAT(DATE_ADD(CURDATE(), INTERVAL 1 MONTH), '%Y%m');
+    SET @sql_add = CONCAT('ALTER TABLE wms_picking_plans ADD PARTITION (PARTITION p', next_month,
+                          ' VALUES LESS THAN (', next_month + 1, '))');
+    PREPARE stmt_add FROM @sql_add;
+    EXECUTE stmt_add;
+    DEALLOCATE PREPARE stmt_add;
+
+    -- 2️⃣ Tháng quá hạn (>6 tháng): drop partition cũ
+    SET old_month = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 6 MONTH), '%Y%m');
+    SET @sql_drop = CONCAT('ALTER TABLE wms_picking_plans DROP PARTITION IF EXISTS p', old_month);
+    PREPARE stmt_drop FROM @sql_drop;
+    EXECUTE stmt_drop;
+    DEALLOCATE PREPARE stmt_drop;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE EVENT IF NOT EXISTS manage_wms_picking_routes_partitions
+ON SCHEDULE EVERY 1 MONTH
+STARTS CURRENT_TIMESTAMP
+DO
+BEGIN
+    DECLARE next_month INT;
+    DECLARE old_month INT;
+
+    -- 1️⃣ Tháng tiếp theo: thêm partition mới
+    SET next_month = DATE_FORMAT(DATE_ADD(CURDATE(), INTERVAL 1 MONTH), '%Y%m');
+    SET @sql_add = CONCAT('ALTER TABLE wms_picking_routes ADD PARTITION (PARTITION p', next_month,
+                          ' VALUES LESS THAN (', next_month + 1, '))');
+    PREPARE stmt_add FROM @sql_add;
+    EXECUTE stmt_add;
+    DEALLOCATE PREPARE stmt_add;
+
+    -- 2️⃣ Tháng quá hạn (>6 tháng): drop partition cũ
+    SET old_month = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 6 MONTH), '%Y%m');
+    SET @sql_drop = CONCAT('ALTER TABLE wms_picking_routes DROP PARTITION IF EXISTS p', old_month);
+    PREPARE stmt_drop FROM @sql_drop;
+    EXECUTE stmt_drop;
+    DEALLOCATE PREPARE stmt_drop;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE EVENT IF NOT EXISTS manage_wms_picking_goods_partitions
+ON SCHEDULE EVERY 1 MONTH
+STARTS CURRENT_TIMESTAMP
+DO
+BEGIN
+    DECLARE next_month INT;
+    DECLARE old_month INT;
+
+    -- 1️⃣ Tháng tiếp theo: thêm partition mới
+    SET next_month = DATE_FORMAT(DATE_ADD(CURDATE(), INTERVAL 1 MONTH), '%Y%m');
+    SET @sql_add = CONCAT('ALTER TABLE wms_picking_goods ADD PARTITION (PARTITION p', next_month,
+                          ' VALUES LESS THAN (', next_month + 1, '))');
+    PREPARE stmt_add FROM @sql_add;
+    EXECUTE stmt_add;
+    DEALLOCATE PREPARE stmt_add;
+
+    -- 2️⃣ Tháng quá hạn (>6 tháng): drop partition cũ
+    SET old_month = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 6 MONTH), '%Y%m');
+    SET @sql_drop = CONCAT('ALTER TABLE wms_picking_goods DROP PARTITION IF EXISTS p', old_month);
+    PREPARE stmt_drop FROM @sql_drop;
+    EXECUTE stmt_drop;
+    DEALLOCATE PREPARE stmt_drop;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE EVENT IF NOT EXISTS manage_wms_picking_events_partitions
+ON SCHEDULE EVERY 1 MONTH
+STARTS CURRENT_TIMESTAMP
+DO
+BEGIN
+    DECLARE next_month INT;
+    DECLARE old_month INT;
+
+    -- 1️⃣ Tháng tiếp theo: thêm partition mới
+    SET next_month = DATE_FORMAT(DATE_ADD(CURDATE(), INTERVAL 1 MONTH), '%Y%m');
+    SET @sql_add = CONCAT('ALTER TABLE wms_picking_events ADD PARTITION (PARTITION p', next_month,
+                          ' VALUES LESS THAN (', next_month + 1, '))');
+    PREPARE stmt_add FROM @sql_add;
+    EXECUTE stmt_add;
+    DEALLOCATE PREPARE stmt_add;
+
+    -- 2️⃣ Tháng quá hạn (>6 tháng): drop partition cũ
+    SET old_month = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 6 MONTH), '%Y%m');
+    SET @sql_drop = CONCAT('ALTER TABLE wms_picking_events DROP PARTITION IF EXISTS p', old_month);
+    PREPARE stmt_drop FROM @sql_drop;
+    EXECUTE stmt_drop;
+    DEALLOCATE PREPARE stmt_drop;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE EVENT IF NOT EXISTS manage_wms_picking_items_partitions
+ON SCHEDULE EVERY 1 MONTH
+STARTS CURRENT_TIMESTAMP
+DO
+BEGIN
+    DECLARE next_month INT;
+    DECLARE old_month INT;
+
+    -- 1️⃣ Tháng tiếp theo: thêm partition mới
+    SET next_month = DATE_FORMAT(DATE_ADD(CURDATE(), INTERVAL 1 MONTH), '%Y%m');
+    SET @sql_add = CONCAT('ALTER TABLE wms_picking_items ADD PARTITION (PARTITION p', next_month,
+                          ' VALUES LESS THAN (', next_month + 1, '))');
+    PREPARE stmt_add FROM @sql_add;
+    EXECUTE stmt_add;
+    DEALLOCATE PREPARE stmt_add;
+
+    -- 2️⃣ Tháng quá hạn (>6 tháng): drop partition cũ
+    SET old_month = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 6 MONTH), '%Y%m');
+    SET @sql_drop = CONCAT('ALTER TABLE wms_picking_items DROP PARTITION IF EXISTS p', old_month);
     PREPARE stmt_drop FROM @sql_drop;
     EXECUTE stmt_drop;
     DEALLOCATE PREPARE stmt_drop;

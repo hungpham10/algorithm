@@ -1,23 +1,28 @@
 mod items;
 mod lots;
+mod nodes;
+mod paths;
 mod sale_events;
 mod sales;
 mod shelves;
 mod stock_entries;
 mod stock_shelves;
 mod stocks;
+mod zones;
 
 use items::Entity as Items;
 use lots::Entity as Lots;
+use nodes::Entity as Nodes;
+use paths::Entity as Paths;
 use sale_events::Entity as SaleEvents;
 use sales::Entity as Sales;
 use shelves::Entity as Shelves;
 use stock_entries::Entity as StockEntries;
 use stock_shelves::Entity as StockShelves;
 use stocks::Entity as Stocks;
+use zones::Entity as Zones;
 
 use std::collections::{HashMap, HashSet};
-use std::convert::TryFrom;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::sync::Arc;
 
@@ -26,8 +31,8 @@ use serde::{Deserialize, Serialize};
 
 use sea_orm::entity::prelude::Expr;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, JoinType, QueryFilter,
-    QueryOrder, QuerySelect, RuntimeErr, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, JoinType,
+    QueryFilter, QueryOrder, QuerySelect, RuntimeErr, Set, TransactionTrait,
 };
 use sea_query::OnConflict;
 
@@ -66,8 +71,10 @@ impl Default for Stock {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(i32)]
-enum LotStatus {
+pub enum LotStatus {
+    Unknown,
     Unavailable,
     Planing,
     Transporting,
@@ -76,41 +83,57 @@ enum LotStatus {
     Returned,
 }
 
-impl TryFrom<i32> for LotStatus {
-    type Error = String;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
+impl From<i32> for LotStatus {
+    fn from(value: i32) -> Self {
         match value {
-            0 => Ok(LotStatus::Unavailable),
-            1 => Ok(LotStatus::Planing),
-            2 => Ok(LotStatus::Transporting),
-            3 => Ok(LotStatus::Available),
-            4 => Ok(LotStatus::Outdated),
-            5 => Ok(LotStatus::Returned),
-            _ => Err(format!("Invalid state({}) for lot", value)),
+            0 => LotStatus::Unavailable,
+            1 => LotStatus::Planing,
+            2 => LotStatus::Transporting,
+            3 => LotStatus::Available,
+            4 => LotStatus::Outdated,
+            5 => LotStatus::Returned,
+            _ => LotStatus::Unknown,
         }
     }
 }
 
-impl TryFrom<String> for LotStatus {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
+impl From<String> for LotStatus {
+    fn from(value: String) -> Self {
         match value.as_str() {
-            "Unavailable" => Ok(LotStatus::Unavailable),
-            "On planing" => Ok(LotStatus::Planing),
-            "On transporting" => Ok(LotStatus::Transporting),
-            "Available" => Ok(LotStatus::Available),
-            "Outdated" => Ok(LotStatus::Outdated),
-            "Being returned" => Ok(LotStatus::Returned),
-            _ => Err(format!("Invalid state({}) for lot", value)),
+            "Unavailable" => LotStatus::Unavailable,
+            "On planing" => LotStatus::Planing,
+            "On transporting" => LotStatus::Transporting,
+            "Available" => LotStatus::Available,
+            "Outdated" => LotStatus::Outdated,
+            "Being returned" => LotStatus::Returned,
+            _ => LotStatus::Unknown,
         }
+    }
+}
+
+impl serde::Serialize for LotStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for LotStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(LotStatus::from(s))
     }
 }
 
 impl Display for LotStatus {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
+            LotStatus::Unknown => write!(f, "Error"),
             LotStatus::Unavailable => write!(f, "Unavailable"),
             LotStatus::Planing => write!(f, "On planing"),
             LotStatus::Transporting => write!(f, "On transporting"),
@@ -136,7 +159,7 @@ pub struct Lot {
     pub cost_price: Option<f64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
+    pub status: Option<LotStatus>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub supplier: Option<String>,
@@ -182,9 +205,12 @@ impl Default for Shelf {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(i32)]
-enum ItemStatus {
+pub enum ItemStatus {
+    Unknown,
     Unavailable,
+    Plan,
     Available,
     Damaged,
     Outdated,
@@ -192,40 +218,60 @@ enum ItemStatus {
     Returned,
 }
 
-impl TryFrom<i32> for ItemStatus {
-    type Error = String;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
+impl From<i32> for ItemStatus {
+    fn from(value: i32) -> Self {
         match value {
-            0 => Ok(ItemStatus::Unavailable),
-            1 => Ok(ItemStatus::Available),
-            2 => Ok(ItemStatus::Damaged),
-            3 => Ok(ItemStatus::Outdated),
-            4 => Ok(ItemStatus::Saled),
-            5 => Ok(ItemStatus::Returned),
-            _ => Err(format!("Invalid state({}) for item", value)),
+            0 => ItemStatus::Unavailable,
+            1 => ItemStatus::Plan,
+            2 => ItemStatus::Available,
+            3 => ItemStatus::Damaged,
+            4 => ItemStatus::Outdated,
+            5 => ItemStatus::Saled,
+            6 => ItemStatus::Returned,
+            _ => ItemStatus::Unknown,
         }
     }
 }
 
-impl TryFrom<String> for ItemStatus {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
+impl From<String> for ItemStatus {
+    fn from(value: String) -> Self {
         match value.as_str() {
-            "Unavailable" => Ok(ItemStatus::Unavailable),
-            "Available" => Ok(ItemStatus::Available),
-            "Being damaged" => Ok(ItemStatus::Damaged),
-            "Being saled" => Ok(ItemStatus::Saled),
-            "Being returned" => Ok(ItemStatus::Returned),
-            "Outdated" => Ok(ItemStatus::Outdated),
-            _ => Err(format!("Invalid state({}) for lot", value)),
+            "Unavailable" => ItemStatus::Unavailable,
+            "Available" => ItemStatus::Available,
+            "Being damaged" => ItemStatus::Damaged,
+            "Being saled" => ItemStatus::Saled,
+            "Being returned" => ItemStatus::Returned,
+            "Outdated" => ItemStatus::Outdated,
+            "Being planed" => ItemStatus::Plan,
+            _ => ItemStatus::Unknown,
         }
     }
 }
+
+impl<'de> Deserialize<'de> for ItemStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(ItemStatus::from(s))
+    }
+}
+
+impl serde::Serialize for ItemStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
 impl Display for ItemStatus {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
+            ItemStatus::Unknown => write!(f, "Errored"),
+            ItemStatus::Plan => write!(f, "Being planed"),
             ItemStatus::Unavailable => write!(f, "Unavailable"),
             ItemStatus::Available => write!(f, "Available"),
             ItemStatus::Damaged => write!(f, "Being damaged"),
@@ -260,7 +306,7 @@ pub struct Item {
     pub barcode: Option<String>,
 
     pub cost_price: f64,
-    pub status: String,
+    pub status: ItemStatus,
 }
 
 impl Default for Item {
@@ -274,7 +320,7 @@ impl Default for Item {
             stock_id: None,
             barcode: None,
             cost_price: 0.0,
-            status: ItemStatus::Unavailable.to_string(),
+            status: ItemStatus::Unavailable,
         }
     }
 }
@@ -306,8 +352,10 @@ impl Default for Sale {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(i32)]
 enum SaleStatus {
+    Unknown,
     Failed,
     Paid,
     Delivered,
@@ -316,25 +364,57 @@ enum SaleStatus {
     Done,
 }
 
-impl TryFrom<i32> for SaleStatus {
-    type Error = String;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
+impl From<i32> for SaleStatus {
+    fn from(value: i32) -> Self {
         match value {
-            0 => Ok(SaleStatus::Failed),
-            1 => Ok(SaleStatus::Done),
-            2 => Ok(SaleStatus::Paid),
-            3 => Ok(SaleStatus::Delivered),
-            4 => Ok(SaleStatus::Returned),
-            5 => Ok(SaleStatus::Refunded),
-            _ => Err(format!("Invalid state({}) for item", value)),
+            0 => SaleStatus::Failed,
+            1 => SaleStatus::Done,
+            2 => SaleStatus::Paid,
+            3 => SaleStatus::Delivered,
+            4 => SaleStatus::Returned,
+            5 => SaleStatus::Refunded,
+            _ => SaleStatus::Unknown,
         }
+    }
+}
+
+impl From<String> for SaleStatus {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "Failed" => SaleStatus::Failed,
+            "Done" => SaleStatus::Done,
+            "Paid" => SaleStatus::Paid,
+            "Delivered" => SaleStatus::Delivered,
+            "Returned" => SaleStatus::Returned,
+            "Refunded" => SaleStatus::Refunded,
+            _ => SaleStatus::Unknown,
+        }
+    }
+}
+
+impl serde::Serialize for SaleStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for SaleStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(SaleStatus::from(s))
     }
 }
 
 impl Display for SaleStatus {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
+            SaleStatus::Unknown => write!(f, "Error"),
             SaleStatus::Failed => write!(f, "Failed"),
             SaleStatus::Done => write!(f, "Done"),
             SaleStatus::Paid => write!(f, "Paid"),
@@ -343,6 +423,245 @@ impl Display for SaleStatus {
             SaleStatus::Refunded => write!(f, "Refunded"),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[repr(i32)]
+pub enum OrderStatus {
+    Unknown,
+    Picking,
+    Packing,
+    Shiping,
+    Returning,
+    Done,
+}
+
+impl From<String> for OrderStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "picking" => OrderStatus::Picking,
+            "packing" => OrderStatus::Packing,
+            "shiping" => OrderStatus::Shiping,
+            "returing" => OrderStatus::Returning,
+            "done" => OrderStatus::Done,
+            _ => OrderStatus::Unknown,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for OrderStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(OrderStatus::from(s))
+    }
+}
+
+impl Display for OrderStatus {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            OrderStatus::Unknown => write!(f, "unknown"),
+            OrderStatus::Picking => write!(f, "picking"),
+            OrderStatus::Packing => write!(f, "packing"),
+            OrderStatus::Shiping => write!(f, "shipping"),
+            OrderStatus::Returning => write!(f, "returning"),
+            OrderStatus::Done => write!(f, "done"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Order {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<OrderStatus>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime<Utc>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<Item>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Zone {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_x: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_y: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[repr(i32)]
+pub enum NodeStatus {
+    Unknown,
+    DamageLeft,
+    DamageRight,
+    Block,
+    Available,
+}
+
+impl From<i32> for NodeStatus {
+    fn from(i: i32) -> Self {
+        match i {
+            1 => NodeStatus::Available,
+            2 => NodeStatus::Block,
+            3 => NodeStatus::DamageLeft,
+            4 => NodeStatus::DamageRight,
+            _ => NodeStatus::Unknown,
+        }
+    }
+}
+
+impl From<String> for NodeStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "damaging left block" => NodeStatus::DamageLeft,
+            "damaging right block" => NodeStatus::DamageRight,
+            "routing is blocked" => NodeStatus::Block,
+            "available" => NodeStatus::Available,
+            _ => NodeStatus::Unknown,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for NodeStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(NodeStatus::from(s))
+    }
+}
+
+impl Display for NodeStatus {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            NodeStatus::Unknown => write!(f, "unknown"),
+            NodeStatus::DamageLeft => write!(f, "damaging left block"),
+            NodeStatus::DamageRight => write!(f, "damaging right block"),
+            NodeStatus::Block => write!(f, "routing is blocked"),
+            NodeStatus::Available => write!(f, "available"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Node {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zone_id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<NodeStatus>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_x: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_y: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[repr(i32)]
+pub enum PathStatus {
+    Unknown,
+    Damage,
+    Block,
+    Available,
+}
+
+impl From<i32> for PathStatus {
+    fn from(i: i32) -> Self {
+        match i {
+            1 => PathStatus::Available,
+            2 => PathStatus::Block,
+            3 => PathStatus::Damage,
+            _ => PathStatus::Unknown,
+        }
+    }
+}
+
+impl From<String> for PathStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "path is damaging" => PathStatus::Damage,
+            "routing is blocked" => PathStatus::Block,
+            "available" => PathStatus::Available,
+            _ => PathStatus::Unknown,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PathStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(PathStatus::from(s))
+    }
+}
+
+impl Display for PathStatus {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            PathStatus::Unknown => write!(f, "unknown"),
+            PathStatus::Damage => write!(f, "path is damaging"),
+            PathStatus::Block => write!(f, "routing is blocked"),
+            PathStatus::Available => write!(f, "available"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PathWay {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zone_id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_node: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to_node: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<PathStatus>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_one_way: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sharp: Option<Vec<(f64, f64)>>,
 }
 
 pub struct Wms {
@@ -457,18 +776,7 @@ impl Wms {
                 entry_date: Set(l.entry_date.unwrap_or_else(chrono::Utc::now)),
                 cost_price: Set(l.cost_price),
                 status: Set(Some(
-                    LotStatus::try_from(
-                        l.status
-                            .clone()
-                            .unwrap_or(LotStatus::Unavailable.to_string()),
-                    )
-                    .map_err(|error| {
-                        DbErr::Custom(format!(
-                            "Fail with status of lot {}: {}",
-                            l.lot_number.clone(),
-                            error
-                        ))
-                    })? as i32,
+                    LotStatus::from(l.status.clone().unwrap_or(LotStatus::Unavailable)) as i32,
                 )),
                 ..Default::default()
             })
@@ -582,7 +890,7 @@ impl Wms {
             .map(|item| (item.stock_id.unwrap_or(0), item.lot_id.unwrap_or(0)))
             .collect::<HashSet<_>>();
 
-        items::Entity::insert_many(items.iter().map(|item| items::ActiveModel {
+        Items::insert_many(items.iter().map(|item| items::ActiveModel {
             tenant_id: Set(tenant_id),
             stock_id: Set(item.stock_id.unwrap_or(0)),
             lot_id: Set(item.lot_id.unwrap_or(0)),
@@ -595,7 +903,7 @@ impl Wms {
         .await?;
         txn.commit().await?;
 
-        let collected_items = items::Entity::find()
+        let collected_items = Items::find()
             .select_only()
             .column(items::Column::Id)
             .column(items::Column::StockId)
@@ -627,9 +935,7 @@ impl Wms {
                 id: Some(id),
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
-                status: ItemStatus::try_from(status)
-                    .map_err(|error| DbErr::Custom(format!("Invalid status: {:?}", error,)))?
-                    .to_string(),
+                status: ItemStatus::from(status),
                 ..Default::default()
             });
         }
@@ -654,7 +960,7 @@ impl Wms {
             .map(|shelf| (shelf.name, shelf.id))
             .collect::<HashMap<_, _>>();
 
-        let valid_items = items::Entity::find()
+        let valid_items = Items::find()
             .filter(items::Column::TenantId.eq(tenant_id))
             .filter(items::Column::LotId.eq(lot_id))
             .filter(
@@ -681,13 +987,10 @@ impl Wms {
                 item_id
             )))?];
             let stock_id = item.stock_id;
-            let status = ItemStatus::try_from(item.status.clone())
-                .map_err(|error| DbErr::Custom(format!("Failed to parse item status: {}", error)))?
-                as i32;
+            let status = ItemStatus::from(item.status.clone()) as i32;
 
             if valid_items.contains(&item_id) {
-                let mut update_query =
-                    items::Entity::update_many().filter(items::Column::Id.eq(item_id));
+                let mut update_query = Items::update_many().filter(items::Column::Id.eq(item_id));
 
                 if let Some(barcode) = &item.barcode {
                     update_query =
@@ -706,12 +1009,9 @@ impl Wms {
                     .exec(&txn)
                     .await?;
 
-                items::Entity::find_by_id(item_id)
-                    .one(&txn)
-                    .await?
-                    .ok_or_else(|| {
-                        DbErr::Custom(format!("Item with id {} not found after update", item_id))
-                    })?;
+                Items::find_by_id(item_id).one(&txn).await?.ok_or_else(|| {
+                    DbErr::Custom(format!("Item with id {} not found after update", item_id))
+                })?;
 
                 count_stock_entries
                     .entry(shelf_id)
@@ -776,7 +1076,7 @@ impl Wms {
             return Ok(());
         }
 
-        let update_result = items::Entity::update_many()
+        let update_result = Items::update_many()
             .col_expr(items::Column::ShelfId, Expr::value(Some(shelf_id)))
             .filter(items::Column::Id.is_in(items.iter().map(|item| item.id).collect::<Vec<_>>()))
             .filter(items::Column::TenantId.eq(tenant_id))
@@ -913,16 +1213,7 @@ impl Wms {
                     entry_date: None,
                     expired_date: None,
                     cost_price: Some(cost_price),
-                    status: Some(
-                        LotStatus::try_from(lot_status)
-                            .map_err(|error| {
-                                DbErr::Query(RuntimeErr::Internal(format!(
-                                    "Lot with id {} face issue: {}",
-                                    lot_id, error,
-                                )))
-                            })?
-                            .to_string(),
-                    ),
+                    status: Some(LotStatus::from(lot_status)),
                     supplier: lot_supplier.clone(),
                     lot_number,
                     quantity: stock_entry_quantity,
@@ -1004,12 +1295,7 @@ impl Wms {
             .await?;
 
         if let Some(result) = result {
-            let status = LotStatus::try_from(result.status.unwrap_or(0)).map_err(|error| {
-                DbErr::Query(RuntimeErr::Internal(format!(
-                    "Lot with id {} face issue: {}",
-                    lot_id, error,
-                )))
-            })?;
+            let status = LotStatus::from(result.status.unwrap_or(0));
 
             Ok(Lot {
                 id: Some(result.id),
@@ -1019,7 +1305,7 @@ impl Wms {
                 quantity: result.quantity,
                 cost_price: result.cost_price,
                 supplier: result.supplier.clone(),
-                status: Some(status.to_string()),
+                status: Some(status),
             })
         } else {
             Err(DbErr::Query(RuntimeErr::Internal(format!(
@@ -1050,7 +1336,7 @@ impl Wms {
             )
             .join_rev(
                 JoinType::InnerJoin,
-                items::Entity::belongs_to(Lots)
+                Items::belongs_to(Lots)
                     .from(items::Column::LotId)
                     .to(lots::Column::Id)
                     .into(),
@@ -1095,7 +1381,11 @@ impl Wms {
                     entry_date: Some(entry_date),
                     expired_date: None,
                     cost_price: Some(cost_price),
-                    status: status,
+                    status: if let Some(status) = status {
+                        Some(LotStatus::from(status))
+                    } else {
+                        None
+                    },
                     supplier: supplier,
                     lot_number: lot_number,
                     quantity: quantity,
@@ -1274,12 +1564,11 @@ impl Wms {
 
                 id: Some(id),
                 barcode: Some(barcode.clone()),
-                status: (if order_id.is_none() {
-                    "in-stock"
+                status: if order_id.is_none() {
+                    ItemStatus::Available
                 } else {
-                    "sold-out"
-                })
-                .to_string(),
+                    ItemStatus::Saled
+                },
             })
         } else {
             Err(DbErr::Query(RuntimeErr::Internal(format!(
@@ -1370,6 +1659,492 @@ impl Wms {
                 "Missing field `stocks`"
             )))),
         }
+    }
+
+    pub async fn get_zone(&self, tenant_id: i32, zone_id: i32) -> Result<Zone, DbErr> {
+        let result = Zones::find()
+            .filter(zones::Column::TenantId.eq(tenant_id))
+            .filter(zones::Column::Id.eq(zone_id))
+            .one(self.dbt(tenant_id))
+            .await?;
+
+        if let Some(result) = result {
+            Ok(Zone {
+                id: Some(result.id),
+                name: Some(result.name),
+                description: Some(result.description),
+                pos_x: Some(result.pos_x),
+                pos_y: Some(result.pos_y),
+                height: Some(result.height),
+                width: Some(result.width),
+            })
+        } else {
+            Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Zone with id {}, not exist",
+                zone_id
+            ))))
+        }
+    }
+
+    pub async fn get_order_detail(&self, tenant_id: i32, order_id: i32) -> Result<Order, DbErr> {
+        match Sales::find()
+            .select_only()
+            .column(sales::Column::Status)
+            .filter(sales::Column::TenantId.eq(tenant_id))
+            .filter(sales::Column::OrderId.eq(order_id))
+            .into_tuple::<(i32, DateTime<Utc>)>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some((status, created_at)) => Ok(Order {
+                order_id: Some(order_id),
+                status: Some(if SaleStatus::from(status) == SaleStatus::Done {
+                    OrderStatus::Done
+                } else {
+                    OrderStatus::Unknown
+                }),
+                created_at: Some(created_at),
+                items: Some(if SaleStatus::from(status) == SaleStatus::Done {
+                    Items::find()
+                        .select_only()
+                        .filter(items::Column::TenantId.eq(tenant_id))
+                        .filter(items::Column::OrderId.eq(Some(order_id)))
+                        .into_tuple::<(i32, i32, i32, i32, f64, Option<String>)>()
+                        .all(self.dbt(tenant_id))
+                        .await?
+                        .into_iter()
+                        .map(|(id, lot_id, stock_id, status, cost_price, barcode)| Item {
+                            id: Some(id),
+                            lot_id: Some(lot_id),
+                            stock_id: Some(stock_id),
+                            status: ItemStatus::from(status),
+                            cost_price,
+                            barcode,
+                            ..Default::default()
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                }),
+            }),
+            None => Err(DbErr::RecordNotFound("Order not found".to_string())),
+        }
+    }
+
+    pub async fn list_paginated_zones(
+        &self,
+        tenant_id: i32,
+        after: i32,
+        limit: u64,
+    ) -> Result<Vec<Zone>, DbErr> {
+        Ok(Zones::find()
+            .select_only()
+            .column(zones::Column::Id)
+            .column(zones::Column::Name)
+            .column(zones::Column::Description)
+            .column(zones::Column::PosX)
+            .column(zones::Column::PosY)
+            .column(zones::Column::Height)
+            .column(zones::Column::Width)
+            .filter(zones::Column::TenantId.eq(tenant_id))
+            .filter(zones::Column::Id.gt(after))
+            .limit(limit)
+            .into_tuple::<(i32, String, String, f64, f64, f64, f64)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(
+                |(id, name, description, pos_x, pos_y, height, width)| Zone {
+                    id: Some(id),
+                    name: Some(name),
+                    description: Some(description),
+                    pos_x: Some(pos_x),
+                    pos_y: Some(pos_y),
+                    height: Some(height),
+                    width: Some(width),
+                },
+            )
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn get_node_by_id(
+        &self,
+        tenant_id: i32,
+        zone_id: i32,
+        node_id: i32,
+    ) -> Result<Node, DbErr> {
+        match Nodes::find()
+            .select_only()
+            .column(nodes::Column::Name)
+            .column(nodes::Column::Status)
+            .column(nodes::Column::PosX)
+            .column(nodes::Column::PosY)
+            .filter(nodes::Column::TenantId.eq(tenant_id))
+            .filter(nodes::Column::ZoneId.eq(zone_id))
+            .filter(nodes::Column::Id.eq(node_id))
+            .into_tuple::<(String, i32, f64, f64)>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some((name, status, pos_x, pos_y)) => Ok(Node {
+                node_id: Some(node_id),
+                zone_id: Some(zone_id),
+                name: Some(name),
+                pos_x: Some(pos_x),
+                pos_y: Some(pos_y),
+                status: Some(NodeStatus::from(status)),
+            }),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Node with id {} in zone {}, not exist",
+                node_id, zone_id,
+            )))),
+        }
+    }
+
+    pub async fn list_paginated_nodes(
+        &self,
+        tenant_id: i32,
+        zone_id: i32,
+        after: i32,
+        limit: u64,
+    ) -> Result<Vec<Node>, DbErr> {
+        Ok(Nodes::find()
+            .select_only()
+            .column(nodes::Column::Id)
+            .column(nodes::Column::Name)
+            .column(nodes::Column::Status)
+            .column(nodes::Column::PosX)
+            .column(nodes::Column::PosY)
+            .filter(nodes::Column::TenantId.eq(tenant_id))
+            .filter(nodes::Column::ZoneId.eq(zone_id))
+            .filter(nodes::Column::Id.gt(after))
+            .limit(limit)
+            .into_tuple::<(i32, String, i32, f64, f64)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|(node_id, name, status, pos_x, pos_y)| Node {
+                node_id: Some(node_id),
+                zone_id: Some(zone_id),
+                pos_x: Some(pos_x),
+                pos_y: Some(pos_y),
+                status: Some(NodeStatus::from(status)),
+                name: Some(name),
+            })
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn create_zones(&self, tenant_id: i32, zones: &Vec<Zone>) -> Result<Vec<i32>, DbErr> {
+        if zones.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut active_models = Vec::new();
+        for zone in zones {
+            active_models.push(zones::ActiveModel {
+                tenant_id: Set(tenant_id),
+                name: Set(zone
+                    .name
+                    .clone()
+                    .ok_or_else(|| DbErr::Custom("Name is missing".to_string()))?),
+                description: Set(zone.description.clone().unwrap_or_default()),
+                pos_x: Set(zone
+                    .pos_x
+                    .ok_or_else(|| DbErr::Custom("pos_x is missing".to_string()))?),
+                pos_y: Set(zone
+                    .pos_y
+                    .ok_or_else(|| DbErr::Custom("pos_y is missing".to_string()))?),
+                height: Set(zone
+                    .height
+                    .ok_or_else(|| DbErr::Custom("height is missing".to_string()))?),
+                width: Set(zone
+                    .width
+                    .ok_or_else(|| DbErr::Custom("width is missing".to_string()))?),
+                ..Default::default()
+            });
+        }
+
+        zones::Entity::insert_many(active_models)
+            .exec(self.dbt(tenant_id))
+            .await?;
+
+        Ok(zones::Entity::find()
+            .select_only()
+            .column(zones::Column::Id)
+            .filter(zones::Column::TenantId.eq(tenant_id))
+            .filter(
+                zones::Column::Name.is_in(
+                    zones
+                        .iter()
+                        .map(|zone| zone.name.clone())
+                        .collect::<Vec<_>>(),
+                ),
+            )
+            .into_tuple::<(i32,)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|(id,)| id)
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn create_nodes(
+        &self,
+        tenant_id: i32,
+        zone_id: Option<i32>,
+        nodes: &Vec<Node>,
+    ) -> Result<Vec<i32>, DbErr> {
+        if nodes.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let txn = self.dbt(tenant_id).begin().await?;
+        let mut active_models = Vec::new();
+
+        if zone_id.is_none() {
+            let zone_ids = nodes
+                .iter()
+                .filter_map(|node| node.zone_id)
+                .collect::<HashSet<_>>();
+
+            let valid_zones = zones::Entity::find()
+                .filter(zones::Column::Id.is_in(zone_ids.clone()))
+                .filter(zones::Column::TenantId.eq(tenant_id))
+                .all(&txn)
+                .await?
+                .into_iter()
+                .map(|zone| zone.id)
+                .collect::<HashSet<i32>>();
+
+            if valid_zones.len() != zone_ids.len() {
+                let invalid_ids: Vec<i32> = zone_ids.difference(&valid_zones).copied().collect();
+
+                return Err(DbErr::Custom(format!(
+                    "Invalid zone IDs: {:?}",
+                    invalid_ids
+                )));
+            }
+
+            for node in nodes {
+                active_models.push(nodes::ActiveModel {
+                    tenant_id: Set(tenant_id),
+                    zone_id: Set(node
+                        .zone_id
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("zone_id is missing")))?),
+                    name: Set(node
+                        .name
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("name is missing")))?),
+                    status: Set(node.status.clone().unwrap_or(NodeStatus::Unknown) as i32),
+                    pos_x: Set(node
+                        .pos_x
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("pos_x is missing")))?),
+                    pos_y: Set(node
+                        .pos_y
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("pos_y is missing")))?),
+                    ..Default::default()
+                });
+            }
+        } else {
+            for node in nodes {
+                active_models.push(nodes::ActiveModel {
+                    tenant_id: Set(tenant_id),
+                    zone_id: Set(zone_id.unwrap()),
+                    name: Set(node
+                        .name
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("name is missing")))?),
+                    status: Set(node.status.clone().unwrap_or(NodeStatus::Unknown) as i32),
+                    pos_x: Set(node
+                        .pos_x
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("pos_x is missing")))?),
+                    pos_y: Set(node
+                        .pos_y
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("pos_y is missing")))?),
+                    ..Default::default()
+                });
+            }
+        }
+
+        Nodes::insert_many(active_models).exec(&txn).await?;
+
+        txn.commit().await?;
+
+        Ok(nodes::Entity::find()
+            .select_only()
+            .column(nodes::Column::Id)
+            .filter(
+                nodes::Column::Name.is_in(
+                    nodes
+                        .iter()
+                        .map(|node| node.name.clone())
+                        .collect::<Vec<_>>(),
+                ),
+            )
+            .into_tuple::<(i32,)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|(id,)| id)
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn get_path_by_id(
+        &self,
+        tenant_id: i32,
+        zone_id: i32,
+        from_node_id: i32,
+        path_id: i32,
+    ) -> Result<PathWay, DbErr> {
+        match Paths::find()
+            .select_only()
+            .column(paths::Column::Id)
+            .column(paths::Column::ToNodeId)
+            .column(paths::Column::Status)
+            .column(paths::Column::IsOneWay)
+            .filter(paths::Column::FromNodeId.eq(from_node_id))
+            .filter(paths::Column::TenantId.eq(tenant_id))
+            .filter(paths::Column::ZoneId.eq(zone_id))
+            .filter(paths::Column::Id.eq(path_id))
+            .into_tuple::<(i32, i32, i32, bool)>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some((path_id, to_node_id, status, is_one_way)) => Ok(PathWay {
+                path_id: Some(path_id),
+                zone_id: Some(zone_id),
+                from_node: Some(from_node_id),
+                to_node: Some(to_node_id),
+                is_one_way: Some(is_one_way),
+                status: Some(PathStatus::from(status)),
+                sharp: None,
+            }),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Path with id {} in zone {} from node {}, not exist",
+                path_id, zone_id, from_node_id,
+            )))),
+        }
+    }
+
+    pub async fn list_paginated_paths_by_node(
+        &self,
+        tenant_id: i32,
+        zone_id: i32,
+        from_node_id: i32,
+        after: i32,
+        limit: u64,
+    ) -> Result<Vec<PathWay>, DbErr> {
+        Ok(Paths::find()
+            .select_only()
+            .column(paths::Column::Id)
+            .column(paths::Column::ToNodeId)
+            .column(paths::Column::Status)
+            .column(paths::Column::IsOneWay)
+            .filter(paths::Column::FromNodeId.eq(from_node_id))
+            .filter(paths::Column::TenantId.eq(tenant_id))
+            .filter(paths::Column::ZoneId.eq(zone_id))
+            .filter(paths::Column::Id.gt(after))
+            .limit(limit)
+            .into_tuple::<(i32, i32, i32, bool)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|(path_id, to_node_id, status, is_one_way)| PathWay {
+                path_id: Some(path_id),
+                zone_id: Some(zone_id),
+                from_node: Some(from_node_id),
+                to_node: Some(to_node_id),
+                is_one_way: Some(is_one_way),
+                status: Some(PathStatus::from(status)),
+                sharp: None,
+            })
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn put_shelf_to_node(
+        &self,
+        tenant_id: i32,
+        zone_id: i32,
+        node_id: i32,
+        shelf_id: i32,
+        is_on_left: bool,
+    ) -> Result<Shelf, DbErr> {
+        match Shelves::find_by_id(shelf_id)
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some(model) => {
+                let mut model: shelves::ActiveModel = model.into();
+
+                model.zone = Set(Some(zone_id));
+                model.node = Set(Some(node_id));
+                model.is_left = Set(Some(is_on_left as i8));
+
+                model.update(self.dbt(tenant_id)).await?;
+
+                Ok(Shelf {
+                    id: Some(shelf_id),
+                    ..Default::default()
+                })
+            }
+            None => Err(DbErr::Custom(format!("not found shelf {}", shelf_id,))),
+        }
+    }
+
+    pub async fn create_picking_plan(
+        &self,
+        tenant_id: i32,
+        orders: &Vec<Order>,
+    ) -> Result<Vec<i32>, DbErr> {
+        Ok(Vec::new())
+    }
+
+    pub async fn plan_picking_routes(
+        &self,
+        tenant_id: i32,
+        plan_id: i32,
+    ) -> Result<Vec<i32>, DbErr> {
+        Ok(Vec::new())
+    }
+
+    pub async fn plan_picking_goods(
+        &self,
+        tenant_id: i32,
+        plan_id: i32,
+        route_id: i32,
+    ) -> Result<Vec<i32>, DbErr> {
+        Ok(Vec::new())
+    }
+
+    pub async fn plan_picking_items(
+        &self,
+        tenant_id: i32,
+        ledger_id: i32,
+    ) -> Result<Vec<i32>, DbErr> {
+        Ok(Vec::new())
+    }
+
+    pub async fn notify_when_route_status_changed(
+        &self,
+        tenant_id: i32,
+        route_id: i32,
+        status: i32,
+    ) -> Result<Vec<i32>, DbErr> {
+        Ok(Vec::new())
+    }
+
+    pub async fn notify_when_order_status_changed(
+        &self,
+        tenant_id: i32,
+        sale_id: i32,
+        status: i32,
+    ) -> Result<Vec<i32>, DbErr> {
+        Ok(Vec::new())
     }
 }
 
@@ -1555,7 +2330,7 @@ mod tests {
             entry_date: Some(Utc::now()),
             expired_date: None,
             cost_price: Some(15.0),
-            status: Some("Available".to_string()),
+            status: Some(LotStatus::Available),
             supplier: Some("Supplier 1".to_string()),
             lot_number: "LOT001".to_string(),
             quantity: 100,
@@ -1586,7 +2361,7 @@ mod tests {
             entry_date: Some(Utc::now()),
             expired_date: None,
             cost_price: Some(15.0),
-            status: Some("Available".to_string()),
+            status: Some(LotStatus::Available),
             supplier: Some("Supplier 1".to_string()),
             lot_number: "LOT001".to_string(),
             quantity: 100,
@@ -1597,7 +2372,7 @@ mod tests {
         let fetched = wms.get_lot(tenant_id, lot_id).await.unwrap();
         assert_eq!(fetched.lot_number, "LOT001");
         assert_eq!(fetched.quantity, 100);
-        assert_eq!(fetched.status.unwrap(), "Available");
+        assert_eq!(fetched.status.unwrap(), LotStatus::Available);
     }
 
     #[tokio::test]
@@ -1625,7 +2400,7 @@ mod tests {
             entry_date: Some(Utc::now()),
             expired_date: None,
             cost_price: Some(15.0),
-            status: Some("Available".to_string()),
+            status: Some(LotStatus::Available),
             supplier: Some("Supplier".to_string()),
             lot_number: "LOT001".to_string(),
             quantity: 100,
@@ -1664,7 +2439,7 @@ mod tests {
             entry_date: Some(Utc::now()),
             expired_date: None,
             cost_price: Some(10.0),
-            status: Some("Available".to_string()),
+            status: Some(LotStatus::Available),
             supplier: Some("Supplier".to_string()),
             lot_number: "LOT001".to_string(),
             quantity: 5,
@@ -1682,7 +2457,7 @@ mod tests {
                 stock_id: Some(stock_id),
                 barcode: Some("BAR001".to_string()),
                 cost_price: 10.0,
-                status: "plan".to_string(),
+                status: ItemStatus::Plan,
             };
             3
         ];
@@ -1750,7 +2525,7 @@ mod tests {
                     entry_date: Some(Utc::now()),
                     expired_date: None,
                     cost_price: Some(10.0),
-                    status: Some("Available".to_string()),
+                    status: Some(LotStatus::Available),
                     supplier: Some("Supp".to_string()),
                     lot_number: "LOT001".to_string(),
                     quantity: 3,
@@ -1769,7 +2544,7 @@ mod tests {
                 stock_id: Some(stock_id),
                 barcode: None,
                 cost_price: 10.0,
-                status: "plan".to_string(),
+                status: ItemStatus::Plan,
             };
             3
         ];
@@ -1783,7 +2558,7 @@ mod tests {
         for (i, item) in import_items.iter_mut().enumerate() {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
-            item.status = ItemStatus::Available.to_string();
+            item.status = ItemStatus::Available;
             item.barcode = Some(format!("BAR{:03}", i + 1));
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
@@ -1853,7 +2628,7 @@ mod tests {
                     entry_date: Some(Utc::now()),
                     expired_date: None,
                     cost_price: Some(10.0),
-                    status: Some("Available".to_string()),
+                    status: Some(LotStatus::Available),
                     supplier: Some("Supp".to_string()),
                     lot_number: "LOT001".to_string(),
                     quantity: 2,
@@ -1872,7 +2647,7 @@ mod tests {
                 stock_id: Some(stock_id),
                 barcode: Some("BAR001".to_string()),
                 cost_price: 10.0,
-                status: "available".to_string(),
+                status: ItemStatus::Available,
             };
             2
         ];
@@ -1883,7 +2658,7 @@ mod tests {
         for (i, item) in import_items.iter_mut().enumerate() {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
-            item.status = ItemStatus::Available.to_string();
+            item.status = ItemStatus::Available;
             item.barcode = Some(format!("BAR{:03}", i + 1));
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
@@ -1953,7 +2728,7 @@ mod tests {
                     entry_date: Some(Utc::now()),
                     expired_date: None,
                     cost_price: Some(10.0),
-                    status: Some("Available".to_string()),
+                    status: Some(LotStatus::Available),
                     supplier: Some("Supp".to_string()),
                     lot_number: "LOT001".to_string(),
                     quantity: 1,
@@ -1982,7 +2757,7 @@ mod tests {
             stock_id: Some(stock_id),
             barcode: Some("BAR123".to_string()),
             cost_price: 10.0,
-            status: "in-stock".to_string(),
+            status: ItemStatus::Available,
         };
         let created_items = wms
             .plan_import_new_items(tenant_id, &[item.clone()])
@@ -1993,7 +2768,7 @@ mod tests {
         for (i, item) in import_items.iter_mut().enumerate() {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
-            item.status = ItemStatus::Available.to_string();
+            item.status = ItemStatus::Available;
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
 
@@ -2010,7 +2785,7 @@ mod tests {
             .unwrap();
         assert_eq!(fetched.barcode.unwrap(), "BAR123");
         assert_eq!(fetched.lot_number.unwrap(), "LOT001");
-        assert_eq!(fetched.status, "in-stock");
+        assert_eq!(fetched.status, ItemStatus::Available);
     }
 
     #[tokio::test]
@@ -2062,7 +2837,7 @@ mod tests {
                     entry_date: Some(Utc::now()),
                     expired_date: None,
                     cost_price: Some(10.0),
-                    status: Some("Available".to_string()),
+                    status: Some(LotStatus::Available),
                     supplier: Some("Supp".to_string()),
                     lot_number: "LOT001".to_string(),
                     quantity: 2,
@@ -2081,7 +2856,7 @@ mod tests {
                 stock_id: Some(stock_id),
                 barcode: Some("BAR001".to_string()),
                 cost_price: 10.0,
-                status: ItemStatus::Available.to_string(),
+                status: ItemStatus::Available,
             },
             Item {
                 id: None,
@@ -2092,7 +2867,7 @@ mod tests {
                 stock_id: Some(stock_id),
                 barcode: Some("BAR002".to_string()),
                 cost_price: 10.0,
-                status: ItemStatus::Available.to_string(),
+                status: ItemStatus::Available,
             },
         ];
         let created_items = wms.plan_import_new_items(tenant_id, &items).await.unwrap();
@@ -2102,7 +2877,7 @@ mod tests {
         for (i, item) in import_items.iter_mut().enumerate() {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
-            item.status = ItemStatus::Available.to_string();
+            item.status = ItemStatus::Available;
             item.barcode = Some(format!("BAR{:03}", i + 1));
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
@@ -2130,8 +2905,7 @@ mod tests {
             .unwrap();
         assert!(fetched_items
             .iter()
-            .all(|i| ItemStatus::try_from(i.status).unwrap().to_string()
-                == ItemStatus::Saled.to_string()));
+            .all(|i| ItemStatus::from(i.status) == ItemStatus::Saled));
         assert!(fetched_items.iter().all(|i| i.order_id == Some(123)));
     }
 
@@ -2278,7 +3052,7 @@ mod tests {
                 lot_number: "LOT001".to_string(),
                 quantity: 50,
                 cost_price: Some(10.0),
-                status: Some("Available".to_string()),
+                status: Some(LotStatus::Available),
                 supplier: Some("Supplier A".to_string()),
                 entry_date: Some(Utc::now()),
                 ..Default::default()
@@ -2287,7 +3061,7 @@ mod tests {
                 lot_number: "LOT002".to_string(),
                 quantity: 30,
                 cost_price: Some(15.0),
-                status: Some("Available".to_string()),
+                status: Some(LotStatus::Available),
                 supplier: Some("Supplier B".to_string()),
                 entry_date: Some(Utc::now()),
                 ..Default::default()
@@ -2302,7 +3076,7 @@ mod tests {
                 stock_id: Some(stock1_id),
                 lot_id: Some(lot1_id),
                 cost_price: 10.0,
-                status: "plan".to_string(),
+                status: ItemStatus::Plan,
                 ..Default::default()
             };
             20  // Part of lot1 for stock1
@@ -2311,7 +3085,7 @@ mod tests {
         let mut import_items1 = created_items1.clone();
         for item in import_items1.iter_mut() {
             item.shelf = Some("Shelf A".to_string());
-            item.status = ItemStatus::Available.to_string();
+            item.status = ItemStatus::Available;
             item.barcode = Some("BAR1".to_string());
         }
         wms.import_real_items(tenant_id, lot1_id, &import_items1)
@@ -2325,7 +3099,7 @@ mod tests {
                 stock_id: Some(stock2_id),
                 lot_id: Some(lot2_id),
                 cost_price: 15.0,
-                status: "plan".to_string(),
+                status: ItemStatus::Plan,
                 ..Default::default()
             };
             10  // Part of lot2 for stock2
@@ -2334,7 +3108,7 @@ mod tests {
         let mut import_items2 = created_items2.clone();
         for item in import_items2.iter_mut() {
             item.shelf = Some("Shelf B".to_string());
-            item.status = ItemStatus::Available.to_string();
+            item.status = ItemStatus::Available;
             item.barcode = Some("BAR2".to_string());
         }
         wms.import_real_items(tenant_id, lot2_id, &import_items2)

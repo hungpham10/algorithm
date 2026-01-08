@@ -2,23 +2,23 @@
 
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "wms_shelves")]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "wms_nodes")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-
-    #[sea_orm(unique)]
-    pub name: String,
-
     pub tenant_id: i32,
-    pub zone: Option<i32>,
-    pub node: Option<i32>,
-    pub is_left: Option<i8>,
-    pub publish: Option<i8>,
-    pub description: Option<String>,
+    pub zone_id: i32,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
+    pub name: String,
+    pub status: i32,
+
+    #[sea_orm(column_type = "Double")]
+    pub pos_x: f64,
+
+    #[sea_orm(column_type = "Double")]
+    pub pos_y: f64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
