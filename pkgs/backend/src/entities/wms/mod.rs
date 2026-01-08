@@ -31,8 +31,8 @@ use serde::{Deserialize, Serialize};
 
 use sea_orm::entity::prelude::Expr;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, JoinType, QueryFilter,
-    QueryOrder, QuerySelect, RuntimeErr, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, JoinType,
+    QueryFilter, QueryOrder, QuerySelect, RuntimeErr, Set, TransactionTrait,
 };
 use sea_query::OnConflict;
 
@@ -2066,10 +2066,83 @@ impl Wms {
             .collect::<Vec<_>>())
     }
 
-    pub async fn create_picking_wave_session(
+    pub async fn put_shelf_to_node(
+        &self,
+        tenant_id: i32,
+        zone_id: i32,
+        node_id: i32,
+        shelf_id: i32,
+        is_on_left: bool,
+    ) -> Result<Shelf, DbErr> {
+        match Shelves::find_by_id(shelf_id)
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some(model) => {
+                let mut model: shelves::ActiveModel = model.into();
+
+                model.zone = Set(Some(zone_id));
+                model.node = Set(Some(node_id));
+                model.is_left = Set(Some(is_on_left as i8));
+
+                model.update(self.dbt(tenant_id)).await?;
+
+                Ok(Shelf {
+                    id: Some(shelf_id),
+                    ..Default::default()
+                })
+            }
+            None => Err(DbErr::Custom(format!("not found shelf {}", shelf_id,))),
+        }
+    }
+
+    pub async fn create_picking_plan(
         &self,
         tenant_id: i32,
         orders: &Vec<Order>,
+    ) -> Result<Vec<i32>, DbErr> {
+        Ok(Vec::new())
+    }
+
+    pub async fn plan_picking_routes(
+        &self,
+        tenant_id: i32,
+        plan_id: i32,
+    ) -> Result<Vec<i32>, DbErr> {
+        Ok(Vec::new())
+    }
+
+    pub async fn plan_picking_goods(
+        &self,
+        tenant_id: i32,
+        plan_id: i32,
+        route_id: i32,
+    ) -> Result<Vec<i32>, DbErr> {
+        Ok(Vec::new())
+    }
+
+    pub async fn plan_picking_items(
+        &self,
+        tenant_id: i32,
+        ledger_id: i32,
+    ) -> Result<Vec<i32>, DbErr> {
+        Ok(Vec::new())
+    }
+
+    pub async fn notify_when_route_status_changed(
+        &self,
+        tenant_id: i32,
+        route_id: i32,
+        status: i32,
+    ) -> Result<Vec<i32>, DbErr> {
+        Ok(Vec::new())
+    }
+
+    pub async fn notify_when_order_status_changed(
+        &self,
+        tenant_id: i32,
+        sale_id: i32,
+        status: i32,
     ) -> Result<Vec<i32>, DbErr> {
         Ok(Vec::new())
     }

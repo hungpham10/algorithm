@@ -240,6 +240,10 @@ pub async fn run() -> std::io::Result<()> {
                         post().to(crate::api::wms::v1::get_path_by_id),
                     )
                     .route(
+                        "v1/wms/shelves/{shelf_id}/zone/{zone_id}/node/{node_id}",
+                        patch().to(crate::api::wms::v1::put_shelf_to_node),
+                    )
+                    .route(
                         "/v1/wms/zone/{zone_id}/nodes",
                         get().to(crate::api::wms::v1::list_nodes),
                     )

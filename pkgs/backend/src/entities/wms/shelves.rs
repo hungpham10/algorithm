@@ -7,9 +7,14 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    pub tenant_id: i32,
+
     #[sea_orm(unique)]
     pub name: String,
+
+    pub tenant_id: i32,
+    pub zone: Option<i32>,
+    pub node: Option<i32>,
+    pub is_left: Option<i8>,
     pub publish: Option<i8>,
     pub description: Option<String>,
     pub created_at: DateTimeUtc,

@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS  `wms_shelves` (
   `name` varchar(255) NOT NULL,
   `publish` BOOLEAN DEFAULT FALSE,
   `description` varchar(255),
+  `node` INTEGER DEFAULT 0,
+  `zone` INTEGER DEFAULT 0,
+  `is_left` BOOLEAN DEFAULT FALSE,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY `unique_tenant_name` (`tenant_id`, `name`)

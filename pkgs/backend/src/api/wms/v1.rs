@@ -159,6 +159,8 @@ impl Default for WmsResponse {
             zone: None,
             nodes: None,
             node: None,
+            paths: None,
+            path: None,
             error: None,
         }
     }
@@ -1129,6 +1131,38 @@ pub async fn get_path_by_id(
     }
 }
 
+pub async fn put_shelf_to_node(
+    path: Path<(i32, i32, i32)>,
+    appstate: Data<Arc<AppState>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    let (shelf_id, zone_id, node_id) = path.into_inner();
+
+    if let Some(entity) = appstate.wms_entity() {
+        match entity
+            .put_shelf_to_node(headers.tenant_id, zone_id, node_id, shelf_id, true)
+            .await
+        {
+            Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
+                shelf: Some(data),
+                ..Default::default()
+            })),
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!(
+                    "Fail to list path zone {}, node {}: {}",
+                    zone_id, node_id, error
+                )),
+                ..Default::default()
+            })),
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
+}
+
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct PickingNodeScope {
     zone: i32,
@@ -1149,12 +1183,12 @@ pub struct SetupPickingWaveRequest {
 
 pub async fn setup_picking_wave(
     appstate: Data<Arc<AppState>>,
-    config: SetupPickingWaveRequest,
+    config: Json<SetupPickingWaveRequest>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
     if let Some(entity) = appstate.wms_entity() {
         match entity
-            .create_picking_wave_session(headers.tenant_id, &config.orders)
+            .create_picking_plan(headers.tenant_id, &config.orders)
             .await
         {
             Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
