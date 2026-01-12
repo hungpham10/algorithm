@@ -2,6 +2,10 @@ mod items;
 mod lots;
 mod nodes;
 mod paths;
+mod picking_events;
+mod picking_goods;
+mod picking_plans;
+mod picking_routes;
 mod sale_events;
 mod sales;
 mod shelves;
@@ -14,6 +18,10 @@ use items::Entity as Items;
 use lots::Entity as Lots;
 use nodes::Entity as Nodes;
 use paths::Entity as Paths;
+use picking_events::Entity as PickingEvents;
+use picking_goods::Entity as PickingGoods;
+use picking_plans::Entity as PickingPlans;
+use picking_routes::Entity as PickingRoutes;
 use sale_events::Entity as SaleEvents;
 use sales::Entity as Sales;
 use shelves::Entity as Shelves;
@@ -35,6 +43,12 @@ use sea_orm::{
     QueryFilter, QueryOrder, QuerySelect, RuntimeErr, Set, TransactionTrait,
 };
 use sea_query::OnConflict;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Point {
+    pub x: f64,
+    pub y: f64,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Stock {
@@ -655,15 +669,189 @@ pub struct PathWay {
     pub to_node: Option<i32>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<PathStatus>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_one_way: Option<bool>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sharp: Option<Vec<(f64, f64)>>,
+    pub sharp: Option<Vec<Point>>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[repr(i32)]
+pub enum PickingRouteStatus {
+    Unknown,
+    Caculating,
+    Pending,
+    Running,
+    Failed,
+}
+
+impl From<i32> for PickingRouteStatus {
+    fn from(i: i32) -> Self {
+        match i {
+            1 => PickingRouteStatus::Caculating,
+            2 => PickingRouteStatus::Pending,
+            3 => PickingRouteStatus::Running,
+            4 => PickingRouteStatus::Failed,
+            _ => PickingRouteStatus::Unknown,
+        }
+    }
+}
+
+impl From<String> for PickingRouteStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "caculating" => PickingRouteStatus::Caculating,
+            "pending" => PickingRouteStatus::Pending,
+            "running" => PickingRouteStatus::Running,
+            "failed" => PickingRouteStatus::Failed,
+            _ => PickingRouteStatus::Unknown,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PickingRouteStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(PickingRouteStatus::from(s))
+    }
+}
+
+impl Display for PickingRouteStatus {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            PickingRouteStatus::Caculating => write!(f, "calculating"),
+            PickingRouteStatus::Pending => write!(f, "pending"),
+            PickingRouteStatus::Running => write!(f, "running"),
+            PickingRouteStatus::Failed => write!(f, "failed"),
+            PickingRouteStatus::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[repr(i32)]
+pub enum PickingPlanStatus {
+    Unknown,
+    Created,
+    Planed,
+    Running,
+    Failed,
+    Done,
+}
+
+impl From<i32> for PickingPlanStatus {
+    fn from(i: i32) -> Self {
+        match i {
+            1 => PickingPlanStatus::Created,
+            2 => PickingPlanStatus::Planed,
+            3 => PickingPlanStatus::Running,
+            4 => PickingPlanStatus::Failed,
+            5 => PickingPlanStatus::Done,
+            _ => PickingPlanStatus::Unknown,
+        }
+    }
+}
+
+impl From<String> for PickingPlanStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "created" => PickingPlanStatus::Created,
+            "planed" => PickingPlanStatus::Planed,
+            "running" => PickingPlanStatus::Running,
+            "failed" => PickingPlanStatus::Failed,
+            "done" => PickingPlanStatus::Done,
+            _ => PickingPlanStatus::Unknown,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PickingPlanStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(PickingPlanStatus::from(s))
+    }
+}
+
+impl Display for PickingPlanStatus {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            PickingPlanStatus::Unknown => write!(f, "unknown"),
+            PickingPlanStatus::Created => write!(f, "created"),
+            PickingPlanStatus::Planed => write!(f, "planed"),
+            PickingPlanStatus::Running => write!(f, "running"),
+            PickingPlanStatus::Failed => write!(f, "failed"),
+            PickingPlanStatus::Done => write!(f, "done"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[repr(i32)]
+pub enum PickingGoodsStatus {
+    Unknown,
+    Planing,
+    Picking,
+    Ready,
+    Damaged,
+}
+
+impl From<i32> for PickingGoodsStatus {
+    fn from(i: i32) -> Self {
+        match i {
+            1 => PickingGoodsStatus::Planing,
+            2 => PickingGoodsStatus::Picking,
+            3 => PickingGoodsStatus::Ready,
+            4 => PickingGoodsStatus::Damaged,
+            _ => PickingGoodsStatus::Unknown,
+        }
+    }
+}
+
+impl From<String> for PickingGoodsStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            _ => PickingGoodsStatus::Unknown,
+            "planing" => PickingGoodsStatus::Planing,
+            "picking" => PickingGoodsStatus::Picking,
+            "ready" => PickingGoodsStatus::Ready,
+            "damaged" => PickingGoodsStatus::Damaged,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PickingGoodsStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(PickingGoodsStatus::from(s))
+    }
+}
+
+impl Display for PickingGoodsStatus {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            PickingGoodsStatus::Unknown => write!(f, "unknown"),
+            PickingGoodsStatus::Planing => write!(f, "planing"),
+            PickingGoodsStatus::Picking => write!(f, "picking"),
+            PickingGoodsStatus::Ready => write!(f, "ready"),
+            PickingGoodsStatus::Damaged => write!(f, "damaged"),
+        }
+    }
+}
 pub struct Wms {
     db: Vec<Arc<DatabaseConnection>>,
 }
@@ -1994,6 +2182,79 @@ impl Wms {
             .collect::<Vec<_>>())
     }
 
+    pub async fn create_paths(
+        &self,
+        tenant_id: i32,
+        paths: &Vec<PathWay>,
+    ) -> Result<Vec<i32>, DbErr> {
+        let mut models = Vec::new();
+        let mut names = Vec::new();
+
+        for (i, path) in paths.iter().enumerate() {
+            let from_node_id = path
+                .from_node
+                .ok_or_else(|| DbErr::Custom(format!("from_node is missing in item {}", i)))?;
+            let to_node_id = path
+                .to_node
+                .ok_or_else(|| DbErr::Custom(format!("to_node is missing in item {}", i)))?;
+            let zone_id = path
+                .zone_id
+                .ok_or_else(|| DbErr::Custom(format!("zone_id is missing in item {}", i)))?;
+            let status = path
+                .to_node
+                .ok_or_else(|| DbErr::Custom(format!("status is missing in item {}", i)))?;
+            let is_one_way = path.is_one_way.unwrap_or(false);
+            let name = path
+                .name
+                .clone()
+                .ok_or_else(|| DbErr::Custom(format!("name is missing in item {}", i)))?;
+            let sharp = path
+                .sharp
+                .clone()
+                .ok_or_else(|| DbErr::Custom(format!("sharp is missing in item {}", i)))?;
+
+            models.push(paths::ActiveModel {
+                tenant_id: Set(tenant_id),
+                zone_id: Set(zone_id),
+                from_node_id: Set(from_node_id),
+                to_node_id: Set(to_node_id),
+                is_one_way: Set(is_one_way),
+                status: Set(status),
+                sharps: Set(Some(paths::ListPoints(sharp))),
+                ..Default::default()
+            });
+            names.push(name);
+        }
+
+        paths::Entity::insert_many(models)
+            .on_conflict(
+                OnConflict::columns([paths::Column::TenantId, paths::Column::Name])
+                    .update_columns([
+                        paths::Column::ZoneId,
+                        paths::Column::FromNodeId,
+                        paths::Column::ToNodeId,
+                        paths::Column::IsOneWay,
+                        paths::Column::Status,
+                        paths::Column::Sharps,
+                    ])
+                    .to_owned(),
+            )
+            .exec(self.dbt(tenant_id))
+            .await?;
+
+        Ok(Paths::find()
+            .select_only()
+            .column(paths::Column::Id)
+            .filter(paths::Column::TenantId.eq(tenant_id))
+            .filter(paths::Column::Name.is_in(names))
+            .into_tuple::<(i32,)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|m| m.0)
+            .collect::<Vec<_>>())
+    }
+
     pub async fn get_path_by_id(
         &self,
         tenant_id: i32,
@@ -2007,20 +2268,22 @@ impl Wms {
             .column(paths::Column::ToNodeId)
             .column(paths::Column::Status)
             .column(paths::Column::IsOneWay)
+            .column(paths::Column::Name)
             .filter(paths::Column::FromNodeId.eq(from_node_id))
             .filter(paths::Column::TenantId.eq(tenant_id))
             .filter(paths::Column::ZoneId.eq(zone_id))
             .filter(paths::Column::Id.eq(path_id))
-            .into_tuple::<(i32, i32, i32, bool)>()
+            .into_tuple::<(i32, i32, i32, bool, String)>()
             .one(self.dbt(tenant_id))
             .await?
         {
-            Some((path_id, to_node_id, status, is_one_way)) => Ok(PathWay {
+            Some((path_id, to_node_id, status, is_one_way, name)) => Ok(PathWay {
                 path_id: Some(path_id),
                 zone_id: Some(zone_id),
                 from_node: Some(from_node_id),
                 to_node: Some(to_node_id),
                 is_one_way: Some(is_one_way),
+                name: Some(name),
                 status: Some(PathStatus::from(status)),
                 sharp: None,
             }),
@@ -2045,21 +2308,23 @@ impl Wms {
             .column(paths::Column::ToNodeId)
             .column(paths::Column::Status)
             .column(paths::Column::IsOneWay)
+            .column(paths::Column::Name)
             .filter(paths::Column::FromNodeId.eq(from_node_id))
             .filter(paths::Column::TenantId.eq(tenant_id))
             .filter(paths::Column::ZoneId.eq(zone_id))
             .filter(paths::Column::Id.gt(after))
             .limit(limit)
-            .into_tuple::<(i32, i32, i32, bool)>()
+            .into_tuple::<(i32, i32, i32, bool, String)>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
-            .map(|(path_id, to_node_id, status, is_one_way)| PathWay {
+            .map(|(path_id, to_node_id, status, is_one_way, name)| PathWay {
                 path_id: Some(path_id),
                 zone_id: Some(zone_id),
                 from_node: Some(from_node_id),
                 to_node: Some(to_node_id),
                 is_one_way: Some(is_one_way),
+                name: Some(name),
                 status: Some(PathStatus::from(status)),
                 sharp: None,
             })

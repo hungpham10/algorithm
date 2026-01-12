@@ -1053,7 +1053,6 @@ pub async fn list_paths_by_node(
     let (zone_id, node_id) = path.into_inner();
 
     if let Some(entity) = appstate.wms_entity() {
-        let include_details = query.include_details.unwrap_or(false);
         let after = query.after.unwrap_or(0);
         let limit = query.limit.unwrap_or(10);
 
@@ -1113,6 +1112,52 @@ pub async fn get_path_by_id(
         {
             Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
                 path: Some(data),
+                ..Default::default()
+            })),
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!(
+                    "Fail to list path zone {}, node {}: {}",
+                    zone_id, node_id, error
+                )),
+                ..Default::default()
+            })),
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
+}
+
+pub async fn create_paths_from_node(
+    path: Path<(i32, i32)>,
+    appstate: Data<Arc<AppState>>,
+    configs: Json<Vec<PathWay>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    let (zone_id, node_id) = path.into_inner();
+    if let Some(entity) = appstate.wms_entity() {
+        let configs = configs
+            .into_inner()
+            .iter()
+            .map(|config| PathWay {
+                is_one_way: config.is_one_way,
+                path_id: None,
+                zone_id: Some(zone_id),
+                from_node: Some(node_id),
+                to_node: config.to_node,
+                status: config.status.clone(),
+                sharp: config.sharp.clone(),
+            })
+            .collect::<Vec<_>>();
+
+        match entity.create_paths(headers.tenant_id, &configs).await {
+            Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
+                paths: Some(ListPathsResponse {
+                    data,
+                    next_after: None,
+                }),
                 ..Default::default()
             })),
             Err(error) => Err(ErrorInternalServerError(WmsResponse {

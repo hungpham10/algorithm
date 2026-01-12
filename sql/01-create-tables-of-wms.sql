@@ -103,6 +103,8 @@ CREATE TABLE IF NOT EXISTS  `wms_items` (
   `status` integer DEFAULT 0,
   `cost_price` DOUBLE NOT NULL,
   `barcode` varchar(255)
+
+  UNIQUE KEY `unique_tenant_barcode` (`tenant_id`, `barcode`)
 );
 
 CREATE TABLE `wms_zones` (
@@ -115,7 +117,9 @@ CREATE TABLE `wms_zones` (
   `pos_x` float NOT NULL DEFAULT 0,
   `pos_y` float NOT NULL DEFAULT 0,
   `height` float NOT NULL,
-  `width` float NOT NULL
+  `width` float NOT NULL,
+
+  UNIQUE KEY `unique_tenant_name` (`tenant_id`, `name`)
 );
 
 CREATE TABLE `wms_nodes` (
@@ -127,7 +131,9 @@ CREATE TABLE `wms_nodes` (
   `name` varchar(255),
   `kind` integer NOT NULL DEFAULT 0,
   `pos_x` float NOT NULL DEFAULT 0,
-  `pos_y` float NOT NULL DEFAULT 0
+  `pos_y` float NOT NULL DEFAULT 0,
+
+  UNIQUE KEY `unique_tenant_name` (`tenant_id`, `name`)
 );
 
 CREATE TABLE `wms_paths` (
@@ -137,11 +143,14 @@ CREATE TABLE `wms_paths` (
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `from_node_id` integer,
   `to_node_id` integer,
+  `name` varchar(50),
   `zone_id` integer,
   `distance` float,
   `is_one_way` boolean DEFAULT false,
-  `waypoints` json,
-  `status` integer NOT NULL DEFAULT 0
+  `sharps` json,
+  `status` integer NOT NULL DEFAULT 0,
+
+  UNIQUE KEY `unique_tenant_name` (`tenant_id`, `name`)
 );
 
 CREATE TABLE `wms_picking_plans` (
