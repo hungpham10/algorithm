@@ -1222,6 +1222,26 @@ pub struct SetupPickingWaveRequest {
     scope: Option<PickingScope>,
 }
 
+pub async fn list_picking_wave(
+    appstate: Data<Arc<AppState>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    Err(ErrorInternalServerError(WmsResponse {
+        error: Some(format!("Not implemented")),
+        ..Default::default()
+    }))
+}
+
+pub async fn get_detail_picking_wave(
+    appstate: Data<Arc<AppState>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    Err(ErrorInternalServerError(WmsResponse {
+        error: Some(format!("Not implemented")),
+        ..Default::default()
+    }))
+}
+
 pub async fn setup_picking_wave(
     appstate: Data<Arc<AppState>>,
     config: Json<SetupPickingWaveRequest>,

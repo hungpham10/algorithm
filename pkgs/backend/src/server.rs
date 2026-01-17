@@ -264,8 +264,16 @@ pub async fn run() -> std::io::Result<()> {
                         get().to(crate::api::wms::v1::get_item_by_barcode),
                     )
                     .route(
-                        "/v1/wms/picking/wave",
+                        "/v1/wms/picking/waves",
                         post().to(crate::api::wms::v1::setup_picking_wave),
+                    )
+                    .route(
+                        "/v1/wms/picking/waves",
+                        get().to(crate::api::wms::v1::list_picking_wave),
+                    )
+                    .route(
+                        "/v1/wms/picking/waves/{wave_id}",
+                        get().to(crate::api::wms::v1::get_detail_picking_wave),
                     )
                     .route("/v1/wms/sync", post().to(crate::api::wms::v1::sync_data))
                     .route(
