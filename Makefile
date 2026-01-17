@@ -42,7 +42,7 @@ library:
 			--no-default-features 														\
 			--bindings pyo3 														\
 			--interpreter python3 														\
-			--compatibility manylinux_2_17 													\
+			--compatibility manylinux_2_31 													\
 			--out dist; 															\
 		cp dist/*.whl ../../$(DIST_DIR)/; 													\
 	else 																		\
