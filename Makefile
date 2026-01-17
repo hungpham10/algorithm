@@ -37,7 +37,13 @@ library:
 	export PATH="$$HOME/.cargo/bin:$$PATH" &&													\
 	cd $(BACKEND_DIR) && 																\
 	if grep -q "^version" Cargo.toml; then 														\
-		maturin build --release --features python --no-default-features --bindings pyo3 --out dist && 						\
+		maturin build --release 														\
+			--features python 														\
+			--no-default-features 														\
+			--bindings pyo3 														\
+			--interpreter python3 														\
+			--compatibility manylinux_2_17 													\
+			--out dist; 															\
 		cp dist/*.whl ../../$(DIST_DIR)/; 													\
 	else 																		\
 		echo "Missing version in Cargo.toml"; 													\
