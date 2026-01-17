@@ -9,7 +9,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::api::AppState;
-use crate::entities::wms::{Item, ItemStatus, Lot, Node, Order, PathWay, Sale, Shelf, Stock, Zone};
+use crate::entities::wms::{
+    Item, ItemStatus, Lot, Node, Order, PathWay, PickingNodeScope, Sale, Shelf, Stock, Zone,
+};
 
 use super::WmsHeaders;
 
@@ -1209,12 +1211,6 @@ pub async fn put_shelf_to_node(
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
-pub struct PickingNodeScope {
-    zone: i32,
-    node: i32,
-}
-
-#[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct PickingScope {
     zones: Vec<i32>,
     nodes: Vec<PickingNodeScope>,
@@ -1232,8 +1228,19 @@ pub async fn setup_picking_wave(
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
     if let Some(entity) = appstate.wms_entity() {
+        let zones = if let Some(scope) = config.scope.clone() {
+            scope.zones
+        } else {
+            vec![]
+        };
+        let nodes = if let Some(scope) = config.scope.clone() {
+            scope.nodes
+        } else {
+            vec![]
+        };
+
         match entity
-            .create_picking_plan(headers.tenant_id, &config.orders)
+            .create_picking_plan(headers.tenant_id, &config.orders, &zones, &nodes)
             .await
         {
             Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {

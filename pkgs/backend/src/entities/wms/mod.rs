@@ -5,6 +5,8 @@ mod paths;
 mod picking_events;
 mod picking_goods;
 mod picking_plans;
+mod picking_plans_in_nodes;
+mod picking_plans_in_zones;
 mod picking_routes;
 mod sale_events;
 mod sales;
@@ -21,6 +23,8 @@ use paths::Entity as Paths;
 use picking_events::Entity as PickingEvents;
 use picking_goods::Entity as PickingGoods;
 use picking_plans::Entity as PickingPlans;
+use picking_plans_in_nodes::Entity as PickingPlansInNodes;
+use picking_plans_in_zones::Entity as PickingPlansInZones;
 use picking_routes::Entity as PickingRoutes;
 use sale_events::Entity as SaleEvents;
 use sales::Entity as Sales;
@@ -35,12 +39,13 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use log::info;
 use serde::{Deserialize, Serialize};
 
 use sea_orm::entity::prelude::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, JoinType,
-    QueryFilter, QueryOrder, QuerySelect, RuntimeErr, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DatabaseTransaction, DbErr,
+    EntityTrait, JoinType, QueryFilter, QueryOrder, QuerySelect, RuntimeErr, Set, TransactionTrait,
 };
 use sea_query::OnConflict;
 
@@ -681,6 +686,12 @@ pub struct PathWay {
     pub sharp: Option<Vec<Point>>,
 }
 
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+pub struct PickingNodeScope {
+    zone: i32,
+    node: i32,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[repr(i32)]
 pub enum PickingRouteStatus {
@@ -689,6 +700,7 @@ pub enum PickingRouteStatus {
     Pending,
     Running,
     Failed,
+    Done,
 }
 
 impl From<i32> for PickingRouteStatus {
@@ -698,6 +710,7 @@ impl From<i32> for PickingRouteStatus {
             2 => PickingRouteStatus::Pending,
             3 => PickingRouteStatus::Running,
             4 => PickingRouteStatus::Failed,
+            5 => PickingRouteStatus::Done,
             _ => PickingRouteStatus::Unknown,
         }
     }
@@ -710,6 +723,7 @@ impl From<String> for PickingRouteStatus {
             "pending" => PickingRouteStatus::Pending,
             "running" => PickingRouteStatus::Running,
             "failed" => PickingRouteStatus::Failed,
+            "done" => PickingRouteStatus::Done,
             _ => PickingRouteStatus::Unknown,
         }
     }
@@ -744,8 +758,28 @@ pub enum PickingPlanStatus {
     Created,
     Planed,
     Running,
+    Pausing,
+    Paused,
     Failed,
     Done,
+}
+
+impl PickingPlanStatus {
+    pub fn can_transition_to(&self, next: &Self) -> bool {
+        match (self, next) {
+            (Self::Created, Self::Planed) => true,
+            (Self::Planed, Self::Created) => true,
+            (Self::Planed, Self::Running) => true,
+            (Self::Running, Self::Done) => true,
+            (Self::Running, Self::Pausing) => true,
+            (Self::Running, Self::Failed) => true,
+            (Self::Pausing, Self::Paused) => true,
+            (Self::Failed, Self::Paused) => true,
+            (Self::Paused, Self::Created) => true,
+            (Self::Paused, Self::Running) => true,
+            _ => false,
+        }
+    }
 }
 
 impl From<i32> for PickingPlanStatus {
@@ -755,7 +789,9 @@ impl From<i32> for PickingPlanStatus {
             2 => PickingPlanStatus::Planed,
             3 => PickingPlanStatus::Running,
             4 => PickingPlanStatus::Failed,
-            5 => PickingPlanStatus::Done,
+            5 => PickingPlanStatus::Pausing,
+            6 => PickingPlanStatus::Paused,
+            7 => PickingPlanStatus::Done,
             _ => PickingPlanStatus::Unknown,
         }
     }
@@ -767,6 +803,8 @@ impl From<String> for PickingPlanStatus {
             "created" => PickingPlanStatus::Created,
             "planed" => PickingPlanStatus::Planed,
             "running" => PickingPlanStatus::Running,
+            "pausing" => PickingPlanStatus::Pausing,
+            "paused" => PickingPlanStatus::Paused,
             "failed" => PickingPlanStatus::Failed,
             "done" => PickingPlanStatus::Done,
             _ => PickingPlanStatus::Unknown,
@@ -791,6 +829,8 @@ impl Display for PickingPlanStatus {
             PickingPlanStatus::Created => write!(f, "created"),
             PickingPlanStatus::Planed => write!(f, "planed"),
             PickingPlanStatus::Running => write!(f, "running"),
+            PickingPlanStatus::Pausing => write!(f, "pausing"),
+            PickingPlanStatus::Paused => write!(f, "paused"),
             PickingPlanStatus::Failed => write!(f, "failed"),
             PickingPlanStatus::Done => write!(f, "done"),
         }
@@ -802,6 +842,7 @@ impl Display for PickingPlanStatus {
 pub enum PickingGoodsStatus {
     Unknown,
     Planing,
+    Waiting,
     Picking,
     Ready,
     Damaged,
@@ -811,7 +852,8 @@ impl From<i32> for PickingGoodsStatus {
     fn from(i: i32) -> Self {
         match i {
             1 => PickingGoodsStatus::Planing,
-            2 => PickingGoodsStatus::Picking,
+            2 => PickingGoodsStatus::Waiting,
+            3 => PickingGoodsStatus::Picking,
             3 => PickingGoodsStatus::Ready,
             4 => PickingGoodsStatus::Damaged,
             _ => PickingGoodsStatus::Unknown,
@@ -822,11 +864,12 @@ impl From<i32> for PickingGoodsStatus {
 impl From<String> for PickingGoodsStatus {
     fn from(s: String) -> Self {
         match s.as_str() {
-            _ => PickingGoodsStatus::Unknown,
             "planing" => PickingGoodsStatus::Planing,
+            "waiting" => PickingGoodsStatus::Waiting,
             "picking" => PickingGoodsStatus::Picking,
             "ready" => PickingGoodsStatus::Ready,
             "damaged" => PickingGoodsStatus::Damaged,
+            _ => PickingGoodsStatus::Unknown,
         }
     }
 }
@@ -845,6 +888,7 @@ impl Display for PickingGoodsStatus {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
             PickingGoodsStatus::Unknown => write!(f, "unknown"),
+            PickingGoodsStatus::Waiting => write!(f, "waiting"),
             PickingGoodsStatus::Planing => write!(f, "planing"),
             PickingGoodsStatus::Picking => write!(f, "picking"),
             PickingGoodsStatus::Ready => write!(f, "ready"),
@@ -1849,6 +1893,82 @@ impl Wms {
         }
     }
 
+    pub async fn are_nodes_existed(
+        &self,
+        tenant_id: i32,
+        nodes: &Vec<PickingNodeScope>,
+    ) -> Result<(), DbErr> {
+        if nodes.is_empty() {
+            return Ok(());
+        }
+
+        let existing_nodes = nodes::Entity::find()
+            .select_only()
+            .column(nodes::Column::Id)
+            .column(nodes::Column::ZoneId)
+            .filter(nodes::Column::TenantId.eq(tenant_id))
+            .filter(nodes::Column::Id.is_in(nodes.iter().map(|n| n.node).collect::<Vec<_>>()))
+            .all(self.dbt(tenant_id))
+            .await?;
+
+        let existing_set = existing_nodes
+            .into_iter()
+            .map(|n| (n.id, n.zone_id))
+            .collect::<HashSet<_>>();
+
+        let invalid_nodes: Vec<PickingNodeScope> = nodes
+            .iter()
+            .filter(|scope| !existing_set.contains(&(scope.node, scope.zone)))
+            .cloned()
+            .collect();
+
+        if !invalid_nodes.is_empty() {
+            return Err(DbErr::Custom(format!(
+                "Invalid nodes in tenant {}: {:?}",
+                tenant_id, invalid_nodes
+            )));
+        }
+
+        Ok(())
+    }
+
+    pub async fn are_zones_existed(
+        &self,
+        tenant_id: i32,
+        zone_ids: &Vec<i32>,
+    ) -> Result<(), DbErr> {
+        if zone_ids.is_empty() {
+            return Ok(());
+        }
+
+        let existing_zones = zones::Entity::find()
+            .select_only()
+            .column(zones::Column::Id)
+            .filter(zones::Column::TenantId.eq(tenant_id))
+            .filter(zones::Column::Id.is_in(zone_ids.to_vec()))
+            .all(self.dbt(tenant_id))
+            .await?;
+
+        let existing_ids = existing_zones
+            .into_iter()
+            .map(|z| z.id)
+            .collect::<HashSet<_>>();
+
+        let invalid_ids = zone_ids
+            .iter()
+            .filter(|id| !existing_ids.contains(id))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if !invalid_ids.is_empty() {
+            return Err(DbErr::Custom(format!(
+                "Invalid Zone in tenant {}: {:?}",
+                tenant_id, invalid_ids,
+            )));
+        }
+        Ok(())
+    }
+
     pub async fn get_zone(&self, tenant_id: i32, zone_id: i32) -> Result<Zone, DbErr> {
         let result = Zones::find()
             .filter(zones::Column::TenantId.eq(tenant_id))
@@ -2361,12 +2481,186 @@ impl Wms {
         }
     }
 
+    pub async fn list_sale_by_order(
+        &self,
+        tenant_id: i32,
+        order_ids: &Vec<i32>,
+    ) -> Result<Vec<Sale>, DbErr> {
+        let rows = Sales::find()
+            .select_only()
+            .column(sales::Column::Id)
+            .column(sales::Column::OrderId)
+            .column(sale_events::Column::StockId)
+            .join_rev(
+                JoinType::InnerJoin,
+                sale_events::Entity::belongs_to(Sales)
+                    .from(sale_events::Column::SaleId)
+                    .to(sales::Column::Id)
+                    .into(),
+            )
+            .filter(sales::Column::TenantId.eq(tenant_id))
+            .filter(sales::Column::OrderId.is_in(order_ids.clone()))
+            .into_tuple::<(i32, i32, i32)>()
+            .all(self.dbt(tenant_id))
+            .await?;
+
+        let mut sale_map: HashMap<i32, Sale> = HashMap::new();
+
+        for (sale_id, order_id, stock_id) in rows {
+            sale_map
+                .entry(sale_id)
+                .and_modify(|s| {
+                    if let Some(ref mut ids) = s.stock_ids {
+                        ids.push(stock_id);
+                    }
+                })
+                .or_insert(Sale {
+                    id: Some(sale_id),
+                    order_id,
+                    stock_ids: Some(vec![stock_id]),
+                    ..Default::default()
+                });
+        }
+
+        Ok(sale_map.into_values().collect())
+    }
+
+    pub async fn get_picking_plan_status(
+        &self,
+        tenant_id: i32,
+        plan_id: i32,
+    ) -> Result<PickingPlanStatus, DbErr> {
+        let txn = self.dbt(tenant_id).begin().await?;
+
+        let result = self
+            .get_picking_plan_status_with_txn(tenant_id, plan_id, &txn)
+            .await?;
+
+        txn.commit().await?;
+        Ok(result)
+    }
+
+    async fn get_picking_plan_status_with_txn(
+        &self,
+        tenant_id: i32,
+        plan_id: i32,
+        txn: &DatabaseTransaction,
+    ) -> Result<PickingPlanStatus, DbErr> {
+        let result = PickingPlans::find()
+            .select_only()
+            .column(picking_plans::Column::Status)
+            .filter(picking_plans::Column::TenantId.eq(tenant_id))
+            .filter(picking_plans::Column::Id.eq(plan_id))
+            .into_tuple::<i32>()
+            .one(txn)
+            .await?;
+
+        if let Some(result) = result {
+            Ok(PickingPlanStatus::from(result))
+        } else {
+            Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Plan {} not exists in tenant {}",
+                plan_id, tenant_id,
+            ))))
+        }
+    }
+
     pub async fn create_picking_plan(
         &self,
         tenant_id: i32,
         orders: &Vec<Order>,
-    ) -> Result<Vec<i32>, DbErr> {
-        Ok(Vec::new())
+        zones: &Vec<i32>,
+        nodes: &Vec<PickingNodeScope>,
+    ) -> Result<i32, DbErr> {
+        let mut picking_goods_models = Vec::new();
+
+        let txn = self.dbt(tenant_id).begin().await?;
+        let order_ids = orders
+            .iter()
+            .map(|order| order.order_id.unwrap_or(0))
+            .collect::<Vec<_>>();
+
+        // @TODO: tách chỗ này ra dùng RPC nếu muốn chia micro services
+        let sale_details = self.list_sale_by_order(tenant_id, &order_ids).await?;
+
+        let plan_id = picking_plans::Entity::insert(picking_plans::ActiveModel {
+            tenant_id: Set(tenant_id),
+            status: Set(PickingPlanStatus::Created as i32),
+            ..Default::default()
+        })
+        .exec(&txn)
+        .await?
+        .last_insert_id;
+
+        if !zones.is_empty() {
+            // @TODO: tách chỗ này ra dùng RPC nếu muốn chia micro services
+            self.are_zones_existed(tenant_id, zones).await?;
+
+            picking_plans_in_zones::Entity::insert_many(
+                zones
+                    .iter()
+                    .map(|&zone_id| {
+                        picking_plans_in_zones::ActiveModel {
+                            id: Set(zone_id), // Khóa chính là ID của Zone
+                            tenant_id: Set(tenant_id),
+                            plan_id: Set(plan_id),
+                            ..Default::default()
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .exec(&txn)
+            .await?;
+        }
+
+        if !nodes.is_empty() {
+            // @TODO: tách chỗ này ra dùng RPC nếu muốn chia micro services
+            self.are_nodes_existed(tenant_id, nodes).await?;
+
+            picking_plans_in_nodes::Entity::insert_many(
+                nodes
+                    .iter()
+                    .map(|node_scope| picking_plans_in_nodes::ActiveModel {
+                        id: Set(node_scope.node),
+                        tenant_id: Set(tenant_id),
+                        plan_id: Set(plan_id),
+                        ..Default::default()
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .exec(&txn)
+            .await?;
+        }
+
+        self.notify_when_plan_status_changed_with_txn(
+            tenant_id,
+            plan_id,
+            PickingPlanStatus::Created,
+            &txn,
+        )
+        .await?;
+
+        for sale_detail in sale_details {
+            picking_goods_models.push(picking_goods::ActiveModel {
+                tenant_id: Set(tenant_id),
+                plan_id: Set(plan_id),
+                status: Set(PickingGoodsStatus::Planing as i32),
+                sale_id: Set(sale_detail.id.ok_or_else(|| {
+                    DbErr::Custom(format!(
+                        "Order {} is not correct or non-existed",
+                        sale_detail.order_id,
+                    ))
+                })?),
+                ..Default::default()
+            });
+        }
+
+        PickingGoods::insert_many(picking_goods_models)
+            .exec(&txn)
+            .await?;
+
+        txn.commit().await?;
+        Ok(plan_id)
     }
 
     pub async fn plan_picking_routes(
@@ -2394,13 +2688,104 @@ impl Wms {
         Ok(Vec::new())
     }
 
+    pub async fn notify_when_plan_status_changed(
+        &self,
+        tenant_id: i32,
+        plan_id: i32,
+        status: PickingPlanStatus,
+    ) -> Result<(), DbErr> {
+        let txn = self.dbt(tenant_id).begin().await?;
+
+        self.notify_when_plan_status_changed_with_txn(tenant_id, plan_id, status, &txn)
+            .await?;
+
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn notify_when_plan_status_changed_with_txn(
+        &self,
+        tenant_id: i32,
+        plan_id: i32,
+        next_status: PickingPlanStatus,
+        txn: &DatabaseTransaction,
+    ) -> Result<(), DbErr> {
+        let current_status = self
+            .get_picking_plan_status_with_txn(tenant_id, plan_id, txn)
+            .await?;
+
+        if !current_status.can_transition_to(&next_status) {
+            return Err(DbErr::Custom(format!(
+                "Invalid state transition from {:?} to {:?}",
+                current_status, next_status
+            )));
+        }
+
+        // @TODO: process event here
+        match next_status {
+            PickingPlanStatus::Created => {}
+            PickingPlanStatus::Planed => {}
+            PickingPlanStatus::Running => {}
+            PickingPlanStatus::Failed => {}
+            PickingPlanStatus::Done => {}
+            _ => {}
+        }
+
+        PickingEvents::insert(picking_events::ActiveModel {
+            tenant_id: Set(tenant_id),
+            plan_id: Set(Some(plan_id)),
+            status: Set(next_status as i32),
+            ..Default::default()
+        })
+        .exec(txn)
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn notify_when_route_status_changed(
         &self,
         tenant_id: i32,
+        actor_id: i32,
         route_id: i32,
-        status: i32,
-    ) -> Result<Vec<i32>, DbErr> {
-        Ok(Vec::new())
+        status: PickingRouteStatus,
+    ) -> Result<(), DbErr> {
+        let txn = self.dbt(tenant_id).begin().await?;
+
+        self.notify_when_route_status_changed_with_txn(tenant_id, actor_id, route_id, status, &txn)
+            .await?;
+
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn notify_when_route_status_changed_with_txn(
+        &self,
+        tenant_id: i32,
+        actor_id: i32,
+        route_id: i32,
+        status: PickingRouteStatus,
+        txn: &DatabaseTransaction,
+    ) -> Result<(), DbErr> {
+        // @TODO: process event here
+        match status {
+            PickingRouteStatus::Caculating => {}
+            PickingRouteStatus::Pending => {}
+            PickingRouteStatus::Running => {}
+            PickingRouteStatus::Failed => {}
+            _ => {}
+        }
+
+        PickingEvents::insert(picking_events::ActiveModel {
+            tenant_id: Set(tenant_id),
+            actor_id: Set(Some(actor_id)),
+            route_id: Set(Some(route_id)),
+            status: Set(status as i32),
+            ..Default::default()
+        })
+        .exec(txn)
+        .await?;
+        Ok(())
     }
 
     pub async fn notify_when_order_status_changed(
@@ -2408,8 +2793,57 @@ impl Wms {
         tenant_id: i32,
         sale_id: i32,
         status: i32,
-    ) -> Result<Vec<i32>, DbErr> {
-        Ok(Vec::new())
+    ) -> Result<(), DbErr> {
+        Ok(())
+    }
+
+    pub async fn release_after_plan_done(&self, tenant_id: i32, plan_id: i32) -> Result<(), DbErr> {
+        let txn = self.dbt(tenant_id).begin().await?;
+
+        let plan = picking_plans::Entity::find_by_id(plan_id)
+            .filter(picking_plans::Column::TenantId.eq(tenant_id))
+            .one(&txn)
+            .await?
+            .ok_or_else(|| {
+                DbErr::Custom(format!(
+                    "Picking Plan {}, tenant {} not exist",
+                    plan_id, tenant_id,
+                ))
+            })?;
+
+        if plan.status != PickingPlanStatus::Done as i32
+            && plan.status != PickingPlanStatus::Failed as i32
+        {
+            Err(DbErr::Custom(format!(
+                "Cannot release duo to plan {}, tenant {} in phase {}, not Done or Failed.",
+                plan_id, tenant_id, plan.status,
+            )))
+        } else {
+            let zones_result = picking_plans_in_zones::Entity::delete_many()
+                .filter(picking_plans_in_zones::Column::TenantId.eq(tenant_id))
+                .filter(picking_plans_in_zones::Column::PlanId.eq(plan_id))
+                .exec(&txn)
+                .await?;
+
+            info!(
+                "Release {} Zones which are linked to Plan ID: {} (Tenant: {})",
+                zones_result.rows_affected, plan_id, tenant_id
+            );
+
+            let nodes_result = picking_plans_in_nodes::Entity::delete_many()
+                .filter(picking_plans_in_nodes::Column::TenantId.eq(tenant_id))
+                .filter(picking_plans_in_nodes::Column::PlanId.eq(plan_id))
+                .exec(&txn)
+                .await?;
+
+            info!(
+                "Release {} nodes which are linked to Plan ID: {} (Tenant: {})",
+                nodes_result.rows_affected, plan_id, tenant_id
+            );
+
+            txn.commit().await?;
+            Ok(())
+        }
     }
 }
 

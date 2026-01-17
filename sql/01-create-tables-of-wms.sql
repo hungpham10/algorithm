@@ -1,3 +1,4 @@
+-- BEGIN: danh sách các bảng liên quan inventory và tồn kho
 CREATE TABLE IF NOT EXISTS `wms_stocks`   (
   `id` integer PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` integer NOT NULL,
@@ -106,7 +107,9 @@ CREATE TABLE IF NOT EXISTS  `wms_items` (
 
   UNIQUE KEY `unique_tenant_barcode` (`tenant_id`, `barcode`)
 );
+-- END
 
+-- BEGIN: danh sách các bảng liên quan topology
 CREATE TABLE `wms_zones` (
   `id` integer PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` integer NOT NULL,
@@ -152,13 +155,31 @@ CREATE TABLE `wms_paths` (
 
   UNIQUE KEY `unique_tenant_name` (`tenant_id`, `name`)
 );
+-- END
 
+-- BEGIN: danh sách các bảng liên quan feature picking
 CREATE TABLE `wms_picking_plans` (
   `id` integer PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` integer NOT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `status` integer
+);
+
+CREATE TABLE `wms_picking_plans_in_zones` (
+  `id` integer PRIMARY KEY,
+  `tenant_id` integer NOT NULL,
+  `plan_id` integer NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+);
+
+CREATE TABLE `wms_picking_plans_in_nodes` (
+  `id` integer PRIMARY KEY,
+  `tenant_id` integer NOT NULL,
+  `plan_id` integer NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 CREATE TABLE `wms_picking_routes` (
@@ -175,13 +196,16 @@ CREATE TABLE `wms_picking_routes` (
 CREATE TABLE `wms_picking_goods` (
   `id` integer PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` integer NOT NULL,
-  `sale_id` integer,
+  `sale_id` integer NOT NULL,
+  `plan_id` integer NOT NULL,
   `route_id` integer,
   `event_id` integer,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `status` integer,
-  `is_ready_to_pack` bool
+  `is_ready_to_pack` boolean,
+
+  UNIQUE KEY `unique_tenant_sale` (`tenant_id`, `sale_id`)
 );
 
 CREATE TABLE `wms_picking_events` (
@@ -189,8 +213,10 @@ CREATE TABLE `wms_picking_events` (
   `tenant_id` integer NOT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `actor_id` integer,
-  `route_id` integer
+  `actor_id` integer NOT NULL,
+  `route_id` integer NOT NULL,
+
+  UNIQUE KEY `unique_tenant_actor_route` (`tenant_id`, `actor_id`, `route_id`)
 );
 
 CREATE TABLE `wms_picking_items` (
@@ -200,8 +226,11 @@ CREATE TABLE `wms_picking_items` (
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `item_id` integer,
   `event_id` integer,
-  `ledger_id` integer
+  `ledger_id` integer,
+
+  UNIQUE KEY `unique_tenant_item` (`tenant_id`, `item_id`)
 );
+-- END
 
 DELIMITER $$
 CREATE EVENT IF NOT EXISTS manage_wms_sales_partitions

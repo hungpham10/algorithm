@@ -9,7 +9,9 @@ pub struct Model {
     pub id: i32,
     pub tenant_id: i32,
     pub actor_id: Option<i32>,
+    pub plan_id: Option<i32>,
     pub route_id: Option<i32>,
+    pub status: i32,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }
