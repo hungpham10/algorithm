@@ -31,7 +31,7 @@ impl VolumeProfile {
     ) -> Result<Self> {
         let (heatmap, levels) =
             Self::cumulate_volume_profile(candles, number_of_levels, overlap, interval_in_hour)?;
-        let ranges = Self::cumulate_volume_range(&heatmap)?;
+        let ranges = Self::cumulate_volume_range(&heatmap, number_of_levels / 10)?;
         let timelines = Self::calculate_cumulate_volume_timeline(&heatmap, &ranges)?;
 
         Ok(Self {
@@ -52,7 +52,7 @@ impl VolumeProfile {
         let (heatmap, levels) =
             Self::cumulate_volume_profile(candles, number_of_levels, overlap, interval_in_hour)?;
 
-        self.ranges = Self::cumulate_volume_range(&heatmap)?;
+        self.ranges = Self::cumulate_volume_range(&heatmap, number_of_levels / 10)?;
         self.timelines = Self::calculate_cumulate_volume_timeline(&heatmap, &self.ranges)?;
         self.levels = levels;
         self.heatmap = heatmap;
@@ -148,20 +148,43 @@ impl VolumeProfile {
             .collect::<Vec<_>>())
     }
 
+    /// Simple moving‑average smoothing.
+    /// `window` must be odd (e.g. 3, 5, 7). Larger windows give stronger smoothing.
     #[inline]
-    pub fn cumulate_volume_range(heatmap: &Vec<Vec<f64>>) -> Result<Vec<(usize, usize, usize)>> {
+    fn smooth_column_totals(totals: &Vec<f64>, window: usize) -> Vec<f64> {
+        let half = window / 2;
+        let mut out = Vec::with_capacity(totals.len());
+
+        for i in 0..totals.len() {
+            let start = if i >= half { i - half } else { 0 };
+            let end = usize::min(i + half + 1, totals.len());
+
+            let sum: f64 = totals[start..end].iter().sum();
+            out.push(sum / (end - start) as f64);
+        }
+        out
+    }
+
+    #[inline]
+    pub fn cumulate_volume_range(
+        heatmap: &Vec<Vec<f64>>,
+        window: usize,
+    ) -> Result<Vec<(usize, usize, usize)>> {
         let mut centers = BTreeMap::new();
 
-        let sorted = (0..heatmap[0].len())
-            .map(|col| heatmap.iter().map(|row| row[col]).sum::<f64>())
-            .collect::<Vec<_>>()
-            .iter()
-            .enumerate()
-            .collect::<Vec<(_, &f64)>>()
-            .into_iter()
-            .sorted_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(Ordering::Greater))
-            .map(|(index, _)| index)
-            .collect::<Vec<_>>();
+        let sorted = Self::smooth_column_totals(
+            &((0..heatmap[0].len())
+                .map(|col| heatmap.iter().map(|row| row[col]).sum::<f64>())
+                .collect::<Vec<_>>()),
+            window,
+        )
+        .iter()
+        .enumerate()
+        .collect::<Vec<(_, &f64)>>()
+        .into_iter()
+        .sorted_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(Ordering::Greater))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
 
         for t in sorted {
             let mut found = false;
@@ -221,7 +244,7 @@ impl VolumeProfile {
         interval_in_hour: i32,
     ) -> Result<(Vec<Vec<f64>>, Vec<f64>)> {
         if candles.is_empty() || number_of_levels == 0 {
-            return Err(anyhow!(format!("candles or number_of_levels is empty")));
+            return Err(anyhow!("candles or number_of_levels is empty"));
         }
 
         let mut all_volumes: Vec<Vec<f64>> = Vec::new();
@@ -234,7 +257,7 @@ impl VolumeProfile {
             .fold(f64::NEG_INFINITY, f64::max);
 
         if global_min_price == f64::INFINITY || global_max_price == f64::NEG_INFINITY {
-            return Err(anyhow!(format!("data range is out of scope")));
+            return Err(anyhow!("data range is out of scope"));
         }
 
         let price_range = global_max_price - global_min_price;
@@ -288,7 +311,7 @@ impl VolumeProfile {
         }
 
         if pin_start_indices.len() < overlap {
-            return Err(anyhow!(format!("overlap is too large")));
+            return Err(anyhow!("overlap is too large"));
         }
 
         for window_start in 0..=(pin_start_indices.len() - overlap) {
