@@ -11,7 +11,7 @@ BACKEND_DIR := pkgs/backend
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
-	$(PYTHON) -m pip install maturin twine pytest pyarrow patchelf --cache-dir $(PIP_CACHE)
+	$(PYTHON) -m pip install maturin[zig] twine pytest pyarrow patchelf --cache-dir $(PIP_CACHE)
 	@if ! command -v rustc > /dev/null; then 													\
 		echo "Installing Rust..."; 														\
 		curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; 								\
@@ -42,7 +42,8 @@ library:
 			--no-default-features 														\
 			--bindings pyo3 														\
 			--interpreter python3 														\
-			--compatibility off 														\
+			--zig 																\
+			--compatibility manylinux_2_28 													\
 			--out dist; 															\
 		cp dist/*.whl ../../$(DIST_DIR)/; 													\
 	else 																		\
