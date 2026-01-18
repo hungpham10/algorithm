@@ -2,11 +2,12 @@ mod items;
 mod lots;
 mod nodes;
 mod paths;
-mod picking_events;
 mod picking_goods;
+mod picking_plan_events;
 mod picking_plans;
 mod picking_plans_in_nodes;
 mod picking_plans_in_zones;
+mod picking_route_events;
 mod picking_routes;
 mod sale_events;
 mod sales;
@@ -20,11 +21,12 @@ use items::Entity as Items;
 use lots::Entity as Lots;
 use nodes::Entity as Nodes;
 use paths::Entity as Paths;
-use picking_events::Entity as PickingEvents;
 use picking_goods::Entity as PickingGoods;
+use picking_plan_events::Entity as PickingPlanEvents;
 use picking_plans::Entity as PickingPlans;
 use picking_plans_in_nodes::Entity as PickingPlansInNodes;
 use picking_plans_in_zones::Entity as PickingPlansInZones;
+use picking_route_events::Entity as PickingRouteEvents;
 use picking_routes::Entity as PickingRoutes;
 use sale_events::Entity as SaleEvents;
 use sales::Entity as Sales;
@@ -383,6 +385,21 @@ enum SaleStatus {
     Done,
 }
 
+impl SaleStatus {
+    pub fn can_transition_to(&self, next: &Self) -> bool {
+        match (self, next) {
+            (Self::Paid, Self::Delivered) => true,
+            (Self::Paid, Self::Failed) => true,
+            (Self::Delivered, Self::Done) => true,
+            (Self::Delivered, Self::Failed) => true,
+            (Self::Done, Self::Returned) => true,
+            (Self::Failed, Self::Returned) => true,
+            (Self::Returned, Self::Refunded) => true,
+            _ => false,
+        }
+    }
+}
+
 impl From<i32> for SaleStatus {
     fn from(value: i32) -> Self {
         match value {
@@ -703,6 +720,20 @@ pub enum PickingRouteStatus {
     Done,
 }
 
+impl PickingRouteStatus {
+    pub fn can_transition_to(&self, next: &Self) -> bool {
+        match (self, next) {
+            (Self::Caculating, Self::Pending) => true,
+            (Self::Pending, Self::Caculating) => true,
+            (Self::Pending, Self::Running) => true,
+            (Self::Running, Self::Done) => true,
+            (Self::Running, Self::Failed) => true,
+            (Self::Failed, Self::Caculating) => true,
+            _ => false,
+        }
+    }
+}
+
 impl From<i32> for PickingRouteStatus {
     fn from(i: i32) -> Self {
         match i {
@@ -746,6 +777,7 @@ impl Display for PickingRouteStatus {
             PickingRouteStatus::Pending => write!(f, "pending"),
             PickingRouteStatus::Running => write!(f, "running"),
             PickingRouteStatus::Failed => write!(f, "failed"),
+            PickingRouteStatus::Done => write!(f, "done"),
             PickingRouteStatus::Unknown => write!(f, "unknown"),
         }
     }
@@ -1810,6 +1842,32 @@ impl Wms {
         }
     }
 
+    async fn get_sale_status_with_txn(
+        &self,
+        tenant_id: i32,
+        sale_id: i32,
+        txn: &DatabaseTransaction,
+    ) -> Result<(SaleStatus, i32), DbErr> {
+        let result = Sales::find()
+            .select_only()
+            .column(sales::Column::Status)
+            .column(sales::Column::Version)
+            .filter(sales::Column::Id.eq(sale_id))
+            .filter(sales::Column::TenantId.eq(tenant_id))
+            .into_tuple::<(i32, i32)>()
+            .one(txn)
+            .await?;
+
+        if let Some((status, version)) = result {
+            Ok((SaleStatus::from(status), version))
+        } else {
+            Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Sale {} not exists in tenant {}",
+                sale_id, tenant_id,
+            ))))
+        }
+    }
+
     pub async fn sale_at_storefront(&self, tenant_id: i32, sale: &Sale) -> Result<Sale, DbErr> {
         match &sale.barcodes {
             Some(barcodes) => {
@@ -1876,7 +1934,7 @@ impl Wms {
                         .map(|stock_id| sale_events::ActiveModel {
                             tenant_id: Set(tenant_id),
                             sale_id: Set(sale_id),
-                            stock_id: Set(*stock_id),
+                            stock_id: Set(Some(*stock_id)),
                             status: Set(SaleStatus::Paid as i32),
                             ..Default::default()
                         })
@@ -2525,38 +2583,24 @@ impl Wms {
         Ok(sale_map.into_values().collect())
     }
 
-    pub async fn get_picking_plan_status(
-        &self,
-        tenant_id: i32,
-        plan_id: i32,
-    ) -> Result<PickingPlanStatus, DbErr> {
-        let txn = self.dbt(tenant_id).begin().await?;
-
-        let result = self
-            .get_picking_plan_status_with_txn(tenant_id, plan_id, &txn)
-            .await?;
-
-        txn.commit().await?;
-        Ok(result)
-    }
-
     async fn get_picking_plan_status_with_txn(
         &self,
         tenant_id: i32,
         plan_id: i32,
         txn: &DatabaseTransaction,
-    ) -> Result<PickingPlanStatus, DbErr> {
+    ) -> Result<(PickingPlanStatus, i32), DbErr> {
         let result = PickingPlans::find()
             .select_only()
             .column(picking_plans::Column::Status)
+            .column(picking_plans::Column::Version)
             .filter(picking_plans::Column::TenantId.eq(tenant_id))
             .filter(picking_plans::Column::Id.eq(plan_id))
-            .into_tuple::<i32>()
+            .into_tuple::<(i32, i32)>()
             .one(txn)
             .await?;
 
-        if let Some(result) = result {
-            Ok(PickingPlanStatus::from(result))
+        if let Some((status, version)) = result {
+            Ok((PickingPlanStatus::from(status), version))
         } else {
             Err(DbErr::Query(RuntimeErr::Internal(format!(
                 "Plan {} not exists in tenant {}",
@@ -2596,7 +2640,7 @@ impl Wms {
             // @TODO: tách chỗ này ra dùng RPC nếu muốn chia micro services
             self.are_zones_existed(tenant_id, zones).await?;
 
-            picking_plans_in_zones::Entity::insert_many(
+            PickingPlansInZones::insert_many(
                 zones
                     .iter()
                     .map(|&zone_id| {
@@ -2617,7 +2661,7 @@ impl Wms {
             // @TODO: tách chỗ này ra dùng RPC nếu muốn chia micro services
             self.are_nodes_existed(tenant_id, nodes).await?;
 
-            picking_plans_in_nodes::Entity::insert_many(
+            PickingPlansInNodes::insert_many(
                 nodes
                     .iter()
                     .map(|node_scope| picking_plans_in_nodes::ActiveModel {
@@ -2661,6 +2705,32 @@ impl Wms {
 
         txn.commit().await?;
         Ok(plan_id)
+    }
+
+    async fn get_picking_route_status_with_txn(
+        &self,
+        tenant_id: i32,
+        route_id: i32,
+        txn: &DatabaseTransaction,
+    ) -> Result<(PickingRouteStatus, i32), DbErr> {
+        let result = PickingRoutes::find()
+            .select_only()
+            .column(picking_routes::Column::Status)
+            .column(picking_routes::Column::Version)
+            .filter(picking_routes::Column::TenantId.eq(tenant_id))
+            .filter(picking_routes::Column::Id.eq(route_id))
+            .into_tuple::<(i32, i32)>()
+            .one(txn)
+            .await?;
+
+        if let Some((status, version)) = result {
+            Ok((PickingRouteStatus::from(status), version))
+        } else {
+            Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Route {} not exists in tenant {}",
+                route_id, tenant_id,
+            ))))
+        }
     }
 
     pub async fn plan_picking_routes(
@@ -2710,9 +2780,13 @@ impl Wms {
         next_status: PickingPlanStatus,
         txn: &DatabaseTransaction,
     ) -> Result<(), DbErr> {
-        let current_status = self
+        let (current_status, version) = self
             .get_picking_plan_status_with_txn(tenant_id, plan_id, txn)
             .await?;
+
+        if current_status == next_status {
+            return Ok(());
+        }
 
         if !current_status.can_transition_to(&next_status) {
             return Err(DbErr::Custom(format!(
@@ -2731,16 +2805,34 @@ impl Wms {
             _ => {}
         }
 
-        PickingEvents::insert(picking_events::ActiveModel {
+        PickingPlanEvents::insert(picking_plan_events::ActiveModel {
             tenant_id: Set(tenant_id),
-            plan_id: Set(Some(plan_id)),
-            status: Set(next_status as i32),
+            plan_id: Set(plan_id),
+            version: Set(version + 1),
+            status: Set(next_status.clone() as i32),
             ..Default::default()
         })
         .exec(txn)
         .await?;
 
-        Ok(())
+        let result = PickingPlans::update_many()
+            .col_expr(
+                picking_plans::Column::Status,
+                Expr::value(next_status as i32),
+            )
+            .col_expr(picking_plans::Column::Version, Expr::value(version + 1))
+            .filter(picking_plans::Column::Id.eq(plan_id))
+            .filter(picking_plans::Column::Version.eq(version))
+            .exec(txn)
+            .await?;
+        if result.rows_affected == 0 {
+            Err(DbErr::Custom(format!(
+                "Failed updating new change of plan {}",
+                plan_id,
+            )))
+        } else {
+            Ok(())
+        }
     }
 
     pub async fn notify_when_route_status_changed(
@@ -2764,37 +2856,138 @@ impl Wms {
         tenant_id: i32,
         actor_id: i32,
         route_id: i32,
-        status: PickingRouteStatus,
+        next_status: PickingRouteStatus,
         txn: &DatabaseTransaction,
     ) -> Result<(), DbErr> {
+        let (current_status, version) = self
+            .get_picking_route_status_with_txn(tenant_id, route_id, txn)
+            .await?;
+
+        if current_status == next_status {
+            return Ok(());
+        }
+
+        if !current_status.can_transition_to(&next_status) {
+            return Err(DbErr::Custom(format!(
+                "Invalid state transition from {:?} to {:?}",
+                current_status, next_status
+            )));
+        }
+
         // @TODO: process event here
-        match status {
+        match next_status {
             PickingRouteStatus::Caculating => {}
             PickingRouteStatus::Pending => {}
             PickingRouteStatus::Running => {}
             PickingRouteStatus::Failed => {}
+            PickingRouteStatus::Done => {}
             _ => {}
         }
 
-        PickingEvents::insert(picking_events::ActiveModel {
+        PickingRouteEvents::insert(picking_route_events::ActiveModel {
             tenant_id: Set(tenant_id),
-            actor_id: Set(Some(actor_id)),
-            route_id: Set(Some(route_id)),
-            status: Set(status as i32),
+            actor_id: Set(actor_id),
+            route_id: Set(route_id),
+            version: Set(version + 1),
+            status: Set(next_status.clone() as i32),
             ..Default::default()
         })
         .exec(txn)
         .await?;
-        Ok(())
+
+        let result = PickingRoutes::update_many()
+            .col_expr(
+                picking_routes::Column::Status,
+                Expr::value(next_status as i32),
+            )
+            .col_expr(picking_routes::Column::Version, Expr::value(version + 1))
+            .filter(picking_routes::Column::Id.eq(route_id))
+            .filter(picking_routes::Column::Version.eq(version))
+            .exec(txn)
+            .await?;
+        if result.rows_affected == 0 {
+            Err(DbErr::Custom(format!(
+                "Failed updating new change of route {}, actor {}",
+                route_id, actor_id,
+            )))
+        } else {
+            Ok(())
+        }
     }
 
-    pub async fn notify_when_order_status_changed(
+    async fn notify_when_order_status_changed(
         &self,
         tenant_id: i32,
         sale_id: i32,
-        status: i32,
+        status: SaleStatus,
     ) -> Result<(), DbErr> {
+        let txn = self.dbt(tenant_id).begin().await?;
+
+        self.notify_when_order_status_changed_with_txn(tenant_id, sale_id, status, &txn)
+            .await?;
+
+        txn.commit().await?;
         Ok(())
+    }
+
+    pub async fn notify_when_order_status_changed_with_txn(
+        &self,
+        tenant_id: i32,
+        sale_id: i32,
+        next_status: SaleStatus,
+        txn: &DatabaseTransaction,
+    ) -> Result<(), DbErr> {
+        let (current_status, version) = self
+            .get_sale_status_with_txn(tenant_id, sale_id, txn)
+            .await?;
+
+        if current_status == next_status {
+            return Ok(());
+        }
+
+        if !current_status.can_transition_to(&next_status) {
+            return Err(DbErr::Custom(format!(
+                "Invalid state transition from {:?} to {:?}",
+                current_status, next_status
+            )));
+        }
+
+        // @TODO: process event here
+        match next_status {
+            SaleStatus::Paid => {}
+            SaleStatus::Delivered => {}
+            SaleStatus::Returned => {}
+            SaleStatus::Refunded => {}
+            SaleStatus::Failed => {}
+            SaleStatus::Done => {}
+            _ => {}
+        }
+
+        SaleEvents::insert(sale_events::ActiveModel {
+            tenant_id: Set(tenant_id),
+            sale_id: Set(sale_id),
+            version: Set(version + 1),
+            status: Set(next_status.clone() as i32),
+            ..Default::default()
+        })
+        .exec(txn)
+        .await?;
+
+        let result = Sales::update_many()
+            .col_expr(sales::Column::Status, Expr::value(next_status as i32))
+            .col_expr(sales::Column::Version, Expr::value(version + 1))
+            .filter(sales::Column::Id.eq(sale_id))
+            .filter(sales::Column::Version.eq(version))
+            .exec(txn)
+            .await?;
+        if result.rows_affected == 0 {
+            Err(DbErr::Custom(format!(
+                "Failed updating new change of sale {}",
+                sale_id,
+            )))
+        } else {
+            Ok(())
+        }
     }
 
     pub async fn release_after_plan_done(&self, tenant_id: i32, plan_id: i32) -> Result<(), DbErr> {

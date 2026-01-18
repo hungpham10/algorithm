@@ -10,6 +10,7 @@ pub struct Model {
     pub tenant_id: i32,
     pub order_id: i32,
     pub status: i32,
+    pub version: i32,
     pub cost_price: f64,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,

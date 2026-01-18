@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS  `wms_sales` (
   `order_id` integer NOT NULL,
   `cost_price` DOUBLE NOT NULL,
   `status` integer DEFAULT 0,
+  `version` integer DEFAULT 0,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY `unique_tenant_order_id` (`tenant_id`, `order_id`)
@@ -83,11 +84,12 @@ CREATE TABLE IF NOT EXISTS `wms_sale_events` (
   `id` integer AUTO_INCREMENT PRIMARY KEY,
   `tenant_id` integer NOT NULL,
   `sale_id` integer NOT NULL,
-  `stock_id` integer NOT NULL,
+  `stock_id` integer,
+  `version` integer NOT NULL,
   `status` integer DEFAULT 0,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY `unique_tenant_sale_id` (`tenant_id`, `sale_id`, `stock_id`)
+  UNIQUE KEY `unique_tenant_sale_id` (`tenant_id`, `sale_id`, `version`)
 );
 
 CREATE TABLE IF NOT EXISTS  `wms_items` (
@@ -163,6 +165,7 @@ CREATE TABLE `wms_picking_plans` (
   `tenant_id` integer NOT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `version` integer DEFAULT 0,
   `status` integer
 );
 
@@ -190,6 +193,7 @@ CREATE TABLE `wms_picking_routes` (
   `depend_id` integer,
   `picking_id` integer,
   `status` integer,
+  `version` integer DEFAULT 0,
   `paths` json
 );
 
@@ -208,15 +212,29 @@ CREATE TABLE `wms_picking_goods` (
   UNIQUE KEY `unique_tenant_sale` (`tenant_id`, `sale_id`)
 );
 
-CREATE TABLE `wms_picking_events` (
+CREATE TABLE `wms_picking_plan_events` (
+  `id` integer PRIMARY KEY AUTO_INCREMENT,
+  `tenant_id` integer NOT NULL,
+  `plan_id` integer NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `version` integer NOT NULL,
+  `status` integer NOT NULL,
+
+  UNIQUE KEY `unique_tenant_plan_status` (`tenant_id`, `plan_id`, `version`)
+);
+
+CREATE TABLE `wms_picking_route_events` (
   `id` integer PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` integer NOT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `version` integer NOT NULL,
   `actor_id` integer NOT NULL,
   `route_id` integer NOT NULL,
+  `status` integer NOT NULL,
 
-  UNIQUE KEY `unique_tenant_actor_route` (`tenant_id`, `actor_id`, `route_id`)
+  UNIQUE KEY `unique_tenant_route_status` (`tenant_id`, `route_id`, `version`)
 );
 
 CREATE TABLE `wms_picking_items` (

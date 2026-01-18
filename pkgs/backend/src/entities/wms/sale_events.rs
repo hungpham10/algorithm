@@ -9,8 +9,9 @@ pub struct Model {
     pub id: i32,
     pub tenant_id: i32,
     pub sale_id: i32,
-    pub stock_id: i32,
+    pub stock_id: Option<i32>,
     pub status: i32,
+    pub version: i32,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }
