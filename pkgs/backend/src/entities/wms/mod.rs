@@ -60,7 +60,7 @@ pub struct Point {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Stock {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<i32>,
+    pub id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shelves: Option<Vec<String>>,
@@ -168,7 +168,7 @@ impl Display for LotStatus {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Lot {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<i32>,
+    pub id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entry_date: Option<DateTime<Utc>>,
@@ -207,7 +207,7 @@ impl Default for Lot {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Shelf {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<i32>,
+    pub id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -306,7 +306,7 @@ impl Display for ItemStatus {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Item {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<i32>,
+    pub id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expired_at: Option<DateTime<Utc>>,
@@ -318,10 +318,10 @@ pub struct Item {
     pub lot_number: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lot_id: Option<i32>,
+    pub lot_id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stock_id: Option<i32>,
+    pub stock_id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub barcode: Option<String>,
@@ -349,15 +349,15 @@ impl Default for Item {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Sale {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<i32>,
+    pub id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stock_ids: Option<Vec<i32>>,
+    pub stock_ids: Option<Vec<i64>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub barcodes: Option<Vec<String>>,
 
-    pub order_id: i32,
+    pub order_id: i64,
     pub cost_prices: Vec<f64>,
 }
 
@@ -511,7 +511,7 @@ impl Display for OrderStatus {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Order {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub order_id: Option<i32>,
+    pub order_id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<OrderStatus>,
@@ -526,7 +526,7 @@ pub struct Order {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Zone {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<i32>,
+    pub id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -606,10 +606,10 @@ impl Display for NodeStatus {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Node {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub node_id: Option<i32>,
+    pub node_id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub zone_id: Option<i32>,
+    pub zone_id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -679,16 +679,16 @@ impl Display for PathStatus {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PathWay {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub path_id: Option<i32>,
+    pub path_id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub zone_id: Option<i32>,
+    pub zone_id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub from_node: Option<i32>,
+    pub from_node: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub to_node: Option<i32>,
+    pub to_node: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -705,8 +705,8 @@ pub struct PathWay {
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct PickingNodeScope {
-    zone: i32,
-    node: i32,
+    zone: i64,
+    node: i64,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -937,13 +937,17 @@ impl Wms {
         Self { db }
     }
 
-    fn dbt(&self, tenant_id: i32) -> &DatabaseConnection {
+    fn dbt(&self, tenant_id: i64) -> &DatabaseConnection {
         self.db[(tenant_id as usize) % self.db.len()].as_ref()
     }
 
-    pub async fn create_stocks(&self, tenant_id: i32, stocks: &[Stock]) -> Result<Vec<i32>, DbErr> {
+    pub async fn create_stocks(
+        &self,
+        tenant_id: i64,
+        stocks: &[Stock],
+    ) -> Result<HashMap<String, i64>, DbErr> {
         if stocks.is_empty() {
-            return Ok(vec![]);
+            return Ok(HashMap::new());
         }
 
         stocks::Entity::insert_many(
@@ -963,6 +967,7 @@ impl Wms {
         Ok(stocks::Entity::find()
             .select_only()
             .column(stocks::Column::Id)
+            .column(stocks::Column::Name)
             .filter(stocks::Column::TenantId.eq(tenant_id))
             .filter(
                 stocks::Column::Name.is_in(
@@ -972,19 +977,19 @@ impl Wms {
                         .collect::<Vec<_>>(),
                 ),
             )
-            .into_tuple::<(i32,)>()
+            .into_tuple::<(i64, String)>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
-            .map(|m| m.0)
-            .collect::<Vec<_>>())
+            .map(|(id, name)| (name, id))
+            .collect::<HashMap<_, _>>())
     }
 
     pub async fn create_shelves(
         &self,
-        tenant_id: i32,
+        tenant_id: i64,
         shelves: &[Shelf],
-    ) -> Result<Vec<i32>, DbErr> {
+    ) -> Result<Vec<i64>, DbErr> {
         if shelves.is_empty() {
             return Ok(vec![]);
         }
@@ -1016,7 +1021,7 @@ impl Wms {
                         .collect::<Vec<_>>(),
                 ),
             )
-            .into_tuple::<(i32,)>()
+            .into_tuple::<(i64,)>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
@@ -1024,7 +1029,7 @@ impl Wms {
             .collect::<Vec<_>>())
     }
 
-    pub async fn create_lots(&self, tenant_id: i32, lots: &[Lot]) -> Result<Vec<i32>, DbErr> {
+    pub async fn create_lots(&self, tenant_id: i64, lots: &[Lot]) -> Result<Vec<i64>, DbErr> {
         let mut models = Vec::new();
 
         if lots.is_empty() {
@@ -1061,7 +1066,7 @@ impl Wms {
                         .collect::<Vec<_>>(),
                 ),
             )
-            .into_tuple::<(i32,)>()
+            .into_tuple::<(i64,)>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
@@ -1071,7 +1076,7 @@ impl Wms {
 
     pub async fn plan_import_new_items(
         &self,
-        tenant_id: i32,
+        tenant_id: i64,
         items: &[Item],
     ) -> Result<Vec<Item>, DbErr> {
         let txn = self.dbt(tenant_id).begin().await?;
@@ -1091,10 +1096,13 @@ impl Wms {
             .await?
             .into_iter()
             .map(|stock| stock.id)
-            .collect::<HashSet<i32>>();
+            .collect::<HashSet<i64>>();
 
         if valid_stocks.len() != stock_ids.len() {
-            let invalid_ids: Vec<i32> = stock_ids.difference(&valid_stocks).copied().collect();
+            let invalid_ids = stock_ids
+                .difference(&valid_stocks)
+                .copied()
+                .collect::<Vec<_>>();
             return Err(DbErr::Custom(format!(
                 "Invalid stock IDs: {:?}",
                 invalid_ids
@@ -1108,7 +1116,7 @@ impl Wms {
             .await?
             .into_iter()
             .map(|lot| lot.id)
-            .collect::<HashSet<i32>>();
+            .collect::<HashSet<i64>>();
 
         if valid_lots.len() != lot_ids.len() {
             return Err(DbErr::Custom(format!(
@@ -1188,7 +1196,7 @@ impl Wms {
                     .into_iter()
                     .fold(Condition::any(), |acc, c| acc.add(c))
             })
-            .into_tuple::<(i32, i32, i32, i32, f64)>()
+            .into_tuple::<(i64, i64, i64, i32, f64)>()
             .all(self.dbt(tenant_id))
             .await?;
 
@@ -1209,8 +1217,8 @@ impl Wms {
 
     pub async fn import_real_items(
         &self,
-        tenant_id: i32,
-        lot_id: i32,
+        tenant_id: i64,
+        lot_id: i64,
         items: &[Item],
     ) -> Result<Vec<Item>, DbErr> {
         let mut ret = Vec::new();
@@ -1332,8 +1340,8 @@ impl Wms {
 
     pub async fn assign_items_to_shelf(
         &self,
-        tenant_id: i32,
-        shelf_id: i32,
+        tenant_id: i64,
+        shelf_id: i64,
         items: &[Item],
     ) -> Result<(), DbErr> {
         if items.is_empty() {
@@ -1354,7 +1362,7 @@ impl Wms {
         }
     }
 
-    pub async fn get_stock(&self, tenant_id: i32, stock_id: i32) -> Result<Stock, DbErr> {
+    pub async fn get_stock(&self, tenant_id: i64, stock_id: i32) -> Result<Stock, DbErr> {
         let result = Stocks::find()
             .filter(stocks::Column::TenantId.eq(tenant_id))
             .filter(stocks::Column::Id.eq(stock_id))
@@ -1381,9 +1389,9 @@ impl Wms {
 
     pub async fn list_paginated_stocks(
         &self,
-        tenant_id: i32,
+        tenant_id: i64,
         include_details: bool,
-        after: i32,
+        after: i64,
         limit: u64,
     ) -> Result<Vec<Stock>, DbErr> {
         if include_details {
@@ -1435,11 +1443,11 @@ impl Wms {
                 .limit(limit)
                 .order_by_asc(stocks::Column::Id)
                 .into_tuple::<(
-                    i32,
+                    i64,
                     String,
                     String,
                     String,
-                    i32,
+                    i64,
                     String,
                     f64,
                     i32,
@@ -1534,7 +1542,7 @@ impl Wms {
                 .group_by(stocks::Column::Name)
                 .group_by(stocks::Column::Unit)
                 .order_by_asc(stocks::Column::Id)
-                .into_tuple::<(i32, String, String, Option<i32>)>()
+                .into_tuple::<(i64, String, String, Option<i32>)>()
                 .all(self.dbt(tenant_id))
                 .await?
                 .into_iter()
@@ -1551,7 +1559,7 @@ impl Wms {
         }
     }
 
-    pub async fn get_lot(&self, tenant_id: i32, lot_id: i32) -> Result<Lot, DbErr> {
+    pub async fn get_lot(&self, tenant_id: i64, lot_id: i64) -> Result<Lot, DbErr> {
         let result = Lots::find()
             .filter(lots::Column::TenantId.eq(tenant_id))
             .filter(lots::Column::Id.eq(lot_id))
@@ -1581,9 +1589,9 @@ impl Wms {
 
     pub async fn list_paginated_lots_of_stock(
         &self,
-        tenant_id: i32,
-        stock_id: i32,
-        after: i32,
+        tenant_id: i64,
+        stock_id: i64,
+        after: i64,
         limit: u64,
     ) -> Result<Vec<Lot>, DbErr> {
         Ok(Lots::find()
@@ -1628,7 +1636,7 @@ impl Wms {
             .group_by(lots::Column::Status)
             .order_by_asc(lots::Column::Id)
             .into_tuple::<(
-                i32,
+                i64,
                 String,
                 Option<String>,
                 DateTime<Utc>,
@@ -1660,10 +1668,10 @@ impl Wms {
 
     pub async fn list_paginated_stocks_of_shelf(
         &self,
-        tenant_id: i32,
-        shelf_id: i32,
+        tenant_id: i64,
+        shelf_id: i64,
         is_publish: bool,
-        after: i32,
+        after: i64,
         limit: u64,
     ) -> Result<Vec<Stock>, DbErr> {
         if is_publish {
@@ -1696,7 +1704,7 @@ impl Wms {
                 .column(stocks::Column::Unit)
                 .column(stock_shelves::Column::Quantity)
                 .order_by_asc(stocks::Column::Id)
-                .into_tuple::<(i32, String, String, i64)>()
+                .into_tuple::<(i64, String, String, i64)>()
                 .all(self.dbt(tenant_id))
                 .await?
                 .into_iter()
@@ -1732,7 +1740,7 @@ impl Wms {
                 .column(stocks::Column::Unit)
                 .column(stock_shelves::Column::Quantity)
                 .order_by_asc(stocks::Column::Id)
-                .into_tuple::<(i32, String, String, i64)>()
+                .into_tuple::<(i64, String, String, i64)>()
                 .all(self.dbt(tenant_id))
                 .await?
                 .into_iter()
@@ -1751,8 +1759,8 @@ impl Wms {
 
     pub async fn list_paginated_shelves(
         &self,
-        tenant_id: i32,
-        after: i32,
+        tenant_id: i64,
+        after: i64,
         limit: u64,
     ) -> Result<Vec<Shelf>, DbErr> {
         Ok(Shelves::find()
@@ -1773,7 +1781,7 @@ impl Wms {
 
     pub async fn get_item_by_barcode(
         &self,
-        tenant_id: i32,
+        tenant_id: i64,
         barcode: &String,
     ) -> Result<Item, DbErr> {
         let ret = Items::find()
@@ -1803,10 +1811,10 @@ impl Wms {
                     .into(),
             )
             .into_tuple::<(
-                i32,
-                Option<i32>,
-                Option<i32>,
-                Option<i32>,
+                i64,
+                Option<i64>,
+                Option<i64>,
+                Option<i64>,
                 Option<DateTime<Utc>>,
                 f64,
                 Option<String>,
@@ -1844,8 +1852,8 @@ impl Wms {
 
     async fn get_sale_status_with_txn(
         &self,
-        tenant_id: i32,
-        sale_id: i32,
+        tenant_id: i64,
+        sale_id: i64,
         txn: &DatabaseTransaction,
     ) -> Result<(SaleStatus, i32), DbErr> {
         let result = Sales::find()
@@ -1868,7 +1876,7 @@ impl Wms {
         }
     }
 
-    pub async fn sale_at_storefront(&self, tenant_id: i32, sale: &Sale) -> Result<Sale, DbErr> {
+    pub async fn sale_at_storefront(&self, tenant_id: i64, sale: &Sale) -> Result<Sale, DbErr> {
         match &sale.barcodes {
             Some(barcodes) => {
                 let txn = self.dbt(tenant_id).begin().await?;
@@ -1906,7 +1914,7 @@ impl Wms {
         }
     }
 
-    pub async fn sale_at_website(&self, tenant_id: i32, sale: &Sale) -> Result<Sale, DbErr> {
+    pub async fn sale_at_website(&self, tenant_id: i64, sale: &Sale) -> Result<Sale, DbErr> {
         match &sale.stock_ids {
             Some(stock_ids) => {
                 let txn = self.dbt(tenant_id).begin().await?;
@@ -1953,7 +1961,7 @@ impl Wms {
 
     pub async fn are_nodes_existed(
         &self,
-        tenant_id: i32,
+        tenant_id: i64,
         nodes: &Vec<PickingNodeScope>,
     ) -> Result<(), DbErr> {
         if nodes.is_empty() {
@@ -1992,8 +2000,8 @@ impl Wms {
 
     pub async fn are_zones_existed(
         &self,
-        tenant_id: i32,
-        zone_ids: &Vec<i32>,
+        tenant_id: i64,
+        zone_ids: &Vec<i64>,
     ) -> Result<(), DbErr> {
         if zone_ids.is_empty() {
             return Ok(());
@@ -2027,7 +2035,7 @@ impl Wms {
         Ok(())
     }
 
-    pub async fn get_zone(&self, tenant_id: i32, zone_id: i32) -> Result<Zone, DbErr> {
+    pub async fn get_zone(&self, tenant_id: i64, zone_id: i64) -> Result<Zone, DbErr> {
         let result = Zones::find()
             .filter(zones::Column::TenantId.eq(tenant_id))
             .filter(zones::Column::Id.eq(zone_id))
@@ -2052,7 +2060,7 @@ impl Wms {
         }
     }
 
-    pub async fn get_order_detail(&self, tenant_id: i32, order_id: i32) -> Result<Order, DbErr> {
+    pub async fn get_order_detail(&self, tenant_id: i64, order_id: i64) -> Result<Order, DbErr> {
         match Sales::find()
             .select_only()
             .column(sales::Column::Status)
@@ -2075,7 +2083,7 @@ impl Wms {
                         .select_only()
                         .filter(items::Column::TenantId.eq(tenant_id))
                         .filter(items::Column::OrderId.eq(Some(order_id)))
-                        .into_tuple::<(i32, i32, i32, i32, f64, Option<String>)>()
+                        .into_tuple::<(i64, i64, i64, i32, f64, Option<String>)>()
                         .all(self.dbt(tenant_id))
                         .await?
                         .into_iter()
@@ -2099,8 +2107,8 @@ impl Wms {
 
     pub async fn list_paginated_zones(
         &self,
-        tenant_id: i32,
-        after: i32,
+        tenant_id: i64,
+        after: i64,
         limit: u64,
     ) -> Result<Vec<Zone>, DbErr> {
         Ok(Zones::find()
@@ -2115,7 +2123,7 @@ impl Wms {
             .filter(zones::Column::TenantId.eq(tenant_id))
             .filter(zones::Column::Id.gt(after))
             .limit(limit)
-            .into_tuple::<(i32, String, String, f64, f64, f64, f64)>()
+            .into_tuple::<(i64, String, String, f64, f64, f64, f64)>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
@@ -2135,9 +2143,9 @@ impl Wms {
 
     pub async fn get_node_by_id(
         &self,
-        tenant_id: i32,
-        zone_id: i32,
-        node_id: i32,
+        tenant_id: i64,
+        zone_id: i64,
+        node_id: i64,
     ) -> Result<Node, DbErr> {
         match Nodes::find()
             .select_only()
@@ -2169,9 +2177,9 @@ impl Wms {
 
     pub async fn list_paginated_nodes(
         &self,
-        tenant_id: i32,
-        zone_id: i32,
-        after: i32,
+        tenant_id: i64,
+        zone_id: i64,
+        after: i64,
         limit: u64,
     ) -> Result<Vec<Node>, DbErr> {
         Ok(Nodes::find()
@@ -2185,7 +2193,7 @@ impl Wms {
             .filter(nodes::Column::ZoneId.eq(zone_id))
             .filter(nodes::Column::Id.gt(after))
             .limit(limit)
-            .into_tuple::<(i32, String, i32, f64, f64)>()
+            .into_tuple::<(i64, String, i32, f64, f64)>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
@@ -2200,7 +2208,11 @@ impl Wms {
             .collect::<Vec<_>>())
     }
 
-    pub async fn create_zones(&self, tenant_id: i32, zones: &Vec<Zone>) -> Result<Vec<i32>, DbErr> {
+    pub async fn create_zones(
+        &self,
+        tenant_id: i64,
+        zones: &Vec<Zone>,
+    ) -> Result<Vec<Zone>, DbErr> {
         if zones.is_empty() {
             return Ok(vec![]);
         }
@@ -2237,7 +2249,12 @@ impl Wms {
         Ok(zones::Entity::find()
             .select_only()
             .column(zones::Column::Id)
-            .filter(zones::Column::TenantId.eq(tenant_id))
+            .column(zones::Column::Name)
+            .column(zones::Column::Description)
+            .column(zones::Column::PosX)
+            .column(zones::Column::PosY)
+            .column(zones::Column::Height)
+            .column(zones::Column::Width)
             .filter(
                 zones::Column::Name.is_in(
                     zones
@@ -2246,20 +2263,30 @@ impl Wms {
                         .collect::<Vec<_>>(),
                 ),
             )
-            .into_tuple::<(i32,)>()
+            .into_tuple::<(i64, String, String, f64, f64, f64, f64)>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
-            .map(|(id,)| id)
+            .map(
+                |(id, name, description, pos_x, pos_y, height, width)| Zone {
+                    id: Some(id),
+                    name: Some(name),
+                    description: Some(description),
+                    pos_x: Some(pos_x),
+                    pos_y: Some(pos_y),
+                    height: Some(height),
+                    width: Some(width),
+                },
+            )
             .collect::<Vec<_>>())
     }
 
     pub async fn create_nodes(
         &self,
-        tenant_id: i32,
-        zone_id: Option<i32>,
+        tenant_id: i64,
+        zone_id: Option<i64>,
         nodes: &Vec<Node>,
-    ) -> Result<Vec<i32>, DbErr> {
+    ) -> Result<Vec<Node>, DbErr> {
         if nodes.is_empty() {
             return Ok(vec![]);
         }
@@ -2280,10 +2307,13 @@ impl Wms {
                 .await?
                 .into_iter()
                 .map(|zone| zone.id)
-                .collect::<HashSet<i32>>();
+                .collect::<HashSet<i64>>();
 
             if valid_zones.len() != zone_ids.len() {
-                let invalid_ids: Vec<i32> = zone_ids.difference(&valid_zones).copied().collect();
+                let invalid_ids = zone_ids
+                    .difference(&valid_zones)
+                    .copied()
+                    .collect::<Vec<_>>();
 
                 return Err(DbErr::Custom(format!(
                     "Invalid zone IDs: {:?}",
@@ -2344,6 +2374,12 @@ impl Wms {
         Ok(nodes::Entity::find()
             .select_only()
             .column(nodes::Column::Id)
+            .column(nodes::Column::ZoneId)
+            .column(nodes::Column::Name)
+            .column(nodes::Column::Status)
+            .column(nodes::Column::PosX)
+            .column(nodes::Column::PosY)
+            .filter(nodes::Column::TenantId.eq(tenant_id))
             .filter(
                 nodes::Column::Name.is_in(
                     nodes
@@ -2352,19 +2388,26 @@ impl Wms {
                         .collect::<Vec<_>>(),
                 ),
             )
-            .into_tuple::<(i32,)>()
+            .into_tuple::<(i64, i64, String, i32, f64, f64)>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
-            .map(|(id,)| id)
+            .map(|(node_id, zone_id, name, status, pos_x, pos_y)| Node {
+                node_id: Some(node_id),
+                zone_id: Some(zone_id),
+                name: Some(name),
+                status: Some(NodeStatus::from(status)),
+                pos_x: Some(pos_x),
+                pos_y: Some(pos_y),
+            })
             .collect::<Vec<_>>())
     }
 
     pub async fn create_paths(
         &self,
-        tenant_id: i32,
+        tenant_id: i64,
         paths: &Vec<PathWay>,
-    ) -> Result<Vec<i32>, DbErr> {
+    ) -> Result<Vec<PathWay>, DbErr> {
         let mut models = Vec::new();
         let mut names = Vec::new();
 
@@ -2379,7 +2422,8 @@ impl Wms {
                 .zone_id
                 .ok_or_else(|| DbErr::Custom(format!("zone_id is missing in item {}", i)))?;
             let status = path
-                .to_node
+                .status
+                .clone()
                 .ok_or_else(|| DbErr::Custom(format!("status is missing in item {}", i)))?;
             let is_one_way = path.is_one_way.unwrap_or(false);
             let name = path
@@ -2397,8 +2441,8 @@ impl Wms {
                 from_node_id: Set(from_node_id),
                 to_node_id: Set(to_node_id),
                 is_one_way: Set(is_one_way),
-                status: Set(status),
-                sharps: Set(Some(paths::ListPoints(sharp))),
+                status: Set(status as i32),
+                sharp: Set(Some(paths::ListPoints(sharp))),
                 ..Default::default()
             });
             names.push(name);
@@ -2413,7 +2457,7 @@ impl Wms {
                         paths::Column::ToNodeId,
                         paths::Column::IsOneWay,
                         paths::Column::Status,
-                        paths::Column::Sharps,
+                        paths::Column::Sharp,
                     ])
                     .to_owned(),
             )
@@ -2423,22 +2467,49 @@ impl Wms {
         Ok(Paths::find()
             .select_only()
             .column(paths::Column::Id)
+            .column(paths::Column::ZoneId)
+            .column(paths::Column::FromNodeId)
+            .column(paths::Column::ToNodeId)
+            .column(paths::Column::Name)
+            .column(paths::Column::Status)
+            .column(paths::Column::IsOneWay)
+            .column(paths::Column::Sharp)
             .filter(paths::Column::TenantId.eq(tenant_id))
             .filter(paths::Column::Name.is_in(names))
-            .into_tuple::<(i32,)>()
+            .into_tuple::<(
+                i64,
+                i64,
+                i64,
+                i64,
+                String,
+                i32,
+                bool,
+                Option<paths::ListPoints>,
+            )>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
-            .map(|m| m.0)
+            .map(
+                |(path_id, zone_id, from_node, to_node, name, status, is_one_way, sharp)| PathWay {
+                    path_id: Some(path_id),
+                    zone_id: Some(zone_id),
+                    from_node: Some(from_node),
+                    to_node: Some(to_node),
+                    name: Some(name),
+                    status: Some(PathStatus::from(status)),
+                    is_one_way: Some(is_one_way),
+                    sharp: sharp.map(|lp| lp.0),
+                },
+            )
             .collect::<Vec<_>>())
     }
 
     pub async fn get_path_by_id(
         &self,
-        tenant_id: i32,
-        zone_id: i32,
-        from_node_id: i32,
-        path_id: i32,
+        tenant_id: i64,
+        zone_id: i64,
+        from_node_id: i64,
+        path_id: i64,
     ) -> Result<PathWay, DbErr> {
         match Paths::find()
             .select_only()
@@ -2451,7 +2522,7 @@ impl Wms {
             .filter(paths::Column::TenantId.eq(tenant_id))
             .filter(paths::Column::ZoneId.eq(zone_id))
             .filter(paths::Column::Id.eq(path_id))
-            .into_tuple::<(i32, i32, i32, bool, String)>()
+            .into_tuple::<(i64, i64, i32, bool, String)>()
             .one(self.dbt(tenant_id))
             .await?
         {
@@ -2474,10 +2545,10 @@ impl Wms {
 
     pub async fn list_paginated_paths_by_node(
         &self,
-        tenant_id: i32,
-        zone_id: i32,
-        from_node_id: i32,
-        after: i32,
+        tenant_id: i64,
+        zone_id: i64,
+        from_node_id: i64,
+        after: i64,
         limit: u64,
     ) -> Result<Vec<PathWay>, DbErr> {
         Ok(Paths::find()
@@ -2492,7 +2563,7 @@ impl Wms {
             .filter(paths::Column::ZoneId.eq(zone_id))
             .filter(paths::Column::Id.gt(after))
             .limit(limit)
-            .into_tuple::<(i32, i32, i32, bool, String)>()
+            .into_tuple::<(i64, i64, i32, bool, String)>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
@@ -2511,10 +2582,10 @@ impl Wms {
 
     pub async fn put_shelf_to_node(
         &self,
-        tenant_id: i32,
-        zone_id: i32,
-        node_id: i32,
-        shelf_id: i32,
+        tenant_id: i64,
+        zone_id: i64,
+        node_id: i64,
+        shelf_id: i64,
         is_on_left: bool,
     ) -> Result<Shelf, DbErr> {
         match Shelves::find_by_id(shelf_id)
@@ -2541,8 +2612,8 @@ impl Wms {
 
     pub async fn list_sale_by_order(
         &self,
-        tenant_id: i32,
-        order_ids: &Vec<i32>,
+        tenant_id: i64,
+        order_ids: &Vec<i64>,
     ) -> Result<Vec<Sale>, DbErr> {
         let rows = Sales::find()
             .select_only()
@@ -2558,11 +2629,11 @@ impl Wms {
             )
             .filter(sales::Column::TenantId.eq(tenant_id))
             .filter(sales::Column::OrderId.is_in(order_ids.clone()))
-            .into_tuple::<(i32, i32, i32)>()
+            .into_tuple::<(i64, i64, i64)>()
             .all(self.dbt(tenant_id))
             .await?;
 
-        let mut sale_map: HashMap<i32, Sale> = HashMap::new();
+        let mut sale_map: HashMap<i64, Sale> = HashMap::new();
 
         for (sale_id, order_id, stock_id) in rows {
             sale_map
@@ -2585,8 +2656,8 @@ impl Wms {
 
     async fn get_picking_plan_status_with_txn(
         &self,
-        tenant_id: i32,
-        plan_id: i32,
+        tenant_id: i64,
+        plan_id: i64,
         txn: &DatabaseTransaction,
     ) -> Result<(PickingPlanStatus, i32), DbErr> {
         let result = PickingPlans::find()
@@ -2611,11 +2682,11 @@ impl Wms {
 
     pub async fn create_picking_plan(
         &self,
-        tenant_id: i32,
+        tenant_id: i64,
         orders: &Vec<Order>,
-        zones: &Vec<i32>,
+        zones: &Vec<i64>,
         nodes: &Vec<PickingNodeScope>,
-    ) -> Result<i32, DbErr> {
+    ) -> Result<i64, DbErr> {
         let mut picking_goods_models = Vec::new();
 
         let txn = self.dbt(tenant_id).begin().await?;
@@ -2709,8 +2780,8 @@ impl Wms {
 
     async fn get_picking_route_status_with_txn(
         &self,
-        tenant_id: i32,
-        route_id: i32,
+        tenant_id: i64,
+        route_id: i64,
         txn: &DatabaseTransaction,
     ) -> Result<(PickingRouteStatus, i32), DbErr> {
         let result = PickingRoutes::find()
@@ -2735,33 +2806,33 @@ impl Wms {
 
     pub async fn plan_picking_routes(
         &self,
-        tenant_id: i32,
-        plan_id: i32,
+        tenant_id: i64,
+        plan_id: i64,
     ) -> Result<Vec<i32>, DbErr> {
         Ok(Vec::new())
     }
 
     pub async fn plan_picking_goods(
         &self,
-        tenant_id: i32,
-        plan_id: i32,
-        route_id: i32,
+        tenant_id: i64,
+        plan_id: i64,
+        route_id: i64,
     ) -> Result<Vec<i32>, DbErr> {
         Ok(Vec::new())
     }
 
     pub async fn plan_picking_items(
         &self,
-        tenant_id: i32,
-        ledger_id: i32,
+        tenant_id: i64,
+        ledger_id: i64,
     ) -> Result<Vec<i32>, DbErr> {
         Ok(Vec::new())
     }
 
     pub async fn notify_when_plan_status_changed(
         &self,
-        tenant_id: i32,
-        plan_id: i32,
+        tenant_id: i64,
+        plan_id: i64,
         status: PickingPlanStatus,
     ) -> Result<(), DbErr> {
         let txn = self.dbt(tenant_id).begin().await?;
@@ -2775,8 +2846,8 @@ impl Wms {
 
     async fn notify_when_plan_status_changed_with_txn(
         &self,
-        tenant_id: i32,
-        plan_id: i32,
+        tenant_id: i64,
+        plan_id: i64,
         next_status: PickingPlanStatus,
         txn: &DatabaseTransaction,
     ) -> Result<(), DbErr> {
@@ -2837,9 +2908,9 @@ impl Wms {
 
     pub async fn notify_when_route_status_changed(
         &self,
-        tenant_id: i32,
-        actor_id: i32,
-        route_id: i32,
+        tenant_id: i64,
+        actor_id: i64,
+        route_id: i64,
         status: PickingRouteStatus,
     ) -> Result<(), DbErr> {
         let txn = self.dbt(tenant_id).begin().await?;
@@ -2853,9 +2924,9 @@ impl Wms {
 
     async fn notify_when_route_status_changed_with_txn(
         &self,
-        tenant_id: i32,
-        actor_id: i32,
-        route_id: i32,
+        tenant_id: i64,
+        actor_id: i64,
+        route_id: i64,
         next_status: PickingRouteStatus,
         txn: &DatabaseTransaction,
     ) -> Result<(), DbErr> {
@@ -2917,8 +2988,8 @@ impl Wms {
 
     async fn notify_when_order_status_changed(
         &self,
-        tenant_id: i32,
-        sale_id: i32,
+        tenant_id: i64,
+        sale_id: i64,
         status: SaleStatus,
     ) -> Result<(), DbErr> {
         let txn = self.dbt(tenant_id).begin().await?;
@@ -2932,8 +3003,8 @@ impl Wms {
 
     pub async fn notify_when_order_status_changed_with_txn(
         &self,
-        tenant_id: i32,
-        sale_id: i32,
+        tenant_id: i64,
+        sale_id: i64,
         next_status: SaleStatus,
         txn: &DatabaseTransaction,
     ) -> Result<(), DbErr> {
@@ -2990,7 +3061,7 @@ impl Wms {
         }
     }
 
-    pub async fn release_after_plan_done(&self, tenant_id: i32, plan_id: i32) -> Result<(), DbErr> {
+    pub async fn release_after_plan_done(&self, tenant_id: i64, plan_id: i64) -> Result<(), DbErr> {
         let txn = self.dbt(tenant_id).begin().await?;
 
         let plan = picking_plans::Entity::find_by_id(plan_id)

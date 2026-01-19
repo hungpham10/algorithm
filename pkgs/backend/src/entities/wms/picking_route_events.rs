@@ -6,10 +6,10 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "wms_picking_route_events")]
 pub struct Model {
     #[sea_orm(primary_key)]
-    pub id: i32,
-    pub tenant_id: i32,
-    pub actor_id: i32,
-    pub route_id: i32,
+    pub id: i64,
+    pub tenant_id: i64,
+    pub actor_id: i64,
+    pub route_id: i64,
     pub status: i32,
     pub version: i32,
     pub created_at: DateTimeUtc,

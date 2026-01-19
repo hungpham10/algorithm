@@ -13,11 +13,10 @@ pub struct ListPoints(pub Vec<Point>);
 #[sea_orm(table_name = "wms_picking_routes")]
 pub struct Model {
     #[sea_orm(primary_key)]
-    pub id: i32,
-
-    pub tenant_id: i32,
-    pub depend_id: Option<i32>,
-    pub picking_id: Option<i32>,
+    pub id: i64,
+    pub tenant_id: i64,
+    pub depend_id: Option<i64>,
+    pub picking_id: Option<i64>,
     pub status: i32,
     pub version: i32,
     pub created_at: DateTimeUtc,

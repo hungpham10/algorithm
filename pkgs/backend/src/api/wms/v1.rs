@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::{Display, Error as FmtError, Formatter, Result as FmtResult};
 use std::sync::Arc;
 
@@ -21,7 +22,7 @@ pub struct QueryPagingInput {
     include_details: Option<bool>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    after: Option<i32>,
+    after: Option<i64>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     limit: Option<u64>,
@@ -32,7 +33,7 @@ pub struct ListStocksResponse {
     data: Vec<Stock>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    next_after: Option<i32>,
+    next_after: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -40,7 +41,7 @@ pub struct ListLotsResponse {
     data: Vec<Lot>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    next_after: Option<i32>,
+    next_after: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -48,7 +49,7 @@ pub struct ListShelvesResponse {
     data: Vec<Shelf>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    next_after: Option<i32>,
+    next_after: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -56,7 +57,7 @@ pub struct ListItemsResponse {
     data: Vec<Item>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    next_after: Option<i32>,
+    next_after: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -64,7 +65,7 @@ pub struct ListZonesResponse {
     data: Vec<Zone>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    next_after: Option<i32>,
+    next_after: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -72,7 +73,7 @@ pub struct ListNodesResponse {
     data: Vec<Node>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    next_after: Option<i32>,
+    next_after: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -80,7 +81,7 @@ pub struct ListPathsResponse {
     data: Vec<PathWay>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    next_after: Option<i32>,
+    next_after: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -170,9 +171,9 @@ impl Default for WmsResponse {
 //-------
 #[derive(Serialize, Deserialize, Clone)]
 pub struct NearExpiryResponse {
-    stock_id: i32,
+    stock_id: i64,
     stock_name: String,
-    lot_id: i32,
+    lot_id: i64,
     lot_number: String,
     quantity: i32,
     expiry_date: DateTime<Utc>,
@@ -181,7 +182,7 @@ pub struct NearExpiryResponse {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct HighTurnoverResponse {
-    id: i32,
+    id: i64,
     name: String,
     quantity: i32,
     unit: String,
@@ -248,21 +249,24 @@ pub async fn create_stocks(
 ) -> Result<HttpResponse> {
     if let Some(entity) = appstate.wms_entity() {
         let stocks = stocks.into_inner();
+        let mapping = stocks
+            .iter()
+            .map(|stock| (stock.name.clone(), (stock.cost_price, stock.unit.clone())))
+            .collect::<HashMap<_, _>>();
 
         match entity.create_stocks(headers.tenant_id, &stocks).await {
             Ok(ids) => Ok(HttpResponse::Ok().json(WmsResponse {
                 stocks: Some(ListStocksResponse {
                     data: ids
                         .iter()
-                        .enumerate()
-                        .map(|(i, &id)| Stock {
+                        .map(|(name, &id)| Stock {
                             id: Some(id),
                             shelves: None,
                             lots: None,
                             quantity: None,
-                            cost_price: stocks[i].cost_price,
-                            name: stocks[i].name.clone(),
-                            unit: stocks[i].unit.clone(),
+                            name: name.clone(),
+                            cost_price: mapping[name].0,
+                            unit: mapping[name].1.clone(),
                         })
                         .collect::<Vec<_>>(),
                     next_after: None,
@@ -311,7 +315,7 @@ pub async fn get_stock(
 pub async fn list_lots(
     appstate: Data<Arc<AppState>>,
     query: Query<QueryPagingInput>,
-    path: Path<(i32,)>,
+    path: Path<(i64,)>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
     let (stock_id,) = path.into_inner();
@@ -403,7 +407,7 @@ pub async fn create_lots(
 
 pub async fn get_lot(
     appstate: Data<Arc<AppState>>,
-    path: Path<(i32,)>,
+    path: Path<(i64,)>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
     let (lot_id,) = path.into_inner();
@@ -481,7 +485,7 @@ pub async fn list_shelves(
 pub async fn list_stocks_in_shelf(
     appstate: Data<Arc<AppState>>,
     query: Query<QueryPagingInput>,
-    path: Path<(i32,)>,
+    path: Path<(i64,)>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
     let (shelf_id,) = path.into_inner();
@@ -577,7 +581,7 @@ pub async fn create_shelves(
 pub async fn plan_item_for_new_lot(
     appstate: Data<Arc<AppState>>,
     plan: Json<Vec<Stock>>,
-    path: Path<i32>,
+    path: Path<i64>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
     let lot_id = path.into_inner();
@@ -646,7 +650,7 @@ pub async fn plan_item_for_new_lot(
 pub async fn import_item_to_warehouse(
     appstate: Data<Arc<AppState>>,
     items: Json<Vec<Item>>,
-    path: Path<i32>,
+    path: Path<i64>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
     let lot_id = path.into_inner();
@@ -689,7 +693,7 @@ pub async fn import_item_to_warehouse(
 pub async fn assign_item_to_shelf(
     appstate: Data<Arc<AppState>>,
     items: Json<Vec<Item>>,
-    path: Path<i32>,
+    path: Path<i64>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
     let shelf_id = path.into_inner();
@@ -782,7 +786,7 @@ pub async fn update_healthy_status_of_item(
 }
 
 pub async fn get_order_detail(
-    path: Path<i32>,
+    path: Path<i64>,
     appstate: Data<Arc<AppState>>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
@@ -816,21 +820,9 @@ pub async fn create_zones(
         let zones = zones.into_inner();
 
         match entity.create_zones(headers.tenant_id, &zones).await {
-            Ok(ids) => Ok(HttpResponse::Ok().json(WmsResponse {
+            Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
                 zones: Some(ListZonesResponse {
-                    data: ids
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &id)| Zone {
-                            id: Some(id),
-                            name: zones[i].name.clone(),
-                            pos_x: zones[i].pos_x,
-                            pos_y: zones[i].pos_y,
-                            height: zones[i].height,
-                            width: zones[i].width,
-                            description: zones[i].description.clone(),
-                        })
-                        .collect::<Vec<_>>(),
+                    data,
                     next_after: None,
                 }),
                 ..Default::default()
@@ -897,7 +889,7 @@ pub async fn list_zones(
 }
 
 pub async fn get_zone(
-    path: Path<i32>,
+    path: Path<i64>,
     appstate: Data<Arc<AppState>>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
@@ -923,7 +915,7 @@ pub async fn get_zone(
 }
 
 pub async fn create_nodes(
-    path: Path<i32>,
+    path: Path<i64>,
     appstate: Data<Arc<AppState>>,
     nodes: Json<Vec<Node>>,
     headers: WmsHeaders,
@@ -936,20 +928,9 @@ pub async fn create_nodes(
             .create_nodes(headers.tenant_id, Some(zone_id), &nodes)
             .await
         {
-            Ok(ids) => Ok(HttpResponse::Ok().json(WmsResponse {
+            Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
                 nodes: Some(ListNodesResponse {
-                    data: ids
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &node_id)| Node {
-                            node_id: Some(node_id),
-                            zone_id: nodes[i].zone_id,
-                            pos_x: nodes[i].pos_x,
-                            pos_y: nodes[i].pos_y,
-                            status: nodes[i].status.clone(),
-                            name: nodes[i].name.clone(),
-                        })
-                        .collect::<Vec<_>>(),
+                    data,
                     next_after: None,
                 }),
                 ..Default::default()
@@ -969,7 +950,7 @@ pub async fn create_nodes(
 
 pub async fn list_nodes(
     appstate: Data<Arc<AppState>>,
-    path: Path<i32>,
+    path: Path<i64>,
     query: Query<QueryPagingInput>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
@@ -1018,7 +999,7 @@ pub async fn list_nodes(
 }
 
 pub async fn get_node_by_id(
-    path: Path<(i32, i32)>,
+    path: Path<(i64, i64)>,
     appstate: Data<Arc<AppState>>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
@@ -1048,7 +1029,7 @@ pub async fn get_node_by_id(
 
 pub async fn list_paths_by_node(
     appstate: Data<Arc<AppState>>,
-    path: Path<(i32, i32)>,
+    path: Path<(i64, i64)>,
     query: Query<QueryPagingInput>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
@@ -1101,7 +1082,7 @@ pub async fn list_paths_by_node(
 }
 
 pub async fn get_path_by_id(
-    path: Path<(i32, i32, i32)>,
+    path: Path<(i64, i64, i64)>,
     appstate: Data<Arc<AppState>>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
@@ -1133,7 +1114,7 @@ pub async fn get_path_by_id(
 }
 
 pub async fn create_paths_from_node(
-    path: Path<(i32, i32)>,
+    path: Path<(i64, i64)>,
     appstate: Data<Arc<AppState>>,
     configs: Json<Vec<PathWay>>,
     headers: WmsHeaders,
@@ -1149,6 +1130,7 @@ pub async fn create_paths_from_node(
                 zone_id: Some(zone_id),
                 from_node: Some(node_id),
                 to_node: config.to_node,
+                name: config.name.clone(),
                 status: config.status.clone(),
                 sharp: config.sharp.clone(),
             })
@@ -1179,7 +1161,7 @@ pub async fn create_paths_from_node(
 }
 
 pub async fn put_shelf_to_node(
-    path: Path<(i32, i32, i32)>,
+    path: Path<(i64, i64, i64)>,
     appstate: Data<Arc<AppState>>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
@@ -1212,7 +1194,7 @@ pub async fn put_shelf_to_node(
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct PickingScope {
-    zones: Vec<i32>,
+    zones: Vec<i64>,
     nodes: Vec<PickingNodeScope>,
 }
 

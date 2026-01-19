@@ -12,11 +12,11 @@ pub struct ListPoints(pub Vec<Point>);
 #[sea_orm(table_name = "wms_paths")]
 pub struct Model {
     #[sea_orm(primary_key)]
-    pub id: i32,
-    pub tenant_id: i32,
-    pub zone_id: i32,
-    pub from_node_id: i32,
-    pub to_node_id: i32,
+    pub id: i64,
+    pub tenant_id: i64,
+    pub zone_id: i64,
+    pub from_node_id: i64,
+    pub to_node_id: i64,
     pub name: String,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
@@ -24,7 +24,7 @@ pub struct Model {
     pub status: i32,
 
     #[sea_orm(column_type = "JsonBinary")]
-    pub sharps: Option<ListPoints>,
+    pub sharp: Option<ListPoints>,
 
     #[sea_orm(column_type = "Double")]
     pub distance: f64,
