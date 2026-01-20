@@ -1,12 +1,16 @@
 use leptos::prelude::*;
+use serde::{Deserialize, Serialize};
 
-use super::Features;
+use super::header::Signal as HeaderFeatures;
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Context {}
 
 #[component]
-pub fn Search(features: ReadSignal<Features>) -> impl IntoView {
+pub fn Search(features: ReadSignal<HeaderFeatures>) -> impl IntoView {
     view! {
         {
-            move || if features.get().searchable {
+            move || if features.get().menu.search.is_some() {
                 view! {
                     <div class="border border-primary border-1 p-1 rounded-1 w-50 w-md-75 w-sm-100">
                         <form class="input-group">
