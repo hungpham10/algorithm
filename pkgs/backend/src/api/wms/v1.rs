@@ -249,26 +249,11 @@ pub async fn create_stocks(
 ) -> Result<HttpResponse> {
     if let Some(entity) = appstate.wms_entity() {
         let stocks = stocks.into_inner();
-        let mapping = stocks
-            .iter()
-            .map(|stock| (stock.name.clone(), (stock.cost_price, stock.unit.clone())))
-            .collect::<HashMap<_, _>>();
 
         match entity.create_stocks(headers.tenant_id, &stocks).await {
-            Ok(ids) => Ok(HttpResponse::Ok().json(WmsResponse {
+            Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
                 stocks: Some(ListStocksResponse {
-                    data: ids
-                        .iter()
-                        .map(|(name, &id)| Stock {
-                            id: Some(id),
-                            shelves: None,
-                            lots: None,
-                            quantity: None,
-                            name: name.clone(),
-                            cost_price: mapping[name].0,
-                            unit: mapping[name].1.clone(),
-                        })
-                        .collect::<Vec<_>>(),
+                    data,
                     next_after: None,
                 }),
                 ..Default::default()
@@ -288,7 +273,7 @@ pub async fn create_stocks(
 
 pub async fn get_stock(
     appstate: Data<Arc<AppState>>,
-    path: Path<(i32,)>,
+    path: Path<(i64,)>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
     let (stock_id,) = path.into_inner();
@@ -372,22 +357,9 @@ pub async fn create_lots(
         let lots = lots.into_inner();
 
         match entity.create_lots(headers.tenant_id, &lots).await {
-            Ok(ids) => Ok(HttpResponse::Ok().json(WmsResponse {
+            Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
                 lots: Some(ListLotsResponse {
-                    data: ids
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &id)| Lot {
-                            id: Some(id),
-                            entry_date: lots[i].entry_date.clone(),
-                            expired_date: None,
-                            cost_price: lots[i].cost_price.clone(),
-                            status: lots[i].status.clone(),
-                            supplier: lots[i].supplier.clone(),
-                            lot_number: lots[i].lot_number.clone(),
-                            quantity: lots[i].quantity,
-                        })
-                        .collect::<Vec<_>>(),
+                    data,
                     next_after: None,
                 }),
                 ..Default::default()
@@ -550,17 +522,9 @@ pub async fn create_shelves(
         let shelves = shelves.into_inner();
 
         match entity.create_shelves(headers.tenant_id, &shelves).await {
-            Ok(ids) => Ok(HttpResponse::Ok().json(WmsResponse {
+            Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
                 shelves: Some(ListShelvesResponse {
-                    data: ids
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &id)| Shelf {
-                            id: Some(id),
-                            name: shelves[i].name.clone(),
-                            description: shelves[i].description.clone(),
-                        })
-                        .collect::<Vec<_>>(),
+                    data,
                     next_after: None,
                 }),
                 ..Default::default()

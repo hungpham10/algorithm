@@ -1,4 +1,6 @@
+use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque};
+use std::hash::{Hash, Hasher};
 use std::io::{Error, ErrorKind as AppErrorKind, Result as AppStateResult};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -32,6 +34,7 @@ use vnscope::actors::tcbs::{resolve_tcbs_routes, TcbsActor};
 use vnscope::actors::vps::{resolve_vps_routes, VpsActor};
 use vnscope::actors::{FlushVariablesCommand, UpdateStocksCommand};
 use vnscope::algorithm::fuzzy::Variables;
+use vnscope::algorithm::snowflakeid::SnowflakeId;
 use vnscope::schemas::{Portal, CRONJOB, WATCHLIST};
 
 use crate::entities;
@@ -42,6 +45,8 @@ pub mod seo;
 pub mod wms;
 
 use chat::Chat;
+
+const EPOCH: u64 = 1735948800000;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct Status {
@@ -95,6 +100,7 @@ impl AppState {
                 format!("Fail to build infisical client: {:?}", error),
             )
         })?;
+        let mut hasher = DefaultHasher::new();
 
         infisical_client
             .login(AuthMethod::new_universal_auth(
@@ -336,8 +342,15 @@ impl AppState {
             None => None,
         };
 
+        std::env::var("RENDER_INSTANCE_ID")
+            .unwrap_or_else(|_| "local_machine".to_string())
+            .hash(&mut hasher);
+
         let wms_entity = match db {
-            Some(ref db) => Some(entities::wms::Wms::new(vec![db.clone()])),
+            Some(ref db) => Some(entities::wms::Wms::new(
+                vec![db.clone()],
+                Arc::new(SnowflakeId::new((hasher.finish() & 0xFFFF) as u16, EPOCH)),
+            )),
             None => None,
         };
 

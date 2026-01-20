@@ -51,6 +51,8 @@ use sea_orm::{
 };
 use sea_query::OnConflict;
 
+use vnscope::algorithm::snowflakeid::SnowflakeId;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Point {
     pub x: f64,
@@ -107,12 +109,12 @@ pub enum LotStatus {
 impl From<i32> for LotStatus {
     fn from(value: i32) -> Self {
         match value {
-            0 => LotStatus::Unavailable,
-            1 => LotStatus::Planing,
-            2 => LotStatus::Transporting,
-            3 => LotStatus::Available,
-            4 => LotStatus::Outdated,
-            5 => LotStatus::Returned,
+            1 => LotStatus::Unavailable,
+            2 => LotStatus::Planing,
+            3 => LotStatus::Transporting,
+            4 => LotStatus::Available,
+            5 => LotStatus::Outdated,
+            6 => LotStatus::Returned,
             _ => LotStatus::Unknown,
         }
     }
@@ -242,13 +244,13 @@ pub enum ItemStatus {
 impl From<i32> for ItemStatus {
     fn from(value: i32) -> Self {
         match value {
-            0 => ItemStatus::Unavailable,
-            1 => ItemStatus::Plan,
-            2 => ItemStatus::Available,
-            3 => ItemStatus::Damaged,
-            4 => ItemStatus::Outdated,
-            5 => ItemStatus::Saled,
-            6 => ItemStatus::Returned,
+            1 => ItemStatus::Unavailable,
+            2 => ItemStatus::Plan,
+            3 => ItemStatus::Available,
+            4 => ItemStatus::Damaged,
+            5 => ItemStatus::Outdated,
+            6 => ItemStatus::Saled,
+            7 => ItemStatus::Returned,
             _ => ItemStatus::Unknown,
         }
     }
@@ -375,7 +377,7 @@ impl Default for Sale {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(i32)]
-enum SaleStatus {
+pub enum SaleStatus {
     Unknown,
     Failed,
     Paid,
@@ -560,10 +562,10 @@ pub enum NodeStatus {
 impl From<i32> for NodeStatus {
     fn from(i: i32) -> Self {
         match i {
-            1 => NodeStatus::Available,
-            2 => NodeStatus::Block,
-            3 => NodeStatus::DamageLeft,
-            4 => NodeStatus::DamageRight,
+            1 => NodeStatus::DamageLeft,
+            2 => NodeStatus::DamageRight,
+            3 => NodeStatus::Block,
+            4 => NodeStatus::Available,
             _ => NodeStatus::Unknown,
         }
     }
@@ -636,9 +638,9 @@ pub enum PathStatus {
 impl From<i32> for PathStatus {
     fn from(i: i32) -> Self {
         match i {
-            1 => PathStatus::Available,
+            1 => PathStatus::Damage,
             2 => PathStatus::Block,
-            3 => PathStatus::Damage,
+            3 => PathStatus::Available,
             _ => PathStatus::Unknown,
         }
     }
@@ -820,9 +822,9 @@ impl From<i32> for PickingPlanStatus {
             1 => PickingPlanStatus::Created,
             2 => PickingPlanStatus::Planed,
             3 => PickingPlanStatus::Running,
-            4 => PickingPlanStatus::Failed,
-            5 => PickingPlanStatus::Pausing,
-            6 => PickingPlanStatus::Paused,
+            4 => PickingPlanStatus::Pausing,
+            5 => PickingPlanStatus::Paused,
+            6 => PickingPlanStatus::Failed,
             7 => PickingPlanStatus::Done,
             _ => PickingPlanStatus::Unknown,
         }
@@ -886,8 +888,8 @@ impl From<i32> for PickingGoodsStatus {
             1 => PickingGoodsStatus::Planing,
             2 => PickingGoodsStatus::Waiting,
             3 => PickingGoodsStatus::Picking,
-            3 => PickingGoodsStatus::Ready,
-            4 => PickingGoodsStatus::Damaged,
+            4 => PickingGoodsStatus::Ready,
+            5 => PickingGoodsStatus::Damaged,
             _ => PickingGoodsStatus::Unknown,
         }
     }
@@ -930,11 +932,12 @@ impl Display for PickingGoodsStatus {
 }
 pub struct Wms {
     db: Vec<Arc<DatabaseConnection>>,
+    generator: Arc<SnowflakeId>,
 }
 
 impl Wms {
-    pub fn new(db: Vec<Arc<DatabaseConnection>>) -> Self {
-        Self { db }
+    pub fn new(db: Vec<Arc<DatabaseConnection>>, generator: Arc<SnowflakeId>) -> Self {
+        Self { db, generator }
     }
 
     fn dbt(&self, tenant_id: i64) -> &DatabaseConnection {
@@ -945,9 +948,9 @@ impl Wms {
         &self,
         tenant_id: i64,
         stocks: &[Stock],
-    ) -> Result<HashMap<String, i64>, DbErr> {
+    ) -> Result<Vec<Stock>, DbErr> {
         if stocks.is_empty() {
-            return Ok(HashMap::new());
+            return Ok(vec![]);
         }
 
         stocks::Entity::insert_many(
@@ -968,6 +971,7 @@ impl Wms {
             .select_only()
             .column(stocks::Column::Id)
             .column(stocks::Column::Name)
+            .column(stocks::Column::Unit)
             .filter(stocks::Column::TenantId.eq(tenant_id))
             .filter(
                 stocks::Column::Name.is_in(
@@ -977,41 +981,50 @@ impl Wms {
                         .collect::<Vec<_>>(),
                 ),
             )
-            .into_tuple::<(i64, String)>()
+            .into_tuple::<(i64, String, String)>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
-            .map(|(id, name)| (name, id))
-            .collect::<HashMap<_, _>>())
+            .map(|(id, name, unit)| Stock {
+                id: Some(id),
+                name,
+                unit,
+                ..Default::default()
+            })
+            .collect::<Vec<_>>())
     }
 
     pub async fn create_shelves(
         &self,
         tenant_id: i64,
         shelves: &[Shelf],
-    ) -> Result<Vec<i64>, DbErr> {
+    ) -> Result<Vec<Shelf>, DbErr> {
         if shelves.is_empty() {
             return Ok(vec![]);
         }
 
+        let mut models = Vec::new();
+
+        for shelf in shelves {
+            models.push(shelves::ActiveModel {
+                tenant_id: Set(tenant_id),
+                name: Set(shelf.name.clone().ok_or_else(|| {
+                    DbErr::Custom(format!("Name is required, you are missing name of shelves"))
+                })?),
+                description: Set(shelf.description.clone()),
+                ..Default::default()
+            })
+        }
         // Insert batch
-        shelves::Entity::insert_many(
-            shelves
-                .iter()
-                .map(|shelf| shelves::ActiveModel {
-                    tenant_id: Set(tenant_id),
-                    name: Set(shelf.name.clone().unwrap_or_default()),
-                    description: Set(shelf.description.clone()),
-                    ..Default::default()
-                })
-                .collect::<Vec<_>>(),
-        )
-        .exec(self.dbt(tenant_id))
-        .await?;
+        shelves::Entity::insert_many(models)
+            .exec(self.dbt(tenant_id))
+            .await?;
 
         Ok(shelves::Entity::find()
             .select_only()
             .column(shelves::Column::Id)
+            .column(shelves::Column::Name)
+            .column(shelves::Column::Description)
             .filter(shelves::Column::TenantId.eq(tenant_id))
             .filter(
                 shelves::Column::Name.is_in(
@@ -1021,15 +1034,19 @@ impl Wms {
                         .collect::<Vec<_>>(),
                 ),
             )
-            .into_tuple::<(i64,)>()
+            .into_tuple::<(i64, String, Option<String>)>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
-            .map(|m| m.0)
+            .map(|(id, name, description)| Shelf {
+                id: Some(id),
+                name: Some(name),
+                description,
+            })
             .collect::<Vec<_>>())
     }
 
-    pub async fn create_lots(&self, tenant_id: i64, lots: &[Lot]) -> Result<Vec<i64>, DbErr> {
+    pub async fn create_lots(&self, tenant_id: i64, lots: &[Lot]) -> Result<Vec<Lot>, DbErr> {
         let mut models = Vec::new();
 
         if lots.is_empty() {
@@ -1037,7 +1054,10 @@ impl Wms {
         }
 
         for l in lots {
+            let id = self.generator.generate();
+
             models.push(lots::ActiveModel {
+                id: Set(id),
                 tenant_id: Set(tenant_id),
                 quantity: Set(l.quantity),
                 lot_number: Set(l.lot_number.clone()),
@@ -1058,6 +1078,12 @@ impl Wms {
         Ok(lots::Entity::find()
             .select_only()
             .column(lots::Column::Id)
+            .column(lots::Column::EntryDate)
+            .column(lots::Column::CostPrice)
+            .column(lots::Column::Status)
+            .column(lots::Column::Supplier)
+            .column(lots::Column::LotNumber)
+            .column(lots::Column::Quantity)
             .filter(lots::Column::TenantId.eq(tenant_id))
             .filter(
                 lots::Column::LotNumber.is_in(
@@ -1066,11 +1092,34 @@ impl Wms {
                         .collect::<Vec<_>>(),
                 ),
             )
-            .into_tuple::<(i64,)>()
+            .into_tuple::<(
+                i64,
+                DateTime<Utc>,
+                Option<f64>,
+                Option<i32>,
+                Option<String>,
+                String,
+                i32,
+            )>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
-            .map(|m| m.0)
+            .map(
+                |(id, entry_date, cost_price, status, supplier, lot_number, quantity)| Lot {
+                    id: Some(id),
+                    entry_date: Some(entry_date),
+                    status: if let Some(status) = status {
+                        Some(LotStatus::from(status))
+                    } else {
+                        None
+                    },
+                    quantity,
+                    cost_price,
+                    lot_number,
+                    supplier,
+                    ..Default::default()
+                },
+            )
             .collect::<Vec<_>>())
     }
 
@@ -1129,6 +1178,13 @@ impl Wms {
         for item in items {
             let lot_id = item.lot_id.unwrap_or(0);
             let stock_id = item.stock_id.unwrap_or(0);
+
+            if item.barcode.is_some() {
+                return Err(DbErr::Custom(format!(
+                    "Planing for lot {}, stock {} requires barcode is none, but it's {:?} now",
+                    lot_id, stock_id, item.barcode,
+                )));
+            }
 
             if valid_lots.contains(&lot_id) && valid_stocks.contains(&stock_id) {
                 count_stock_entries
@@ -1221,98 +1277,148 @@ impl Wms {
         lot_id: i64,
         items: &[Item],
     ) -> Result<Vec<Item>, DbErr> {
-        let mut ret = Vec::new();
+        if items.is_empty() {
+            return Ok(vec![]);
+        }
+
         let txn = self.dbt(tenant_id).begin().await?;
 
-        let shelves = shelves::Entity::find()
+        // ────────────────────────────────────────────────────────
+        // 1. Lấy shelf map (giữ nguyên)
+        let shelves: HashMap<String, i64> = shelves::Entity::find()
             .filter(shelves::Column::TenantId.eq(tenant_id))
-            .all(self.dbt(tenant_id))
+            .all(&txn) // dùng txn để consistent
             .await?
             .into_iter()
-            .map(|shelf| (shelf.name, shelf.id))
-            .collect::<HashMap<_, _>>();
+            .map(|s| (s.name, s.id))
+            .collect();
 
-        let valid_items = Items::find()
-            .filter(items::Column::TenantId.eq(tenant_id))
-            .filter(items::Column::LotId.eq(lot_id))
-            .filter(
-                items::Column::Id.is_in(
-                    items
-                        .iter()
-                        .filter_map(|item| item.id)
-                        .collect::<HashSet<_>>(),
-                ),
-            )
-            .all(&txn)
-            .await?
-            .into_iter()
-            .map(|item| item.id)
-            .collect::<HashSet<_>>();
+        // ────────────────────────────────────────────────────────
+        // 2. Validate tất cả item hợp lệ & thu thập dữ liệu cần check
+        let mut item_ids = Vec::new();
+        let mut barcodes_in_batch = Vec::new();
+        let mut updates = Vec::new(); // lưu active model để update sau
 
-        let mut count_stock_entries = HashMap::new();
         for item in items {
             let item_id = item
                 .id
-                .ok_or_else(|| DbErr::Custom(format!("Item ID is missing")))?;
-            let shelf_id = shelves[&item.shelf.clone().ok_or(DbErr::Custom(format!(
-                "Missing field shelf in item {}",
-                item_id
-            )))?];
-            let stock_id = item.stock_id;
-            let status = ItemStatus::from(item.status.clone()) as i32;
+                .ok_or_else(|| DbErr::Custom("Item ID is missing".to_string()))?;
 
-            if valid_items.contains(&item_id) {
-                let mut update_query = Items::update_many().filter(items::Column::Id.eq(item_id));
+            item_ids.push(item_id);
 
-                if let Some(barcode) = &item.barcode {
-                    update_query =
-                        update_query.col_expr(items::Column::Barcode, Expr::value(barcode.clone()));
-                }
+            // Validate shelf tồn tại
+            let shelf_name = item
+                .shelf
+                .as_ref()
+                .ok_or_else(|| DbErr::Custom(format!("Missing shelf for item {}", item_id)))?;
+            let shelf_id = *shelves
+                .get(shelf_name)
+                .ok_or_else(|| DbErr::Custom(format!("Shelf '{}' not found", shelf_name)))?;
 
-                if let Some(expired_at) = item.expired_at {
-                    update_query =
-                        update_query.col_expr(items::Column::ExpiredAt, Expr::value(expired_at));
-                }
+            // Thu thập barcode nếu có (để check duplicate)
+            if let Some(barcode) = &item.barcode {
+                barcodes_in_batch.push(barcode.clone());
+            }
 
-                update_query
-                    .col_expr(items::Column::ShelfId, Expr::value(shelf_id))
-                    .col_expr(items::Column::Status, Expr::value(status))
-                    .col_expr(items::Column::UpdatedAt, Expr::value(chrono::Utc::now()))
-                    .exec(&txn)
-                    .await?;
+            // Chuẩn bị ActiveModel để update
+            let mut am = items::ActiveModel {
+                id: Set(item_id),
+                shelf_id: Set(Some(shelf_id)),
+                status: Set(item.status.clone() as i32),
+                updated_at: Set(chrono::Utc::now()),
+                ..Default::default()
+            };
 
-                Items::find_by_id(item_id).one(&txn).await?.ok_or_else(|| {
-                    DbErr::Custom(format!("Item with id {} not found after update", item_id))
-                })?;
+            if let Some(bc) = &item.barcode {
+                am.barcode = Set(Some(bc.clone()));
+            }
+            if let Some(exp) = item.expired_at {
+                am.expired_at = Set(Some(exp));
+            }
 
-                count_stock_entries
-                    .entry(shelf_id)
-                    .or_insert_with(HashMap::new)
-                    .entry(stock_id)
-                    .and_modify(|count| *count += 1)
-                    .or_insert(1);
+            updates.push(am);
+        }
 
-                ret.push(Item {
-                    id: item.id,
-                    expired_at: item.expired_at.clone(),
-                    shelf: item.shelf.clone(),
-                    lot_number: item.lot_number.clone(),
-                    lot_id: item.lot_id,
-                    stock_id: item.stock_id,
-                    barcode: item.barcode.clone(),
-                    cost_price: item.cost_price,
-                    status: item.status.clone(),
-                });
+        // ────────────────────────────────────────────────────────
+        // 3. Check duplicate barcode TRONG batch
+        let mut seen = std::collections::HashSet::new();
+        for bc in &barcodes_in_batch {
+            if !seen.insert(bc.clone()) {
+                txn.rollback().await?;
+                return Err(DbErr::Custom(format!("Duplicate barcode in batch: {}", bc)));
             }
         }
 
+        // ────────────────────────────────────────────────────────
+        // 4. Check barcode đã tồn tại trong DB (loại trừ các item đang import)
+        if !barcodes_in_batch.is_empty() {
+            let existing = items::Entity::find()
+                .filter(items::Column::TenantId.eq(tenant_id))
+                .filter(items::Column::Barcode.is_in(barcodes_in_batch.clone()))
+                .filter(items::Column::Id.is_not_in(item_ids.clone()))
+                .all(&txn)
+                .await?;
+
+            if !existing.is_empty() {
+                let dup = existing[0].barcode.as_ref().unwrap();
+                txn.rollback().await?;
+                return Err(DbErr::Custom(format!(
+                    "Barcode '{}' already exists in database",
+                    dup
+                )));
+            }
+        }
+
+        // ────────────────────────────────────────────────────────
+        // 5. Thực hiện update (loop, nhưng trong transaction → atomic)
+        let mut ret = Vec::new();
+        let mut count_stock_entries: HashMap<i64, HashMap<Option<i64>, i32>> = HashMap::new();
+
+        for am in updates {
+            let updated = am.update(&txn).await?;
+            let item_id = updated.id;
+
+            // Tính quantity cho stock_shelves
+            let shelf_id = updated.shelf_id.unwrap_or(0); // fallback nếu null
+            let stock_id = updated.stock_id;
+            count_stock_entries
+                .entry(shelf_id)
+                .or_default()
+                .entry(Some(stock_id))
+                .and_modify(|e| *e += 1)
+                .or_insert(1);
+
+            // Build Item để return
+            ret.push(Item {
+                id: Some(item_id),
+                expired_at: updated.expired_at,
+                shelf: shelves
+                    .iter()
+                    .find(|(_, &id)| id == shelf_id)
+                    .map(|(name, _)| name.clone()),
+                lot_number: None, // nếu cần thì query thêm
+                lot_id: Some(lot_id),
+                stock_id: Some(stock_id),
+                barcode: updated.barcode,
+                cost_price: updated.cost_price,
+                status: ItemStatus::from(updated.status),
+            });
+        }
+
+        // ────────────────────────────────────────────────────────
+        // 6. Upsert stock_shelves (giữ nguyên logic của bạn)
         let mut inserts = Vec::new();
         for (&shelf_id, stock_map) in &count_stock_entries {
-            for (stock_id, &qty) in stock_map {
+            for (&stock_id, &qty) in stock_map {
                 let am = stock_shelves::ActiveModel {
                     tenant_id: Set(tenant_id),
                     shelf_id: Set(shelf_id),
-                    stock_id: Set(stock_id.ok_or(DbErr::Custom(format!("")))?),
+                    stock_id: Set(stock_id.ok_or_else(|| {
+                        DbErr::Custom(format!(
+                            "Upsert new plan item to shelf {} fail duo to missing stock id",
+                            shelf_id,
+                        ))
+                    })?),
                     quantity: Set(qty),
                     ..Default::default()
                 };
@@ -1321,7 +1427,7 @@ impl Wms {
         }
 
         if !inserts.is_empty() {
-            let on_conflict = OnConflict::columns(vec![
+            let on_conflict = OnConflict::columns([
                 stock_shelves::Column::TenantId,
                 stock_shelves::Column::ShelfId,
                 stock_shelves::Column::StockId,
@@ -1334,6 +1440,7 @@ impl Wms {
                 .exec(&txn)
                 .await?;
         }
+
         txn.commit().await?;
         Ok(ret)
     }
@@ -1344,6 +1451,8 @@ impl Wms {
         shelf_id: i64,
         items: &[Item],
     ) -> Result<(), DbErr> {
+        // @TODO: kiểm tra xem item đã được nhập vào kho chưa, nếu chưa nhập thì k
+        //        cho assign được
         if items.is_empty() {
             return Ok(());
         }
@@ -1362,7 +1471,7 @@ impl Wms {
         }
     }
 
-    pub async fn get_stock(&self, tenant_id: i64, stock_id: i32) -> Result<Stock, DbErr> {
+    pub async fn get_stock(&self, tenant_id: i64, stock_id: i64) -> Result<Stock, DbErr> {
         let result = Stocks::find()
             .filter(stocks::Column::TenantId.eq(tenant_id))
             .filter(stocks::Column::Id.eq(stock_id))
@@ -1929,12 +2038,14 @@ impl Wms {
                 .await?;
 
                 let sale_id = Sales::find()
+                    .select_only()
+                    .column(sales::Column::Id)
                     .filter(sales::Column::OrderId.eq(sale.order_id))
                     .filter(sales::Column::TenantId.eq(tenant_id))
+                    .into_tuple::<i64>()
                     .one(&txn)
                     .await?
-                    .ok_or(DbErr::RecordNotFound("Sale not found".to_string()))?
-                    .id;
+                    .ok_or(DbErr::RecordNotFound("Sale not found".to_string()))?;
 
                 SaleEvents::insert_many(
                     stock_ids
@@ -1949,9 +2060,23 @@ impl Wms {
                         .collect::<Vec<_>>(),
                 )
                 .exec(&txn)
-                .await?;
+                .await
+                .map_err(|error| {
+                    DbErr::Custom(format!(
+                        "Failed to update event of sale {}, order {}: {}",
+                        sale_id, sale.order_id, error,
+                    ))
+                })?;
+
                 txn.commit().await?;
-                Ok(sale.clone())
+
+                Ok(Sale {
+                    id: Some(sale_id),
+                    stock_ids: Some(stock_ids.clone()),
+                    order_id: sale.order_id,
+                    cost_prices: sale.cost_prices.clone(),
+                    ..Default::default()
+                })
             }
             None => Err(DbErr::Query(RuntimeErr::Internal(format!(
                 "Missing field `stocks`"
@@ -2697,15 +2822,16 @@ impl Wms {
 
         // @TODO: tách chỗ này ra dùng RPC nếu muốn chia micro services
         let sale_details = self.list_sale_by_order(tenant_id, &order_ids).await?;
+        let plan_id = self.generator.generate();
 
-        let plan_id = picking_plans::Entity::insert(picking_plans::ActiveModel {
+        picking_plans::Entity::insert(picking_plans::ActiveModel {
+            id: Set(plan_id),
             tenant_id: Set(tenant_id),
             status: Set(PickingPlanStatus::Created as i32),
             ..Default::default()
         })
         .exec(&txn)
-        .await?
-        .last_insert_id;
+        .await?;
 
         if !zones.is_empty() {
             // @TODO: tách chỗ này ra dùng RPC nếu muốn chia micro services
@@ -3128,7 +3254,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_stocks() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 1;
         let stocks = vec![
             Stock {
@@ -3151,8 +3280,8 @@ mod tests {
             },
         ];
 
-        let created_ids = wms.create_stocks(tenant_id, &stocks).await.unwrap();
-        assert_eq!(created_ids.len(), 2);
+        let created_stocks = wms.create_stocks(tenant_id, &stocks).await.unwrap();
+        assert_eq!(created_stocks.len(), 2);
 
         let fetched = Stocks::find()
             .filter(stocks::Column::TenantId.eq(tenant_id))
@@ -3167,7 +3296,10 @@ mod tests {
     #[tokio::test]
     async fn test_list_paginated_stocks() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 2;
 
         // Create stocks first
@@ -3205,7 +3337,10 @@ mod tests {
     #[tokio::test]
     async fn test_get_stock() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 3;
 
         let stock = Stock {
@@ -3217,11 +3352,11 @@ mod tests {
             name: "Test Stock".to_string(),
             unit: "kg".to_string(),
         };
-        let created_ids = wms
+        let created_stocks = wms
             .create_stocks(tenant_id, &[stock.clone()])
             .await
             .unwrap();
-        let stock_id = created_ids[0];
+        let stock_id = created_stocks[0].id.unwrap();
 
         let fetched = wms.get_stock(tenant_id, stock_id).await.unwrap();
         assert_eq!(fetched.name, "Test Stock");
@@ -3231,7 +3366,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_shelves() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 4;
         let shelves = vec![
             Shelf {
@@ -3246,8 +3384,8 @@ mod tests {
             },
         ];
 
-        let created_ids = wms.create_shelves(tenant_id, &shelves).await.unwrap();
-        assert_eq!(created_ids.len(), 2);
+        let created_shelves = wms.create_shelves(tenant_id, &shelves).await.unwrap();
+        assert_eq!(created_shelves.len(), 2);
 
         let fetched = Shelves::find()
             .filter(shelves::Column::TenantId.eq(tenant_id))
@@ -3261,7 +3399,10 @@ mod tests {
     #[tokio::test]
     async fn test_list_paginated_shelves() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 5;
 
         let shelves = vec![
@@ -3286,7 +3427,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_lots() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 6;
         let lots = vec![Lot {
             id: None,
@@ -3299,8 +3443,8 @@ mod tests {
             quantity: 100,
         }];
 
-        let created_ids = wms.create_lots(tenant_id, &lots).await.unwrap();
-        assert_eq!(created_ids.len(), 1);
+        let created_lots = wms.create_lots(tenant_id, &lots).await.unwrap();
+        assert_eq!(created_lots.len(), 1);
 
         let fetched = Lots::find()
             .filter(lots::Column::TenantId.eq(tenant_id))
@@ -3316,7 +3460,10 @@ mod tests {
     #[tokio::test]
     async fn test_get_lot() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 7;
 
         let lot = Lot {
@@ -3329,8 +3476,8 @@ mod tests {
             lot_number: "LOT001".to_string(),
             quantity: 100,
         };
-        let created_ids = wms.create_lots(tenant_id, &[lot.clone()]).await.unwrap();
-        let lot_id = created_ids[0];
+        let created_lots = wms.create_lots(tenant_id, &[lot.clone()]).await.unwrap();
+        let lot_id = created_lots[0].id.unwrap();
 
         let fetched = wms.get_lot(tenant_id, lot_id).await.unwrap();
         assert_eq!(fetched.lot_number, "LOT001");
@@ -3341,7 +3488,10 @@ mod tests {
     #[tokio::test]
     async fn test_list_paginated_lots_of_stock() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 8;
 
         // Create stock
@@ -3354,8 +3504,8 @@ mod tests {
             name: "Stock for Lots".to_string(),
             unit: "unit".to_string(),
         };
-        let stock_ids = wms.create_stocks(tenant_id, &[stock]).await.unwrap();
-        let stock_id = stock_ids[0];
+        let created_stocks = wms.create_stocks(tenant_id, &[stock]).await.unwrap();
+        let stock_id = created_stocks[0].id.unwrap();
 
         // Create lots (but to link, we need items, but for simplicity, assume list works without items for count)
         let lot = Lot {
@@ -3381,7 +3531,10 @@ mod tests {
     #[tokio::test]
     async fn test_plan_import_new_items() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 9;
 
         // Create stock and lot
@@ -3394,8 +3547,8 @@ mod tests {
             name: "Stock for Import".to_string(),
             unit: "unit".to_string(),
         };
-        let stock_ids = wms.create_stocks(tenant_id, &[stock]).await.unwrap();
-        let stock_id = stock_ids[0];
+        let created_stocks = wms.create_stocks(tenant_id, &[stock]).await.unwrap();
+        let stock_id = created_stocks[0].id.unwrap();
 
         let lot = Lot {
             id: None,
@@ -3407,8 +3560,8 @@ mod tests {
             lot_number: "LOT001".to_string(),
             quantity: 5,
         };
-        let lot_ids = wms.create_lots(tenant_id, &[lot]).await.unwrap();
-        let lot_id = lot_ids[0];
+        let lots = wms.create_lots(tenant_id, &[lot]).await.unwrap();
+        let lot_id = lots[0].id.unwrap();
 
         let items = vec![
             Item {
@@ -3418,7 +3571,7 @@ mod tests {
                 lot_number: None,
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
-                barcode: Some("BAR001".to_string()),
+                barcode: None,
                 cost_price: 10.0,
                 status: ItemStatus::Plan,
             };
@@ -3441,11 +3594,14 @@ mod tests {
     #[tokio::test]
     async fn test_import_real_items() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 10;
 
         // Setup shelf to store un-classified items
-        let shelf_id = wms
+        let created_shelves = wms
             .create_shelves(
                 tenant_id,
                 &[
@@ -3462,10 +3618,11 @@ mod tests {
                 ],
             )
             .await
-            .unwrap()[1];
+            .unwrap();
+        let shelf_id = created_shelves[1].id.unwrap();
 
         // Setup stock, lot, plan items
-        let stock_id = wms
+        let created_stocks = wms
             .create_stocks(
                 tenant_id,
                 &[Stock {
@@ -3479,8 +3636,9 @@ mod tests {
                 }],
             )
             .await
-            .unwrap()[0];
-        let lot_id = wms
+            .unwrap();
+        let stock_id = created_stocks[0].id.unwrap();
+        let created_lots = wms
             .create_lots(
                 tenant_id,
                 &[Lot {
@@ -3495,7 +3653,8 @@ mod tests {
                 }],
             )
             .await
-            .unwrap()[0];
+            .unwrap();
+        let lot_id = created_lots[0].id.unwrap();
 
         let plan_items = vec![
             Item {
@@ -3544,11 +3703,14 @@ mod tests {
     #[tokio::test]
     async fn test_assign_items_to_shelf() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 12;
 
         // Setup shelf
-        let shelf_id = wms
+        let created_shelves = wms
             .create_shelves(
                 tenant_id,
                 &[
@@ -3565,10 +3727,11 @@ mod tests {
                 ],
             )
             .await
-            .unwrap()[1];
+            .unwrap();
+        let shelf_id = created_shelves[1].id.unwrap();
 
         // Setup items
-        let stock_id = wms
+        let created_stocks = wms
             .create_stocks(
                 tenant_id,
                 &[Stock {
@@ -3582,8 +3745,9 @@ mod tests {
                 }],
             )
             .await
-            .unwrap()[0];
-        let lot_id = wms
+            .unwrap();
+        let stock_id = created_stocks[0].id.unwrap();
+        let created_lots = wms
             .create_lots(
                 tenant_id,
                 &[Lot {
@@ -3598,7 +3762,8 @@ mod tests {
                 }],
             )
             .await
-            .unwrap()[0];
+            .unwrap();
+        let lot_id = created_lots[0].id.unwrap();
 
         let items = vec![
             Item {
@@ -3608,7 +3773,7 @@ mod tests {
                 lot_number: None,
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
-                barcode: Some("BAR001".to_string()),
+                barcode: None,
                 cost_price: 10.0,
                 status: ItemStatus::Available,
             };
@@ -3645,11 +3810,14 @@ mod tests {
     #[tokio::test]
     async fn test_get_item_by_barcode() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 13;
 
         // Setup shelf to store un-classified items
-        let shelf_id = wms
+        let created_shelves = wms
             .create_shelves(
                 tenant_id,
                 &[
@@ -3666,9 +3834,10 @@ mod tests {
                 ],
             )
             .await
-            .unwrap()[0];
+            .unwrap();
+        let shelf_id = created_shelves[0].id.unwrap();
 
-        let stock_id = wms
+        let created_stocks = wms
             .create_stocks(
                 tenant_id,
                 &[Stock {
@@ -3682,8 +3851,9 @@ mod tests {
                 }],
             )
             .await
-            .unwrap()[0];
-        let lot_id = wms
+            .unwrap();
+        let stock_id = created_stocks[0].id.unwrap();
+        let created_lots = wms
             .create_lots(
                 tenant_id,
                 &[Lot {
@@ -3698,8 +3868,9 @@ mod tests {
                 }],
             )
             .await
-            .unwrap()[0];
-        let shelf_id = wms
+            .unwrap();
+        let lot_id = created_lots[0].id.unwrap();
+        let created_shelves_2 = wms
             .create_shelves(
                 tenant_id,
                 &[Shelf {
@@ -3709,7 +3880,8 @@ mod tests {
                 }],
             )
             .await
-            .unwrap()[0];
+            .unwrap();
+        let shelf_id = created_shelves_2[0].id.unwrap();
 
         let item = Item {
             id: None,
@@ -3718,7 +3890,7 @@ mod tests {
             lot_number: Some("LOT001".to_string()),
             lot_id: Some(lot_id),
             stock_id: Some(stock_id),
-            barcode: Some("BAR123".to_string()),
+            barcode: None,
             cost_price: 10.0,
             status: ItemStatus::Available,
         };
@@ -3731,6 +3903,7 @@ mod tests {
         for (i, item) in import_items.iter_mut().enumerate() {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
+            item.barcode = Some("BAR123".to_string());
             item.status = ItemStatus::Available;
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
@@ -3754,11 +3927,14 @@ mod tests {
     #[tokio::test]
     async fn test_sale_at_storefront() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 14;
 
         // Setup shelf to store un-classified items
-        let shelf_id = wms
+        let created_shelves = wms
             .create_shelves(
                 tenant_id,
                 &[
@@ -3775,9 +3951,10 @@ mod tests {
                 ],
             )
             .await
-            .unwrap()[1];
+            .unwrap();
+        let shelf_id = created_shelves[1].id.unwrap();
 
-        let stock_id = wms
+        let created_stocks = wms
             .create_stocks(
                 tenant_id,
                 &[Stock {
@@ -3791,8 +3968,9 @@ mod tests {
                 }],
             )
             .await
-            .unwrap()[0];
-        let lot_id = wms
+            .unwrap();
+        let stock_id = created_stocks[0].id.unwrap();
+        let created_lots = wms
             .create_lots(
                 tenant_id,
                 &[Lot {
@@ -3807,7 +3985,8 @@ mod tests {
                 }],
             )
             .await
-            .unwrap()[0];
+            .unwrap();
+        let lot_id = created_lots[0].id.unwrap();
 
         let items = vec![
             Item {
@@ -3817,7 +3996,7 @@ mod tests {
                 lot_number: None,
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
-                barcode: Some("BAR001".to_string()),
+                barcode: None,
                 cost_price: 10.0,
                 status: ItemStatus::Available,
             },
@@ -3828,7 +4007,7 @@ mod tests {
                 lot_number: None,
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
-                barcode: Some("BAR002".to_string()),
+                barcode: None,
                 cost_price: 10.0,
                 status: ItemStatus::Available,
             },
@@ -3875,7 +4054,10 @@ mod tests {
     #[tokio::test]
     async fn test_sale_at_website() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 15;
 
         let stocks = vec![
@@ -3898,7 +4080,8 @@ mod tests {
                 unit: "unit".to_string(),
             },
         ];
-        let stock_ids = wms.create_stocks(tenant_id, &stocks).await.unwrap();
+        let stock_objs = wms.create_stocks(tenant_id, &stocks).await.unwrap();
+        let stock_ids: Vec<i64> = stock_objs.iter().map(|s| s.id.unwrap()).collect();
 
         let sale = Sale {
             id: None,
@@ -3925,10 +4108,13 @@ mod tests {
     #[tokio::test]
     async fn test_list_paginated_stocks_of_shelf() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 16;
 
-        let shelf_id = wms
+        let created_shelves = wms
             .create_shelves(
                 tenant_id,
                 &[Shelf {
@@ -3938,7 +4124,8 @@ mod tests {
                 }],
             )
             .await
-            .unwrap()[0];
+            .unwrap();
+        let shelf_id = created_shelves[0].id.unwrap();
 
         let stock = Stock {
             id: None,
@@ -3949,7 +4136,8 @@ mod tests {
             name: "Shelf Stock".to_string(),
             unit: "unit".to_string(),
         };
-        let stock_id = wms.create_stocks(tenant_id, &[stock]).await.unwrap()[0];
+        let stocks = wms.create_stocks(tenant_id, &[stock]).await.unwrap();
+        let stock_id = stocks[0].id.unwrap();
 
         // Assume stock_shelves insert is needed, but since not in code, skip or mock
         // For test, assume the join works if data is there; but code has stock_shelves, assume created elsewhere or adjust
@@ -3973,7 +4161,10 @@ mod tests {
     #[tokio::test]
     async fn test_list_paginated_stocks_detailed() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 17;
         // Create shelves
         let shelves = vec![
@@ -3988,9 +4179,9 @@ mod tests {
                 description: None,
             },
         ];
-        let shelf_ids = wms.create_shelves(tenant_id, &shelves).await.unwrap();
-        let shelf_a_id = shelf_ids[0];
-        let shelf_b_id = shelf_ids[1];
+        let shelves_created = wms.create_shelves(tenant_id, &shelves).await.unwrap();
+        let shelf_a_id = shelves_created[0].id.unwrap();
+        let shelf_b_id = shelves_created[1].id.unwrap();
         // Create stocks
         let stocks = vec![
             Stock {
@@ -4006,9 +4197,9 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let stock_ids = wms.create_stocks(tenant_id, &stocks).await.unwrap();
-        let stock1_id = stock_ids[0];
-        let stock2_id = stock_ids[1];
+        let created_stocks = wms.create_stocks(tenant_id, &stocks).await.unwrap();
+        let stock1_id = created_stocks[0].id.unwrap();
+        let stock2_id = created_stocks[1].id.unwrap();
         // Create lots
         let lots = vec![
             Lot {
@@ -4030,9 +4221,9 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let lot_ids = wms.create_lots(tenant_id, &lots).await.unwrap();
-        let lot1_id = lot_ids[0];
-        let lot2_id = lot_ids[1];
+        let created_lots = wms.create_lots(tenant_id, &lots).await.unwrap();
+        let lot1_id = created_lots[0].id.unwrap();
+        let lot2_id = created_lots[1].id.unwrap();
         // Plan and import items to link everything
         let items1 = vec![
             Item {
@@ -4046,10 +4237,10 @@ mod tests {
         ];
         let created_items1 = wms.plan_import_new_items(tenant_id, &items1).await.unwrap();
         let mut import_items1 = created_items1.clone();
-        for item in import_items1.iter_mut() {
+        for (i, item) in import_items1.iter_mut().enumerate() {
             item.shelf = Some("Shelf A".to_string());
             item.status = ItemStatus::Available;
-            item.barcode = Some("BAR1".to_string());
+            item.barcode = Some(format!("BAR0-{}", i));
         }
         wms.import_real_items(tenant_id, lot1_id, &import_items1)
             .await
@@ -4069,10 +4260,10 @@ mod tests {
         ];
         let created_items2 = wms.plan_import_new_items(tenant_id, &items2).await.unwrap();
         let mut import_items2 = created_items2.clone();
-        for item in import_items2.iter_mut() {
+        for (i, item) in import_items2.iter_mut().enumerate() {
             item.shelf = Some("Shelf B".to_string());
             item.status = ItemStatus::Available;
-            item.barcode = Some("BAR2".to_string());
+            item.barcode = Some(format!("BAR1-{}", i));
         }
         wms.import_real_items(tenant_id, lot2_id, &import_items2)
             .await
