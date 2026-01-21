@@ -2026,6 +2026,7 @@ impl Wms {
     pub async fn sale_at_website(&self, tenant_id: i64, sale: &Sale) -> Result<Sale, DbErr> {
         match &sale.stock_ids {
             Some(stock_ids) => {
+                let mut counts = HashMap::new();
                 let txn = self.dbt(tenant_id).begin().await?;
 
                 Sales::insert(sales::ActiveModel {
@@ -2047,14 +2048,19 @@ impl Wms {
                     .await?
                     .ok_or(DbErr::RecordNotFound("Sale not found".to_string()))?;
 
+                for &id in stock_ids {
+                    *counts.entry(id).or_insert(0) += 1;
+                }
+
                 SaleEvents::insert_many(
-                    stock_ids
-                        .iter()
-                        .map(|stock_id| sale_events::ActiveModel {
+                    counts
+                        .into_iter()
+                        .map(|(stock_id, count)| sale_events::ActiveModel {
                             tenant_id: Set(tenant_id),
                             sale_id: Set(sale_id),
-                            stock_id: Set(Some(*stock_id)),
-                            status: Set(SaleStatus::Paid as i32),
+                            stock_id: Set(stock_id),
+                            count: Set(count),
+                            status: Set(PickingGoodsStatus::Planing as i32),
                             ..Default::default()
                         })
                         .collect::<Vec<_>>(),
@@ -2079,7 +2085,7 @@ impl Wms {
                 })
             }
             None => Err(DbErr::Query(RuntimeErr::Internal(format!(
-                "Missing field `stocks`"
+                "Missing field `stocks_ids`"
             )))),
         }
     }
