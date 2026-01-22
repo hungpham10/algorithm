@@ -2,7 +2,7 @@ use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 
 use actix_web::middleware::Logger;
-use actix_web::web::{get, patch, post, put, scope, Data};
+use actix_web::web::{delete, get, patch, post, put, scope, Data};
 use actix_web::{App, HttpServer};
 
 use tokio::signal::unix::{signal, SignalKind};
@@ -206,7 +206,7 @@ pub async fn run() -> std::io::Result<()> {
                         get().to(crate::api::wms::v1::list_stocks_in_shelf),
                     )
                     .route(
-                        "/v1/wms/shelves/{shelve_id}",
+                        "/v1/wms/shelves/{shelve_id}/items",
                         post().to(crate::api::wms::v1::assign_item_to_shelf),
                     )
                     .route(
@@ -274,6 +274,26 @@ pub async fn run() -> std::io::Result<()> {
                     .route(
                         "/v1/wms/picking/waves/{wave_id}",
                         get().to(crate::api::wms::v1::get_detail_picking_wave),
+                    )
+                    .route(
+                        "/v1/wms/picking/routes/{route_id}",
+                        patch().to(crate::api::wms::v1::update_one_existed_route),
+                    )
+                    .route(
+                        "/v1/wms/picking/routes",
+                        patch().to(crate::api::wms::v1::update_existed_routes_in_batch),
+                    )
+                    .route(
+                        "/v1/wms/picking/routes",
+                        post().to(crate::api::wms::v1::create_new_routes),
+                    )
+                    .route(
+                        "/v1/wms/picking/routes",
+                        delete().to(crate::api::wms::v1::finish_routes_in_batch),
+                    )
+                    .route(
+                        "/v1/wms/picking/routes/{route_id}",
+                        delete().to(crate::api::wms::v1::finish_one_route),
                     )
                     .route("/v1/wms/sync", post().to(crate::api::wms::v1::sync_data))
                     .route(

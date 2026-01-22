@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fmt::{Display, Error as FmtError, Formatter, Result as FmtResult};
 use std::sync::Arc;
 
@@ -11,7 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::AppState;
 use crate::entities::wms::{
-    Item, ItemStatus, Lot, Node, Order, PathWay, PickingNodeScope, Sale, Shelf, Stock, Zone,
+    Item, ItemStatus, Lot, Node, Order, PathWay, PickingNodeScope, Plan, Route, Sale, Shelf, Stock,
+    Zone,
 };
 
 use super::WmsHeaders;
@@ -85,6 +85,14 @@ pub struct ListPathsResponse {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ListPlansResponse {
+    data: Vec<Plan>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_after: Option<i64>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WmsResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     stocks: Option<ListStocksResponse>,
@@ -135,6 +143,12 @@ pub struct WmsResponse {
     path: Option<PathWay>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    plans: Option<ListPlansResponse>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    plan: Option<Plan>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
 
@@ -164,6 +178,8 @@ impl Default for WmsResponse {
             node: None,
             paths: None,
             path: None,
+            plans: None,
+            plan: None,
             error: None,
         }
     }
@@ -1168,24 +1184,82 @@ pub struct SetupPickingWaveRequest {
     scope: Option<PickingScope>,
 }
 
-pub async fn list_picking_wave(
-    appstate: Data<Arc<AppState>>,
-    headers: WmsHeaders,
-) -> Result<HttpResponse> {
-    Err(ErrorInternalServerError(WmsResponse {
-        error: Some(format!("Not implemented")),
-        ..Default::default()
-    }))
-}
-
 pub async fn get_detail_picking_wave(
     appstate: Data<Arc<AppState>>,
+    path: Path<i64>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
-    Err(ErrorInternalServerError(WmsResponse {
-        error: Some(format!("Not implemented")),
-        ..Default::default()
-    }))
+    if let Some(entity) = appstate.wms_entity() {
+        let wave_id = path.into_inner();
+
+        match entity.get_picking_wave(headers.tenant_id, wave_id).await {
+            Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
+                plan: Some(data),
+                ..Default::default()
+            })),
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!(
+                    "Failed to get detail of plan {}: {}",
+                    wave_id, error
+                )),
+                ..Default::default()
+            })),
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
+}
+
+pub async fn list_picking_wave(
+    appstate: Data<Arc<AppState>>,
+    query: Query<QueryPagingInput>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    if let Some(entity) = appstate.wms_entity() {
+        let include_details = query.include_details.unwrap_or(false);
+        let after = query.after.unwrap_or(0);
+        let limit = query.limit.unwrap_or(10);
+
+        if limit > 100 {
+            Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!(
+                    "Maximum item per page does not exceed 100, currently is {}",
+                    limit
+                )),
+                ..Default::default()
+            }))
+        } else {
+            match entity
+                .list_picking_wave(headers.tenant_id, include_details, after, limit)
+                .await
+            {
+                Ok(data) => {
+                    let next_after = if data.len() == limit as usize {
+                        data.last().unwrap().id
+                    } else {
+                        None
+                    };
+
+                    Ok(HttpResponse::Ok().json(WmsResponse {
+                        plans: Some(ListPlansResponse { data, next_after }),
+                        ..Default::default()
+                    }))
+                }
+                Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                    error: Some(format!("Failed to get list of stocks: {}", error)),
+                    ..Default::default()
+                })),
+            }
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
 }
 
 pub async fn setup_picking_wave(
@@ -1210,6 +1284,7 @@ pub async fn setup_picking_wave(
             .await
         {
             Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
+                plan: Some(data),
                 ..Default::default()
             })),
             Err(error) => Err(ErrorInternalServerError(WmsResponse {
@@ -1223,6 +1298,61 @@ pub async fn setup_picking_wave(
             ..Default::default()
         }))
     }
+}
+
+pub async fn update_one_existed_route(
+    appstate: Data<Arc<AppState>>,
+    path: Path<i64>,
+    config: Json<Route>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    Err(ErrorInternalServerError(WmsResponse {
+        error: Some(format!("Not implemented")),
+        ..Default::default()
+    }))
+}
+
+pub async fn update_existed_routes_in_batch(
+    appstate: Data<Arc<AppState>>,
+    config: Json<Vec<Route>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    Err(ErrorInternalServerError(WmsResponse {
+        error: Some(format!("Not implemented")),
+        ..Default::default()
+    }))
+}
+
+pub async fn create_new_routes(
+    appstate: Data<Arc<AppState>>,
+    config: Json<Vec<Route>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    Err(ErrorInternalServerError(WmsResponse {
+        error: Some(format!("Not implemented")),
+        ..Default::default()
+    }))
+}
+
+pub async fn finish_routes_in_batch(
+    appstate: Data<Arc<AppState>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    Err(ErrorInternalServerError(WmsResponse {
+        error: Some(format!("Not implemented")),
+        ..Default::default()
+    }))
+}
+
+pub async fn finish_one_route(
+    appstate: Data<Arc<AppState>>,
+    path: Path<i64>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    Err(ErrorInternalServerError(WmsResponse {
+        error: Some(format!("Not implemented")),
+        ..Default::default()
+    }))
 }
 
 pub async fn process_offline_sale(

@@ -871,6 +871,44 @@ impl Display for PickingPlanStatus {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Route {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+}
+
+impl Default for Route {
+    fn default() -> Self {
+        Self { id: None }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Plan {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zones: Option<Vec<i64>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nodes: Option<Vec<i64>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub routes: Option<Vec<i64>>,
+}
+
+impl Default for Plan {
+    fn default() -> Self {
+        Self {
+            id: None,
+            nodes: None,
+            zones: None,
+            routes: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[repr(i32)]
 pub enum PickingGoodsStatus {
@@ -2811,13 +2849,179 @@ impl Wms {
         }
     }
 
+    pub async fn get_picking_wave(&self, tenant_id: i64, wave_id: i64) -> Result<Plan, DbErr> {
+        let plan_exists = PickingPlans::find()
+            .filter(picking_plans::Column::Id.eq(wave_id))
+            .filter(picking_plans::Column::TenantId.eq(tenant_id))
+            .one(self.dbt(tenant_id))
+            .await?;
+
+        if plan_exists.is_none() {
+            return Err(DbErr::RecordNotFound("Plan not found".to_string()));
+        }
+
+        let mut plan = Plan {
+            id: Some(wave_id),
+            ..Default::default()
+        };
+
+        plan.nodes = Some(
+            picking_plans_in_nodes::Entity::find()
+                .select_only()
+                .column(picking_plans_in_nodes::Column::Id)
+                .filter(picking_plans_in_nodes::Column::PlanId.eq(wave_id))
+                .into_tuple::<i64>()
+                .all(self.dbt(tenant_id))
+                .await?,
+        );
+
+        plan.zones = Some(
+            picking_plans_in_zones::Entity::find()
+                .select_only()
+                .column(picking_plans_in_zones::Column::Id)
+                .filter(picking_plans_in_zones::Column::PlanId.eq(wave_id))
+                .into_tuple::<i64>()
+                .all(self.dbt(tenant_id))
+                .await?,
+        );
+
+        plan.routes = Some(
+            picking_routes::Entity::find()
+                .select_only()
+                .column(picking_routes::Column::Id)
+                .filter(picking_routes::Column::PickingId.eq(wave_id))
+                .into_tuple::<i64>()
+                .all(self.dbt(tenant_id))
+                .await?,
+        );
+
+        if let Some(ref v) = plan.zones {
+            if v.is_empty() {
+                plan.zones = None;
+            }
+        }
+
+        if let Some(ref v) = plan.routes {
+            if v.is_empty() {
+                plan.routes = None;
+            }
+        }
+
+        Ok(plan)
+    }
+
+    pub async fn list_picking_wave(
+        &self,
+        tenant_id: i64,
+        include_details: bool,
+        after: i64,
+        limit: u64,
+    ) -> Result<Vec<Plan>, DbErr> {
+        let mut plans = PickingPlans::find()
+            .select_only()
+            .column(picking_plans::Column::Id)
+            .filter(picking_plans::Column::Id.gt(after))
+            .filter(picking_plans::Column::TenantId.eq(tenant_id))
+            .limit(limit)
+            .order_by_asc(picking_plans::Column::Id)
+            .into_tuple::<i64>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|id| {
+                (
+                    id,
+                    Plan {
+                        id: Some(id),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        if include_details {
+            let ids = plans.clone().into_keys().collect::<Vec<_>>();
+
+            PickingPlans::find()
+                .select_only()
+                .column_as(picking_plans::Column::Id, "plan_id")
+                .column_as(picking_routes::Column::Id, "route_id")
+                .join_rev(
+                    JoinType::InnerJoin,
+                    picking_routes::Entity::belongs_to(PickingPlans)
+                        .from(picking_routes::Column::PickingId)
+                        .to(picking_plans::Column::Id)
+                        .into(),
+                )
+                .filter(picking_plans::Column::TenantId.eq(tenant_id))
+                .filter(picking_plans::Column::Id.is_in(ids.clone()))
+                .into_tuple::<(i64, i64)>()
+                .all(self.dbt(tenant_id))
+                .await?
+                .into_iter()
+                .for_each(|(plan_id, route_id)| {
+                    if let Some(plan) = plans.get_mut(&plan_id) {
+                        plan.routes.get_or_insert_with(Vec::new).push(route_id);
+                    }
+                });
+
+            PickingPlans::find()
+                .select_only()
+                .column_as(picking_plans::Column::Id, "plan_id")
+                .column_as(picking_plans_in_zones::Column::Id, "zone_id")
+                .join_rev(
+                    JoinType::InnerJoin,
+                    picking_plans_in_zones::Entity::belongs_to(PickingPlans)
+                        .from(picking_plans_in_zones::Column::PlanId)
+                        .to(picking_plans::Column::Id)
+                        .into(),
+                )
+                .filter(picking_plans::Column::TenantId.eq(tenant_id))
+                .filter(picking_plans::Column::Id.is_in(ids.clone()))
+                .into_tuple::<(i64, i64)>()
+                .all(self.dbt(tenant_id))
+                .await?
+                .into_iter()
+                .for_each(|(plan_id, zone_id)| {
+                    if let Some(plan) = plans.get_mut(&plan_id) {
+                        plan.zones.get_or_insert_with(Vec::new).push(zone_id);
+                    }
+                });
+
+            PickingPlans::find()
+                .select_only()
+                .column_as(picking_plans::Column::Id, "plan_id")
+                .column_as(picking_plans_in_nodes::Column::Id, "zone_id")
+                .join_rev(
+                    JoinType::InnerJoin,
+                    picking_plans_in_nodes::Entity::belongs_to(PickingPlans)
+                        .from(picking_plans_in_nodes::Column::PlanId)
+                        .to(picking_plans::Column::Id)
+                        .into(),
+                )
+                .filter(picking_plans::Column::TenantId.eq(tenant_id))
+                .filter(picking_plans::Column::Id.is_in(ids.clone()))
+                .into_tuple::<(i64, i64)>()
+                .all(self.dbt(tenant_id))
+                .await?
+                .into_iter()
+                .for_each(|(plan_id, node_id)| {
+                    if let Some(plan) = plans.get_mut(&plan_id) {
+                        plan.nodes.get_or_insert_with(Vec::new).push(node_id);
+                    }
+                });
+        }
+
+        Ok(plans.into_values().collect::<Vec<_>>())
+    }
+
     pub async fn create_picking_plan(
         &self,
         tenant_id: i64,
         orders: &Vec<Order>,
         zones: &Vec<i64>,
         nodes: &Vec<PickingNodeScope>,
-    ) -> Result<i64, DbErr> {
+    ) -> Result<Plan, DbErr> {
         let mut picking_goods_models = Vec::new();
 
         let txn = self.dbt(tenant_id).begin().await?;
@@ -2830,7 +3034,7 @@ impl Wms {
         let sale_details = self.list_sale_by_order(tenant_id, &order_ids).await?;
         let plan_id = self.generator.generate();
 
-        picking_plans::Entity::insert(picking_plans::ActiveModel {
+        PickingPlans::insert(picking_plans::ActiveModel {
             id: Set(plan_id),
             tenant_id: Set(tenant_id),
             status: Set(PickingPlanStatus::Created as i32),
@@ -2905,9 +3109,12 @@ impl Wms {
         PickingGoods::insert_many(picking_goods_models)
             .exec(&txn)
             .await?;
-
         txn.commit().await?;
-        Ok(plan_id)
+
+        Ok(Plan {
+            id: Some(plan_id),
+            ..Default::default()
+        })
     }
 
     async fn get_picking_route_status_with_txn(
