@@ -292,12 +292,20 @@ pub async fn run() -> std::io::Result<()> {
                         post().to(crate::api::wms::v1::create_new_routes),
                     )
                     .route(
-                        "/v1/wms/picking/routes",
-                        delete().to(crate::api::wms::v1::finish_routes_in_batch),
-                    )
-                    .route(
                         "/v1/wms/picking/routes/{route_id}",
                         delete().to(crate::api::wms::v1::finish_one_route),
+                    )
+                    .route(
+                        "/v1/wms/picking/routes/{route_id}/start",
+                        put().to(crate::api::wms::v1::start_one_route),
+                    )
+                    .route(
+                        "/v1/wms/picking/routes/{route_id}/failed",
+                        put().to(crate::api::wms::v1::report_one_route_failed),
+                    )
+                    .route(
+                        "/v1/wms/picking/routes/{route_id}/done",
+                        put().to(crate::api::wms::v1::finish_one_route),
                     )
                     .route("/v1/wms/sync", post().to(crate::api::wms::v1::sync_data))
                     .route(

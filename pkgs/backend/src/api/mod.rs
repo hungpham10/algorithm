@@ -349,7 +349,7 @@ impl AppState {
         let wms_entity = match db {
             Some(ref db) => Some(entities::wms::Wms::new(
                 vec![db.clone()],
-                Arc::new(SnowflakeId::new((hasher.finish() & 0xFFFF) as u16, EPOCH)),
+                Arc::new(SnowflakeId::new((hasher.finish() % 1023) as u16, EPOCH)),
             )),
             None => None,
         };

@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::AppState;
 use crate::entities::wms::{
-    Item, ItemStatus, Lot, Node, Order, PathWay, PickingNodeScope, Plan, Route, Sale, Shelf, Stock,
-    Zone,
+    Item, ItemStatus, Lot, Node, Order, PathWay, PickingNodeScope, PickingRouteStatus, Plan, Route,
+    Sale, Shelf, Stock, Zone,
 };
 
 use super::WmsHeaders;
@@ -584,15 +584,11 @@ pub async fn plan_item_for_new_lot(
                     Some(
                         (0..quantity)
                             .map(|_| Item {
-                                id: None,
-                                shelf: None,
-                                expired_at: None,
-                                lot_number: None,
                                 stock_id: it.id,
                                 lot_id: Some(lot_id),
-                                cost_price: it.cost_price.unwrap_or(0.0),
-                                status: ItemStatus::Plan,
-                                barcode: None,
+                                cost_price: it.cost_price,
+                                status: Some(ItemStatus::Plan),
+                                ..Default::default()
                             })
                             .collect::<Vec<_>>(),
                     )
@@ -1366,14 +1362,70 @@ pub async fn create_new_routes(
     }))
 }
 
-pub async fn finish_routes_in_batch(
+pub async fn start_one_route(
     appstate: Data<Arc<AppState>>,
+    path: Path<i64>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
-    Err(ErrorInternalServerError(WmsResponse {
-        error: Some(format!("Not implemented")),
-        ..Default::default()
-    }))
+    let route_id = path.into_inner();
+
+    if let Some(entity) = appstate.wms_entity() {
+        match entity
+            .notify_when_route_status_changed(
+                headers.tenant_id,
+                0,
+                route_id,
+                PickingRouteStatus::Running,
+            )
+            .await
+        {
+            Ok(_) => Ok(HttpResponse::Ok().json(WmsResponse {
+                ..Default::default()
+            })),
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!("Fail to finish route {}: {}", route_id, error)),
+                ..Default::default()
+            })),
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
+}
+
+pub async fn report_one_route_failed(
+    appstate: Data<Arc<AppState>>,
+    path: Path<i64>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    let route_id = path.into_inner();
+
+    if let Some(entity) = appstate.wms_entity() {
+        match entity
+            .notify_when_route_status_changed(
+                headers.tenant_id,
+                0,
+                route_id,
+                PickingRouteStatus::Failed,
+            )
+            .await
+        {
+            Ok(_) => Ok(HttpResponse::Ok().json(WmsResponse {
+                ..Default::default()
+            })),
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!("Fail to finish route {}: {}", route_id, error)),
+                ..Default::default()
+            })),
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
 }
 
 pub async fn finish_one_route(
@@ -1381,10 +1433,32 @@ pub async fn finish_one_route(
     path: Path<i64>,
     headers: WmsHeaders,
 ) -> Result<HttpResponse> {
-    Err(ErrorInternalServerError(WmsResponse {
-        error: Some(format!("Not implemented")),
-        ..Default::default()
-    }))
+    let route_id = path.into_inner();
+
+    if let Some(entity) = appstate.wms_entity() {
+        match entity
+            .notify_when_route_status_changed(
+                headers.tenant_id,
+                0,
+                route_id,
+                PickingRouteStatus::Done,
+            )
+            .await
+        {
+            Ok(_) => Ok(HttpResponse::Ok().json(WmsResponse {
+                ..Default::default()
+            })),
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!("Fail to finish route {}: {}", route_id, error)),
+                ..Default::default()
+            })),
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
 }
 
 pub async fn process_offline_sale(

@@ -1371,7 +1371,7 @@ impl Wms {
             let mut am = items::ActiveModel {
                 id: Set(item_id),
                 shelf_id: Set(Some(shelf_id)),
-                status: Set(Some(item.status.clone() as i32)),
+                status: Set(item.status.clone().unwrap_or(ItemStatus::Unknown) as i32),
                 updated_at: Set(chrono::Utc::now()),
                 ..Default::default()
             };
@@ -3367,7 +3367,7 @@ impl Wms {
         }
     }
 
-    async fn notify_when_order_status_changed(
+    pub async fn notify_when_order_status_changed(
         &self,
         tenant_id: i64,
         sale_id: i64,
@@ -3382,7 +3382,7 @@ impl Wms {
         Ok(())
     }
 
-    pub async fn notify_when_order_status_changed_with_txn(
+    async fn notify_when_order_status_changed_with_txn(
         &self,
         tenant_id: i64,
         sale_id: i64,
@@ -3827,8 +3827,9 @@ mod tests {
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
                 barcode: None,
-                cost_price: 10.0,
-                status: ItemStatus::Plan,
+                cost_price: Some(10.0),
+                status: Some(ItemStatus::Plan),
+                ..Default::default()
             };
             3
         ];
@@ -3920,8 +3921,9 @@ mod tests {
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
                 barcode: None,
-                cost_price: 10.0,
-                status: ItemStatus::Plan,
+                cost_price: Some(10.0),
+                status: Some(ItemStatus::Plan),
+                ..Default::default()
             };
             3
         ];
@@ -3935,7 +3937,7 @@ mod tests {
         for (i, item) in import_items.iter_mut().enumerate() {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
-            item.status = ItemStatus::Available;
+            item.status = Some(ItemStatus::Available);
             item.barcode = Some(format!("BAR{:03}", i + 1));
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
@@ -4029,8 +4031,9 @@ mod tests {
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
                 barcode: None,
-                cost_price: 10.0,
-                status: ItemStatus::Available,
+                cost_price: Some(10.0),
+                status: Some(ItemStatus::Available),
+                ..Default::default()
             };
             2
         ];
@@ -4041,7 +4044,7 @@ mod tests {
         for (i, item) in import_items.iter_mut().enumerate() {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
-            item.status = ItemStatus::Available;
+            item.status = Some(ItemStatus::Available);
             item.barcode = Some(format!("BAR{:03}", i + 1));
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
@@ -4146,8 +4149,9 @@ mod tests {
             lot_id: Some(lot_id),
             stock_id: Some(stock_id),
             barcode: None,
-            cost_price: 10.0,
-            status: ItemStatus::Available,
+            cost_price: Some(10.0),
+            status: Some(ItemStatus::Available),
+            ..Default::default()
         };
         let created_items = wms
             .plan_import_new_items(tenant_id, &[item.clone()])
@@ -4159,7 +4163,7 @@ mod tests {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
             item.barcode = Some("BAR123".to_string());
-            item.status = ItemStatus::Available;
+            item.status = Some(ItemStatus::Available);
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
 
@@ -4171,12 +4175,12 @@ mod tests {
             .unwrap();
 
         let fetched = wms
-            .get_item_by_barcode(tenant_id, &"BAR123".to_string())
+            .get_item_by_barcode_in_inventory(tenant_id, &"BAR123".to_string())
             .await
             .unwrap();
         assert_eq!(fetched.barcode.unwrap(), "BAR123");
         assert_eq!(fetched.lot_number.unwrap(), "LOT001");
-        assert_eq!(fetched.status, ItemStatus::Available);
+        assert_eq!(fetched.status, Some(ItemStatus::Available));
     }
 
     #[tokio::test]
@@ -4252,8 +4256,9 @@ mod tests {
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
                 barcode: None,
-                cost_price: 10.0,
-                status: ItemStatus::Available,
+                cost_price: Some(10.0),
+                status: Some(ItemStatus::Available),
+                ..Default::default()
             },
             Item {
                 id: None,
@@ -4263,8 +4268,9 @@ mod tests {
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
                 barcode: None,
-                cost_price: 10.0,
-                status: ItemStatus::Available,
+                cost_price: Some(10.0),
+                status: Some(ItemStatus::Available),
+                ..Default::default()
             },
         ];
         let created_items = wms.plan_import_new_items(tenant_id, &items).await.unwrap();
@@ -4274,7 +4280,7 @@ mod tests {
         for (i, item) in import_items.iter_mut().enumerate() {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
-            item.status = ItemStatus::Available;
+            item.status = Some(ItemStatus::Available);
             item.barcode = Some(format!("BAR{:03}", i + 1));
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
@@ -4484,8 +4490,8 @@ mod tests {
             Item {
                 stock_id: Some(stock1_id),
                 lot_id: Some(lot1_id),
-                cost_price: 10.0,
-                status: ItemStatus::Plan,
+                cost_price: Some(10.0),
+                status: Some(ItemStatus::Plan),
                 ..Default::default()
             };
             20  // Part of lot1 for stock1
@@ -4494,7 +4500,7 @@ mod tests {
         let mut import_items1 = created_items1.clone();
         for (i, item) in import_items1.iter_mut().enumerate() {
             item.shelf = Some("Shelf A".to_string());
-            item.status = ItemStatus::Available;
+            item.status = Some(ItemStatus::Available);
             item.barcode = Some(format!("BAR0-{}", i));
         }
         wms.import_real_items(tenant_id, lot1_id, &import_items1)
@@ -4507,8 +4513,8 @@ mod tests {
             Item {
                 stock_id: Some(stock2_id),
                 lot_id: Some(lot2_id),
-                cost_price: 15.0,
-                status: ItemStatus::Plan,
+                cost_price: Some(15.0),
+                status: Some(ItemStatus::Plan),
                 ..Default::default()
             };
             10  // Part of lot2 for stock2
@@ -4517,7 +4523,7 @@ mod tests {
         let mut import_items2 = created_items2.clone();
         for (i, item) in import_items2.iter_mut().enumerate() {
             item.shelf = Some("Shelf B".to_string());
-            item.status = ItemStatus::Available;
+            item.status = Some(ItemStatus::Available);
             item.barcode = Some(format!("BAR1-{}", i));
         }
         wms.import_real_items(tenant_id, lot2_id, &import_items2)
