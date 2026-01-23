@@ -716,7 +716,7 @@ pub async fn assign_item_to_shelf(
     }
 }
 
-pub async fn get_item_by_barcode(
+pub async fn get_item_by_barcode_about_order(
     path: Path<String>,
     appstate: Data<Arc<AppState>>,
     headers: WmsHeaders,
@@ -725,7 +725,39 @@ pub async fn get_item_by_barcode(
 
     if let Some(entity) = appstate.wms_entity() {
         match entity
-            .get_item_by_barcode(headers.tenant_id, &barcode)
+            .get_item_by_barcode_in_picking(headers.tenant_id, &barcode)
+            .await
+        {
+            Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {
+                item: Some(data),
+                ..Default::default()
+            })),
+            Err(error) => Err(ErrorInternalServerError(WmsResponse {
+                error: Some(format!(
+                    "Failed to get item by barcode {}: {}",
+                    barcode, error
+                )),
+                ..Default::default()
+            })),
+        }
+    } else {
+        Err(ErrorInternalServerError(WmsResponse {
+            error: Some(format!("Not implemented")),
+            ..Default::default()
+        }))
+    }
+}
+
+pub async fn get_item_by_barcode_in_inventory(
+    path: Path<String>,
+    appstate: Data<Arc<AppState>>,
+    headers: WmsHeaders,
+) -> Result<HttpResponse> {
+    let barcode = path.into_inner();
+
+    if let Some(entity) = appstate.wms_entity() {
+        match entity
+            .get_item_by_barcode_in_inventory(headers.tenant_id, &barcode)
             .await
         {
             Ok(data) => Ok(HttpResponse::Ok().json(WmsResponse {

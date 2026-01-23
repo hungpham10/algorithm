@@ -3,6 +3,7 @@ mod lots;
 mod nodes;
 mod paths;
 mod picking_goods;
+mod picking_items;
 mod picking_plan_events;
 mod picking_plans;
 mod picking_plans_in_nodes;
@@ -22,6 +23,7 @@ use lots::Entity as Lots;
 use nodes::Entity as Nodes;
 use paths::Entity as Paths;
 use picking_goods::Entity as PickingGoods;
+use picking_items::Entity as PickingItems;
 use picking_plan_events::Entity as PickingPlanEvents;
 use picking_plans::Entity as PickingPlans;
 use picking_plans_in_nodes::Entity as PickingPlansInNodes;
@@ -326,10 +328,16 @@ pub struct Item {
     pub stock_id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub sale_id: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub barcode: Option<String>,
 
-    pub cost_price: f64,
-    pub status: ItemStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_price: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<ItemStatus>,
 }
 
 impl Default for Item {
@@ -340,10 +348,11 @@ impl Default for Item {
             shelf: None,
             lot_number: None,
             lot_id: None,
+            sale_id: None,
             stock_id: None,
             barcode: None,
-            cost_price: 0.0,
-            status: ItemStatus::Unavailable,
+            cost_price: None,
+            status: None,
         }
     }
 }
@@ -1261,7 +1270,7 @@ impl Wms {
             stock_id: Set(item.stock_id.unwrap_or(0)),
             lot_id: Set(item.lot_id.unwrap_or(0)),
             expired_at: Set(item.expired_at),
-            cost_price: Set(item.cost_price),
+            cost_price: Set(item.cost_price.unwrap_or(0.0)),
             barcode: Set(item.barcode.clone()),
             ..Default::default()
         }))
@@ -1297,11 +1306,11 @@ impl Wms {
         let mut ret = Vec::new();
         for (id, stock_id, lot_id, status, cost_price) in collected_items {
             ret.push(Item {
-                cost_price,
+                cost_price: Some(cost_price),
                 id: Some(id),
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
-                status: ItemStatus::from(status),
+                status: Some(ItemStatus::from(status)),
                 ..Default::default()
             });
         }
@@ -1362,7 +1371,7 @@ impl Wms {
             let mut am = items::ActiveModel {
                 id: Set(item_id),
                 shelf_id: Set(Some(shelf_id)),
-                status: Set(item.status.clone() as i32),
+                status: Set(Some(item.status.clone() as i32)),
                 updated_at: Set(chrono::Utc::now()),
                 ..Default::default()
             };
@@ -1438,8 +1447,9 @@ impl Wms {
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
                 barcode: updated.barcode,
-                cost_price: updated.cost_price,
-                status: ItemStatus::from(updated.status),
+                cost_price: Some(updated.cost_price),
+                status: Some(ItemStatus::from(updated.status)),
+                ..Default::default()
             });
         }
 
@@ -1926,7 +1936,43 @@ impl Wms {
             .collect::<Vec<_>>())
     }
 
-    pub async fn get_item_by_barcode(
+    pub async fn get_item_by_barcode_in_picking(
+        &self,
+        tenant_id: i64,
+        barcode: &String,
+    ) -> Result<Item, DbErr> {
+        let ret = PickingItems::find()
+            .select_only()
+            .column(picking_goods::Column::SaleId)
+            .column(picking_items::Column::ItemId)
+            .join_rev(
+                JoinType::InnerJoin,
+                picking_goods::Entity::belongs_to(PickingItems)
+                    .from(picking_goods::Column::Id)
+                    .to(picking_items::Column::LedgerId)
+                    .into(),
+            )
+            .filter(picking_items::Column::TenantId.eq(tenant_id))
+            .filter(picking_items::Column::Barcode.eq(barcode))
+            .into_tuple::<(i64, i64)>()
+            .one(self.dbt(tenant_id))
+            .await?;
+
+        if let Some((sale_id, item_id)) = ret {
+            Ok(Item {
+                id: Some(item_id),
+                sale_id: Some(sale_id),
+                ..Default::default()
+            })
+        } else {
+            Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Not found barcode {}",
+                barcode
+            ))))
+        }
+    }
+
+    pub async fn get_item_by_barcode_in_inventory(
         &self,
         tenant_id: i64,
         barcode: &String,
@@ -1935,10 +1981,10 @@ impl Wms {
             .select_only()
             .column(items::Column::Id)
             .column(items::Column::LotId)
-            .column(items::Column::OrderId)
             .column(items::Column::StockId)
             .column(items::Column::ExpiredAt)
             .column(items::Column::CostPrice)
+            .column(items::Column::Status)
             .column(lots::Column::LotNumber)
             .column(shelves::Column::Name)
             .filter(items::Column::TenantId.eq(tenant_id))
@@ -1961,17 +2007,16 @@ impl Wms {
                 i64,
                 Option<i64>,
                 Option<i64>,
-                Option<i64>,
                 Option<DateTime<Utc>>,
                 f64,
+                i32,
                 Option<String>,
                 Option<String>,
             )>()
             .one(self.dbt(tenant_id))
             .await?;
 
-        if let Some((id, lot_id, order_id, stock_id, expired_at, cost_price, lot_number, shelf)) =
-            ret
+        if let Some((id, lot_id, stock_id, expired_at, cost_price, status, lot_number, shelf)) = ret
         {
             Ok(Item {
                 lot_id,
@@ -1979,15 +2024,11 @@ impl Wms {
                 expired_at,
                 shelf,
                 lot_number,
-                cost_price,
-
                 id: Some(id),
                 barcode: Some(barcode.clone()),
-                status: if order_id.is_none() {
-                    ItemStatus::Available
-                } else {
-                    ItemStatus::Saled
-                },
+                cost_price: Some(cost_price),
+                status: Some(ItemStatus::from(status)),
+                ..Default::default()
             })
         } else {
             Err(DbErr::Query(RuntimeErr::Internal(format!(
@@ -2071,6 +2112,7 @@ impl Wms {
                     tenant_id: Set(tenant_id),
                     order_id: Set(sale.order_id),
                     cost_price: Set(sale.cost_prices.iter().sum()),
+                    status: Set(SaleStatus::Paid as i32),
                     ..Default::default()
                 })
                 .exec(&txn)
@@ -2260,8 +2302,8 @@ impl Wms {
                             id: Some(id),
                             lot_id: Some(lot_id),
                             stock_id: Some(stock_id),
-                            status: ItemStatus::from(status),
-                            cost_price,
+                            status: Some(ItemStatus::from(status)),
+                            cost_price: Some(cost_price),
                             barcode,
                             ..Default::default()
                         })

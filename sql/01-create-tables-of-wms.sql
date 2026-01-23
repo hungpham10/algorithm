@@ -246,9 +246,11 @@ CREATE TABLE `wms_picking_items` (
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `item_id` BIGINT,
   `event_id` BIGINT,
+  `route_id` BIGINT,
   `ledger_id` BIGINT,
+  `barcode` varchar(255),
 
-  UNIQUE KEY `unique_tenant_item` (`tenant_id`, `item_id`)
+  UNIQUE KEY `unique_tenant_item_event` (`tenant_id`, `item_id`)
 );
 -- END
 

@@ -253,15 +253,19 @@ pub async fn run() -> std::io::Result<()> {
                     )
                     .route(
                         "/v1/wms/zone/{zone_id}/nodes/{node_id}",
-                        post().to(crate::api::wms::v1::get_node_by_id),
+                        get().to(crate::api::wms::v1::get_node_by_id),
                     )
                     .route(
                         "/v1/wms/zone/{zone_id}/nodes/{node_id}/pathways",
                         post().to(crate::api::wms::v1::create_paths_from_node),
                     )
                     .route(
-                        "/v1/wms/stock/barcode/{barcode}",
-                        get().to(crate::api::wms::v1::get_item_by_barcode),
+                        "/v1/wms/stock/barcode/inventory/{barcode}",
+                        get().to(crate::api::wms::v1::get_item_by_barcode_in_inventory),
+                    )
+                    .route(
+                        "/v1/wms/stock/barcode/order/{barcode}",
+                        get().to(crate::api::wms::v1::get_item_by_barcode_about_order),
                     )
                     .route(
                         "/v1/wms/picking/waves",
