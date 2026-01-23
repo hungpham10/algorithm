@@ -6,10 +6,15 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "wms_shelves")]
 pub struct Model {
     #[sea_orm(primary_key)]
-    pub id: i32,
-    pub tenant_id: i32,
+    pub id: i64,
+
     #[sea_orm(unique)]
     pub name: String,
+
+    pub tenant_id: i64,
+    pub zone: Option<i64>,
+    pub node: Option<i64>,
+    pub is_left: Option<i8>,
     pub publish: Option<i8>,
     pub description: Option<String>,
     pub created_at: DateTimeUtc,

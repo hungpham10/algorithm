@@ -2,7 +2,7 @@ use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 
 use actix_web::middleware::Logger;
-use actix_web::web::{get, post, put, scope, Data};
+use actix_web::web::{delete, get, patch, post, put, scope, Data};
 use actix_web::{App, HttpServer};
 
 use tokio::signal::unix::{signal, SignalKind};
@@ -15,7 +15,7 @@ use crate::api::{flush, health, lock, synchronize, unlock, AppState};
 
 pub async fn run() -> std::io::Result<()> {
     // @NOTE: sentry configuration
-    let _ = sentry::init((
+    let _guard = sentry::init((
         std::env::var("SENTRY_DSN")
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid SENTRY_DSN"))?,
         sentry::ClientOptions {
@@ -195,6 +195,10 @@ pub async fn run() -> std::io::Result<()> {
                     )
                     .route(
                         "/v1/wms/shelves",
+                        post().to(crate::api::wms::v1::create_shelves),
+                    )
+                    .route(
+                        "/v1/wms/shelves",
                         get().to(crate::api::wms::v1::list_shelves),
                     )
                     .route(
@@ -202,12 +206,12 @@ pub async fn run() -> std::io::Result<()> {
                         get().to(crate::api::wms::v1::list_stocks_in_shelf),
                     )
                     .route(
-                        "/v1/wms/shelves/{shelve_id}",
+                        "/v1/wms/shelves/{shelve_id}/items",
                         post().to(crate::api::wms::v1::assign_item_to_shelf),
                     )
                     .route(
-                        "/v1/wms/shelves",
-                        post().to(crate::api::wms::v1::create_shelves),
+                        "/v1/wms/shelves/{shelve_id}/item/{barcode}",
+                        patch().to(crate::api::wms::v1::update_healthy_status_of_item),
                     )
                     .route(
                         "/v1/wms/sales/offline",
@@ -218,8 +222,90 @@ pub async fn run() -> std::io::Result<()> {
                         post().to(crate::api::wms::v1::process_online_sale),
                     )
                     .route(
-                        "/v1/wms/stock/barcode/{barcode}",
-                        get().to(crate::api::wms::v1::get_item_by_barcode),
+                        "/v1/wms/sales/orders/{order_id}",
+                        get().to(crate::api::wms::v1::get_order_detail),
+                    )
+                    .route("/v1/wms/zone", get().to(crate::api::wms::v1::list_zones))
+                    .route("/v1/wms/zone", post().to(crate::api::wms::v1::create_zones))
+                    .route(
+                        "/v1/wms/zone/{zone_id}",
+                        post().to(crate::api::wms::v1::get_zone),
+                    )
+                    .route(
+                        "/v1/wms/zone/{zone_id}/nodes/{node_id}/pathways",
+                        get().to(crate::api::wms::v1::list_paths_by_node),
+                    )
+                    .route(
+                        "/v1/wms/zone/{zone_id}/nodes/{node_id}/pathways/{path_id}",
+                        get().to(crate::api::wms::v1::get_path_by_id),
+                    )
+                    .route(
+                        "v1/wms/shelves/{shelf_id}/zone/{zone_id}/node/{node_id}",
+                        patch().to(crate::api::wms::v1::put_shelf_to_node),
+                    )
+                    .route(
+                        "/v1/wms/zone/{zone_id}/nodes",
+                        get().to(crate::api::wms::v1::list_nodes),
+                    )
+                    .route(
+                        "/v1/wms/zone/{zone_id}/nodes",
+                        post().to(crate::api::wms::v1::create_nodes),
+                    )
+                    .route(
+                        "/v1/wms/zone/{zone_id}/nodes/{node_id}",
+                        get().to(crate::api::wms::v1::get_node_by_id),
+                    )
+                    .route(
+                        "/v1/wms/zone/{zone_id}/nodes/{node_id}/pathways",
+                        post().to(crate::api::wms::v1::create_paths_from_node),
+                    )
+                    .route(
+                        "/v1/wms/stock/barcode/inventory/{barcode}",
+                        get().to(crate::api::wms::v1::get_item_by_barcode_in_inventory),
+                    )
+                    .route(
+                        "/v1/wms/stock/barcode/order/{barcode}",
+                        get().to(crate::api::wms::v1::get_item_by_barcode_about_order),
+                    )
+                    .route(
+                        "/v1/wms/picking/waves",
+                        post().to(crate::api::wms::v1::setup_picking_wave),
+                    )
+                    .route(
+                        "/v1/wms/picking/waves",
+                        get().to(crate::api::wms::v1::list_picking_wave),
+                    )
+                    .route(
+                        "/v1/wms/picking/waves/{wave_id}",
+                        get().to(crate::api::wms::v1::get_detail_picking_wave),
+                    )
+                    .route(
+                        "/v1/wms/picking/routes/{route_id}",
+                        patch().to(crate::api::wms::v1::update_one_existed_route),
+                    )
+                    .route(
+                        "/v1/wms/picking/routes",
+                        patch().to(crate::api::wms::v1::update_existed_routes_in_batch),
+                    )
+                    .route(
+                        "/v1/wms/picking/routes",
+                        post().to(crate::api::wms::v1::create_new_routes),
+                    )
+                    .route(
+                        "/v1/wms/picking/routes/{route_id}",
+                        delete().to(crate::api::wms::v1::finish_one_route),
+                    )
+                    .route(
+                        "/v1/wms/picking/routes/{route_id}/start",
+                        put().to(crate::api::wms::v1::start_one_route),
+                    )
+                    .route(
+                        "/v1/wms/picking/routes/{route_id}/failed",
+                        put().to(crate::api::wms::v1::report_one_route_failed),
+                    )
+                    .route(
+                        "/v1/wms/picking/routes/{route_id}/done",
+                        put().to(crate::api::wms::v1::finish_one_route),
                     )
                     .route("/v1/wms/sync", post().to(crate::api::wms::v1::sync_data))
                     .route(

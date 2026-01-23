@@ -6,7 +6,7 @@ use std::future::{ready, Ready};
 
 #[derive(Debug)]
 pub struct WmsHeaders {
-    tenant_id: i32,
+    tenant_id: i64,
     is_guess: bool,
 }
 
@@ -29,7 +29,7 @@ impl FromRequest for WmsHeaders {
         };
         let tenant_id = match headers.get("X-Tenant-Id") {
             Some(value) => match value.to_str() {
-                Ok(str_val) => match str_val.parse::<i32>() {
+                Ok(str_val) => match str_val.parse::<i64>() {
                     Ok(parsed) => parsed,
                     Err(_) => {
                         return ready(Err(ErrorBadRequest(

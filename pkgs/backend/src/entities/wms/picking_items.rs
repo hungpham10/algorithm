@@ -2,14 +2,17 @@
 
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "wms_stocks")]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "wms_picking_plans")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub tenant_id: i64,
-    pub name: String,
-    pub unit: String,
+    pub item_id: i64,
+    pub event_id: i64,
+    pub route_id: i64,
+    pub ledger_id: i64,
+    pub barcode: String,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

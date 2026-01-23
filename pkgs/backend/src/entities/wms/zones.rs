@@ -3,17 +3,27 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-#[sea_orm(table_name = "wms_sales")]
+#[sea_orm(table_name = "wms_zones")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub tenant_id: i64,
-    pub order_id: i64,
-    pub status: i32,
-    pub version: i32,
-    pub cost_price: f64,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
+    pub name: String,
+    pub description: String,
+
+    #[sea_orm(column_type = "Double")]
+    pub pos_x: f64,
+
+    #[sea_orm(column_type = "Double")]
+    pub pos_y: f64,
+
+    #[sea_orm(column_type = "Double")]
+    pub height: f64,
+
+    #[sea_orm(column_type = "Double")]
+    pub width: f64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

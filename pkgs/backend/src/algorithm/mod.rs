@@ -9,6 +9,7 @@ pub mod genetic;
 pub mod heap;
 pub mod kmean;
 pub mod lru;
+pub mod snowflakeid;
 //pub mod markov;
 
 pub use binarysearch::*;

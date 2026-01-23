@@ -6,11 +6,13 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "wms_sale_events")]
 pub struct Model {
     #[sea_orm(primary_key)]
-    pub id: i32,
-    pub tenant_id: i32,
-    pub sale_id: i32,
-    pub stock_id: i32,
+    pub id: i64,
+    pub tenant_id: i64,
+    pub sale_id: i64,
+    pub stock_id: i64,
+    pub count: i32,
     pub status: i32,
+    pub version: i32,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

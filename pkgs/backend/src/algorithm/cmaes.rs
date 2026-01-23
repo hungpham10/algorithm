@@ -325,8 +325,7 @@ mod tests {
 
     // --- TEST: random() ---
     #[rstest]
-    #[case(2)]
-    #[case(10)]
+    #[case(100)]
     fn test_convex_random(#[case] n: usize) {
         let convex = Convex::new(n, None, Some((-2.0, 2.0)));
         let sample = convex.random();

@@ -1,40 +1,70 @@
 mod items;
 mod lots;
+mod nodes;
+mod paths;
+mod picking_goods;
+mod picking_items;
+mod picking_plan_events;
+mod picking_plans;
+mod picking_plans_in_nodes;
+mod picking_plans_in_zones;
+mod picking_route_events;
+mod picking_routes;
 mod sale_events;
 mod sales;
 mod shelves;
 mod stock_entries;
 mod stock_shelves;
 mod stocks;
+mod zones;
 
 use items::Entity as Items;
 use lots::Entity as Lots;
+use nodes::Entity as Nodes;
+use paths::Entity as Paths;
+use picking_goods::Entity as PickingGoods;
+use picking_items::Entity as PickingItems;
+use picking_plan_events::Entity as PickingPlanEvents;
+use picking_plans::Entity as PickingPlans;
+use picking_plans_in_nodes::Entity as PickingPlansInNodes;
+use picking_plans_in_zones::Entity as PickingPlansInZones;
+use picking_route_events::Entity as PickingRouteEvents;
+use picking_routes::Entity as PickingRoutes;
 use sale_events::Entity as SaleEvents;
 use sales::Entity as Sales;
 use shelves::Entity as Shelves;
 use stock_entries::Entity as StockEntries;
 use stock_shelves::Entity as StockShelves;
 use stocks::Entity as Stocks;
+use zones::Entity as Zones;
 
 use std::collections::{HashMap, HashSet};
-use std::convert::TryFrom;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use log::info;
 use serde::{Deserialize, Serialize};
 
 use sea_orm::entity::prelude::Expr;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, JoinType, QueryFilter,
-    QueryOrder, QuerySelect, RuntimeErr, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DatabaseTransaction, DbErr,
+    EntityTrait, JoinType, QueryFilter, QueryOrder, QuerySelect, RuntimeErr, Set, TransactionTrait,
 };
 use sea_query::OnConflict;
+
+use vnscope::algorithm::snowflakeid::SnowflakeId;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Point {
+    pub x: f64,
+    pub y: f64,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Stock {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<i32>,
+    pub id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shelves: Option<Vec<String>>,
@@ -66,8 +96,10 @@ impl Default for Stock {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(i32)]
-enum LotStatus {
+pub enum LotStatus {
+    Unknown,
     Unavailable,
     Planing,
     Transporting,
@@ -76,41 +108,57 @@ enum LotStatus {
     Returned,
 }
 
-impl TryFrom<i32> for LotStatus {
-    type Error = String;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
+impl From<i32> for LotStatus {
+    fn from(value: i32) -> Self {
         match value {
-            0 => Ok(LotStatus::Unavailable),
-            1 => Ok(LotStatus::Planing),
-            2 => Ok(LotStatus::Transporting),
-            3 => Ok(LotStatus::Available),
-            4 => Ok(LotStatus::Outdated),
-            5 => Ok(LotStatus::Returned),
-            _ => Err(format!("Invalid state({}) for lot", value)),
+            1 => LotStatus::Unavailable,
+            2 => LotStatus::Planing,
+            3 => LotStatus::Transporting,
+            4 => LotStatus::Available,
+            5 => LotStatus::Outdated,
+            6 => LotStatus::Returned,
+            _ => LotStatus::Unknown,
         }
     }
 }
 
-impl TryFrom<String> for LotStatus {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
+impl From<String> for LotStatus {
+    fn from(value: String) -> Self {
         match value.as_str() {
-            "Unavailable" => Ok(LotStatus::Unavailable),
-            "On planing" => Ok(LotStatus::Planing),
-            "On transporting" => Ok(LotStatus::Transporting),
-            "Available" => Ok(LotStatus::Available),
-            "Outdated" => Ok(LotStatus::Outdated),
-            "Being returned" => Ok(LotStatus::Returned),
-            _ => Err(format!("Invalid state({}) for lot", value)),
+            "Unavailable" => LotStatus::Unavailable,
+            "On planing" => LotStatus::Planing,
+            "On transporting" => LotStatus::Transporting,
+            "Available" => LotStatus::Available,
+            "Outdated" => LotStatus::Outdated,
+            "Being returned" => LotStatus::Returned,
+            _ => LotStatus::Unknown,
         }
+    }
+}
+
+impl serde::Serialize for LotStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for LotStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(LotStatus::from(s))
     }
 }
 
 impl Display for LotStatus {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
+            LotStatus::Unknown => write!(f, "Error"),
             LotStatus::Unavailable => write!(f, "Unavailable"),
             LotStatus::Planing => write!(f, "On planing"),
             LotStatus::Transporting => write!(f, "On transporting"),
@@ -124,7 +172,7 @@ impl Display for LotStatus {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Lot {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<i32>,
+    pub id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entry_date: Option<DateTime<Utc>>,
@@ -136,7 +184,7 @@ pub struct Lot {
     pub cost_price: Option<f64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
+    pub status: Option<LotStatus>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub supplier: Option<String>,
@@ -163,7 +211,7 @@ impl Default for Lot {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Shelf {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<i32>,
+    pub id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -182,9 +230,12 @@ impl Default for Shelf {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(i32)]
-enum ItemStatus {
+pub enum ItemStatus {
+    Unknown,
     Unavailable,
+    Plan,
     Available,
     Damaged,
     Outdated,
@@ -192,40 +243,60 @@ enum ItemStatus {
     Returned,
 }
 
-impl TryFrom<i32> for ItemStatus {
-    type Error = String;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
+impl From<i32> for ItemStatus {
+    fn from(value: i32) -> Self {
         match value {
-            0 => Ok(ItemStatus::Unavailable),
-            1 => Ok(ItemStatus::Available),
-            2 => Ok(ItemStatus::Damaged),
-            3 => Ok(ItemStatus::Outdated),
-            4 => Ok(ItemStatus::Saled),
-            5 => Ok(ItemStatus::Returned),
-            _ => Err(format!("Invalid state({}) for item", value)),
+            1 => ItemStatus::Unavailable,
+            2 => ItemStatus::Plan,
+            3 => ItemStatus::Available,
+            4 => ItemStatus::Damaged,
+            5 => ItemStatus::Outdated,
+            6 => ItemStatus::Saled,
+            7 => ItemStatus::Returned,
+            _ => ItemStatus::Unknown,
         }
     }
 }
 
-impl TryFrom<String> for ItemStatus {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
+impl From<String> for ItemStatus {
+    fn from(value: String) -> Self {
         match value.as_str() {
-            "Unavailable" => Ok(ItemStatus::Unavailable),
-            "Available" => Ok(ItemStatus::Available),
-            "Being damaged" => Ok(ItemStatus::Damaged),
-            "Being saled" => Ok(ItemStatus::Saled),
-            "Being returned" => Ok(ItemStatus::Returned),
-            "Outdated" => Ok(ItemStatus::Outdated),
-            _ => Err(format!("Invalid state({}) for lot", value)),
+            "Unavailable" => ItemStatus::Unavailable,
+            "Available" => ItemStatus::Available,
+            "Being damaged" => ItemStatus::Damaged,
+            "Being saled" => ItemStatus::Saled,
+            "Being returned" => ItemStatus::Returned,
+            "Outdated" => ItemStatus::Outdated,
+            "Being planed" => ItemStatus::Plan,
+            _ => ItemStatus::Unknown,
         }
     }
 }
+
+impl<'de> Deserialize<'de> for ItemStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(ItemStatus::from(s))
+    }
+}
+
+impl serde::Serialize for ItemStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
 impl Display for ItemStatus {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
+            ItemStatus::Unknown => write!(f, "Errored"),
+            ItemStatus::Plan => write!(f, "Being planed"),
             ItemStatus::Unavailable => write!(f, "Unavailable"),
             ItemStatus::Available => write!(f, "Available"),
             ItemStatus::Damaged => write!(f, "Being damaged"),
@@ -239,7 +310,7 @@ impl Display for ItemStatus {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Item {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<i32>,
+    pub id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expired_at: Option<DateTime<Utc>>,
@@ -251,16 +322,22 @@ pub struct Item {
     pub lot_number: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lot_id: Option<i32>,
+    pub lot_id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stock_id: Option<i32>,
+    pub stock_id: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sale_id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub barcode: Option<String>,
 
-    pub cost_price: f64,
-    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_price: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<ItemStatus>,
 }
 
 impl Default for Item {
@@ -271,10 +348,11 @@ impl Default for Item {
             shelf: None,
             lot_number: None,
             lot_id: None,
+            sale_id: None,
             stock_id: None,
             barcode: None,
-            cost_price: 0.0,
-            status: ItemStatus::Unavailable.to_string(),
+            cost_price: None,
+            status: None,
         }
     }
 }
@@ -282,15 +360,15 @@ impl Default for Item {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Sale {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<i32>,
+    pub id: Option<i64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stock_ids: Option<Vec<i32>>,
+    pub stock_ids: Option<Vec<i64>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub barcodes: Option<Vec<String>>,
 
-    pub order_id: i32,
+    pub order_id: i64,
     pub cost_prices: Vec<f64>,
 }
 
@@ -306,8 +384,10 @@ impl Default for Sale {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(i32)]
-enum SaleStatus {
+pub enum SaleStatus {
+    Unknown,
     Failed,
     Paid,
     Delivered,
@@ -316,25 +396,72 @@ enum SaleStatus {
     Done,
 }
 
-impl TryFrom<i32> for SaleStatus {
-    type Error = String;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(SaleStatus::Failed),
-            1 => Ok(SaleStatus::Done),
-            2 => Ok(SaleStatus::Paid),
-            3 => Ok(SaleStatus::Delivered),
-            4 => Ok(SaleStatus::Returned),
-            5 => Ok(SaleStatus::Refunded),
-            _ => Err(format!("Invalid state({}) for item", value)),
+impl SaleStatus {
+    pub fn can_transition_to(&self, next: &Self) -> bool {
+        match (self, next) {
+            (Self::Paid, Self::Delivered) => true,
+            (Self::Paid, Self::Failed) => true,
+            (Self::Delivered, Self::Done) => true,
+            (Self::Delivered, Self::Failed) => true,
+            (Self::Done, Self::Returned) => true,
+            (Self::Failed, Self::Returned) => true,
+            (Self::Returned, Self::Refunded) => true,
+            _ => false,
         }
+    }
+}
+
+impl From<i32> for SaleStatus {
+    fn from(value: i32) -> Self {
+        match value {
+            0 => SaleStatus::Failed,
+            1 => SaleStatus::Done,
+            2 => SaleStatus::Paid,
+            3 => SaleStatus::Delivered,
+            4 => SaleStatus::Returned,
+            5 => SaleStatus::Refunded,
+            _ => SaleStatus::Unknown,
+        }
+    }
+}
+
+impl From<String> for SaleStatus {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "Failed" => SaleStatus::Failed,
+            "Done" => SaleStatus::Done,
+            "Paid" => SaleStatus::Paid,
+            "Delivered" => SaleStatus::Delivered,
+            "Returned" => SaleStatus::Returned,
+            "Refunded" => SaleStatus::Refunded,
+            _ => SaleStatus::Unknown,
+        }
+    }
+}
+
+impl serde::Serialize for SaleStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for SaleStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(SaleStatus::from(s))
     }
 }
 
 impl Display for SaleStatus {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
+            SaleStatus::Unknown => write!(f, "Error"),
             SaleStatus::Failed => write!(f, "Failed"),
             SaleStatus::Done => write!(f, "Done"),
             SaleStatus::Paid => write!(f, "Paid"),
@@ -345,20 +472,530 @@ impl Display for SaleStatus {
     }
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[repr(i32)]
+pub enum OrderStatus {
+    Unknown,
+    Picking,
+    Packing,
+    Shiping,
+    Returning,
+    Done,
+}
+
+impl From<String> for OrderStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "picking" => OrderStatus::Picking,
+            "packing" => OrderStatus::Packing,
+            "shiping" => OrderStatus::Shiping,
+            "returing" => OrderStatus::Returning,
+            "done" => OrderStatus::Done,
+            _ => OrderStatus::Unknown,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for OrderStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(OrderStatus::from(s))
+    }
+}
+
+impl Display for OrderStatus {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            OrderStatus::Unknown => write!(f, "unknown"),
+            OrderStatus::Picking => write!(f, "picking"),
+            OrderStatus::Packing => write!(f, "packing"),
+            OrderStatus::Shiping => write!(f, "shipping"),
+            OrderStatus::Returning => write!(f, "returning"),
+            OrderStatus::Done => write!(f, "done"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Order {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<OrderStatus>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime<Utc>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<Item>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Zone {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_x: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_y: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[repr(i32)]
+pub enum NodeStatus {
+    Unknown,
+    DamageLeft,
+    DamageRight,
+    Block,
+    Available,
+}
+
+impl From<i32> for NodeStatus {
+    fn from(i: i32) -> Self {
+        match i {
+            1 => NodeStatus::DamageLeft,
+            2 => NodeStatus::DamageRight,
+            3 => NodeStatus::Block,
+            4 => NodeStatus::Available,
+            _ => NodeStatus::Unknown,
+        }
+    }
+}
+
+impl From<String> for NodeStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "damaging left block" => NodeStatus::DamageLeft,
+            "damaging right block" => NodeStatus::DamageRight,
+            "routing is blocked" => NodeStatus::Block,
+            "available" => NodeStatus::Available,
+            _ => NodeStatus::Unknown,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for NodeStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(NodeStatus::from(s))
+    }
+}
+
+impl Display for NodeStatus {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            NodeStatus::Unknown => write!(f, "unknown"),
+            NodeStatus::DamageLeft => write!(f, "damaging left block"),
+            NodeStatus::DamageRight => write!(f, "damaging right block"),
+            NodeStatus::Block => write!(f, "routing is blocked"),
+            NodeStatus::Available => write!(f, "available"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Node {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zone_id: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<NodeStatus>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_x: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_y: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[repr(i32)]
+pub enum PathStatus {
+    Unknown,
+    Damage,
+    Block,
+    Available,
+}
+
+impl From<i32> for PathStatus {
+    fn from(i: i32) -> Self {
+        match i {
+            1 => PathStatus::Damage,
+            2 => PathStatus::Block,
+            3 => PathStatus::Available,
+            _ => PathStatus::Unknown,
+        }
+    }
+}
+
+impl From<String> for PathStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "path is damaging" => PathStatus::Damage,
+            "routing is blocked" => PathStatus::Block,
+            "available" => PathStatus::Available,
+            _ => PathStatus::Unknown,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PathStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(PathStatus::from(s))
+    }
+}
+
+impl Display for PathStatus {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            PathStatus::Unknown => write!(f, "unknown"),
+            PathStatus::Damage => write!(f, "path is damaging"),
+            PathStatus::Block => write!(f, "routing is blocked"),
+            PathStatus::Available => write!(f, "available"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PathWay {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_id: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zone_id: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_node: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to_node: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<PathStatus>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_one_way: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sharp: Option<Vec<Point>>,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+pub struct PickingNodeScope {
+    zone: i64,
+    node: i64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[repr(i32)]
+pub enum PickingRouteStatus {
+    Unknown,
+    Caculating,
+    Pending,
+    Running,
+    Failed,
+    Done,
+}
+
+impl PickingRouteStatus {
+    pub fn can_transition_to(&self, next: &Self) -> bool {
+        match (self, next) {
+            (Self::Caculating, Self::Pending) => true,
+            (Self::Pending, Self::Caculating) => true,
+            (Self::Pending, Self::Running) => true,
+            (Self::Running, Self::Done) => true,
+            (Self::Running, Self::Failed) => true,
+            (Self::Failed, Self::Caculating) => true,
+            _ => false,
+        }
+    }
+}
+
+impl From<i32> for PickingRouteStatus {
+    fn from(i: i32) -> Self {
+        match i {
+            1 => PickingRouteStatus::Caculating,
+            2 => PickingRouteStatus::Pending,
+            3 => PickingRouteStatus::Running,
+            4 => PickingRouteStatus::Failed,
+            5 => PickingRouteStatus::Done,
+            _ => PickingRouteStatus::Unknown,
+        }
+    }
+}
+
+impl From<String> for PickingRouteStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "caculating" => PickingRouteStatus::Caculating,
+            "pending" => PickingRouteStatus::Pending,
+            "running" => PickingRouteStatus::Running,
+            "failed" => PickingRouteStatus::Failed,
+            "done" => PickingRouteStatus::Done,
+            _ => PickingRouteStatus::Unknown,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PickingRouteStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(PickingRouteStatus::from(s))
+    }
+}
+
+impl Display for PickingRouteStatus {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            PickingRouteStatus::Caculating => write!(f, "calculating"),
+            PickingRouteStatus::Pending => write!(f, "pending"),
+            PickingRouteStatus::Running => write!(f, "running"),
+            PickingRouteStatus::Failed => write!(f, "failed"),
+            PickingRouteStatus::Done => write!(f, "done"),
+            PickingRouteStatus::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[repr(i32)]
+pub enum PickingPlanStatus {
+    Unknown,
+    Created,
+    Planed,
+    Running,
+    Pausing,
+    Paused,
+    Failed,
+    Done,
+}
+
+impl PickingPlanStatus {
+    pub fn can_transition_to(&self, next: &Self) -> bool {
+        match (self, next) {
+            (Self::Created, Self::Planed) => true,
+            (Self::Planed, Self::Created) => true,
+            (Self::Planed, Self::Running) => true,
+            (Self::Running, Self::Done) => true,
+            (Self::Running, Self::Pausing) => true,
+            (Self::Running, Self::Failed) => true,
+            (Self::Pausing, Self::Paused) => true,
+            (Self::Failed, Self::Paused) => true,
+            (Self::Paused, Self::Created) => true,
+            (Self::Paused, Self::Running) => true,
+            _ => false,
+        }
+    }
+}
+
+impl From<i32> for PickingPlanStatus {
+    fn from(i: i32) -> Self {
+        match i {
+            1 => PickingPlanStatus::Created,
+            2 => PickingPlanStatus::Planed,
+            3 => PickingPlanStatus::Running,
+            4 => PickingPlanStatus::Pausing,
+            5 => PickingPlanStatus::Paused,
+            6 => PickingPlanStatus::Failed,
+            7 => PickingPlanStatus::Done,
+            _ => PickingPlanStatus::Unknown,
+        }
+    }
+}
+
+impl From<String> for PickingPlanStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "created" => PickingPlanStatus::Created,
+            "planed" => PickingPlanStatus::Planed,
+            "running" => PickingPlanStatus::Running,
+            "pausing" => PickingPlanStatus::Pausing,
+            "paused" => PickingPlanStatus::Paused,
+            "failed" => PickingPlanStatus::Failed,
+            "done" => PickingPlanStatus::Done,
+            _ => PickingPlanStatus::Unknown,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PickingPlanStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(PickingPlanStatus::from(s))
+    }
+}
+
+impl Display for PickingPlanStatus {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            PickingPlanStatus::Unknown => write!(f, "unknown"),
+            PickingPlanStatus::Created => write!(f, "created"),
+            PickingPlanStatus::Planed => write!(f, "planed"),
+            PickingPlanStatus::Running => write!(f, "running"),
+            PickingPlanStatus::Pausing => write!(f, "pausing"),
+            PickingPlanStatus::Paused => write!(f, "paused"),
+            PickingPlanStatus::Failed => write!(f, "failed"),
+            PickingPlanStatus::Done => write!(f, "done"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Route {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+}
+
+impl Default for Route {
+    fn default() -> Self {
+        Self { id: None }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Plan {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zones: Option<Vec<i64>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nodes: Option<Vec<i64>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub routes: Option<Vec<i64>>,
+}
+
+impl Default for Plan {
+    fn default() -> Self {
+        Self {
+            id: None,
+            nodes: None,
+            zones: None,
+            routes: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[repr(i32)]
+pub enum PickingGoodsStatus {
+    Unknown,
+    Planing,
+    Waiting,
+    Picking,
+    Ready,
+    Damaged,
+}
+
+impl From<i32> for PickingGoodsStatus {
+    fn from(i: i32) -> Self {
+        match i {
+            1 => PickingGoodsStatus::Planing,
+            2 => PickingGoodsStatus::Waiting,
+            3 => PickingGoodsStatus::Picking,
+            4 => PickingGoodsStatus::Ready,
+            5 => PickingGoodsStatus::Damaged,
+            _ => PickingGoodsStatus::Unknown,
+        }
+    }
+}
+
+impl From<String> for PickingGoodsStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "planing" => PickingGoodsStatus::Planing,
+            "waiting" => PickingGoodsStatus::Waiting,
+            "picking" => PickingGoodsStatus::Picking,
+            "ready" => PickingGoodsStatus::Ready,
+            "damaged" => PickingGoodsStatus::Damaged,
+            _ => PickingGoodsStatus::Unknown,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PickingGoodsStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(PickingGoodsStatus::from(s))
+    }
+}
+
+impl Display for PickingGoodsStatus {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        match self {
+            PickingGoodsStatus::Unknown => write!(f, "unknown"),
+            PickingGoodsStatus::Waiting => write!(f, "waiting"),
+            PickingGoodsStatus::Planing => write!(f, "planing"),
+            PickingGoodsStatus::Picking => write!(f, "picking"),
+            PickingGoodsStatus::Ready => write!(f, "ready"),
+            PickingGoodsStatus::Damaged => write!(f, "damaged"),
+        }
+    }
+}
 pub struct Wms {
     db: Vec<Arc<DatabaseConnection>>,
+    generator: Arc<SnowflakeId>,
 }
 
 impl Wms {
-    pub fn new(db: Vec<Arc<DatabaseConnection>>) -> Self {
-        Self { db }
+    pub fn new(db: Vec<Arc<DatabaseConnection>>, generator: Arc<SnowflakeId>) -> Self {
+        Self { db, generator }
     }
 
-    fn dbt(&self, tenant_id: i32) -> &DatabaseConnection {
+    fn dbt(&self, tenant_id: i64) -> &DatabaseConnection {
         self.db[(tenant_id as usize) % self.db.len()].as_ref()
     }
 
-    pub async fn create_stocks(&self, tenant_id: i32, stocks: &[Stock]) -> Result<Vec<i32>, DbErr> {
+    pub async fn create_stocks(
+        &self,
+        tenant_id: i64,
+        stocks: &[Stock],
+    ) -> Result<Vec<Stock>, DbErr> {
         if stocks.is_empty() {
             return Ok(vec![]);
         }
@@ -380,6 +1017,8 @@ impl Wms {
         Ok(stocks::Entity::find()
             .select_only()
             .column(stocks::Column::Id)
+            .column(stocks::Column::Name)
+            .column(stocks::Column::Unit)
             .filter(stocks::Column::TenantId.eq(tenant_id))
             .filter(
                 stocks::Column::Name.is_in(
@@ -389,41 +1028,50 @@ impl Wms {
                         .collect::<Vec<_>>(),
                 ),
             )
-            .into_tuple::<(i32,)>()
+            .into_tuple::<(i64, String, String)>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
-            .map(|m| m.0)
+            .map(|(id, name, unit)| Stock {
+                id: Some(id),
+                name,
+                unit,
+                ..Default::default()
+            })
             .collect::<Vec<_>>())
     }
 
     pub async fn create_shelves(
         &self,
-        tenant_id: i32,
+        tenant_id: i64,
         shelves: &[Shelf],
-    ) -> Result<Vec<i32>, DbErr> {
+    ) -> Result<Vec<Shelf>, DbErr> {
         if shelves.is_empty() {
             return Ok(vec![]);
         }
 
+        let mut models = Vec::new();
+
+        for shelf in shelves {
+            models.push(shelves::ActiveModel {
+                tenant_id: Set(tenant_id),
+                name: Set(shelf.name.clone().ok_or_else(|| {
+                    DbErr::Custom(format!("Name is required, you are missing name of shelves"))
+                })?),
+                description: Set(shelf.description.clone()),
+                ..Default::default()
+            })
+        }
         // Insert batch
-        shelves::Entity::insert_many(
-            shelves
-                .iter()
-                .map(|shelf| shelves::ActiveModel {
-                    tenant_id: Set(tenant_id),
-                    name: Set(shelf.name.clone().unwrap_or_default()),
-                    description: Set(shelf.description.clone()),
-                    ..Default::default()
-                })
-                .collect::<Vec<_>>(),
-        )
-        .exec(self.dbt(tenant_id))
-        .await?;
+        shelves::Entity::insert_many(models)
+            .exec(self.dbt(tenant_id))
+            .await?;
 
         Ok(shelves::Entity::find()
             .select_only()
             .column(shelves::Column::Id)
+            .column(shelves::Column::Name)
+            .column(shelves::Column::Description)
             .filter(shelves::Column::TenantId.eq(tenant_id))
             .filter(
                 shelves::Column::Name.is_in(
@@ -433,15 +1081,19 @@ impl Wms {
                         .collect::<Vec<_>>(),
                 ),
             )
-            .into_tuple::<(i32,)>()
+            .into_tuple::<(i64, String, Option<String>)>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
-            .map(|m| m.0)
+            .map(|(id, name, description)| Shelf {
+                id: Some(id),
+                name: Some(name),
+                description,
+            })
             .collect::<Vec<_>>())
     }
 
-    pub async fn create_lots(&self, tenant_id: i32, lots: &[Lot]) -> Result<Vec<i32>, DbErr> {
+    pub async fn create_lots(&self, tenant_id: i64, lots: &[Lot]) -> Result<Vec<Lot>, DbErr> {
         let mut models = Vec::new();
 
         if lots.is_empty() {
@@ -449,7 +1101,10 @@ impl Wms {
         }
 
         for l in lots {
+            let id = self.generator.generate();
+
             models.push(lots::ActiveModel {
+                id: Set(id),
                 tenant_id: Set(tenant_id),
                 quantity: Set(l.quantity),
                 lot_number: Set(l.lot_number.clone()),
@@ -457,18 +1112,7 @@ impl Wms {
                 entry_date: Set(l.entry_date.unwrap_or_else(chrono::Utc::now)),
                 cost_price: Set(l.cost_price),
                 status: Set(Some(
-                    LotStatus::try_from(
-                        l.status
-                            .clone()
-                            .unwrap_or(LotStatus::Unavailable.to_string()),
-                    )
-                    .map_err(|error| {
-                        DbErr::Custom(format!(
-                            "Fail with status of lot {}: {}",
-                            l.lot_number.clone(),
-                            error
-                        ))
-                    })? as i32,
+                    LotStatus::from(l.status.clone().unwrap_or(LotStatus::Unavailable)) as i32,
                 )),
                 ..Default::default()
             })
@@ -481,6 +1125,12 @@ impl Wms {
         Ok(lots::Entity::find()
             .select_only()
             .column(lots::Column::Id)
+            .column(lots::Column::EntryDate)
+            .column(lots::Column::CostPrice)
+            .column(lots::Column::Status)
+            .column(lots::Column::Supplier)
+            .column(lots::Column::LotNumber)
+            .column(lots::Column::Quantity)
             .filter(lots::Column::TenantId.eq(tenant_id))
             .filter(
                 lots::Column::LotNumber.is_in(
@@ -489,17 +1139,40 @@ impl Wms {
                         .collect::<Vec<_>>(),
                 ),
             )
-            .into_tuple::<(i32,)>()
+            .into_tuple::<(
+                i64,
+                DateTime<Utc>,
+                Option<f64>,
+                Option<i32>,
+                Option<String>,
+                String,
+                i32,
+            )>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
-            .map(|m| m.0)
+            .map(
+                |(id, entry_date, cost_price, status, supplier, lot_number, quantity)| Lot {
+                    id: Some(id),
+                    entry_date: Some(entry_date),
+                    status: if let Some(status) = status {
+                        Some(LotStatus::from(status))
+                    } else {
+                        None
+                    },
+                    quantity,
+                    cost_price,
+                    lot_number,
+                    supplier,
+                    ..Default::default()
+                },
+            )
             .collect::<Vec<_>>())
     }
 
     pub async fn plan_import_new_items(
         &self,
-        tenant_id: i32,
+        tenant_id: i64,
         items: &[Item],
     ) -> Result<Vec<Item>, DbErr> {
         let txn = self.dbt(tenant_id).begin().await?;
@@ -519,10 +1192,13 @@ impl Wms {
             .await?
             .into_iter()
             .map(|stock| stock.id)
-            .collect::<HashSet<i32>>();
+            .collect::<HashSet<i64>>();
 
         if valid_stocks.len() != stock_ids.len() {
-            let invalid_ids: Vec<i32> = stock_ids.difference(&valid_stocks).copied().collect();
+            let invalid_ids = stock_ids
+                .difference(&valid_stocks)
+                .copied()
+                .collect::<Vec<_>>();
             return Err(DbErr::Custom(format!(
                 "Invalid stock IDs: {:?}",
                 invalid_ids
@@ -536,7 +1212,7 @@ impl Wms {
             .await?
             .into_iter()
             .map(|lot| lot.id)
-            .collect::<HashSet<i32>>();
+            .collect::<HashSet<i64>>();
 
         if valid_lots.len() != lot_ids.len() {
             return Err(DbErr::Custom(format!(
@@ -549,6 +1225,13 @@ impl Wms {
         for item in items {
             let lot_id = item.lot_id.unwrap_or(0);
             let stock_id = item.stock_id.unwrap_or(0);
+
+            if item.barcode.is_some() {
+                return Err(DbErr::Custom(format!(
+                    "Planing for lot {}, stock {} requires barcode is none, but it's {:?} now",
+                    lot_id, stock_id, item.barcode,
+                )));
+            }
 
             if valid_lots.contains(&lot_id) && valid_stocks.contains(&stock_id) {
                 count_stock_entries
@@ -582,12 +1265,12 @@ impl Wms {
             .map(|item| (item.stock_id.unwrap_or(0), item.lot_id.unwrap_or(0)))
             .collect::<HashSet<_>>();
 
-        items::Entity::insert_many(items.iter().map(|item| items::ActiveModel {
+        Items::insert_many(items.iter().map(|item| items::ActiveModel {
             tenant_id: Set(tenant_id),
             stock_id: Set(item.stock_id.unwrap_or(0)),
             lot_id: Set(item.lot_id.unwrap_or(0)),
             expired_at: Set(item.expired_at),
-            cost_price: Set(item.cost_price),
+            cost_price: Set(item.cost_price.unwrap_or(0.0)),
             barcode: Set(item.barcode.clone()),
             ..Default::default()
         }))
@@ -595,7 +1278,7 @@ impl Wms {
         .await?;
         txn.commit().await?;
 
-        let collected_items = items::Entity::find()
+        let collected_items = Items::find()
             .select_only()
             .column(items::Column::Id)
             .column(items::Column::StockId)
@@ -616,20 +1299,18 @@ impl Wms {
                     .into_iter()
                     .fold(Condition::any(), |acc, c| acc.add(c))
             })
-            .into_tuple::<(i32, i32, i32, i32, f64)>()
+            .into_tuple::<(i64, i64, i64, i32, f64)>()
             .all(self.dbt(tenant_id))
             .await?;
 
         let mut ret = Vec::new();
         for (id, stock_id, lot_id, status, cost_price) in collected_items {
             ret.push(Item {
-                cost_price,
+                cost_price: Some(cost_price),
                 id: Some(id),
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
-                status: ItemStatus::try_from(status)
-                    .map_err(|error| DbErr::Custom(format!("Invalid status: {:?}", error,)))?
-                    .to_string(),
+                status: Some(ItemStatus::from(status)),
                 ..Default::default()
             });
         }
@@ -639,108 +1320,153 @@ impl Wms {
 
     pub async fn import_real_items(
         &self,
-        tenant_id: i32,
-        lot_id: i32,
+        tenant_id: i64,
+        lot_id: i64,
         items: &[Item],
     ) -> Result<Vec<Item>, DbErr> {
-        let mut ret = Vec::new();
+        if items.is_empty() {
+            return Ok(vec![]);
+        }
+
         let txn = self.dbt(tenant_id).begin().await?;
 
-        let shelves = shelves::Entity::find()
+        // ────────────────────────────────────────────────────────
+        // 1. Lấy shelf map (giữ nguyên)
+        let shelves: HashMap<String, i64> = shelves::Entity::find()
             .filter(shelves::Column::TenantId.eq(tenant_id))
-            .all(self.dbt(tenant_id))
+            .all(&txn) // dùng txn để consistent
             .await?
             .into_iter()
-            .map(|shelf| (shelf.name, shelf.id))
-            .collect::<HashMap<_, _>>();
+            .map(|s| (s.name, s.id))
+            .collect();
 
-        let valid_items = items::Entity::find()
-            .filter(items::Column::TenantId.eq(tenant_id))
-            .filter(items::Column::LotId.eq(lot_id))
-            .filter(
-                items::Column::Id.is_in(
-                    items
-                        .iter()
-                        .filter_map(|item| item.id)
-                        .collect::<HashSet<_>>(),
-                ),
-            )
-            .all(&txn)
-            .await?
-            .into_iter()
-            .map(|item| item.id)
-            .collect::<HashSet<_>>();
+        // ────────────────────────────────────────────────────────
+        // 2. Validate tất cả item hợp lệ & thu thập dữ liệu cần check
+        let mut item_ids = Vec::new();
+        let mut barcodes_in_batch = Vec::new();
+        let mut updates = Vec::new(); // lưu active model để update sau
 
-        let mut count_stock_entries = HashMap::new();
         for item in items {
             let item_id = item
                 .id
-                .ok_or_else(|| DbErr::Custom(format!("Item ID is missing")))?;
-            let shelf_id = shelves[&item.shelf.clone().ok_or(DbErr::Custom(format!(
-                "Missing field shelf in item {}",
-                item_id
-            )))?];
-            let stock_id = item.stock_id;
-            let status = ItemStatus::try_from(item.status.clone())
-                .map_err(|error| DbErr::Custom(format!("Failed to parse item status: {}", error)))?
-                as i32;
+                .ok_or_else(|| DbErr::Custom("Item ID is missing".to_string()))?;
 
-            if valid_items.contains(&item_id) {
-                let mut update_query =
-                    items::Entity::update_many().filter(items::Column::Id.eq(item_id));
+            item_ids.push(item_id);
 
-                if let Some(barcode) = &item.barcode {
-                    update_query =
-                        update_query.col_expr(items::Column::Barcode, Expr::value(barcode.clone()));
-                }
+            // Validate shelf tồn tại
+            let shelf_name = item
+                .shelf
+                .as_ref()
+                .ok_or_else(|| DbErr::Custom(format!("Missing shelf for item {}", item_id)))?;
+            let shelf_id = *shelves
+                .get(shelf_name)
+                .ok_or_else(|| DbErr::Custom(format!("Shelf '{}' not found", shelf_name)))?;
 
-                if let Some(expired_at) = item.expired_at {
-                    update_query =
-                        update_query.col_expr(items::Column::ExpiredAt, Expr::value(expired_at));
-                }
+            // Thu thập barcode nếu có (để check duplicate)
+            if let Some(barcode) = &item.barcode {
+                barcodes_in_batch.push(barcode.clone());
+            }
 
-                update_query
-                    .col_expr(items::Column::ShelfId, Expr::value(shelf_id))
-                    .col_expr(items::Column::Status, Expr::value(status))
-                    .col_expr(items::Column::UpdatedAt, Expr::value(chrono::Utc::now()))
-                    .exec(&txn)
-                    .await?;
+            // Chuẩn bị ActiveModel để update
+            let mut am = items::ActiveModel {
+                id: Set(item_id),
+                shelf_id: Set(Some(shelf_id)),
+                status: Set(item.status.clone().unwrap_or(ItemStatus::Unknown) as i32),
+                updated_at: Set(chrono::Utc::now()),
+                ..Default::default()
+            };
 
-                items::Entity::find_by_id(item_id)
-                    .one(&txn)
-                    .await?
-                    .ok_or_else(|| {
-                        DbErr::Custom(format!("Item with id {} not found after update", item_id))
-                    })?;
+            if let Some(bc) = &item.barcode {
+                am.barcode = Set(Some(bc.clone()));
+            }
+            if let Some(exp) = item.expired_at {
+                am.expired_at = Set(Some(exp));
+            }
 
-                count_stock_entries
-                    .entry(shelf_id)
-                    .or_insert_with(HashMap::new)
-                    .entry(stock_id)
-                    .and_modify(|count| *count += 1)
-                    .or_insert(1);
+            updates.push(am);
+        }
 
-                ret.push(Item {
-                    id: item.id,
-                    expired_at: item.expired_at.clone(),
-                    shelf: item.shelf.clone(),
-                    lot_number: item.lot_number.clone(),
-                    lot_id: item.lot_id,
-                    stock_id: item.stock_id,
-                    barcode: item.barcode.clone(),
-                    cost_price: item.cost_price,
-                    status: item.status.clone(),
-                });
+        // ────────────────────────────────────────────────────────
+        // 3. Check duplicate barcode TRONG batch
+        let mut seen = std::collections::HashSet::new();
+        for bc in &barcodes_in_batch {
+            if !seen.insert(bc.clone()) {
+                txn.rollback().await?;
+                return Err(DbErr::Custom(format!("Duplicate barcode in batch: {}", bc)));
             }
         }
 
+        // ────────────────────────────────────────────────────────
+        // 4. Check barcode đã tồn tại trong DB (loại trừ các item đang import)
+        if !barcodes_in_batch.is_empty() {
+            let existing = items::Entity::find()
+                .filter(items::Column::TenantId.eq(tenant_id))
+                .filter(items::Column::Barcode.is_in(barcodes_in_batch.clone()))
+                .filter(items::Column::Id.is_not_in(item_ids.clone()))
+                .all(&txn)
+                .await?;
+
+            if !existing.is_empty() {
+                let dup = existing[0].barcode.as_ref().unwrap();
+                txn.rollback().await?;
+                return Err(DbErr::Custom(format!(
+                    "Barcode '{}' already exists in database",
+                    dup
+                )));
+            }
+        }
+
+        // ────────────────────────────────────────────────────────
+        // 5. Thực hiện update (loop, nhưng trong transaction → atomic)
+        let mut ret = Vec::new();
+        let mut count_stock_entries: HashMap<i64, HashMap<Option<i64>, i32>> = HashMap::new();
+
+        for am in updates {
+            let updated = am.update(&txn).await?;
+            let item_id = updated.id;
+
+            // Tính quantity cho stock_shelves
+            let shelf_id = updated.shelf_id.unwrap_or(0); // fallback nếu null
+            let stock_id = updated.stock_id;
+            count_stock_entries
+                .entry(shelf_id)
+                .or_default()
+                .entry(Some(stock_id))
+                .and_modify(|e| *e += 1)
+                .or_insert(1);
+
+            // Build Item để return
+            ret.push(Item {
+                id: Some(item_id),
+                expired_at: updated.expired_at,
+                shelf: shelves
+                    .iter()
+                    .find(|(_, &id)| id == shelf_id)
+                    .map(|(name, _)| name.clone()),
+                lot_number: None, // nếu cần thì query thêm
+                lot_id: Some(lot_id),
+                stock_id: Some(stock_id),
+                barcode: updated.barcode,
+                cost_price: Some(updated.cost_price),
+                status: Some(ItemStatus::from(updated.status)),
+                ..Default::default()
+            });
+        }
+
+        // ────────────────────────────────────────────────────────
+        // 6. Upsert stock_shelves (giữ nguyên logic của bạn)
         let mut inserts = Vec::new();
         for (&shelf_id, stock_map) in &count_stock_entries {
-            for (stock_id, &qty) in stock_map {
+            for (&stock_id, &qty) in stock_map {
                 let am = stock_shelves::ActiveModel {
                     tenant_id: Set(tenant_id),
                     shelf_id: Set(shelf_id),
-                    stock_id: Set(stock_id.ok_or(DbErr::Custom(format!("")))?),
+                    stock_id: Set(stock_id.ok_or_else(|| {
+                        DbErr::Custom(format!(
+                            "Upsert new plan item to shelf {} fail duo to missing stock id",
+                            shelf_id,
+                        ))
+                    })?),
                     quantity: Set(qty),
                     ..Default::default()
                 };
@@ -749,7 +1475,7 @@ impl Wms {
         }
 
         if !inserts.is_empty() {
-            let on_conflict = OnConflict::columns(vec![
+            let on_conflict = OnConflict::columns([
                 stock_shelves::Column::TenantId,
                 stock_shelves::Column::ShelfId,
                 stock_shelves::Column::StockId,
@@ -762,21 +1488,24 @@ impl Wms {
                 .exec(&txn)
                 .await?;
         }
+
         txn.commit().await?;
         Ok(ret)
     }
 
     pub async fn assign_items_to_shelf(
         &self,
-        tenant_id: i32,
-        shelf_id: i32,
+        tenant_id: i64,
+        shelf_id: i64,
         items: &[Item],
     ) -> Result<(), DbErr> {
+        // @TODO: kiểm tra xem item đã được nhập vào kho chưa, nếu chưa nhập thì k
+        //        cho assign được
         if items.is_empty() {
             return Ok(());
         }
 
-        let update_result = items::Entity::update_many()
+        let update_result = Items::update_many()
             .col_expr(items::Column::ShelfId, Expr::value(Some(shelf_id)))
             .filter(items::Column::Id.is_in(items.iter().map(|item| item.id).collect::<Vec<_>>()))
             .filter(items::Column::TenantId.eq(tenant_id))
@@ -790,7 +1519,7 @@ impl Wms {
         }
     }
 
-    pub async fn get_stock(&self, tenant_id: i32, stock_id: i32) -> Result<Stock, DbErr> {
+    pub async fn get_stock(&self, tenant_id: i64, stock_id: i64) -> Result<Stock, DbErr> {
         let result = Stocks::find()
             .filter(stocks::Column::TenantId.eq(tenant_id))
             .filter(stocks::Column::Id.eq(stock_id))
@@ -817,9 +1546,9 @@ impl Wms {
 
     pub async fn list_paginated_stocks(
         &self,
-        tenant_id: i32,
+        tenant_id: i64,
         include_details: bool,
-        after: i32,
+        after: i64,
         limit: u64,
     ) -> Result<Vec<Stock>, DbErr> {
         if include_details {
@@ -871,11 +1600,11 @@ impl Wms {
                 .limit(limit)
                 .order_by_asc(stocks::Column::Id)
                 .into_tuple::<(
-                    i32,
+                    i64,
                     String,
                     String,
                     String,
-                    i32,
+                    i64,
                     String,
                     f64,
                     i32,
@@ -913,16 +1642,7 @@ impl Wms {
                     entry_date: None,
                     expired_date: None,
                     cost_price: Some(cost_price),
-                    status: Some(
-                        LotStatus::try_from(lot_status)
-                            .map_err(|error| {
-                                DbErr::Query(RuntimeErr::Internal(format!(
-                                    "Lot with id {} face issue: {}",
-                                    lot_id, error,
-                                )))
-                            })?
-                            .to_string(),
-                    ),
+                    status: Some(LotStatus::from(lot_status)),
                     supplier: lot_supplier.clone(),
                     lot_number,
                     quantity: stock_entry_quantity,
@@ -979,7 +1699,7 @@ impl Wms {
                 .group_by(stocks::Column::Name)
                 .group_by(stocks::Column::Unit)
                 .order_by_asc(stocks::Column::Id)
-                .into_tuple::<(i32, String, String, Option<i32>)>()
+                .into_tuple::<(i64, String, String, Option<i32>)>()
                 .all(self.dbt(tenant_id))
                 .await?
                 .into_iter()
@@ -996,7 +1716,7 @@ impl Wms {
         }
     }
 
-    pub async fn get_lot(&self, tenant_id: i32, lot_id: i32) -> Result<Lot, DbErr> {
+    pub async fn get_lot(&self, tenant_id: i64, lot_id: i64) -> Result<Lot, DbErr> {
         let result = Lots::find()
             .filter(lots::Column::TenantId.eq(tenant_id))
             .filter(lots::Column::Id.eq(lot_id))
@@ -1004,12 +1724,7 @@ impl Wms {
             .await?;
 
         if let Some(result) = result {
-            let status = LotStatus::try_from(result.status.unwrap_or(0)).map_err(|error| {
-                DbErr::Query(RuntimeErr::Internal(format!(
-                    "Lot with id {} face issue: {}",
-                    lot_id, error,
-                )))
-            })?;
+            let status = LotStatus::from(result.status.unwrap_or(0));
 
             Ok(Lot {
                 id: Some(result.id),
@@ -1019,7 +1734,7 @@ impl Wms {
                 quantity: result.quantity,
                 cost_price: result.cost_price,
                 supplier: result.supplier.clone(),
-                status: Some(status.to_string()),
+                status: Some(status),
             })
         } else {
             Err(DbErr::Query(RuntimeErr::Internal(format!(
@@ -1031,9 +1746,9 @@ impl Wms {
 
     pub async fn list_paginated_lots_of_stock(
         &self,
-        tenant_id: i32,
-        stock_id: i32,
-        after: i32,
+        tenant_id: i64,
+        stock_id: i64,
+        after: i64,
         limit: u64,
     ) -> Result<Vec<Lot>, DbErr> {
         Ok(Lots::find()
@@ -1050,7 +1765,7 @@ impl Wms {
             )
             .join_rev(
                 JoinType::InnerJoin,
-                items::Entity::belongs_to(Lots)
+                Items::belongs_to(Lots)
                     .from(items::Column::LotId)
                     .to(lots::Column::Id)
                     .into(),
@@ -1078,7 +1793,7 @@ impl Wms {
             .group_by(lots::Column::Status)
             .order_by_asc(lots::Column::Id)
             .into_tuple::<(
-                i32,
+                i64,
                 String,
                 Option<String>,
                 DateTime<Utc>,
@@ -1095,7 +1810,11 @@ impl Wms {
                     entry_date: Some(entry_date),
                     expired_date: None,
                     cost_price: Some(cost_price),
-                    status: status,
+                    status: if let Some(status) = status {
+                        Some(LotStatus::from(status))
+                    } else {
+                        None
+                    },
                     supplier: supplier,
                     lot_number: lot_number,
                     quantity: quantity,
@@ -1106,10 +1825,10 @@ impl Wms {
 
     pub async fn list_paginated_stocks_of_shelf(
         &self,
-        tenant_id: i32,
-        shelf_id: i32,
+        tenant_id: i64,
+        shelf_id: i64,
         is_publish: bool,
-        after: i32,
+        after: i64,
         limit: u64,
     ) -> Result<Vec<Stock>, DbErr> {
         if is_publish {
@@ -1142,7 +1861,7 @@ impl Wms {
                 .column(stocks::Column::Unit)
                 .column(stock_shelves::Column::Quantity)
                 .order_by_asc(stocks::Column::Id)
-                .into_tuple::<(i32, String, String, i64)>()
+                .into_tuple::<(i64, String, String, i64)>()
                 .all(self.dbt(tenant_id))
                 .await?
                 .into_iter()
@@ -1178,7 +1897,7 @@ impl Wms {
                 .column(stocks::Column::Unit)
                 .column(stock_shelves::Column::Quantity)
                 .order_by_asc(stocks::Column::Id)
-                .into_tuple::<(i32, String, String, i64)>()
+                .into_tuple::<(i64, String, String, i64)>()
                 .all(self.dbt(tenant_id))
                 .await?
                 .into_iter()
@@ -1197,8 +1916,8 @@ impl Wms {
 
     pub async fn list_paginated_shelves(
         &self,
-        tenant_id: i32,
-        after: i32,
+        tenant_id: i64,
+        after: i64,
         limit: u64,
     ) -> Result<Vec<Shelf>, DbErr> {
         Ok(Shelves::find()
@@ -1217,19 +1936,55 @@ impl Wms {
             .collect::<Vec<_>>())
     }
 
-    pub async fn get_item_by_barcode(
+    pub async fn get_item_by_barcode_in_picking(
         &self,
-        tenant_id: i32,
+        tenant_id: i64,
+        barcode: &String,
+    ) -> Result<Item, DbErr> {
+        let ret = PickingItems::find()
+            .select_only()
+            .column(picking_goods::Column::SaleId)
+            .column(picking_items::Column::ItemId)
+            .join_rev(
+                JoinType::InnerJoin,
+                picking_goods::Entity::belongs_to(PickingItems)
+                    .from(picking_goods::Column::Id)
+                    .to(picking_items::Column::LedgerId)
+                    .into(),
+            )
+            .filter(picking_items::Column::TenantId.eq(tenant_id))
+            .filter(picking_items::Column::Barcode.eq(barcode))
+            .into_tuple::<(i64, i64)>()
+            .one(self.dbt(tenant_id))
+            .await?;
+
+        if let Some((sale_id, item_id)) = ret {
+            Ok(Item {
+                id: Some(item_id),
+                sale_id: Some(sale_id),
+                ..Default::default()
+            })
+        } else {
+            Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Not found barcode {}",
+                barcode
+            ))))
+        }
+    }
+
+    pub async fn get_item_by_barcode_in_inventory(
+        &self,
+        tenant_id: i64,
         barcode: &String,
     ) -> Result<Item, DbErr> {
         let ret = Items::find()
             .select_only()
             .column(items::Column::Id)
             .column(items::Column::LotId)
-            .column(items::Column::OrderId)
             .column(items::Column::StockId)
             .column(items::Column::ExpiredAt)
             .column(items::Column::CostPrice)
+            .column(items::Column::Status)
             .column(lots::Column::LotNumber)
             .column(shelves::Column::Name)
             .filter(items::Column::TenantId.eq(tenant_id))
@@ -1249,20 +2004,19 @@ impl Wms {
                     .into(),
             )
             .into_tuple::<(
-                i32,
-                Option<i32>,
-                Option<i32>,
-                Option<i32>,
+                i64,
+                Option<i64>,
+                Option<i64>,
                 Option<DateTime<Utc>>,
                 f64,
+                i32,
                 Option<String>,
                 Option<String>,
             )>()
             .one(self.dbt(tenant_id))
             .await?;
 
-        if let Some((id, lot_id, order_id, stock_id, expired_at, cost_price, lot_number, shelf)) =
-            ret
+        if let Some((id, lot_id, stock_id, expired_at, cost_price, status, lot_number, shelf)) = ret
         {
             Ok(Item {
                 lot_id,
@@ -1270,16 +2024,11 @@ impl Wms {
                 expired_at,
                 shelf,
                 lot_number,
-                cost_price,
-
                 id: Some(id),
                 barcode: Some(barcode.clone()),
-                status: (if order_id.is_none() {
-                    "in-stock"
-                } else {
-                    "sold-out"
-                })
-                .to_string(),
+                cost_price: Some(cost_price),
+                status: Some(ItemStatus::from(status)),
+                ..Default::default()
             })
         } else {
             Err(DbErr::Query(RuntimeErr::Internal(format!(
@@ -1289,7 +2038,33 @@ impl Wms {
         }
     }
 
-    pub async fn sale_at_storefront(&self, tenant_id: i32, sale: &Sale) -> Result<Sale, DbErr> {
+    async fn get_sale_status_with_txn(
+        &self,
+        tenant_id: i64,
+        sale_id: i64,
+        txn: &DatabaseTransaction,
+    ) -> Result<(SaleStatus, i32), DbErr> {
+        let result = Sales::find()
+            .select_only()
+            .column(sales::Column::Status)
+            .column(sales::Column::Version)
+            .filter(sales::Column::Id.eq(sale_id))
+            .filter(sales::Column::TenantId.eq(tenant_id))
+            .into_tuple::<(i32, i32)>()
+            .one(txn)
+            .await?;
+
+        if let Some((status, version)) = result {
+            Ok((SaleStatus::from(status), version))
+        } else {
+            Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Sale {} not exists in tenant {}",
+                sale_id, tenant_id,
+            ))))
+        }
+    }
+
+    pub async fn sale_at_storefront(&self, tenant_id: i64, sale: &Sale) -> Result<Sale, DbErr> {
         match &sale.barcodes {
             Some(barcodes) => {
                 let txn = self.dbt(tenant_id).begin().await?;
@@ -1327,48 +2102,1392 @@ impl Wms {
         }
     }
 
-    pub async fn sale_at_website(&self, tenant_id: i32, sale: &Sale) -> Result<Sale, DbErr> {
+    pub async fn sale_at_website(&self, tenant_id: i64, sale: &Sale) -> Result<Sale, DbErr> {
         match &sale.stock_ids {
             Some(stock_ids) => {
+                let mut counts = HashMap::new();
                 let txn = self.dbt(tenant_id).begin().await?;
 
                 Sales::insert(sales::ActiveModel {
                     tenant_id: Set(tenant_id),
                     order_id: Set(sale.order_id),
                     cost_price: Set(sale.cost_prices.iter().sum()),
+                    status: Set(SaleStatus::Paid as i32),
                     ..Default::default()
                 })
                 .exec(&txn)
                 .await?;
 
                 let sale_id = Sales::find()
+                    .select_only()
+                    .column(sales::Column::Id)
                     .filter(sales::Column::OrderId.eq(sale.order_id))
                     .filter(sales::Column::TenantId.eq(tenant_id))
+                    .into_tuple::<i64>()
                     .one(&txn)
                     .await?
-                    .ok_or(DbErr::RecordNotFound("Sale not found".to_string()))?
-                    .id;
+                    .ok_or(DbErr::RecordNotFound("Sale not found".to_string()))?;
+
+                for &id in stock_ids {
+                    *counts.entry(id).or_insert(0) += 1;
+                }
 
                 SaleEvents::insert_many(
-                    stock_ids
-                        .iter()
-                        .map(|stock_id| sale_events::ActiveModel {
+                    counts
+                        .into_iter()
+                        .map(|(stock_id, count)| sale_events::ActiveModel {
                             tenant_id: Set(tenant_id),
                             sale_id: Set(sale_id),
-                            stock_id: Set(*stock_id),
-                            status: Set(SaleStatus::Paid as i32),
+                            stock_id: Set(stock_id),
+                            count: Set(count),
+                            status: Set(PickingGoodsStatus::Planing as i32),
                             ..Default::default()
                         })
                         .collect::<Vec<_>>(),
                 )
                 .exec(&txn)
-                .await?;
+                .await
+                .map_err(|error| {
+                    DbErr::Custom(format!(
+                        "Failed to update event of sale {}, order {}: {}",
+                        sale_id, sale.order_id, error,
+                    ))
+                })?;
+
                 txn.commit().await?;
-                Ok(sale.clone())
+
+                Ok(Sale {
+                    id: Some(sale_id),
+                    stock_ids: Some(stock_ids.clone()),
+                    order_id: sale.order_id,
+                    cost_prices: sale.cost_prices.clone(),
+                    ..Default::default()
+                })
             }
             None => Err(DbErr::Query(RuntimeErr::Internal(format!(
-                "Missing field `stocks`"
+                "Missing field `stocks_ids`"
             )))),
+        }
+    }
+
+    pub async fn are_nodes_existed(
+        &self,
+        tenant_id: i64,
+        nodes: &Vec<PickingNodeScope>,
+    ) -> Result<(), DbErr> {
+        if nodes.is_empty() {
+            return Ok(());
+        }
+
+        let existing_nodes = nodes::Entity::find()
+            .select_only()
+            .column(nodes::Column::Id)
+            .column(nodes::Column::ZoneId)
+            .filter(nodes::Column::TenantId.eq(tenant_id))
+            .filter(nodes::Column::Id.is_in(nodes.iter().map(|n| n.node).collect::<Vec<_>>()))
+            .all(self.dbt(tenant_id))
+            .await?;
+
+        let existing_set = existing_nodes
+            .into_iter()
+            .map(|n| (n.id, n.zone_id))
+            .collect::<HashSet<_>>();
+
+        let invalid_nodes: Vec<PickingNodeScope> = nodes
+            .iter()
+            .filter(|scope| !existing_set.contains(&(scope.node, scope.zone)))
+            .cloned()
+            .collect();
+
+        if !invalid_nodes.is_empty() {
+            return Err(DbErr::Custom(format!(
+                "Invalid nodes in tenant {}: {:?}",
+                tenant_id, invalid_nodes
+            )));
+        }
+
+        Ok(())
+    }
+
+    pub async fn are_zones_existed(
+        &self,
+        tenant_id: i64,
+        zone_ids: &Vec<i64>,
+    ) -> Result<(), DbErr> {
+        if zone_ids.is_empty() {
+            return Ok(());
+        }
+
+        let existing_zones = zones::Entity::find()
+            .select_only()
+            .column(zones::Column::Id)
+            .filter(zones::Column::TenantId.eq(tenant_id))
+            .filter(zones::Column::Id.is_in(zone_ids.to_vec()))
+            .all(self.dbt(tenant_id))
+            .await?;
+
+        let existing_ids = existing_zones
+            .into_iter()
+            .map(|z| z.id)
+            .collect::<HashSet<_>>();
+
+        let invalid_ids = zone_ids
+            .iter()
+            .filter(|id| !existing_ids.contains(id))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if !invalid_ids.is_empty() {
+            return Err(DbErr::Custom(format!(
+                "Invalid Zone in tenant {}: {:?}",
+                tenant_id, invalid_ids,
+            )));
+        }
+        Ok(())
+    }
+
+    pub async fn get_zone(&self, tenant_id: i64, zone_id: i64) -> Result<Zone, DbErr> {
+        let result = Zones::find()
+            .filter(zones::Column::TenantId.eq(tenant_id))
+            .filter(zones::Column::Id.eq(zone_id))
+            .one(self.dbt(tenant_id))
+            .await?;
+
+        if let Some(result) = result {
+            Ok(Zone {
+                id: Some(result.id),
+                name: Some(result.name),
+                description: Some(result.description),
+                pos_x: Some(result.pos_x),
+                pos_y: Some(result.pos_y),
+                height: Some(result.height),
+                width: Some(result.width),
+            })
+        } else {
+            Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Zone with id {}, not exist",
+                zone_id
+            ))))
+        }
+    }
+
+    pub async fn get_order_detail(&self, tenant_id: i64, order_id: i64) -> Result<Order, DbErr> {
+        match Sales::find()
+            .select_only()
+            .column(sales::Column::Status)
+            .filter(sales::Column::TenantId.eq(tenant_id))
+            .filter(sales::Column::OrderId.eq(order_id))
+            .into_tuple::<(i32, DateTime<Utc>)>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some((status, created_at)) => Ok(Order {
+                order_id: Some(order_id),
+                status: Some(if SaleStatus::from(status) == SaleStatus::Done {
+                    OrderStatus::Done
+                } else {
+                    OrderStatus::Unknown
+                }),
+                created_at: Some(created_at),
+                items: Some(if SaleStatus::from(status) == SaleStatus::Done {
+                    Items::find()
+                        .select_only()
+                        .filter(items::Column::TenantId.eq(tenant_id))
+                        .filter(items::Column::OrderId.eq(Some(order_id)))
+                        .into_tuple::<(i64, i64, i64, i32, f64, Option<String>)>()
+                        .all(self.dbt(tenant_id))
+                        .await?
+                        .into_iter()
+                        .map(|(id, lot_id, stock_id, status, cost_price, barcode)| Item {
+                            id: Some(id),
+                            lot_id: Some(lot_id),
+                            stock_id: Some(stock_id),
+                            status: Some(ItemStatus::from(status)),
+                            cost_price: Some(cost_price),
+                            barcode,
+                            ..Default::default()
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                }),
+            }),
+            None => Err(DbErr::RecordNotFound("Order not found".to_string())),
+        }
+    }
+
+    pub async fn list_paginated_zones(
+        &self,
+        tenant_id: i64,
+        after: i64,
+        limit: u64,
+    ) -> Result<Vec<Zone>, DbErr> {
+        Ok(Zones::find()
+            .select_only()
+            .column(zones::Column::Id)
+            .column(zones::Column::Name)
+            .column(zones::Column::Description)
+            .column(zones::Column::PosX)
+            .column(zones::Column::PosY)
+            .column(zones::Column::Height)
+            .column(zones::Column::Width)
+            .filter(zones::Column::TenantId.eq(tenant_id))
+            .filter(zones::Column::Id.gt(after))
+            .limit(limit)
+            .into_tuple::<(i64, String, String, f64, f64, f64, f64)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(
+                |(id, name, description, pos_x, pos_y, height, width)| Zone {
+                    id: Some(id),
+                    name: Some(name),
+                    description: Some(description),
+                    pos_x: Some(pos_x),
+                    pos_y: Some(pos_y),
+                    height: Some(height),
+                    width: Some(width),
+                },
+            )
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn get_node_by_id(
+        &self,
+        tenant_id: i64,
+        zone_id: i64,
+        node_id: i64,
+    ) -> Result<Node, DbErr> {
+        match Nodes::find()
+            .select_only()
+            .column(nodes::Column::Name)
+            .column(nodes::Column::Status)
+            .column(nodes::Column::PosX)
+            .column(nodes::Column::PosY)
+            .filter(nodes::Column::TenantId.eq(tenant_id))
+            .filter(nodes::Column::ZoneId.eq(zone_id))
+            .filter(nodes::Column::Id.eq(node_id))
+            .into_tuple::<(String, i32, f64, f64)>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some((name, status, pos_x, pos_y)) => Ok(Node {
+                node_id: Some(node_id),
+                zone_id: Some(zone_id),
+                name: Some(name),
+                pos_x: Some(pos_x),
+                pos_y: Some(pos_y),
+                status: Some(NodeStatus::from(status)),
+            }),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Node with id {} in zone {}, not exist",
+                node_id, zone_id,
+            )))),
+        }
+    }
+
+    pub async fn list_paginated_nodes(
+        &self,
+        tenant_id: i64,
+        zone_id: i64,
+        after: i64,
+        limit: u64,
+    ) -> Result<Vec<Node>, DbErr> {
+        Ok(Nodes::find()
+            .select_only()
+            .column(nodes::Column::Id)
+            .column(nodes::Column::Name)
+            .column(nodes::Column::Status)
+            .column(nodes::Column::PosX)
+            .column(nodes::Column::PosY)
+            .filter(nodes::Column::TenantId.eq(tenant_id))
+            .filter(nodes::Column::ZoneId.eq(zone_id))
+            .filter(nodes::Column::Id.gt(after))
+            .limit(limit)
+            .into_tuple::<(i64, String, i32, f64, f64)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|(node_id, name, status, pos_x, pos_y)| Node {
+                node_id: Some(node_id),
+                zone_id: Some(zone_id),
+                pos_x: Some(pos_x),
+                pos_y: Some(pos_y),
+                status: Some(NodeStatus::from(status)),
+                name: Some(name),
+            })
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn create_zones(
+        &self,
+        tenant_id: i64,
+        zones: &Vec<Zone>,
+    ) -> Result<Vec<Zone>, DbErr> {
+        if zones.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut active_models = Vec::new();
+        for zone in zones {
+            active_models.push(zones::ActiveModel {
+                tenant_id: Set(tenant_id),
+                name: Set(zone
+                    .name
+                    .clone()
+                    .ok_or_else(|| DbErr::Custom("Name is missing".to_string()))?),
+                description: Set(zone.description.clone().unwrap_or_default()),
+                pos_x: Set(zone
+                    .pos_x
+                    .ok_or_else(|| DbErr::Custom("pos_x is missing".to_string()))?),
+                pos_y: Set(zone
+                    .pos_y
+                    .ok_or_else(|| DbErr::Custom("pos_y is missing".to_string()))?),
+                height: Set(zone
+                    .height
+                    .ok_or_else(|| DbErr::Custom("height is missing".to_string()))?),
+                width: Set(zone
+                    .width
+                    .ok_or_else(|| DbErr::Custom("width is missing".to_string()))?),
+                ..Default::default()
+            });
+        }
+
+        zones::Entity::insert_many(active_models)
+            .exec(self.dbt(tenant_id))
+            .await?;
+
+        Ok(zones::Entity::find()
+            .select_only()
+            .column(zones::Column::Id)
+            .column(zones::Column::Name)
+            .column(zones::Column::Description)
+            .column(zones::Column::PosX)
+            .column(zones::Column::PosY)
+            .column(zones::Column::Height)
+            .column(zones::Column::Width)
+            .filter(
+                zones::Column::Name.is_in(
+                    zones
+                        .iter()
+                        .map(|zone| zone.name.clone())
+                        .collect::<Vec<_>>(),
+                ),
+            )
+            .into_tuple::<(i64, String, String, f64, f64, f64, f64)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(
+                |(id, name, description, pos_x, pos_y, height, width)| Zone {
+                    id: Some(id),
+                    name: Some(name),
+                    description: Some(description),
+                    pos_x: Some(pos_x),
+                    pos_y: Some(pos_y),
+                    height: Some(height),
+                    width: Some(width),
+                },
+            )
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn create_nodes(
+        &self,
+        tenant_id: i64,
+        zone_id: Option<i64>,
+        nodes: &Vec<Node>,
+    ) -> Result<Vec<Node>, DbErr> {
+        if nodes.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let txn = self.dbt(tenant_id).begin().await?;
+        let mut active_models = Vec::new();
+
+        if zone_id.is_none() {
+            let zone_ids = nodes
+                .iter()
+                .filter_map(|node| node.zone_id)
+                .collect::<HashSet<_>>();
+
+            let valid_zones = zones::Entity::find()
+                .filter(zones::Column::Id.is_in(zone_ids.clone()))
+                .filter(zones::Column::TenantId.eq(tenant_id))
+                .all(&txn)
+                .await?
+                .into_iter()
+                .map(|zone| zone.id)
+                .collect::<HashSet<i64>>();
+
+            if valid_zones.len() != zone_ids.len() {
+                let invalid_ids = zone_ids
+                    .difference(&valid_zones)
+                    .copied()
+                    .collect::<Vec<_>>();
+
+                return Err(DbErr::Custom(format!(
+                    "Invalid zone IDs: {:?}",
+                    invalid_ids
+                )));
+            }
+
+            for node in nodes {
+                active_models.push(nodes::ActiveModel {
+                    tenant_id: Set(tenant_id),
+                    zone_id: Set(node
+                        .zone_id
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("zone_id is missing")))?),
+                    name: Set(node
+                        .name
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("name is missing")))?),
+                    status: Set(node.status.clone().unwrap_or(NodeStatus::Unknown) as i32),
+                    pos_x: Set(node
+                        .pos_x
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("pos_x is missing")))?),
+                    pos_y: Set(node
+                        .pos_y
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("pos_y is missing")))?),
+                    ..Default::default()
+                });
+            }
+        } else {
+            for node in nodes {
+                active_models.push(nodes::ActiveModel {
+                    tenant_id: Set(tenant_id),
+                    zone_id: Set(zone_id.unwrap()),
+                    name: Set(node
+                        .name
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("name is missing")))?),
+                    status: Set(node.status.clone().unwrap_or(NodeStatus::Unknown) as i32),
+                    pos_x: Set(node
+                        .pos_x
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("pos_x is missing")))?),
+                    pos_y: Set(node
+                        .pos_y
+                        .clone()
+                        .ok_or_else(|| DbErr::Custom(format!("pos_y is missing")))?),
+                    ..Default::default()
+                });
+            }
+        }
+
+        Nodes::insert_many(active_models).exec(&txn).await?;
+
+        txn.commit().await?;
+
+        Ok(nodes::Entity::find()
+            .select_only()
+            .column(nodes::Column::Id)
+            .column(nodes::Column::ZoneId)
+            .column(nodes::Column::Name)
+            .column(nodes::Column::Status)
+            .column(nodes::Column::PosX)
+            .column(nodes::Column::PosY)
+            .filter(nodes::Column::TenantId.eq(tenant_id))
+            .filter(
+                nodes::Column::Name.is_in(
+                    nodes
+                        .iter()
+                        .map(|node| node.name.clone())
+                        .collect::<Vec<_>>(),
+                ),
+            )
+            .into_tuple::<(i64, i64, String, i32, f64, f64)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|(node_id, zone_id, name, status, pos_x, pos_y)| Node {
+                node_id: Some(node_id),
+                zone_id: Some(zone_id),
+                name: Some(name),
+                status: Some(NodeStatus::from(status)),
+                pos_x: Some(pos_x),
+                pos_y: Some(pos_y),
+            })
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn create_paths(
+        &self,
+        tenant_id: i64,
+        paths: &Vec<PathWay>,
+    ) -> Result<Vec<PathWay>, DbErr> {
+        let mut models = Vec::new();
+        let mut names = Vec::new();
+
+        for (i, path) in paths.iter().enumerate() {
+            let from_node_id = path
+                .from_node
+                .ok_or_else(|| DbErr::Custom(format!("from_node is missing in item {}", i)))?;
+            let to_node_id = path
+                .to_node
+                .ok_or_else(|| DbErr::Custom(format!("to_node is missing in item {}", i)))?;
+            let zone_id = path
+                .zone_id
+                .ok_or_else(|| DbErr::Custom(format!("zone_id is missing in item {}", i)))?;
+            let status = path
+                .status
+                .clone()
+                .ok_or_else(|| DbErr::Custom(format!("status is missing in item {}", i)))?;
+            let is_one_way = path.is_one_way.unwrap_or(false);
+            let name = path
+                .name
+                .clone()
+                .ok_or_else(|| DbErr::Custom(format!("name is missing in item {}", i)))?;
+            let sharp = path
+                .sharp
+                .clone()
+                .ok_or_else(|| DbErr::Custom(format!("sharp is missing in item {}", i)))?;
+
+            models.push(paths::ActiveModel {
+                tenant_id: Set(tenant_id),
+                zone_id: Set(zone_id),
+                from_node_id: Set(from_node_id),
+                to_node_id: Set(to_node_id),
+                is_one_way: Set(is_one_way),
+                status: Set(status as i32),
+                sharp: Set(Some(paths::ListPoints(sharp))),
+                ..Default::default()
+            });
+            names.push(name);
+        }
+
+        paths::Entity::insert_many(models)
+            .on_conflict(
+                OnConflict::columns([paths::Column::TenantId, paths::Column::Name])
+                    .update_columns([
+                        paths::Column::ZoneId,
+                        paths::Column::FromNodeId,
+                        paths::Column::ToNodeId,
+                        paths::Column::IsOneWay,
+                        paths::Column::Status,
+                        paths::Column::Sharp,
+                    ])
+                    .to_owned(),
+            )
+            .exec(self.dbt(tenant_id))
+            .await?;
+
+        Ok(Paths::find()
+            .select_only()
+            .column(paths::Column::Id)
+            .column(paths::Column::ZoneId)
+            .column(paths::Column::FromNodeId)
+            .column(paths::Column::ToNodeId)
+            .column(paths::Column::Name)
+            .column(paths::Column::Status)
+            .column(paths::Column::IsOneWay)
+            .column(paths::Column::Sharp)
+            .filter(paths::Column::TenantId.eq(tenant_id))
+            .filter(paths::Column::Name.is_in(names))
+            .into_tuple::<(
+                i64,
+                i64,
+                i64,
+                i64,
+                String,
+                i32,
+                bool,
+                Option<paths::ListPoints>,
+            )>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(
+                |(path_id, zone_id, from_node, to_node, name, status, is_one_way, sharp)| PathWay {
+                    path_id: Some(path_id),
+                    zone_id: Some(zone_id),
+                    from_node: Some(from_node),
+                    to_node: Some(to_node),
+                    name: Some(name),
+                    status: Some(PathStatus::from(status)),
+                    is_one_way: Some(is_one_way),
+                    sharp: sharp.map(|lp| lp.0),
+                },
+            )
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn get_path_by_id(
+        &self,
+        tenant_id: i64,
+        zone_id: i64,
+        from_node_id: i64,
+        path_id: i64,
+    ) -> Result<PathWay, DbErr> {
+        match Paths::find()
+            .select_only()
+            .column(paths::Column::Id)
+            .column(paths::Column::ToNodeId)
+            .column(paths::Column::Status)
+            .column(paths::Column::IsOneWay)
+            .column(paths::Column::Name)
+            .filter(paths::Column::FromNodeId.eq(from_node_id))
+            .filter(paths::Column::TenantId.eq(tenant_id))
+            .filter(paths::Column::ZoneId.eq(zone_id))
+            .filter(paths::Column::Id.eq(path_id))
+            .into_tuple::<(i64, i64, i32, bool, String)>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some((path_id, to_node_id, status, is_one_way, name)) => Ok(PathWay {
+                path_id: Some(path_id),
+                zone_id: Some(zone_id),
+                from_node: Some(from_node_id),
+                to_node: Some(to_node_id),
+                is_one_way: Some(is_one_way),
+                name: Some(name),
+                status: Some(PathStatus::from(status)),
+                sharp: None,
+            }),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Path with id {} in zone {} from node {}, not exist",
+                path_id, zone_id, from_node_id,
+            )))),
+        }
+    }
+
+    pub async fn list_paginated_paths_by_node(
+        &self,
+        tenant_id: i64,
+        zone_id: i64,
+        from_node_id: i64,
+        after: i64,
+        limit: u64,
+    ) -> Result<Vec<PathWay>, DbErr> {
+        Ok(Paths::find()
+            .select_only()
+            .column(paths::Column::Id)
+            .column(paths::Column::ToNodeId)
+            .column(paths::Column::Status)
+            .column(paths::Column::IsOneWay)
+            .column(paths::Column::Name)
+            .filter(paths::Column::FromNodeId.eq(from_node_id))
+            .filter(paths::Column::TenantId.eq(tenant_id))
+            .filter(paths::Column::ZoneId.eq(zone_id))
+            .filter(paths::Column::Id.gt(after))
+            .limit(limit)
+            .into_tuple::<(i64, i64, i32, bool, String)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|(path_id, to_node_id, status, is_one_way, name)| PathWay {
+                path_id: Some(path_id),
+                zone_id: Some(zone_id),
+                from_node: Some(from_node_id),
+                to_node: Some(to_node_id),
+                is_one_way: Some(is_one_way),
+                name: Some(name),
+                status: Some(PathStatus::from(status)),
+                sharp: None,
+            })
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn put_shelf_to_node(
+        &self,
+        tenant_id: i64,
+        zone_id: i64,
+        node_id: i64,
+        shelf_id: i64,
+        is_on_left: bool,
+    ) -> Result<Shelf, DbErr> {
+        match Shelves::find_by_id(shelf_id)
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some(model) => {
+                let mut model: shelves::ActiveModel = model.into();
+
+                model.zone = Set(Some(zone_id));
+                model.node = Set(Some(node_id));
+                model.is_left = Set(Some(is_on_left as i8));
+
+                model.update(self.dbt(tenant_id)).await?;
+
+                Ok(Shelf {
+                    id: Some(shelf_id),
+                    ..Default::default()
+                })
+            }
+            None => Err(DbErr::Custom(format!("not found shelf {}", shelf_id,))),
+        }
+    }
+
+    pub async fn list_sale_by_order(
+        &self,
+        tenant_id: i64,
+        order_ids: &Vec<i64>,
+    ) -> Result<Vec<Sale>, DbErr> {
+        let rows = Sales::find()
+            .select_only()
+            .column(sales::Column::Id)
+            .column(sales::Column::OrderId)
+            .column(sale_events::Column::StockId)
+            .join_rev(
+                JoinType::InnerJoin,
+                sale_events::Entity::belongs_to(Sales)
+                    .from(sale_events::Column::SaleId)
+                    .to(sales::Column::Id)
+                    .into(),
+            )
+            .filter(sales::Column::TenantId.eq(tenant_id))
+            .filter(sales::Column::OrderId.is_in(order_ids.clone()))
+            .into_tuple::<(i64, i64, i64)>()
+            .all(self.dbt(tenant_id))
+            .await?;
+
+        let mut sale_map: HashMap<i64, Sale> = HashMap::new();
+
+        for (sale_id, order_id, stock_id) in rows {
+            sale_map
+                .entry(sale_id)
+                .and_modify(|s| {
+                    if let Some(ref mut ids) = s.stock_ids {
+                        ids.push(stock_id);
+                    }
+                })
+                .or_insert(Sale {
+                    id: Some(sale_id),
+                    order_id,
+                    stock_ids: Some(vec![stock_id]),
+                    ..Default::default()
+                });
+        }
+
+        Ok(sale_map.into_values().collect())
+    }
+
+    async fn get_picking_plan_status_with_txn(
+        &self,
+        tenant_id: i64,
+        plan_id: i64,
+        txn: &DatabaseTransaction,
+    ) -> Result<(PickingPlanStatus, i32), DbErr> {
+        let result = PickingPlans::find()
+            .select_only()
+            .column(picking_plans::Column::Status)
+            .column(picking_plans::Column::Version)
+            .filter(picking_plans::Column::TenantId.eq(tenant_id))
+            .filter(picking_plans::Column::Id.eq(plan_id))
+            .into_tuple::<(i32, i32)>()
+            .one(txn)
+            .await?;
+
+        if let Some((status, version)) = result {
+            Ok((PickingPlanStatus::from(status), version))
+        } else {
+            Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Plan {} not exists in tenant {}",
+                plan_id, tenant_id,
+            ))))
+        }
+    }
+
+    pub async fn get_picking_wave(&self, tenant_id: i64, wave_id: i64) -> Result<Plan, DbErr> {
+        let plan_exists = PickingPlans::find()
+            .filter(picking_plans::Column::Id.eq(wave_id))
+            .filter(picking_plans::Column::TenantId.eq(tenant_id))
+            .one(self.dbt(tenant_id))
+            .await?;
+
+        if plan_exists.is_none() {
+            return Err(DbErr::RecordNotFound("Plan not found".to_string()));
+        }
+
+        let mut plan = Plan {
+            id: Some(wave_id),
+            ..Default::default()
+        };
+
+        plan.nodes = Some(
+            picking_plans_in_nodes::Entity::find()
+                .select_only()
+                .column(picking_plans_in_nodes::Column::Id)
+                .filter(picking_plans_in_nodes::Column::PlanId.eq(wave_id))
+                .into_tuple::<i64>()
+                .all(self.dbt(tenant_id))
+                .await?,
+        );
+
+        plan.zones = Some(
+            picking_plans_in_zones::Entity::find()
+                .select_only()
+                .column(picking_plans_in_zones::Column::Id)
+                .filter(picking_plans_in_zones::Column::PlanId.eq(wave_id))
+                .into_tuple::<i64>()
+                .all(self.dbt(tenant_id))
+                .await?,
+        );
+
+        plan.routes = Some(
+            picking_routes::Entity::find()
+                .select_only()
+                .column(picking_routes::Column::Id)
+                .filter(picking_routes::Column::PickingId.eq(wave_id))
+                .into_tuple::<i64>()
+                .all(self.dbt(tenant_id))
+                .await?,
+        );
+
+        if let Some(ref v) = plan.zones {
+            if v.is_empty() {
+                plan.zones = None;
+            }
+        }
+
+        if let Some(ref v) = plan.routes {
+            if v.is_empty() {
+                plan.routes = None;
+            }
+        }
+
+        Ok(plan)
+    }
+
+    pub async fn list_picking_wave(
+        &self,
+        tenant_id: i64,
+        include_details: bool,
+        after: i64,
+        limit: u64,
+    ) -> Result<Vec<Plan>, DbErr> {
+        let mut plans = PickingPlans::find()
+            .select_only()
+            .column(picking_plans::Column::Id)
+            .filter(picking_plans::Column::Id.gt(after))
+            .filter(picking_plans::Column::TenantId.eq(tenant_id))
+            .limit(limit)
+            .order_by_asc(picking_plans::Column::Id)
+            .into_tuple::<i64>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|id| {
+                (
+                    id,
+                    Plan {
+                        id: Some(id),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        if include_details {
+            let ids = plans.clone().into_keys().collect::<Vec<_>>();
+
+            PickingPlans::find()
+                .select_only()
+                .column_as(picking_plans::Column::Id, "plan_id")
+                .column_as(picking_routes::Column::Id, "route_id")
+                .join_rev(
+                    JoinType::InnerJoin,
+                    picking_routes::Entity::belongs_to(PickingPlans)
+                        .from(picking_routes::Column::PickingId)
+                        .to(picking_plans::Column::Id)
+                        .into(),
+                )
+                .filter(picking_plans::Column::TenantId.eq(tenant_id))
+                .filter(picking_plans::Column::Id.is_in(ids.clone()))
+                .into_tuple::<(i64, i64)>()
+                .all(self.dbt(tenant_id))
+                .await?
+                .into_iter()
+                .for_each(|(plan_id, route_id)| {
+                    if let Some(plan) = plans.get_mut(&plan_id) {
+                        plan.routes.get_or_insert_with(Vec::new).push(route_id);
+                    }
+                });
+
+            PickingPlans::find()
+                .select_only()
+                .column_as(picking_plans::Column::Id, "plan_id")
+                .column_as(picking_plans_in_zones::Column::Id, "zone_id")
+                .join_rev(
+                    JoinType::InnerJoin,
+                    picking_plans_in_zones::Entity::belongs_to(PickingPlans)
+                        .from(picking_plans_in_zones::Column::PlanId)
+                        .to(picking_plans::Column::Id)
+                        .into(),
+                )
+                .filter(picking_plans::Column::TenantId.eq(tenant_id))
+                .filter(picking_plans::Column::Id.is_in(ids.clone()))
+                .into_tuple::<(i64, i64)>()
+                .all(self.dbt(tenant_id))
+                .await?
+                .into_iter()
+                .for_each(|(plan_id, zone_id)| {
+                    if let Some(plan) = plans.get_mut(&plan_id) {
+                        plan.zones.get_or_insert_with(Vec::new).push(zone_id);
+                    }
+                });
+
+            PickingPlans::find()
+                .select_only()
+                .column_as(picking_plans::Column::Id, "plan_id")
+                .column_as(picking_plans_in_nodes::Column::Id, "zone_id")
+                .join_rev(
+                    JoinType::InnerJoin,
+                    picking_plans_in_nodes::Entity::belongs_to(PickingPlans)
+                        .from(picking_plans_in_nodes::Column::PlanId)
+                        .to(picking_plans::Column::Id)
+                        .into(),
+                )
+                .filter(picking_plans::Column::TenantId.eq(tenant_id))
+                .filter(picking_plans::Column::Id.is_in(ids.clone()))
+                .into_tuple::<(i64, i64)>()
+                .all(self.dbt(tenant_id))
+                .await?
+                .into_iter()
+                .for_each(|(plan_id, node_id)| {
+                    if let Some(plan) = plans.get_mut(&plan_id) {
+                        plan.nodes.get_or_insert_with(Vec::new).push(node_id);
+                    }
+                });
+        }
+
+        Ok(plans.into_values().collect::<Vec<_>>())
+    }
+
+    pub async fn create_picking_plan(
+        &self,
+        tenant_id: i64,
+        orders: &Vec<Order>,
+        zones: &Vec<i64>,
+        nodes: &Vec<PickingNodeScope>,
+    ) -> Result<Plan, DbErr> {
+        let mut picking_goods_models = Vec::new();
+
+        let txn = self.dbt(tenant_id).begin().await?;
+        let order_ids = orders
+            .iter()
+            .map(|order| order.order_id.unwrap_or(0))
+            .collect::<Vec<_>>();
+
+        // @TODO: tách chỗ này ra dùng RPC nếu muốn chia micro services
+        let sale_details = self.list_sale_by_order(tenant_id, &order_ids).await?;
+        let plan_id = self.generator.generate();
+
+        PickingPlans::insert(picking_plans::ActiveModel {
+            id: Set(plan_id),
+            tenant_id: Set(tenant_id),
+            status: Set(PickingPlanStatus::Created as i32),
+            ..Default::default()
+        })
+        .exec(&txn)
+        .await?;
+
+        if !zones.is_empty() {
+            // @TODO: tách chỗ này ra dùng RPC nếu muốn chia micro services
+            self.are_zones_existed(tenant_id, zones).await?;
+
+            PickingPlansInZones::insert_many(
+                zones
+                    .iter()
+                    .map(|&zone_id| {
+                        picking_plans_in_zones::ActiveModel {
+                            id: Set(zone_id), // Khóa chính là ID của Zone
+                            tenant_id: Set(tenant_id),
+                            plan_id: Set(plan_id),
+                            ..Default::default()
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .exec(&txn)
+            .await?;
+        }
+
+        if !nodes.is_empty() {
+            // @TODO: tách chỗ này ra dùng RPC nếu muốn chia micro services
+            self.are_nodes_existed(tenant_id, nodes).await?;
+
+            PickingPlansInNodes::insert_many(
+                nodes
+                    .iter()
+                    .map(|node_scope| picking_plans_in_nodes::ActiveModel {
+                        id: Set(node_scope.node),
+                        tenant_id: Set(tenant_id),
+                        plan_id: Set(plan_id),
+                        ..Default::default()
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .exec(&txn)
+            .await?;
+        }
+
+        self.notify_when_plan_status_changed_with_txn(
+            tenant_id,
+            plan_id,
+            PickingPlanStatus::Created,
+            &txn,
+        )
+        .await?;
+
+        for sale_detail in sale_details {
+            picking_goods_models.push(picking_goods::ActiveModel {
+                tenant_id: Set(tenant_id),
+                plan_id: Set(plan_id),
+                status: Set(PickingGoodsStatus::Planing as i32),
+                sale_id: Set(sale_detail.id.ok_or_else(|| {
+                    DbErr::Custom(format!(
+                        "Order {} is not correct or non-existed",
+                        sale_detail.order_id,
+                    ))
+                })?),
+                ..Default::default()
+            });
+        }
+
+        PickingGoods::insert_many(picking_goods_models)
+            .exec(&txn)
+            .await?;
+        txn.commit().await?;
+
+        Ok(Plan {
+            id: Some(plan_id),
+            ..Default::default()
+        })
+    }
+
+    async fn get_picking_route_status_with_txn(
+        &self,
+        tenant_id: i64,
+        route_id: i64,
+        txn: &DatabaseTransaction,
+    ) -> Result<(PickingRouteStatus, i32), DbErr> {
+        let result = PickingRoutes::find()
+            .select_only()
+            .column(picking_routes::Column::Status)
+            .column(picking_routes::Column::Version)
+            .filter(picking_routes::Column::TenantId.eq(tenant_id))
+            .filter(picking_routes::Column::Id.eq(route_id))
+            .into_tuple::<(i32, i32)>()
+            .one(txn)
+            .await?;
+
+        if let Some((status, version)) = result {
+            Ok((PickingRouteStatus::from(status), version))
+        } else {
+            Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Route {} not exists in tenant {}",
+                route_id, tenant_id,
+            ))))
+        }
+    }
+
+    pub async fn plan_picking_routes(
+        &self,
+        tenant_id: i64,
+        plan_id: i64,
+    ) -> Result<Vec<i32>, DbErr> {
+        Ok(Vec::new())
+    }
+
+    pub async fn plan_picking_goods(
+        &self,
+        tenant_id: i64,
+        plan_id: i64,
+        route_id: i64,
+    ) -> Result<Vec<i32>, DbErr> {
+        Ok(Vec::new())
+    }
+
+    pub async fn plan_picking_items(
+        &self,
+        tenant_id: i64,
+        ledger_id: i64,
+    ) -> Result<Vec<i32>, DbErr> {
+        Ok(Vec::new())
+    }
+
+    pub async fn notify_when_plan_status_changed(
+        &self,
+        tenant_id: i64,
+        plan_id: i64,
+        status: PickingPlanStatus,
+    ) -> Result<(), DbErr> {
+        let txn = self.dbt(tenant_id).begin().await?;
+
+        self.notify_when_plan_status_changed_with_txn(tenant_id, plan_id, status, &txn)
+            .await?;
+
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn notify_when_plan_status_changed_with_txn(
+        &self,
+        tenant_id: i64,
+        plan_id: i64,
+        next_status: PickingPlanStatus,
+        txn: &DatabaseTransaction,
+    ) -> Result<(), DbErr> {
+        let (current_status, version) = self
+            .get_picking_plan_status_with_txn(tenant_id, plan_id, txn)
+            .await?;
+
+        if current_status == next_status {
+            return Ok(());
+        }
+
+        if !current_status.can_transition_to(&next_status) {
+            return Err(DbErr::Custom(format!(
+                "Invalid state transition from {:?} to {:?}",
+                current_status, next_status
+            )));
+        }
+
+        // @TODO: process event here
+        match next_status {
+            PickingPlanStatus::Created => {}
+            PickingPlanStatus::Planed => {}
+            PickingPlanStatus::Running => {}
+            PickingPlanStatus::Failed => {}
+            PickingPlanStatus::Done => {}
+            _ => {}
+        }
+
+        PickingPlanEvents::insert(picking_plan_events::ActiveModel {
+            tenant_id: Set(tenant_id),
+            plan_id: Set(plan_id),
+            version: Set(version + 1),
+            status: Set(next_status.clone() as i32),
+            ..Default::default()
+        })
+        .exec(txn)
+        .await?;
+
+        let result = PickingPlans::update_many()
+            .col_expr(
+                picking_plans::Column::Status,
+                Expr::value(next_status as i32),
+            )
+            .col_expr(picking_plans::Column::Version, Expr::value(version + 1))
+            .filter(picking_plans::Column::Id.eq(plan_id))
+            .filter(picking_plans::Column::Version.eq(version))
+            .exec(txn)
+            .await?;
+        if result.rows_affected == 0 {
+            Err(DbErr::Custom(format!(
+                "Failed updating new change of plan {}",
+                plan_id,
+            )))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub async fn notify_when_route_status_changed(
+        &self,
+        tenant_id: i64,
+        actor_id: i64,
+        route_id: i64,
+        status: PickingRouteStatus,
+    ) -> Result<(), DbErr> {
+        let txn = self.dbt(tenant_id).begin().await?;
+
+        self.notify_when_route_status_changed_with_txn(tenant_id, actor_id, route_id, status, &txn)
+            .await?;
+
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn notify_when_route_status_changed_with_txn(
+        &self,
+        tenant_id: i64,
+        actor_id: i64,
+        route_id: i64,
+        next_status: PickingRouteStatus,
+        txn: &DatabaseTransaction,
+    ) -> Result<(), DbErr> {
+        let (current_status, version) = self
+            .get_picking_route_status_with_txn(tenant_id, route_id, txn)
+            .await?;
+
+        if current_status == next_status {
+            return Ok(());
+        }
+
+        if !current_status.can_transition_to(&next_status) {
+            return Err(DbErr::Custom(format!(
+                "Invalid state transition from {:?} to {:?}",
+                current_status, next_status
+            )));
+        }
+
+        // @TODO: process event here
+        match next_status {
+            PickingRouteStatus::Caculating => {}
+            PickingRouteStatus::Pending => {}
+            PickingRouteStatus::Running => {}
+            PickingRouteStatus::Failed => {}
+            PickingRouteStatus::Done => {}
+            _ => {}
+        }
+
+        PickingRouteEvents::insert(picking_route_events::ActiveModel {
+            tenant_id: Set(tenant_id),
+            actor_id: Set(actor_id),
+            route_id: Set(route_id),
+            version: Set(version + 1),
+            status: Set(next_status.clone() as i32),
+            ..Default::default()
+        })
+        .exec(txn)
+        .await?;
+
+        let result = PickingRoutes::update_many()
+            .col_expr(
+                picking_routes::Column::Status,
+                Expr::value(next_status as i32),
+            )
+            .col_expr(picking_routes::Column::Version, Expr::value(version + 1))
+            .filter(picking_routes::Column::Id.eq(route_id))
+            .filter(picking_routes::Column::Version.eq(version))
+            .exec(txn)
+            .await?;
+        if result.rows_affected == 0 {
+            Err(DbErr::Custom(format!(
+                "Failed updating new change of route {}, actor {}",
+                route_id, actor_id,
+            )))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub async fn notify_when_order_status_changed(
+        &self,
+        tenant_id: i64,
+        sale_id: i64,
+        status: SaleStatus,
+    ) -> Result<(), DbErr> {
+        let txn = self.dbt(tenant_id).begin().await?;
+
+        self.notify_when_order_status_changed_with_txn(tenant_id, sale_id, status, &txn)
+            .await?;
+
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn notify_when_order_status_changed_with_txn(
+        &self,
+        tenant_id: i64,
+        sale_id: i64,
+        next_status: SaleStatus,
+        txn: &DatabaseTransaction,
+    ) -> Result<(), DbErr> {
+        let (current_status, version) = self
+            .get_sale_status_with_txn(tenant_id, sale_id, txn)
+            .await?;
+
+        if current_status == next_status {
+            return Ok(());
+        }
+
+        if !current_status.can_transition_to(&next_status) {
+            return Err(DbErr::Custom(format!(
+                "Invalid state transition from {:?} to {:?}",
+                current_status, next_status
+            )));
+        }
+
+        // @TODO: process event here
+        match next_status {
+            SaleStatus::Paid => {}
+            SaleStatus::Delivered => {}
+            SaleStatus::Returned => {}
+            SaleStatus::Refunded => {}
+            SaleStatus::Failed => {}
+            SaleStatus::Done => {}
+            _ => {}
+        }
+
+        SaleEvents::insert(sale_events::ActiveModel {
+            tenant_id: Set(tenant_id),
+            sale_id: Set(sale_id),
+            version: Set(version + 1),
+            status: Set(next_status.clone() as i32),
+            ..Default::default()
+        })
+        .exec(txn)
+        .await?;
+
+        let result = Sales::update_many()
+            .col_expr(sales::Column::Status, Expr::value(next_status as i32))
+            .col_expr(sales::Column::Version, Expr::value(version + 1))
+            .filter(sales::Column::Id.eq(sale_id))
+            .filter(sales::Column::Version.eq(version))
+            .exec(txn)
+            .await?;
+        if result.rows_affected == 0 {
+            Err(DbErr::Custom(format!(
+                "Failed updating new change of sale {}",
+                sale_id,
+            )))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub async fn release_after_plan_done(&self, tenant_id: i64, plan_id: i64) -> Result<(), DbErr> {
+        let txn = self.dbt(tenant_id).begin().await?;
+
+        let plan = picking_plans::Entity::find_by_id(plan_id)
+            .filter(picking_plans::Column::TenantId.eq(tenant_id))
+            .one(&txn)
+            .await?
+            .ok_or_else(|| {
+                DbErr::Custom(format!(
+                    "Picking Plan {}, tenant {} not exist",
+                    plan_id, tenant_id,
+                ))
+            })?;
+
+        if plan.status != PickingPlanStatus::Done as i32
+            && plan.status != PickingPlanStatus::Failed as i32
+        {
+            Err(DbErr::Custom(format!(
+                "Cannot release duo to plan {}, tenant {} in phase {}, not Done or Failed.",
+                plan_id, tenant_id, plan.status,
+            )))
+        } else {
+            let zones_result = picking_plans_in_zones::Entity::delete_many()
+                .filter(picking_plans_in_zones::Column::TenantId.eq(tenant_id))
+                .filter(picking_plans_in_zones::Column::PlanId.eq(plan_id))
+                .exec(&txn)
+                .await?;
+
+            info!(
+                "Release {} Zones which are linked to Plan ID: {} (Tenant: {})",
+                zones_result.rows_affected, plan_id, tenant_id
+            );
+
+            let nodes_result = picking_plans_in_nodes::Entity::delete_many()
+                .filter(picking_plans_in_nodes::Column::TenantId.eq(tenant_id))
+                .filter(picking_plans_in_nodes::Column::PlanId.eq(plan_id))
+                .exec(&txn)
+                .await?;
+
+            info!(
+                "Release {} nodes which are linked to Plan ID: {} (Tenant: {})",
+                nodes_result.rows_affected, plan_id, tenant_id
+            );
+
+            txn.commit().await?;
+            Ok(())
         }
     }
 }
@@ -1390,7 +3509,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_stocks() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 1;
         let stocks = vec![
             Stock {
@@ -1413,8 +3535,8 @@ mod tests {
             },
         ];
 
-        let created_ids = wms.create_stocks(tenant_id, &stocks).await.unwrap();
-        assert_eq!(created_ids.len(), 2);
+        let created_stocks = wms.create_stocks(tenant_id, &stocks).await.unwrap();
+        assert_eq!(created_stocks.len(), 2);
 
         let fetched = Stocks::find()
             .filter(stocks::Column::TenantId.eq(tenant_id))
@@ -1429,7 +3551,10 @@ mod tests {
     #[tokio::test]
     async fn test_list_paginated_stocks() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 2;
 
         // Create stocks first
@@ -1467,7 +3592,10 @@ mod tests {
     #[tokio::test]
     async fn test_get_stock() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 3;
 
         let stock = Stock {
@@ -1479,11 +3607,11 @@ mod tests {
             name: "Test Stock".to_string(),
             unit: "kg".to_string(),
         };
-        let created_ids = wms
+        let created_stocks = wms
             .create_stocks(tenant_id, &[stock.clone()])
             .await
             .unwrap();
-        let stock_id = created_ids[0];
+        let stock_id = created_stocks[0].id.unwrap();
 
         let fetched = wms.get_stock(tenant_id, stock_id).await.unwrap();
         assert_eq!(fetched.name, "Test Stock");
@@ -1493,7 +3621,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_shelves() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 4;
         let shelves = vec![
             Shelf {
@@ -1508,8 +3639,8 @@ mod tests {
             },
         ];
 
-        let created_ids = wms.create_shelves(tenant_id, &shelves).await.unwrap();
-        assert_eq!(created_ids.len(), 2);
+        let created_shelves = wms.create_shelves(tenant_id, &shelves).await.unwrap();
+        assert_eq!(created_shelves.len(), 2);
 
         let fetched = Shelves::find()
             .filter(shelves::Column::TenantId.eq(tenant_id))
@@ -1523,7 +3654,10 @@ mod tests {
     #[tokio::test]
     async fn test_list_paginated_shelves() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 5;
 
         let shelves = vec![
@@ -1548,21 +3682,24 @@ mod tests {
     #[tokio::test]
     async fn test_create_lots() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 6;
         let lots = vec![Lot {
             id: None,
             entry_date: Some(Utc::now()),
             expired_date: None,
             cost_price: Some(15.0),
-            status: Some("Available".to_string()),
+            status: Some(LotStatus::Available),
             supplier: Some("Supplier 1".to_string()),
             lot_number: "LOT001".to_string(),
             quantity: 100,
         }];
 
-        let created_ids = wms.create_lots(tenant_id, &lots).await.unwrap();
-        assert_eq!(created_ids.len(), 1);
+        let created_lots = wms.create_lots(tenant_id, &lots).await.unwrap();
+        assert_eq!(created_lots.len(), 1);
 
         let fetched = Lots::find()
             .filter(lots::Column::TenantId.eq(tenant_id))
@@ -1578,7 +3715,10 @@ mod tests {
     #[tokio::test]
     async fn test_get_lot() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 7;
 
         let lot = Lot {
@@ -1586,24 +3726,27 @@ mod tests {
             entry_date: Some(Utc::now()),
             expired_date: None,
             cost_price: Some(15.0),
-            status: Some("Available".to_string()),
+            status: Some(LotStatus::Available),
             supplier: Some("Supplier 1".to_string()),
             lot_number: "LOT001".to_string(),
             quantity: 100,
         };
-        let created_ids = wms.create_lots(tenant_id, &[lot.clone()]).await.unwrap();
-        let lot_id = created_ids[0];
+        let created_lots = wms.create_lots(tenant_id, &[lot.clone()]).await.unwrap();
+        let lot_id = created_lots[0].id.unwrap();
 
         let fetched = wms.get_lot(tenant_id, lot_id).await.unwrap();
         assert_eq!(fetched.lot_number, "LOT001");
         assert_eq!(fetched.quantity, 100);
-        assert_eq!(fetched.status.unwrap(), "Available");
+        assert_eq!(fetched.status.unwrap(), LotStatus::Available);
     }
 
     #[tokio::test]
     async fn test_list_paginated_lots_of_stock() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 8;
 
         // Create stock
@@ -1616,8 +3759,8 @@ mod tests {
             name: "Stock for Lots".to_string(),
             unit: "unit".to_string(),
         };
-        let stock_ids = wms.create_stocks(tenant_id, &[stock]).await.unwrap();
-        let stock_id = stock_ids[0];
+        let created_stocks = wms.create_stocks(tenant_id, &[stock]).await.unwrap();
+        let stock_id = created_stocks[0].id.unwrap();
 
         // Create lots (but to link, we need items, but for simplicity, assume list works without items for count)
         let lot = Lot {
@@ -1625,7 +3768,7 @@ mod tests {
             entry_date: Some(Utc::now()),
             expired_date: None,
             cost_price: Some(15.0),
-            status: Some("Available".to_string()),
+            status: Some(LotStatus::Available),
             supplier: Some("Supplier".to_string()),
             lot_number: "LOT001".to_string(),
             quantity: 100,
@@ -1643,7 +3786,10 @@ mod tests {
     #[tokio::test]
     async fn test_plan_import_new_items() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 9;
 
         // Create stock and lot
@@ -1656,21 +3802,21 @@ mod tests {
             name: "Stock for Import".to_string(),
             unit: "unit".to_string(),
         };
-        let stock_ids = wms.create_stocks(tenant_id, &[stock]).await.unwrap();
-        let stock_id = stock_ids[0];
+        let created_stocks = wms.create_stocks(tenant_id, &[stock]).await.unwrap();
+        let stock_id = created_stocks[0].id.unwrap();
 
         let lot = Lot {
             id: None,
             entry_date: Some(Utc::now()),
             expired_date: None,
             cost_price: Some(10.0),
-            status: Some("Available".to_string()),
+            status: Some(LotStatus::Available),
             supplier: Some("Supplier".to_string()),
             lot_number: "LOT001".to_string(),
             quantity: 5,
         };
-        let lot_ids = wms.create_lots(tenant_id, &[lot]).await.unwrap();
-        let lot_id = lot_ids[0];
+        let lots = wms.create_lots(tenant_id, &[lot]).await.unwrap();
+        let lot_id = lots[0].id.unwrap();
 
         let items = vec![
             Item {
@@ -1680,9 +3826,10 @@ mod tests {
                 lot_number: None,
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
-                barcode: Some("BAR001".to_string()),
-                cost_price: 10.0,
-                status: "plan".to_string(),
+                barcode: None,
+                cost_price: Some(10.0),
+                status: Some(ItemStatus::Plan),
+                ..Default::default()
             };
             3
         ];
@@ -1703,11 +3850,14 @@ mod tests {
     #[tokio::test]
     async fn test_import_real_items() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 10;
 
         // Setup shelf to store un-classified items
-        let shelf_id = wms
+        let created_shelves = wms
             .create_shelves(
                 tenant_id,
                 &[
@@ -1724,10 +3874,11 @@ mod tests {
                 ],
             )
             .await
-            .unwrap()[1];
+            .unwrap();
+        let shelf_id = created_shelves[1].id.unwrap();
 
         // Setup stock, lot, plan items
-        let stock_id = wms
+        let created_stocks = wms
             .create_stocks(
                 tenant_id,
                 &[Stock {
@@ -1741,8 +3892,9 @@ mod tests {
                 }],
             )
             .await
-            .unwrap()[0];
-        let lot_id = wms
+            .unwrap();
+        let stock_id = created_stocks[0].id.unwrap();
+        let created_lots = wms
             .create_lots(
                 tenant_id,
                 &[Lot {
@@ -1750,14 +3902,15 @@ mod tests {
                     entry_date: Some(Utc::now()),
                     expired_date: None,
                     cost_price: Some(10.0),
-                    status: Some("Available".to_string()),
+                    status: Some(LotStatus::Available),
                     supplier: Some("Supp".to_string()),
                     lot_number: "LOT001".to_string(),
                     quantity: 3,
                 }],
             )
             .await
-            .unwrap()[0];
+            .unwrap();
+        let lot_id = created_lots[0].id.unwrap();
 
         let plan_items = vec![
             Item {
@@ -1768,8 +3921,9 @@ mod tests {
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
                 barcode: None,
-                cost_price: 10.0,
-                status: "plan".to_string(),
+                cost_price: Some(10.0),
+                status: Some(ItemStatus::Plan),
+                ..Default::default()
             };
             3
         ];
@@ -1783,7 +3937,7 @@ mod tests {
         for (i, item) in import_items.iter_mut().enumerate() {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
-            item.status = ItemStatus::Available.to_string();
+            item.status = Some(ItemStatus::Available);
             item.barcode = Some(format!("BAR{:03}", i + 1));
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
@@ -1806,11 +3960,14 @@ mod tests {
     #[tokio::test]
     async fn test_assign_items_to_shelf() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 12;
 
         // Setup shelf
-        let shelf_id = wms
+        let created_shelves = wms
             .create_shelves(
                 tenant_id,
                 &[
@@ -1827,10 +3984,11 @@ mod tests {
                 ],
             )
             .await
-            .unwrap()[1];
+            .unwrap();
+        let shelf_id = created_shelves[1].id.unwrap();
 
         // Setup items
-        let stock_id = wms
+        let created_stocks = wms
             .create_stocks(
                 tenant_id,
                 &[Stock {
@@ -1844,8 +4002,9 @@ mod tests {
                 }],
             )
             .await
-            .unwrap()[0];
-        let lot_id = wms
+            .unwrap();
+        let stock_id = created_stocks[0].id.unwrap();
+        let created_lots = wms
             .create_lots(
                 tenant_id,
                 &[Lot {
@@ -1853,14 +4012,15 @@ mod tests {
                     entry_date: Some(Utc::now()),
                     expired_date: None,
                     cost_price: Some(10.0),
-                    status: Some("Available".to_string()),
+                    status: Some(LotStatus::Available),
                     supplier: Some("Supp".to_string()),
                     lot_number: "LOT001".to_string(),
                     quantity: 2,
                 }],
             )
             .await
-            .unwrap()[0];
+            .unwrap();
+        let lot_id = created_lots[0].id.unwrap();
 
         let items = vec![
             Item {
@@ -1870,9 +4030,10 @@ mod tests {
                 lot_number: None,
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
-                barcode: Some("BAR001".to_string()),
-                cost_price: 10.0,
-                status: "available".to_string(),
+                barcode: None,
+                cost_price: Some(10.0),
+                status: Some(ItemStatus::Available),
+                ..Default::default()
             };
             2
         ];
@@ -1883,7 +4044,7 @@ mod tests {
         for (i, item) in import_items.iter_mut().enumerate() {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
-            item.status = ItemStatus::Available.to_string();
+            item.status = Some(ItemStatus::Available);
             item.barcode = Some(format!("BAR{:03}", i + 1));
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
@@ -1907,11 +4068,14 @@ mod tests {
     #[tokio::test]
     async fn test_get_item_by_barcode() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 13;
 
         // Setup shelf to store un-classified items
-        let shelf_id = wms
+        let created_shelves = wms
             .create_shelves(
                 tenant_id,
                 &[
@@ -1928,9 +4092,10 @@ mod tests {
                 ],
             )
             .await
-            .unwrap()[0];
+            .unwrap();
+        let shelf_id = created_shelves[0].id.unwrap();
 
-        let stock_id = wms
+        let created_stocks = wms
             .create_stocks(
                 tenant_id,
                 &[Stock {
@@ -1944,8 +4109,9 @@ mod tests {
                 }],
             )
             .await
-            .unwrap()[0];
-        let lot_id = wms
+            .unwrap();
+        let stock_id = created_stocks[0].id.unwrap();
+        let created_lots = wms
             .create_lots(
                 tenant_id,
                 &[Lot {
@@ -1953,15 +4119,16 @@ mod tests {
                     entry_date: Some(Utc::now()),
                     expired_date: None,
                     cost_price: Some(10.0),
-                    status: Some("Available".to_string()),
+                    status: Some(LotStatus::Available),
                     supplier: Some("Supp".to_string()),
                     lot_number: "LOT001".to_string(),
                     quantity: 1,
                 }],
             )
             .await
-            .unwrap()[0];
-        let shelf_id = wms
+            .unwrap();
+        let lot_id = created_lots[0].id.unwrap();
+        let created_shelves_2 = wms
             .create_shelves(
                 tenant_id,
                 &[Shelf {
@@ -1971,7 +4138,8 @@ mod tests {
                 }],
             )
             .await
-            .unwrap()[0];
+            .unwrap();
+        let shelf_id = created_shelves_2[0].id.unwrap();
 
         let item = Item {
             id: None,
@@ -1980,9 +4148,10 @@ mod tests {
             lot_number: Some("LOT001".to_string()),
             lot_id: Some(lot_id),
             stock_id: Some(stock_id),
-            barcode: Some("BAR123".to_string()),
-            cost_price: 10.0,
-            status: "in-stock".to_string(),
+            barcode: None,
+            cost_price: Some(10.0),
+            status: Some(ItemStatus::Available),
+            ..Default::default()
         };
         let created_items = wms
             .plan_import_new_items(tenant_id, &[item.clone()])
@@ -1993,7 +4162,8 @@ mod tests {
         for (i, item) in import_items.iter_mut().enumerate() {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
-            item.status = ItemStatus::Available.to_string();
+            item.barcode = Some("BAR123".to_string());
+            item.status = Some(ItemStatus::Available);
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
 
@@ -2005,22 +4175,25 @@ mod tests {
             .unwrap();
 
         let fetched = wms
-            .get_item_by_barcode(tenant_id, &"BAR123".to_string())
+            .get_item_by_barcode_in_inventory(tenant_id, &"BAR123".to_string())
             .await
             .unwrap();
         assert_eq!(fetched.barcode.unwrap(), "BAR123");
         assert_eq!(fetched.lot_number.unwrap(), "LOT001");
-        assert_eq!(fetched.status, "in-stock");
+        assert_eq!(fetched.status, Some(ItemStatus::Available));
     }
 
     #[tokio::test]
     async fn test_sale_at_storefront() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 14;
 
         // Setup shelf to store un-classified items
-        let shelf_id = wms
+        let created_shelves = wms
             .create_shelves(
                 tenant_id,
                 &[
@@ -2037,9 +4210,10 @@ mod tests {
                 ],
             )
             .await
-            .unwrap()[1];
+            .unwrap();
+        let shelf_id = created_shelves[1].id.unwrap();
 
-        let stock_id = wms
+        let created_stocks = wms
             .create_stocks(
                 tenant_id,
                 &[Stock {
@@ -2053,8 +4227,9 @@ mod tests {
                 }],
             )
             .await
-            .unwrap()[0];
-        let lot_id = wms
+            .unwrap();
+        let stock_id = created_stocks[0].id.unwrap();
+        let created_lots = wms
             .create_lots(
                 tenant_id,
                 &[Lot {
@@ -2062,14 +4237,15 @@ mod tests {
                     entry_date: Some(Utc::now()),
                     expired_date: None,
                     cost_price: Some(10.0),
-                    status: Some("Available".to_string()),
+                    status: Some(LotStatus::Available),
                     supplier: Some("Supp".to_string()),
                     lot_number: "LOT001".to_string(),
                     quantity: 2,
                 }],
             )
             .await
-            .unwrap()[0];
+            .unwrap();
+        let lot_id = created_lots[0].id.unwrap();
 
         let items = vec![
             Item {
@@ -2079,9 +4255,10 @@ mod tests {
                 lot_number: None,
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
-                barcode: Some("BAR001".to_string()),
-                cost_price: 10.0,
-                status: ItemStatus::Available.to_string(),
+                barcode: None,
+                cost_price: Some(10.0),
+                status: Some(ItemStatus::Available),
+                ..Default::default()
             },
             Item {
                 id: None,
@@ -2090,9 +4267,10 @@ mod tests {
                 lot_number: None,
                 lot_id: Some(lot_id),
                 stock_id: Some(stock_id),
-                barcode: Some("BAR002".to_string()),
-                cost_price: 10.0,
-                status: ItemStatus::Available.to_string(),
+                barcode: None,
+                cost_price: Some(10.0),
+                status: Some(ItemStatus::Available),
+                ..Default::default()
             },
         ];
         let created_items = wms.plan_import_new_items(tenant_id, &items).await.unwrap();
@@ -2102,7 +4280,7 @@ mod tests {
         for (i, item) in import_items.iter_mut().enumerate() {
             item.id = created_items[i].id;
             item.shelf = Some("Test Shelf".to_string());
-            item.status = ItemStatus::Available.to_string();
+            item.status = Some(ItemStatus::Available);
             item.barcode = Some(format!("BAR{:03}", i + 1));
             item.expired_at = Some(Utc::now() + chrono::Duration::days(30));
         }
@@ -2130,15 +4308,17 @@ mod tests {
             .unwrap();
         assert!(fetched_items
             .iter()
-            .all(|i| ItemStatus::try_from(i.status).unwrap().to_string()
-                == ItemStatus::Saled.to_string()));
+            .all(|i| ItemStatus::from(i.status) == ItemStatus::Saled));
         assert!(fetched_items.iter().all(|i| i.order_id == Some(123)));
     }
 
     #[tokio::test]
     async fn test_sale_at_website() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 15;
 
         let stocks = vec![
@@ -2161,7 +4341,8 @@ mod tests {
                 unit: "unit".to_string(),
             },
         ];
-        let stock_ids = wms.create_stocks(tenant_id, &stocks).await.unwrap();
+        let stock_objs = wms.create_stocks(tenant_id, &stocks).await.unwrap();
+        let stock_ids: Vec<i64> = stock_objs.iter().map(|s| s.id.unwrap()).collect();
 
         let sale = Sale {
             id: None,
@@ -2188,10 +4369,13 @@ mod tests {
     #[tokio::test]
     async fn test_list_paginated_stocks_of_shelf() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 16;
 
-        let shelf_id = wms
+        let created_shelves = wms
             .create_shelves(
                 tenant_id,
                 &[Shelf {
@@ -2201,7 +4385,8 @@ mod tests {
                 }],
             )
             .await
-            .unwrap()[0];
+            .unwrap();
+        let shelf_id = created_shelves[0].id.unwrap();
 
         let stock = Stock {
             id: None,
@@ -2212,7 +4397,8 @@ mod tests {
             name: "Shelf Stock".to_string(),
             unit: "unit".to_string(),
         };
-        let stock_id = wms.create_stocks(tenant_id, &[stock]).await.unwrap()[0];
+        let stocks = wms.create_stocks(tenant_id, &[stock]).await.unwrap();
+        let stock_id = stocks[0].id.unwrap();
 
         // Assume stock_shelves insert is needed, but since not in code, skip or mock
         // For test, assume the join works if data is there; but code has stock_shelves, assume created elsewhere or adjust
@@ -2236,7 +4422,10 @@ mod tests {
     #[tokio::test]
     async fn test_list_paginated_stocks_detailed() {
         let db = setup_db().await.unwrap();
-        let wms = Wms::new(vec![Arc::new(db)]);
+        let wms = Wms::new(
+            vec![Arc::new(db)],
+            Arc::new(SnowflakeId::new(1, 1735948800000)),
+        );
         let tenant_id = 17;
         // Create shelves
         let shelves = vec![
@@ -2251,9 +4440,9 @@ mod tests {
                 description: None,
             },
         ];
-        let shelf_ids = wms.create_shelves(tenant_id, &shelves).await.unwrap();
-        let shelf_a_id = shelf_ids[0];
-        let shelf_b_id = shelf_ids[1];
+        let shelves_created = wms.create_shelves(tenant_id, &shelves).await.unwrap();
+        let shelf_a_id = shelves_created[0].id.unwrap();
+        let shelf_b_id = shelves_created[1].id.unwrap();
         // Create stocks
         let stocks = vec![
             Stock {
@@ -2269,16 +4458,16 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let stock_ids = wms.create_stocks(tenant_id, &stocks).await.unwrap();
-        let stock1_id = stock_ids[0];
-        let stock2_id = stock_ids[1];
+        let created_stocks = wms.create_stocks(tenant_id, &stocks).await.unwrap();
+        let stock1_id = created_stocks[0].id.unwrap();
+        let stock2_id = created_stocks[1].id.unwrap();
         // Create lots
         let lots = vec![
             Lot {
                 lot_number: "LOT001".to_string(),
                 quantity: 50,
                 cost_price: Some(10.0),
-                status: Some("Available".to_string()),
+                status: Some(LotStatus::Available),
                 supplier: Some("Supplier A".to_string()),
                 entry_date: Some(Utc::now()),
                 ..Default::default()
@@ -2287,32 +4476,32 @@ mod tests {
                 lot_number: "LOT002".to_string(),
                 quantity: 30,
                 cost_price: Some(15.0),
-                status: Some("Available".to_string()),
+                status: Some(LotStatus::Available),
                 supplier: Some("Supplier B".to_string()),
                 entry_date: Some(Utc::now()),
                 ..Default::default()
             },
         ];
-        let lot_ids = wms.create_lots(tenant_id, &lots).await.unwrap();
-        let lot1_id = lot_ids[0];
-        let lot2_id = lot_ids[1];
+        let created_lots = wms.create_lots(tenant_id, &lots).await.unwrap();
+        let lot1_id = created_lots[0].id.unwrap();
+        let lot2_id = created_lots[1].id.unwrap();
         // Plan and import items to link everything
         let items1 = vec![
             Item {
                 stock_id: Some(stock1_id),
                 lot_id: Some(lot1_id),
-                cost_price: 10.0,
-                status: "plan".to_string(),
+                cost_price: Some(10.0),
+                status: Some(ItemStatus::Plan),
                 ..Default::default()
             };
             20  // Part of lot1 for stock1
         ];
         let created_items1 = wms.plan_import_new_items(tenant_id, &items1).await.unwrap();
         let mut import_items1 = created_items1.clone();
-        for item in import_items1.iter_mut() {
+        for (i, item) in import_items1.iter_mut().enumerate() {
             item.shelf = Some("Shelf A".to_string());
-            item.status = ItemStatus::Available.to_string();
-            item.barcode = Some("BAR1".to_string());
+            item.status = Some(ItemStatus::Available);
+            item.barcode = Some(format!("BAR0-{}", i));
         }
         wms.import_real_items(tenant_id, lot1_id, &import_items1)
             .await
@@ -2324,18 +4513,18 @@ mod tests {
             Item {
                 stock_id: Some(stock2_id),
                 lot_id: Some(lot2_id),
-                cost_price: 15.0,
-                status: "plan".to_string(),
+                cost_price: Some(15.0),
+                status: Some(ItemStatus::Plan),
                 ..Default::default()
             };
             10  // Part of lot2 for stock2
         ];
         let created_items2 = wms.plan_import_new_items(tenant_id, &items2).await.unwrap();
         let mut import_items2 = created_items2.clone();
-        for item in import_items2.iter_mut() {
+        for (i, item) in import_items2.iter_mut().enumerate() {
             item.shelf = Some("Shelf B".to_string());
-            item.status = ItemStatus::Available.to_string();
-            item.barcode = Some("BAR2".to_string());
+            item.status = Some(ItemStatus::Available);
+            item.barcode = Some(format!("BAR1-{}", i));
         }
         wms.import_real_items(tenant_id, lot2_id, &import_items2)
             .await
