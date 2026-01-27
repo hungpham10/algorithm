@@ -164,7 +164,7 @@ pub async fn run() -> std::io::Result<()> {
                         get().to(crate::api::ohcl::v1::get_list_of_symbols_by_product),
                     ),
             )
-            // @NOTE: APIs of WMS
+            // @NOTE: APIs of ecommerce
             .service(
                 scope("/api/ecommerce")
                     .route("/v1/wms/stocks", get().to(crate::api::wms::v1::list_stocks))
@@ -319,6 +319,10 @@ pub async fn run() -> std::io::Result<()> {
                     .route(
                         "/v1/wms/stock/high-turnover",
                         get().to(crate::api::wms::v1::get_high_turnover),
+                    )
+                    .route(
+                        "v1/cms/webhooks/hubspot",
+                        post().to(crate::api::cms::v1::hubspot::receive_data_changing),
                     ),
             )
             // @NOTE: AppState
