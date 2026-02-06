@@ -1,26 +1,20 @@
 use serde::{Deserialize, Serialize};
 
+use menu::Context as MenuContext;
+
 #[derive(Serialize, Deserialize, Clone)]
-pub struct Padding {
+struct Padding {
     page: String,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Features {
-    padding: Padding,
-    logo: String,
-    menu: Vec<String>,
-    contents: Vec<String>,
-    searchable: bool,
-}
-
 mod application;
-mod contents;
+mod dropdown;
 mod footer;
 mod header;
 mod logo;
 mod main;
 mod menu;
 mod search;
+mod vertical;
 
 pub use application::Application;

@@ -15,5 +15,6 @@ Session.vim
 /target
 /dist
 /pkgs/backend/dist
+/pkgs/frontend/dist
 .aider*
 /templates
