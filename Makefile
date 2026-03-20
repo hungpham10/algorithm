@@ -9,11 +9,9 @@ SERVICES_DIR := pkgs/services
 PROXY_DIR := pkgs/proxy
 FRONTEND_DIR := pkgs/frontend
 
-# Docker Compose helper
 up:
 	@docker-compose up --build
 
-# Setup môi trường cơ bản cho CI/CD và Dev
 setup:
 	@if ! command -v rustc > /dev/null; then \
 		echo "Installing Rust..."; \
@@ -24,13 +22,11 @@ setup:
 		$(CARGO) install trunk; \
 	fi
 
-# Lint code cho toàn bộ workspace
 lint:
 	@echo "Running Clippy & Fmt..."
 	$(CARGO) clippy --all-targets --all-features -- -D warnings
 	$(CARGO) fmt --all -- --check
 
-# Build các thành phần chính
 proxy:
 	@echo "Building Proxy (Release)..."
 	$(CARGO) build -p proxy --release
@@ -43,7 +39,6 @@ client:
 	@echo "Building Frontend (Trunk Release)..."
 	cd $(FRONTEND_DIR) && $(TRUNK) build --release
 
-# Chạy test suite
 test-backend:
 	$(CARGO) test -p backend
 
@@ -53,13 +48,10 @@ test-proxy:
 test-services:
 	$(CARGO) test -p services
 
-# Gom tất cả các test lại
 test: test-backend test-proxy test-services
 
-# Target build toàn bộ project
 all: lint test server proxy client
 
-# Dọn dẹp artifact
 clean:
 	@echo "Cleaning workspace..."
 	$(CARGO) clean

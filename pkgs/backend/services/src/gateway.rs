@@ -51,7 +51,7 @@ pub async fn routes(
     let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
     let environment = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "dev".to_string());
 
-    // @TODO: xem thử có cách nào load cấu hình từ yaml bên ngoài luôn đươc không
+    // TODO: xem thử có cách nào load cấu hình từ yaml bên ngoài luôn đươc không
     let mut router = Router::new()
         .route("/health", get(health_check))
         .route("/reload", post(reload))
