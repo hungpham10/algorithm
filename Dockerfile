@@ -1,7 +1,7 @@
 ARG NGX_VERSION=1.27.1
 
 # -----------------------------------------------------------------------
-# --- builder: build all examples
+# --- Build proxy stage
 # -----------------------------------------------------------------------
 FROM rust:bookworm AS proxy
 ARG NGX_VERSION
@@ -47,17 +47,20 @@ ENV NGINX_DIR=/usr/local/openresty/nginx/conf
 ENV SUPERVISOR_DIR=/etc/supervisor/conf.d
 
 WORKDIR /app
-COPY --from=backend /app/target/release/algorithm ./aio
+COPY --from=backend /app/target/release/services ./aio
 COPY --from=proxy /app/target/release/libproxy.so /usr/local/openresty/nginx/modules/libproxy.so
-COPY sql ./sql
+COPY sql /sql
+COPY scripts/nginx.sh /app/nginx.sh
 COPY scripts/release.sh /app/endpoint.sh
 
 # Install runtime dependencies
-RUN apt update && 												\
-	apt install -y supervisor curl git
+RUN apt update && apt install -y supervisor curl git gettext-base default-mysql-client tor
 
 # Create supervisor configuration directory
 RUN mkdir -p /etc/supervisor/conf.d
+
+# Copy supervisor configuration files
+COPY conf/torrc /etc/tor/torrc
 
 # Copy supervisor configuration files
 COPY conf/supervisor/*.conf /etc/supervisor/conf.d/
@@ -65,6 +68,7 @@ COPY conf/supervisor/*.conf /etc/supervisor/conf.d/
 # Copy Nginx configuration
 COPY conf/nginx/http.conf /usr/local/openresty/nginx/conf/nginx.conf
 COPY conf/nginx/www.conf /usr/local/openresty/nginx/conf/http.d/default.conf
+COPY conf/nginx/vhost /usr/local/openresty/nginx/conf/http.d/vhost
 
 # Setup openresty modules
 RUN if git clone https://github.com/zmartzone/lua-resty-openidc.git /tmp/openidc; then 				\
@@ -108,6 +112,8 @@ RUN useradd nginx &&												\
 	mkdir /var/log/nginx && 										\
 	chown -R nginx:nginx /var/log/nginx && 									\
 	chmod -R 755 /var/log/nginx
+
+RUN rm -rf /var/lib/apt/lists/*
 
 ENTRYPOINT ["/app/endpoint.sh", "/usr/bin/supervisord", "/sql", "-n"]
 EXPOSE 8080

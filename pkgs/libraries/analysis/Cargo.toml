@@ -1,0 +1,10 @@
+[package]
+name = "analysis"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+itertools = "0.14.0"
+rayon = "1.11.0"
+
+schemas = { path = "../../backend/schemas" }

@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: algorithm
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 512M
+    sysctls:
+      - net.core.somaxconn=65535
+      - net.ipv4.ip_local_port_range=1024 65535
+    environment:
+      - LAVINMQ_DSN=""
+      - MYSQL_DSN=mysql://admin:rootroot@db:3306/default
+      - MYSQL_HOST=db
+      - MYSQL_USER=admin
+      - MYSQL_PORT=3306
+      - MYSQL_PASSWORD=rootroot
+      - MYSQL_DATABASE=default
+      - REDIS_DSN=redis://default:rootroot@valkey:6379,redis://default:rootroot@valkey:6379
+      - REDIS_HOST=valkey
+      - REDIS_PORT=6379
+      - REDIS_USERNAME=default
+      - REDIS_PASSWORD=rootroot
+    depends_on:
+      - db
+      - valkey
+    networks:
+      - app-network
+
+  db:
+    image: mysql:8.0
+    container_name: mysql-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootroot
+      MYSQL_DATABASE: default
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: rootroot
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - app-network
+
+  valkey:
+    image: valkey/valkey:9.0-alpine
+    command: valkey-server --requirepass rootroot
+    container_name: valkey-cache
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  db_data:

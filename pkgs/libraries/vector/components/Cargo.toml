@@ -1,0 +1,13 @@
+[package]
+name = "vector_components"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+vector_config_macro = { path = "../../../macros/vector_config_macro" }
+vector_runtime = { path = "../runtime" }
+tokio = { version = "1.49.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.149"
+typetag = "0.2.21"
+async-trait = "0.1.89"

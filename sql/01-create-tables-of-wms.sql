@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS  `wms_items` (
 -- END
 
 -- BEGIN: danh sách các bảng liên quan topology
-CREATE TABLE `wms_zones` (
+CREATE TABLE IF NOT EXISTS `wms_zones` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` BIGINT NOT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -129,7 +129,7 @@ CREATE TABLE `wms_zones` (
   UNIQUE KEY `unique_tenant_name` (`tenant_id`, `name`)
 );
 
-CREATE TABLE `wms_nodes` (
+CREATE TABLE IF NOT EXISTS `wms_nodes` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` BIGINT NOT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -143,7 +143,7 @@ CREATE TABLE `wms_nodes` (
   UNIQUE KEY `unique_tenant_name` (`tenant_id`, `name`)
 );
 
-CREATE TABLE `wms_paths` (
+CREATE TABLE IF NOT EXISTS `wms_paths` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` BIGINT NOT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -162,7 +162,7 @@ CREATE TABLE `wms_paths` (
 -- END
 
 -- BEGIN: danh sách các bảng liên quan feature picking
-CREATE TABLE `wms_picking_plans` (
+CREATE TABLE IF NOT EXISTS `wms_picking_plans` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` BIGINT NOT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -171,15 +171,7 @@ CREATE TABLE `wms_picking_plans` (
   `status` integer
 );
 
-CREATE TABLE `wms_picking_plans_in_zones` (
-  `id` BIGINT PRIMARY KEY,
-  `tenant_id` BIGINT NOT NULL,
-  `plan_id` BIGINT NOT NULL,
-  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-);
-
-CREATE TABLE `wms_picking_plans_in_nodes` (
+CREATE TABLE IF NOT EXISTS `wms_picking_plans_in_zones` (
   `id` BIGINT PRIMARY KEY,
   `tenant_id` BIGINT NOT NULL,
   `plan_id` BIGINT NOT NULL,
@@ -187,7 +179,15 @@ CREATE TABLE `wms_picking_plans_in_nodes` (
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
-CREATE TABLE `wms_picking_routes` (
+CREATE TABLE IF NOT EXISTS `wms_picking_plans_in_nodes` (
+  `id` BIGINT PRIMARY KEY,
+  `tenant_id` BIGINT NOT NULL,
+  `plan_id` BIGINT NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS `wms_picking_routes` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -199,7 +199,7 @@ CREATE TABLE `wms_picking_routes` (
   `paths` json
 );
 
-CREATE TABLE `wms_picking_goods` (
+CREATE TABLE IF NOT EXISTS `wms_picking_goods` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` BIGINT NOT NULL,
   `sale_id` BIGINT NOT NULL,
@@ -214,7 +214,7 @@ CREATE TABLE `wms_picking_goods` (
   UNIQUE KEY `unique_tenant_sale` (`tenant_id`, `sale_id`)
 );
 
-CREATE TABLE `wms_picking_plan_events` (
+CREATE TABLE IF NOT EXISTS `wms_picking_plan_events` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` BIGINT NOT NULL,
   `plan_id` BIGINT NOT NULL,
@@ -226,7 +226,7 @@ CREATE TABLE `wms_picking_plan_events` (
   UNIQUE KEY `unique_tenant_plan_status` (`tenant_id`, `plan_id`, `version`)
 );
 
-CREATE TABLE `wms_picking_route_events` (
+CREATE TABLE IF NOT EXISTS `wms_picking_route_events` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` BIGINT NOT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -239,7 +239,7 @@ CREATE TABLE `wms_picking_route_events` (
   UNIQUE KEY `unique_tenant_route_status` (`tenant_id`, `route_id`, `version`)
 );
 
-CREATE TABLE `wms_picking_items` (
+CREATE TABLE IF NOT EXISTS `wms_picking_items` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` BIGINT NOT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
