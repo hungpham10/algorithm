@@ -331,6 +331,10 @@ impl QueryCandleSticks {
             .get(provider)
             .ok_or_else(|| Error::new(ErrorKind::NotFound, "Provider not found"))?;
 
+        if limit > 1000 {
+            return Err(Error::new(ErrorKind::InvalidData, "`limit` mustn't be larger than 1000"));
+        }
+
         let (adj_from, adj_to) = if provider == "binance" {
             (from * 1000, to * 1000)
         } else {
