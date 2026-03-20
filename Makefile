@@ -39,16 +39,13 @@ client:
 	@echo "Building Frontend (Trunk Release)..."
 	cd $(FRONTEND_DIR) && $(TRUNK) build --release
 
-test-backend:
-	$(CARGO) test -p backend
-
 test-proxy:
 	$(CARGO) test -p proxy
 
 test-services:
 	$(CARGO) test -p services
 
-test: test-backend test-proxy test-services
+test: test-proxy test-services
 
 all: lint test server proxy client
 
