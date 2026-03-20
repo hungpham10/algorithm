@@ -9,6 +9,9 @@ DIST_DIR := dist
 TEST_DIR := tests
 BACKEND_DIR := pkgs/backend
 
+up:
+	@docker-compose up --build
+
 setup:
 	$(PYTHON) -m pip install --upgrade pip
 	$(PYTHON) -m pip install maturin[zig] twine pytest pyarrow patchelf --cache-dir $(PIP_CACHE)
@@ -62,7 +65,7 @@ server:
 	@echo "Building release version $(VERSION)"
 	@mkdir -p $(DIST_DIR)
 	export PATH="$$HOME/.cargo/bin:$$PATH" &&													\
- 	$(CARGO) build -p backend --release --bin algorithm
+ 	$(CARGO) build -p services --release --bin services
 
 client:
 	@echo "Building release version $(VERSION)"

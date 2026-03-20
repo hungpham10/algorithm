@@ -1,7 +1,6 @@
 # GitHub Actions CI/CD workflow for the Rust Python project.
-# This workflow automates linting, testing, and publishing of the Python package
-# to TestPyPI (for development builds) and PyPI (for releases).
-# It leverages Makefile targets for common tasks like setup, lint, test, and build.
+# Focuses on CI (Lint/Test) and CD via Docker images.
+# Removed: PyPI publishing and .deb package generation.
 
 name: Rust Python CI/CD
 
@@ -16,105 +15,25 @@ on:
       - feat/**
       - main
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+' # Matches tags like v0.1.0
-      - '[0-9]+.[0-9]+.[0-9]+'  # Matches tags like 0.1.0
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+'
   pull_request:
     branches:
       - main
 
 jobs:
   lint:
-    name: Lint Code (via Makefile) # Updated name for clarity
+    name: Lint Code
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Rust toolchain
+      - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_VERSION }}
-          components: clippy, rustfmt, llvm-tools
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip' # Enable pip caching
-
-      - name: Cache Cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            pkgs/backend/target/
-            target/
-          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-lint-
-
-      - name: Install dependencies via Makefile
-        run: make setup # make lint depends on this
-
-      - name: Run linters via Makefile
-        run: make lint
-
-  test:
-    name: Test (via Makefile) # Updated name
-    runs-on: ubuntu-22.04
-    needs: [] # Assuming it runs in parallel with linA
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: 'rootroot'
-          MYSQL_PASSWORD: 'rootroot'
-          MYSQL_USER: 'mysql'
-          MYSQL_DATABASE: test
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd "mysqladmin ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 3
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 3
-    env:
-      # @NOTE: AWS S3
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
-      # @NOTE: secret management
-      INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
-      INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-      INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
-
-      # @NOTE: dev environment
-      ENVIRONMENT: dev
-      MYSQL_DSN: mysql://mysql:rootroot@127.0.0.1:3306/test
-      REDIS_DSN: redis://127.0.0.1::6379
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-
-      - name: Install dependencies via Makefile
-        run: make setup
+          components: clippy, rustfmt
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -122,332 +41,93 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
-      - name: Cache Cargo dependencies
-        uses: actions/cache@v3
+      - name: Cache Cargo
+        uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/bin/
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            pkgs/backend/target/
             target/
-          key: ${{ runner.os }}-cargo-release-build-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-release-build-
+          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Setup database for unit test
+      - name: Run Linters
         run: |
-          ./scripts/dataload.sh "mysql" ./sql
+          make setup
+          make lint
 
-      - name: Run tests via Makefile
+  test:
+    name: Test Suite
+    runs-on: ubuntu-22.04
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: 'rootroot'
+          MYSQL_DATABASE: test
+        ports:
+          - 3306:3306
+        options: --health-cmd "mysqladmin ping" --health-interval 10s --health-timeout 5s --health-retries 3
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 3
+    env:
+      ENVIRONMENT: dev
+      MYSQL_DSN: mysql://root:rootroot@127.0.0.1:3306/test
+      REDIS_DSN: redis://127.0.0.1:6379
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust & Python
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Setup Database
+        run: ./scripts/dataload.sh "mysql" ./sql
+
+      - name: Run Tests
         run: |
           make setup
           make test
 
-  build_publish_dev:
-    name: Build and Publish Dev Version (via Makefile) # Updated name
-    runs-on: ${{ matrix.os }}
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    strategy:
-      matrix:
-        os:
-          - ubuntu-22.04
-    permissions:
-      contents: write # For updating Cargo.toml
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-
-      - name: Install build dependencies via Makefile
-        run: make setup # Installs maturin, twine, wheel etc. via Makefile
-
-      # This step modifies backend/Cargo.toml to include a development suffix
-      # (e.g., .dev0+<short_sha>) in the package version.
-      # This ensures development builds have unique, PEP 440 compliant versions.
-      - name: Set development version in backend/Cargo.toml
-        working-directory: ./pkgs/backend # Ensures sed works on backend/Cargo.toml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          BASE_VERSION=$(grep -oP '^version = "\K[^"]+' Cargo.toml)
-          echo "Base version from Cargo.toml: ${BASE_VERSION}"
-
-          if ! which jq &> /dev/null; then
-            sudo apt install -y jq
-          fi
-
-          # Initialize commit count
-          COMMIT_COUNT=0
-          PAGE=1
-          PER_PAGE=100
-          BRANCH="main"
-
-          for i in $(seq 1 10000); do
-            # Fetch commits for the main branch
-            RESPONSE=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-              "https://api.github.com/repos/$GITHUB_REPOSITORY/commits?sha=$BRANCH&per_page=$PER_PAGE&page=$PAGE")
-
-            # Check if response is valid JSON
-            if ! echo "$RESPONSE" | jq . >/dev/null 2>&1; then
-              echo "Error: Invalid API response or authentication failed."
-              exit 1
-            fi
-
-            # Get the number of commits in this page
-            PAGE_COUNT=$(echo "$RESPONSE" | jq 'length')
-
-            # Add to total commit count
-            COMMIT_COUNT=$((COMMIT_COUNT + PAGE_COUNT))
-
-            # If fewer than PER_PAGE commits, we've reached the end
-            if [[ $PAGE_COUNT -lt $PER_PAGE ]]; then
-              break
-            fi
-
-            # Move to the next page
-            PAGE=$((PAGE + 1))
-          done
-
-          # Construct PEP 440 dev version
-          DEV_VERSION="${BASE_VERSION}-dev${COMMIT_COUNT}" # Construct PEP 440 dev version
-          echo "Updating pkgs/backend/Cargo.toml version to: ${DEV_VERSION}"
-
-          # Escape dots in BASE_VERSION for sed pattern to ensure sed works correctly.
-          # This prevents sed from misinterpreting dots as regex special characters.
-          BASE_VERSION_ESCAPED=$(echo "${BASE_VERSION}" | sed 's/\./\\./g')
-
-          # -i.bak creates a backup; rm removes it after successful substitution.
-          sed -i.bak "s/^version = \"${BASE_VERSION_ESCAPED}\"/version = \"${DEV_VERSION}\"/" Cargo.toml
-          rm Cargo.toml.bak # Clean up backup file
-          echo "New version in Cargo.toml: $(grep '^version = ' Cargo.toml)"
-        shell: bash
-
-      - name: Check CPU architecture
-        run: |
-          echo "=== GitHub Actions Runner Info ==="
-          echo "Runner OS       : ${{ runner.os }}"
-          echo "Runner Arch     : ${{ runner.arch }}"     # X64 hoặc ARM64
-          echo ""
-          echo "=== uname -m ==="
-          uname -m                                          # x86_64 hoặc aarch64
-          echo ""
-          echo "=== lscpu (chi tiết) ==="
-          lscpu | grep -E "Architecture|Model name|Vendor ID"
-          echo ""
-          echo "=== file /bin/bash ==="
-          file /bin/bash
-          echo ""
-          echo "=== python -c import platform ==="
-          python3 -c "import platform, sys; print('platform.machine():', platform.machine()); print('sys.maxsize > 2**32:', sys.maxsize > 2**32)"
-
-      - name: Build wheel via Makefile
-        run: make library # This will use the modified Cargo.toml and output to dist/
-
-      - name: Publish development version to TestPyPI
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
-        run: |
-          python -m twine upload --repository-url https://test.pypi.org/legacy/ --verbose dist/*.whl # Updated path
-
-  build_publish_release:
-    name: Build and Publish Release Version (via Makefile) # Updated name
-    runs-on: ${{ matrix.os }}
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    strategy:
-      matrix:
-        os:
-          - ubuntu-22.04
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-
-      - name: Install build dependencies via Makefile
-        run: make setup # Installs maturin, twine, etc.
-
-      # This step verifies that the version in backend/Cargo.toml matches the Git tag.
-      # It strips the 'v' prefix from the tag (if present) for comparison.
-      # This ensures that the released package version accurately reflects the intended tag.
-      # The job will fail if the versions do not match.
-      - name: Verify version match for release
-        working-directory: ./pkgs/backend # Ensures grep works on backend/Cargo.toml
-        run: |
-          CARGO_VERSION=$(grep -oP '^version = "\K[^"]+' Cargo.toml) # Extract version from Cargo.toml
-          TAG_NAME="${{ github.ref_name }}" # Get the full tag name (e.g., v0.1.0 or 0.1.0)
-          ACTUAL_TAG=${TAG_NAME#refs/tags/} # Strip 'refs/tags/' prefix if present (though github.ref_name is usually clean)
-          CLEANED_TAG_VERSION=${ACTUAL_TAG#v} # Remove 'v' prefix from tag if present (e.g., v0.1.0 -> 0.1.0)
-
-          echo "Cargo.toml version: $CARGO_VERSION"
-          echo "Original Git ref (tag name): $TAG_NAME"
-          echo "Tag for comparison (after stripping refs/tags/): $ACTUAL_TAG"
-          echo "Cleaned Tag version for comparison (after stripping 'v'): $CLEANED_TAG_VERSION"
-
-          if [ "$CARGO_VERSION" != "$CLEANED_TAG_VERSION" ]; then
-            echo "Error: Cargo.toml version ($CARGO_VERSION) does not match Git tag ($ACTUAL_TAG, cleaned: $CLEANED_TAG_VERSION)."
-            exit 1
-          fi
-          echo "Cargo.toml version and Git tag match. Proceeding with release."
-        shell: bash
-
-      - name: Build wheel via Makefile
-        run: make library # This will use the existing Cargo.toml and output to dist/
-
-      - name: Publish release version to PyPI
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: |
-          python -m twine upload --non-interactive --verbose dist/*.whl # Updated path
-
-
-  build_deb:
-    name: Build .deb Package and Attach to Release
-    runs-on: ubuntu-22.04
-    needs: test
-    if: startsWith(github.ref, 'refs/tags/')  # Chỉ chạy trên tag release
-    permissions:
-      contents: write  # Cần để tạo GitHub Release
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-
-      - name: Cache Cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            pkgs/backend/target/
-            target/
-          key: ${{ runner.os }}-cargo-deb-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-deb-
-
-      - name: Build .deb package
-        working-directory: ./pkgs/backend
-        run: |
-          cargo install --force cargo-deb
-          cargo build --release
-          cargo deb
-
-      - name: Verify .deb package contents
-        run: |
-          dpkg -c ./target/debian/*.deb
-
-      - name: Upload .deb as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: deb-package-${{ github.ref_name }}
-          path: ./target/debian/*.deb
-
-      - name: Create Release and Upload .deb
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ./target/debian/*.deb
-          tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }} - DEB Package
-          body: |
-            Auto-generated release for version ${{ github.ref_name }}.
-            - Includes .deb package for Debian/Ubuntu installation.
-            - Built from commit: ${{ github.sha }}.
-            - Install: `sudo dpkg -i your-package.deb` or `sudo apt install ./your-package.deb`.
-          draft: false  # Publish ngay, không draft
-          prerelease: false  # Không phải pre-release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Sử dụng token mặc định
-
   build_docker_image:
-    name: Build and Push Docker Image
+    name: Build & Push Docker
     runs-on: ubuntu-22.04
     needs: test
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: read
       packages: write
-    env:
-      REGISTRY: ghcr.io
-      USERNAME: ${{ github.actor }}
-      PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-      IMAGE_NAME: ${{ github.repository }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.7.1
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          install: true
-          driver-opts: |
-            image=moby/buildkit:master
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3.3.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ env.USERNAME }}
-          password: ${{ env.PASSWORD }}
-
-      - name: Check Dockerfile existence
-        run: |
-          if [ ! -f Dockerfile ]; then
-            echo "Error: Dockerfile not found in repository root"
-            exit 1
-          fi
-
-      - name: Extract metadata for Docker
+      - name: Extract Metadata
         id: meta
-        uses: docker/metadata-action@v5.5.1
+        uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ghcr.io/${{ github.repository }}
           tags: |
-            type=semver,pattern={{version}} # e.g., 0.1.0 or v0.1.0
-            type=semver,pattern={{major}}.{{minor}} # e.g., 0.1
-            type=raw,value=latest # Always tag as latest for releases
-          labels: |
-            org.opencontainers.image.title=Vietnamese Stock Data Mining
-            org.opencontainers.image.description=Mining and analyzing Vietnamese stock data
-            org.opencontainers.image.vendor=${{ github.repository_owner }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+            type=semver,pattern={{version}}
+            type=raw,value=latest
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6.9.0
+      - name: Build and Push
+        uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile
           push: true
-          platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ github.workflow }}-${{ github.job }}
-          cache-to: type=gha,mode=max,scope=${{ github.workflow }}-${{ github.job }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

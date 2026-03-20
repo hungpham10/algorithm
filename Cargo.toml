@@ -1,3 +1,14 @@
 [workspace]
 resolver = "2"
-members = ["pkgs/backend", "pkgs/frontend", "pkgs/proxy"]
+members = [
+    "pkgs/proxy",
+    "pkgs/backend/integration",
+    "pkgs/backend/schemas",
+    "pkgs/backend/models",
+    "pkgs/backend/services",
+    "pkgs/libraries/algorithm",
+    "pkgs/libraries/analysis",
+    "pkgs/libraries/vector/runtime",
+    "pkgs/macros/vector_config_macro",
+    "pkgs/libraries/vector/components",
+]

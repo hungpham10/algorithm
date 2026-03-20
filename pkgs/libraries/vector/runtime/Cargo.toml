@@ -1,0 +1,23 @@
+[package]
+name = "vector_runtime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Macro
+vector_config_macro = { path = "../../../macros/vector_config_macro" }
+
+# Model
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.149"
+
+# Core
+log = "0.4.22"
+tokio = { version = "1.49.0", features = ["full"] }
+tokio-util = { version = "0.7.18", features = ["compat"] }
+typetag = "0.2.21"
+async-trait = "0.1.89"
+
+# Future
+futures = "0.3"
+futures-util = "0.3"

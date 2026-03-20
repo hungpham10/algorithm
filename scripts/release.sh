@@ -36,10 +36,13 @@ function prepare() {
     exit 1
   fi
 
-  for script_path in "$1"/*; do
-    if ! psql -Atx "$POSTGRES_DSN" -f "$script_path"; then
-      exit $?
+  for script_path in $(ls "$1"/*.sql | sort); do
+    echo "Executing: $script_path"
+    if ! mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -P "${MYSQL_PORT:-3306}" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE" < "$script_path"; then
+      echo "Error: Failed to execute $script_path" >&2
+      exit 1
     fi
+    rm $script_path
   done
 }
 
@@ -97,6 +100,12 @@ function boot() {
     sed -i '/proxy_ssl_server_name/d' ${NGINX_DIR}/http.d/default.conf
     sed -i '/proxy_ssl_verify/d' ${NGINX_DIR}/http.d/default.conf
   fi
+
+  # Setup tor directorys
+  mkdir -p /var/lib/tor/hidden_service
+  chmod 700 /var/lib/tor/hidden_service 2>/dev/null || true
+  chown debian-tor:debian-tor /var/lib/tor
+  chown debian-tor:debian-tor /var/lib/tor/hidden_service
 
   # Setup command for the backend
   if [ "${USE_CLOUDFLARE_TUNNEL}" = "true" ]; then

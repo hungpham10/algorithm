@@ -1,0 +1,9 @@
+SocksPort 0
+ControlPort 0
+
+DataDirectory /var/lib/tor
+
+HiddenServiceDir /var/lib/tor/hidden_service/
+HiddenServiceVersion 3
+
+HiddenServicePort 80 unix:/run/tor/nginx-onion.sock
