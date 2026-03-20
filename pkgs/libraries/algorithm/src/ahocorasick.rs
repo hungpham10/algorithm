@@ -40,6 +40,12 @@ struct Node {
     label: String,
 }
 
+impl Default for AhoCorasick {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AhoCorasick {
     pub fn new() -> Self {
         Self::new_with_callbacks(
@@ -51,7 +57,7 @@ impl AhoCorasick {
             &|pattern: &String| -> Vec<String> {
                 pattern
                     .split("")
-                    .filter(|block| block.len() > 0)
+                    .filter(|block| !block.is_empty())
                     .map(|block| block.to_string())
                     .collect()
             },
@@ -122,7 +128,9 @@ impl AhoCorasick {
             for block in (self.split_fn)(pattern) {
                 let possible_next_state = nodes[current_state].next.get(&block);
 
-                if possible_next_state.is_none() {
+                if let Some(possible_next_state) = possible_next_state {
+                    next_state = *possible_next_state;
+                } else {
                     // @NOTE: if next state not found, build it
 
                     let index = self.goto_mapping.len();
@@ -156,8 +164,6 @@ impl AhoCorasick {
                     nodes[current_state].next.insert(next_block.clone(), index);
                     next_state = state;
                     state += 1;
-                } else {
-                    next_state = *possible_next_state.unwrap();
                 }
 
                 current_state = next_state;
@@ -314,7 +320,7 @@ mod tests {
             &|pattern: &String| -> Vec<String> {
                 pattern
                     .split("")
-                    .filter(|block| block.len() > 0)
+                    .filter(|block| !block.is_empty())
                     .map(|block| block.to_string())
                     .collect()
             },
@@ -326,11 +332,11 @@ mod tests {
 
         ahocorasick.optimize();
 
-        assert_eq!(ahocorasick.similar(String::from("abc")), true);
-        assert_eq!(ahocorasick.similar(String::from("aabc")), true);
-        assert_eq!(ahocorasick.similar(String::from("daabce")), true);
-        assert_eq!(ahocorasick.similar(String::from("aa")), false);
-        assert_eq!(ahocorasick.similar(String::from("abd")), false);
+        assert!(ahocorasick.similar(&String::from("abc")));
+        assert!(ahocorasick.similar(&String::from("aabc")));
+        assert!(ahocorasick.similar(&String::from("daabce")));
+        assert!(!ahocorasick.similar(&String::from("aa")));
+        assert!(!ahocorasick.similar(&String::from("abd")));
     }
 
     #[test]
@@ -344,7 +350,7 @@ mod tests {
             &|pattern: &String| -> Vec<String> {
                 pattern
                     .split("")
-                    .filter(|block| block.len() > 0)
+                    .filter(|block| !block.is_empty())
                     .map(|block| block.to_string())
                     .collect()
             },
@@ -357,9 +363,9 @@ mod tests {
 
         ahocorasick.optimize();
 
-        assert_eq!(ahocorasick.similar(String::from("ushers")), true);
-        assert_eq!(ahocorasick.similar(String::from("ahishers")), true);
-        assert_eq!(ahocorasick.similar(String::from("she")), true);
+        assert!(ahocorasick.similar(&String::from("ushers")));
+        assert!(ahocorasick.similar(&String::from("ahishers")));
+        assert!(ahocorasick.similar(&String::from("she")));
     }
 
     #[test]
@@ -373,7 +379,7 @@ mod tests {
             &|pattern: &String| -> Vec<String> {
                 pattern
                     .split(" ")
-                    .filter(|block| block.len() > 0)
+                    .filter(|block| !block.is_empty())
                     .map(|block| block.to_string())
                     .collect()
             },
@@ -386,11 +392,11 @@ mod tests {
 
         ahocorasick.optimize();
 
-        assert_eq!(ahocorasick.similar(String::from("hôm nay trời đẹp")), true);
-        assert_eq!(ahocorasick.similar(String::from("ngày mai trời mưa")), true);
-        assert_eq!(ahocorasick.similar(String::from("tuần sau đi chơi")), true);
-        assert_eq!(ahocorasick.similar(String::from("tháng sau đi học")), true);
-        assert_eq!(ahocorasick.similar(String::from("hôm qua")), false);
+        assert!(ahocorasick.similar(&String::from("hôm nay trời đẹp")));
+        assert!(ahocorasick.similar(&String::from("ngày mai trời mưa")));
+        assert!(ahocorasick.similar(&String::from("tuần sau đi chơi")));
+        assert!(ahocorasick.similar(&String::from("tháng sau đi học")));
+        assert!(!ahocorasick.similar(&String::from("hôm qua")));
     }
 
     #[test]
@@ -404,7 +410,7 @@ mod tests {
             &|pattern: &String| -> Vec<String> {
                 pattern
                     .split("")
-                    .filter(|block| block.len() > 0)
+                    .filter(|block| !block.is_empty())
                     .map(|block| block.to_string())
                     .collect()
             },
@@ -414,8 +420,8 @@ mod tests {
 
         ahocorasick.optimize();
 
-        assert_eq!(ahocorasick.similar(String::from("")), false);
-        assert_eq!(ahocorasick.similar(String::from("abc")), false);
+        assert!(!ahocorasick.similar(&String::from("")));
+        assert!(!ahocorasick.similar(&String::from("abc")));
     }
 
     #[test]
@@ -429,7 +435,7 @@ mod tests {
             &|pattern: &String| -> Vec<String> {
                 pattern
                     .split("")
-                    .filter(|block| block.len() > 0)
+                    .filter(|block| !block.is_empty())
                     .map(|block| block.to_string())
                     .collect()
             },
@@ -440,7 +446,7 @@ mod tests {
 
         ahocorasick.optimize();
 
-        assert_eq!(ahocorasick.similar(String::from("abc")), true);
+        assert!(ahocorasick.similar(&String::from("abc")));
     }
 
     #[test]
@@ -454,7 +460,7 @@ mod tests {
             &|pattern: &String| -> Vec<String> {
                 pattern
                     .split("")
-                    .filter(|block| block.len() > 0)
+                    .filter(|block| !block.is_empty())
                     .map(|block| block.to_string())
                     .collect()
             },
@@ -464,8 +470,8 @@ mod tests {
 
         ahocorasick.optimize();
 
-        assert_eq!(ahocorasick.similar(String::from("a.b+c")), true);
-        assert_eq!(ahocorasick.similar(String::from("da.b+ce")), true);
+        assert!(ahocorasick.similar(&String::from("a.b+c")));
+        assert!(ahocorasick.similar(&String::from("da.b+ce")));
     }
 
     #[test]
@@ -479,7 +485,7 @@ mod tests {
             &|pattern: &String| -> Vec<String> {
                 pattern
                     .split("")
-                    .filter(|block| block.len() > 0)
+                    .filter(|block| !block.is_empty())
                     .map(|block| block.to_string())
                     .collect()
             },
@@ -487,7 +493,7 @@ mod tests {
 
         ahocorasick.optimize();
 
-        assert_eq!(ahocorasick.similar(String::from("abc")), false);
+        assert!(!ahocorasick.similar(&String::from("abc")));
     }
 
     #[test]
@@ -501,7 +507,7 @@ mod tests {
             &|pattern: &String| -> Vec<String> {
                 pattern
                     .split("")
-                    .filter(|block| block.len() > 0)
+                    .filter(|block| !block.is_empty())
                     .map(|block| block.to_string())
                     .collect()
             },
@@ -512,8 +518,8 @@ mod tests {
 
         ahocorasick.optimize();
 
-        assert_eq!(ahocorasick.similar(String::from("ab")), false);
-        assert_eq!(ahocorasick.similar(String::from("de")), false);
+        assert!(!ahocorasick.similar(&String::from("ab")));
+        assert!(!ahocorasick.similar(&String::from("de")));
     }
 
     #[test]
@@ -527,7 +533,7 @@ mod tests {
             &|pattern: &String| -> Vec<String> {
                 pattern
                     .split("")
-                    .filter(|block| block.len() > 0)
+                    .filter(|block| !block.is_empty())
                     .map(|block| block.to_string())
                     .collect()
             },
@@ -553,7 +559,7 @@ mod tests {
         let duration = start.elapsed();
         println!("Time elapsed in searching ahocorasick is: {:?}", duration);
 
-        assert_eq!(result, true);
+        assert!(result);
     }
 
     #[test]

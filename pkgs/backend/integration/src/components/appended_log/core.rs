@@ -14,8 +14,8 @@ pub struct AppendedLog {
 }
 
 impl AppendedLog {
-    pub fn new(dsn: &String) -> Result<Self, Error> {
-        let parsed = Url::parse(dsn.as_str())
+    pub fn new(dsn: &str) -> Result<Self, Error> {
+        let parsed = Url::parse(dsn)
             .map_err(|e| Error::new(ErrorKind::InvalidInput, format!("URL is invalid: {}", e)))?;
 
         if parsed.scheme() != "sftp" && parsed.scheme() != "ssh" {
@@ -37,9 +37,7 @@ impl AppendedLog {
             let mut session = Session::new()?;
 
             session.set_tcp_stream(tcp);
-            session
-                .handshake()
-                .map_err(|e| Error::new(ErrorKind::Other, e))?;
+            session.handshake().map_err(Error::other)?;
             session.userauth_password(username, password).map_err(|e| {
                 Error::new(ErrorKind::PermissionDenied, format!("Auth failed: {}", e))
             })?;
@@ -60,14 +58,14 @@ impl AppendedLog {
         let _guard = self
             .lock
             .read()
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Lock failed: {}", e)))?;
+            .map_err(|e| Error::other(format!("Lock failed: {}", e)))?;
 
         Ok(self
             .session
             .sftp()
-            .map_err(|e| Error::new(ErrorKind::Other, e))?
+            .map_err(Error::other)?
             .readdir(Path::new("/"))
-            .map_err(|e| Error::new(ErrorKind::Other, e))?
+            .map_err(Error::other)?
             .into_iter()
             .map(|(path, _)| {
                 path.file_name()
@@ -82,7 +80,7 @@ impl AppendedLog {
         let _guard = self
             .lock
             .write()
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Lock failed: {}", e)))?;
+            .map_err(|e| Error::other(format!("Lock failed: {}", e)))?;
 
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -92,9 +90,9 @@ impl AppendedLog {
 
         self.session
             .sftp()
-            .map_err(|e| Error::new(ErrorKind::Other, format!("SFTP error: {}", e)))?
+            .map_err(|e| Error::other(format!("SFTP error: {}", e)))?
             .rename(Path::new(&self.storage), Path::new(&new_path), None)
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Rotate failed: {}", e)))?;
+            .map_err(|e| Error::other(format!("Rotate failed: {}", e)))?;
         Ok(())
     }
 
@@ -102,16 +100,16 @@ impl AppendedLog {
         let _guard = self
             .lock
             .read()
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Lock failed: {}", e)))?;
+            .map_err(|e| Error::other(format!("Lock failed: {}", e)))?;
 
         Ok(self
             .session
             .sftp()
-            .map_err(|e| Error::new(ErrorKind::Other, format!("SFTP session failed: {}", e)))?
+            .map_err(|e| Error::other(format!("SFTP session failed: {}", e)))?
             .open(Path::new(&self.storage))
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Open failed: {}", e)))?
+            .map_err(|e| Error::other(format!("Open failed: {}", e)))?
             .stat()
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Stat failed: {}", e)))?
+            .map_err(|e| Error::other(format!("Stat failed: {}", e)))?
             .size
             .unwrap_or(0))
     }
@@ -120,19 +118,19 @@ impl AppendedLog {
         let _guard = self
             .lock
             .write()
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Lock failed: {}", e)))?;
+            .map_err(|e| Error::other(format!("Lock failed: {}", e)))?;
 
         let mut file = self
             .session
             .sftp()
-            .map_err(|e| Error::new(ErrorKind::Other, format!("SFTP session failed: {}", e)))?
+            .map_err(|e| Error::other(format!("SFTP session failed: {}", e)))?
             .open_mode(
                 Path::new(&self.storage),
                 OpenFlags::CREATE | OpenFlags::APPEND | OpenFlags::WRITE,
                 0o644,
                 OpenType::File,
             )
-            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+            .map_err(Error::other)?;
 
         let len = data.len() as u32;
         file.write_all(&len.to_le_bytes())?;
@@ -149,14 +147,14 @@ impl AppendedLog {
         let _guard = self
             .lock
             .read()
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Lock failed: {}", e)))?;
+            .map_err(|e| Error::other(format!("Lock failed: {}", e)))?;
 
         let mut file = self
             .session
             .sftp()
-            .map_err(|e| Error::new(ErrorKind::Other, format!("SFTP error: {}", e)))?
+            .map_err(|e| Error::other(format!("SFTP error: {}", e)))?
             .open(Path::new(&self.storage))
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Open failed: {}", e)))?;
+            .map_err(|e| Error::other(format!("Open failed: {}", e)))?;
 
         // Di chuyển tới vị trí bắt đầu
         file.seek(SeekFrom::Start(start_offset))?;
@@ -192,14 +190,14 @@ impl AppendedLog {
         let _guard = self
             .lock
             .read()
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Lock failed: {}", e)))?;
+            .map_err(|e| Error::other(format!("Lock failed: {}", e)))?;
 
         let mut file = self
             .session
             .sftp()
-            .map_err(|e| Error::new(ErrorKind::Other, format!("SFTP error: {}", e)))?
+            .map_err(|e| Error::other(format!("SFTP error: {}", e)))?
             .open(Path::new(&self.storage))
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Open failed: {}", e)))?;
+            .map_err(|e| Error::other(format!("Open failed: {}", e)))?;
 
         file.seek(SeekFrom::Start(offset))?;
 
@@ -231,34 +229,29 @@ impl AppendedLog {
         let _guard = self
             .lock
             .write()
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Lock failed: {}", e)))?;
+            .map_err(|e| Error::other(format!("Lock failed: {}", e)))?;
 
         let sftp = self
             .session
             .sftp()
-            .map_err(|e| Error::new(ErrorKind::Other, format!("SFTP error: {}", e)))?;
+            .map_err(|e| Error::other(format!("SFTP error: {}", e)))?;
 
         let entries = sftp
             .readdir(Path::new("/"))
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Readdir failed: {}", e)))?;
+            .map_err(|e| Error::other(format!("Readdir failed: {}", e)))?;
 
         for (path, _stat) in entries {
-            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                if file_name.starts_with(&format!("{}.", self.storage)) {
-                    let parts: Vec<&str> = file_name.split('.').collect();
+            if let Some(file_name) = path.file_name().and_then(|n| n.to_str())
+                && file_name.starts_with(&format!("{}.", self.storage))
+            {
+                let parts: Vec<&str> = file_name.split('.').collect();
 
-                    if let Some(ts_str) = parts.last() {
-                        if let Ok(file_ts) = ts_str.parse::<u64>() {
-                            if file_ts < before_timestamp {
-                                sftp.unlink(&path).map_err(|error| {
-                                    Error::new(
-                                        ErrorKind::Other,
-                                        format!("Delete failed: {}", error),
-                                    )
-                                })?;
-                            }
-                        }
-                    }
+                if let Some(ts_str) = parts.last()
+                    && let Ok(file_ts) = ts_str.parse::<u64>()
+                    && file_ts < before_timestamp
+                {
+                    sftp.unlink(&path)
+                        .map_err(|error| Error::other(format!("Delete failed: {}", error)))?;
                 }
             }
         }
@@ -282,7 +275,7 @@ mod tests {
 
     #[test]
     fn test_full_lsm_flow() {
-        let logger = AppendedLog::new(&TEST_DSN1.to_string()).expect("Kết nối thất bại");
+        let logger = AppendedLog::new(TEST_DSN1).expect("Kết nối thất bại");
         let mock_data = b"Unit test data content\n";
 
         logger
@@ -310,7 +303,7 @@ mod tests {
 
     #[test]
     fn test_streaming_read_integrity() {
-        let logger = AppendedLog::new(&TEST_DSN2.to_string()).expect("Kết nối thất bại");
+        let logger = AppendedLog::new(TEST_DSN2).expect("Kết nối thất bại");
 
         // 1. Chuẩn bị các "message" riêng biệt
         let messages = vec![
@@ -374,7 +367,7 @@ mod tests {
 
     #[test]
     fn test_append_multiple_times() {
-        let logger = AppendedLog::new(&TEST_DSN3.to_string()).expect("Kết nối thất bại");
+        let logger = AppendedLog::new(TEST_DSN3).expect("Kết nối thất bại");
 
         // Xóa trắng file active bằng cách rotate để đảm bảo môi trường sạch
         let _ = logger.rotate_new_partition();
@@ -424,7 +417,7 @@ mod tests {
     fn test_concurrent_writes() {
         use std::thread;
 
-        let logger = AppendedLog::new(&TEST_DSN4.to_string()).expect("Kết nối thất bại");
+        let logger = AppendedLog::new(TEST_DSN4).expect("Kết nối thất bại");
 
         let _ = logger.rotate_new_partition();
 
@@ -471,18 +464,13 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_invalid_url() {
-        AppendedLog::new(&("not_a_url".to_string())).unwrap();
+        AppendedLog::new("not_a_url").unwrap();
     }
 
     #[test]
     fn test_cleanup_logs_older_than_one_hour() {
-        for dsn in vec![
-            TEST_DSN1.to_string(),
-            TEST_DSN2.to_string(),
-            TEST_DSN3.to_string(),
-            TEST_DSN4.to_string(),
-        ] {
-            let logger = AppendedLog::new(&dsn).expect("Kết nối thất bại");
+        for dsn in [TEST_DSN1, TEST_DSN2, TEST_DSN3, TEST_DSN4] {
+            let logger = AppendedLog::new(dsn).expect("Kết nối thất bại");
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -494,7 +482,7 @@ mod tests {
 
             let files = logger.list_partitions().unwrap();
             let exists_old = files.iter().any(|f| {
-                if let Some(ts_str) = f.split('.').last() {
+                if let Some(ts_str) = f.split('.').next_back() {
                     ts_str.parse::<u64>().unwrap_or(0) <= one_minute_ago
                 } else {
                     true

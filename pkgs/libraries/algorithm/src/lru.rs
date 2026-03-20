@@ -1,9 +1,9 @@
-use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use dashmap::DashMap;
 use parking_lot::Mutex;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const NULL: usize = usize::MAX;
 
@@ -46,9 +46,12 @@ where
 {
     pub fn new(total_capacity: usize) -> Self {
         // S phải là lũy thừa của 2 để dùng bitwise AND thay cho phép chia lấy dư (%)
-        assert!(S > 0 && S.is_power_of_two(), "SHARD_COUNT (S) phải là lũy thừa của 2 (ví dụ: 8, 16, 32)");
+        assert!(
+            S > 0 && S.is_power_of_two(),
+            "SHARD_COUNT (S) phải là lũy thừa của 2 (ví dụ: 8, 16, 32)"
+        );
 
-        let capacity_per_shard = (total_capacity + S - 1) / S;
+        let capacity_per_shard = total_capacity.div_ceil(S);
         let actual_total = capacity_per_shard * S;
 
         // 1. Khởi tạo Arena bộ nhớ phẳng
@@ -60,7 +63,11 @@ where
                 caching_vec.push(Node {
                     key: None,
                     value: None,
-                    next: AtomicUsize::new(if i + 1 < capacity_per_shard { current + 1 } else { NULL }),
+                    next: AtomicUsize::new(if i + 1 < capacity_per_shard {
+                        current + 1
+                    } else {
+                        NULL
+                    }),
                     prev: AtomicUsize::new(if i > 0 { current - 1 } else { NULL }),
                 });
             }
@@ -72,7 +79,11 @@ where
             AlignedShard {
                 mutex: Mutex::new(HeadTail {
                     first: if capacity_per_shard > 0 { offset } else { NULL },
-                    last: if capacity_per_shard > 0 { offset + capacity_per_shard - 1 } else { NULL },
+                    last: if capacity_per_shard > 0 {
+                        offset + capacity_per_shard - 1
+                    } else {
+                        NULL
+                    },
                 }),
             }
         });
@@ -135,7 +146,9 @@ where
         // Case 2: Ghi mới (Bắt buộc dùng lock cứng để bảo vệ tính nhất quán)
         let mut ht = self.shards[shard_idx].mutex.lock();
         let last_idx = ht.last;
-        if last_idx == NULL { return; }
+        if last_idx == NULL {
+            return;
+        }
 
         let node = &self.caching[last_idx];
 
@@ -159,15 +172,21 @@ where
     }
 
     fn move_to_front_inside_lock(&self, ht: &mut HeadTail, index: usize) {
-        if ht.first == index || ht.first == NULL { return; }
+        if ht.first == index || ht.first == NULL {
+            return;
+        }
 
         let node = &self.caching[index];
         let p = node.prev.load(Ordering::Acquire);
         let n = node.next.load(Ordering::Acquire);
 
         // Cắt node ra khỏi vị trí hiện tại
-        if p != NULL { self.caching[p].next.store(n, Ordering::Release); }
-        if n != NULL { self.caching[n].prev.store(p, Ordering::Release); }
+        if p != NULL {
+            self.caching[p].next.store(n, Ordering::Release);
+        }
+        if n != NULL {
+            self.caching[n].prev.store(p, Ordering::Release);
+        }
 
         if index == ht.last {
             ht.last = p;
@@ -205,7 +224,9 @@ mod tests {
         for i in 0..1000 {
             if cache.get_shard_idx(&i) == 0 {
                 keys.push(i);
-                if keys.len() == 3 { break; }
+                if keys.len() == 3 {
+                    break;
+                }
             }
         }
         let (k1, k2, k3) = (keys[0], keys[1], keys[2]);
@@ -286,14 +307,27 @@ mod tests {
             let stored_key = node.key.expect("Node trong mapping phải có key");
             let stored_val = node.value.expect("Node trong mapping phải có value");
 
-            assert_eq!(key, stored_key, "Data Corruption: Key trong mapping ({}) khác Key trong Node ({})", key, stored_key);
-            assert_eq!(stored_val, gen_value(key), "Data Corruption: Value của key {} bị sai lệch!", key);
+            assert_eq!(
+                key, stored_key,
+                "Data Corruption: Key trong mapping ({}) khác Key trong Node ({})",
+                key, stored_key
+            );
+            assert_eq!(
+                stored_val,
+                gen_value(key),
+                "Data Corruption: Value của key {} bị sai lệch!",
+                key
+            );
 
             // 2. Kiểm tra Shard Consistency: Key phải nằm đúng Shard của nó
             let expected_shard = cache.get_shard_idx(&key);
             // Kiểm tra xem index này có nằm trong dải bộ nhớ của Shard đó không
             let actual_shard = index / capacity_per_shard;
-            assert_eq!(expected_shard, actual_shard, "Key {} nằm sai phân vùng Shard!", key);
+            assert_eq!(
+                expected_shard, actual_shard,
+                "Key {} nằm sai phân vùng Shard!",
+                key
+            );
         }
 
         // 3. Kiểm tra tính toàn vẹn của cấu trúc Danh sách liên kết (Double-ended check)
@@ -310,7 +344,11 @@ mod tests {
                 last_seen = curr;
                 curr = cache.caching[curr].next.load(Ordering::Acquire);
             }
-            assert_eq!(last_seen, ht.last, "Tail của Shard {} không khớp khi duyệt xuôi", s_idx);
+            assert_eq!(
+                last_seen, ht.last,
+                "Tail của Shard {} không khớp khi duyệt xuôi",
+                s_idx
+            );
 
             // Duyệt ngược: Tail -> Head
             let mut curr = ht.last;
@@ -320,9 +358,21 @@ mod tests {
                 first_seen = curr;
                 curr = cache.caching[curr].prev.load(Ordering::Acquire);
             }
-            assert_eq!(first_seen, ht.first, "Head của Shard {} không khớp khi duyệt ngược", s_idx);
-            assert_eq!(forward_count, backward_count, "Số lượng node duyệt xuôi và ngược không bằng nhau ở Shard {}", s_idx);
-            assert_eq!(forward_count, capacity_per_shard, "Shard {} không đủ số lượng node", s_idx);
+            assert_eq!(
+                first_seen, ht.first,
+                "Head của Shard {} không khớp khi duyệt ngược",
+                s_idx
+            );
+            assert_eq!(
+                forward_count, backward_count,
+                "Số lượng node duyệt xuôi và ngược không bằng nhau ở Shard {}",
+                s_idx
+            );
+            assert_eq!(
+                forward_count, capacity_per_shard,
+                "Shard {} không đủ số lượng node",
+                s_idx
+            );
         }
 
         println!("🚀 [PASSED] Dữ liệu chuẩn 100%, không phát hiện Race Condition trên Node!");
@@ -342,7 +392,9 @@ mod tests {
         for i in 0..1000 {
             if cache.get_shard_idx(&i) == 0 {
                 keys.push(i);
-                if keys.len() == 3 { break; }
+                if keys.len() == 3 {
+                    break;
+                }
             }
         }
 
@@ -361,7 +413,11 @@ mod tests {
         cache.put(k3, 30);
 
         // Kiểm tra mapping
-        assert_eq!(cache.mapping.get(&k3).map(|e| *e.value()), Some(index_of_k1), "Key 3 phải chiếm slot của Key 1");
+        assert_eq!(
+            cache.mapping.get(&k3).map(|e| *e.value()),
+            Some(index_of_k1),
+            "Key 3 phải chiếm slot của Key 1"
+        );
         assert!(cache.mapping.get(&k1).is_none(), "Key 1 phải bị đuổi");
 
         // 3. Lock đúng Shard 0 để kiểm tra Head/Tail
@@ -420,12 +476,17 @@ mod tests {
         });
 
         // Cơ chế check timeout cho test
-        if let Err(_) = wait_timeout(result, Duration::from_secs(5)) {
-            panic!("TEST FAILED: Deadlock detected! Cấu trúc nhiều RwLock lồng nhau đã làm treo thread.");
+        if wait_timeout(result, Duration::from_secs(5)).is_err() {
+            panic!(
+                "TEST FAILED: Deadlock detected! Cấu trúc nhiều RwLock lồng nhau đã làm treo thread."
+            );
         }
     }
 
-    fn wait_timeout<T: 'static>(handle: thread::JoinHandle<T>, timeout: Duration) -> Result<(), ()> {
+    fn wait_timeout<T: 'static>(
+        handle: thread::JoinHandle<T>,
+        timeout: Duration,
+    ) -> Result<(), ()> {
         let (tx, rx) = std::sync::mpsc::channel();
         thread::spawn(move || {
             let _ = handle.join();
@@ -560,7 +621,11 @@ mod tests {
 
         // 1. Kiểm tra Mapping size
         // Số lượng phần tử hiện tại phải bằng total_capacity vì chúng ta chèn vượt ngưỡng rất nhiều
-        assert_eq!(cache.mapping.len(), total_capacity, "Mapping phải đầy khít capacity");
+        assert_eq!(
+            cache.mapping.len(),
+            total_capacity,
+            "Mapping phải đầy khít capacity"
+        );
 
         // 2. Kiểm tra tính nhất quán của Linked List (Duyệt từng Shard)
         let mut total_nodes_in_lists = 0;
@@ -571,11 +636,19 @@ mod tests {
             let mut visited = std::collections::HashSet::new();
 
             while curr != NULL {
-                assert!(visited.insert(curr), "Phát hiện chu trình (vòng lặp vô tận) trong Shard {}", i);
+                assert!(
+                    visited.insert(curr),
+                    "Phát hiện chu trình (vòng lặp vô tận) trong Shard {}",
+                    i
+                );
                 count += 1;
                 curr = cache.caching[curr].next.load(Ordering::Acquire);
             }
-            assert_eq!(count, capacity_per_shard, "Shard {} bị thiếu node trong danh sách liên kết", i);
+            assert_eq!(
+                count, capacity_per_shard,
+                "Shard {} bị thiếu node trong danh sách liên kết",
+                i
+            );
             total_nodes_in_lists += count;
         }
         assert_eq!(total_nodes_in_lists, total_capacity);
@@ -584,7 +657,10 @@ mod tests {
         // Công thức: Tổng Put - Capacity = Số lần phải Evict
         let actual_evicted = evicted_count.load(Ordering::SeqCst);
         let expected_evicted = total_ops - total_capacity;
-        assert_eq!(actual_evicted, expected_evicted, "Số lượng callback xóa không khớp với logic eviction");
+        assert_eq!(
+            actual_evicted, expected_evicted,
+            "Số lượng callback xóa không khớp với logic eviction"
+        );
 
         println!("✅ Test passed: Không có dữ liệu bị 'lạc trôi', Linked List hoàn hảo!");
     }
@@ -664,10 +740,7 @@ mod tests {
         }
         let duration_read = start_read.elapsed();
 
-        println!(
-            "\n⏱️ Single Thread Result ({} ops):",
-            iterations
-        );
+        println!("\n⏱️ Single Thread Result ({} ops):", iterations);
         println!(
             " - Write: {:?} ({:.2} ops/sec)",
             duration_write,
@@ -684,9 +757,9 @@ mod tests {
 #[cfg(test)]
 mod performance_tests {
     use super::*;
-    use std::time::Instant;
     use std::sync::Arc;
     use std::thread;
+    use std::time::Instant;
 
     #[test]
     fn bench_write_only_performance() {
@@ -768,7 +841,6 @@ mod final_benchmarks {
     use super::*;
     use std::sync::Arc;
     use std::time::Instant;
-    use core_affinity;
 
     fn run_workload(cache: Arc<LruCache<u32, u32, 32>>, use_affinity: bool) -> (u128, f64) {
         let core_ids = core_affinity::get_core_ids().unwrap();
@@ -777,21 +849,19 @@ mod final_benchmarks {
         let total_ops = (num_threads * iterations) as u64;
 
         let start = Instant::now();
+
         let mut handles = vec![];
 
-        for t_idx in 0..num_threads {
+        for (t_idx, &core_id) in core_ids.iter().enumerate().take(num_threads) {
             let c = Arc::clone(&cache);
-            let core_id = core_ids[t_idx];
 
             handles.push(std::thread::spawn(move || {
-                // Chỉ ghim nếu yêu cầu
                 if use_affinity {
                     core_affinity::set_for_current(core_id);
                 }
 
                 for i in 0..iterations {
                     let key = (t_idx * iterations + i) as u32 % 100_000;
-                    // Tỉ lệ 90% Read, 10% Write
                     if i % 10 == 0 {
                         c.put(key, i as u32);
                     } else {
@@ -801,7 +871,9 @@ mod final_benchmarks {
             }));
         }
 
-        for h in handles { h.join().unwrap(); }
+        for h in handles {
+            h.join().unwrap();
+        }
 
         let duration = start.elapsed();
         let throughput = total_ops as f64 / duration.as_secs_f64();
@@ -831,6 +903,13 @@ mod final_benchmarks {
         let improvement = ((tp2 - tp1) / tp1) * 100.0;
         println!("\n📈 KẾT LUẬN:");
         println!("   - Hiệu năng tăng thêm: {:.2}%", improvement);
-        println!("   - Giả thuyết Context Switching: {}", if improvement > 5.0 { "CHÍNH XÁC" } else { "CẦN KIỂM TRA LẠI" });
+        println!(
+            "   - Giả thuyết Context Switching: {}",
+            if improvement > 5.0 {
+                "CHÍNH XÁC"
+            } else {
+                "CẦN KIỂM TRA LẠI"
+            }
+        );
     }
 }

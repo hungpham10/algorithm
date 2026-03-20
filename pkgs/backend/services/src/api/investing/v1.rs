@@ -7,7 +7,7 @@ use axum::Router;
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::response::{Response, IntoResponse, Json};
+use axum::response::{IntoResponse, Json, Response};
 use axum::routing::get;
 use http::header;
 
@@ -245,8 +245,10 @@ async fn get_heatmap_from_broker(
                             let mut heatmap: Vec<Vec<f64>> = vec![vec![0.0; cols]; rows];
 
                             for (j, profile) in vp.heatmap().iter().enumerate() {
-                                for i in 0..rows {
-                                    heatmap[i][j] = *profile.get(i).unwrap();
+                                for (row, &value) in
+                                    heatmap.iter_mut().zip(profile.iter()).take(rows)
+                                {
+                                    row[j] = value;
                                 }
                             }
 
@@ -390,8 +392,6 @@ async fn get_list_of_brokers(
     }
 }
 
-
-
 async fn get_list_of_symbols(
     State(app_state): State<AppState>,
     Path(broker): Path<String>,
@@ -402,13 +402,16 @@ async fn get_list_of_symbols(
 
     let api_mapping = match app_state.investing_apis.get("get_list_of_symbols") {
         Some(name) => name,
-        None => return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(OhclResponse {
-                error: Some("API mapping configuration missing".to_string()),
-                ..Default::default()
-            }),
-        ).into_response(),
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(OhclResponse {
+                    error: Some("API mapping configuration missing".to_string()),
+                    ..Default::default()
+                }),
+            )
+                .into_response();
+        }
     };
 
     // Key này đại diện cho nguyên một cục OhclResponse đã được serialize
@@ -420,20 +423,35 @@ async fn get_list_of_symbols(
     }
 
     // --- [CACHE MISS PATH] ---
-    match app_state.investing_entity.is_broker_enabled(tenant_id, &broker).await {
+    match app_state
+        .investing_entity
+        .is_broker_enabled(tenant_id, &broker)
+        .await
+    {
         Ok(true) => {
             let mut headers = HashMap::new();
-            if let Ok(token) = app_state.admin_entity.get_unencrypted_token(tenant_id, &broker).await {
+            if let Ok(token) = app_state
+                .admin_entity
+                .get_unencrypted_token(tenant_id, &broker)
+                .await
+            {
                 headers.insert("Authorization".to_string(), format!("Bearer {}", token));
             }
 
             let api_name = format!("{api_mapping}:{broker}");
-            match app_state.admin_entity.perform_api_by_api_name(
-                tenant_id, &api_name, ApiType::Read, vec![], headers, None
-            ).await {
+            match app_state
+                .admin_entity
+                .perform_api_by_api_name(tenant_id, &api_name, ApiType::Read, vec![], headers, None)
+                .await
+            {
                 Ok(data) => {
-                    let symbols: Vec<String> = data.into_iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()).or_else(|| Some(v.to_string())))
+                    let symbols: Vec<String> = data
+                        .into_iter()
+                        .filter_map(|v| {
+                            v.as_str()
+                                .map(|s| s.to_string())
+                                .or_else(|| Some(v.to_string()))
+                        })
                         .collect();
 
                     let res_obj = OhclResponse {
@@ -451,21 +469,32 @@ async fn get_list_of_symbols(
                 }
                 Err(e) => (
                     StatusCode::BAD_GATEWAY,
-                    Json(OhclResponse { error: Some(format!("Broker query failed: {e}")), ..Default::default() })
-                ).into_response(),
+                    Json(OhclResponse {
+                        error: Some(format!("Broker query failed: {e}")),
+                        ..Default::default()
+                    }),
+                )
+                    .into_response(),
             }
         }
         Ok(false) => (
             StatusCode::FORBIDDEN,
-            Json(OhclResponse { error: Some(format!("Broker {broker} is blocked")), ..Default::default() })
-        ).into_response(),
+            Json(OhclResponse {
+                error: Some(format!("Broker {broker} is blocked")),
+                ..Default::default()
+            }),
+        )
+            .into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(OhclResponse { error: Some(format!("DB error: {e}")), ..Default::default() })
-        ).into_response(),
+            Json(OhclResponse {
+                error: Some(format!("DB error: {e}")),
+                ..Default::default()
+            }),
+        )
+            .into_response(),
     }
 }
-
 
 async fn get_list_of_symbols_by_product(
     State(app_state): State<AppState>,
@@ -485,27 +514,48 @@ async fn get_list_of_symbols_by_product(
     }
 
     // --- [CACHE MISS PATH] ---
-    match app_state.investing_entity.is_product_enabled(tenant_id, &product, &broker).await {
+    match app_state
+        .investing_entity
+        .is_product_enabled(tenant_id, &product, &broker)
+        .await
+    {
         Ok(true) => {
             let api_name = match app_state.investing_apis.get(&func) {
                 Some(name) => name,
-                None => return (
-                    StatusCode::NOT_FOUND,
-                    Json(OhclResponse { error: Some(format!("API {func} not found")), ..Default::default() })
-                ).into_response(),
+                None => {
+                    return (
+                        StatusCode::NOT_FOUND,
+                        Json(OhclResponse {
+                            error: Some(format!("API {func} not found")),
+                            ..Default::default()
+                        }),
+                    )
+                        .into_response();
+                }
             };
 
             let mut headers = HashMap::new();
-            if let Ok(token) = app_state.admin_entity.get_unencrypted_token(tenant_id, &broker).await {
+            if let Ok(token) = app_state
+                .admin_entity
+                .get_unencrypted_token(tenant_id, &broker)
+                .await
+            {
                 headers.insert("Authorization".to_string(), format!("Bearer {}", token));
             }
 
-            match app_state.admin_entity.perform_api_by_api_name(
-                tenant_id, api_name, ApiType::Read, vec![], headers, None
-            ).await {
+            match app_state
+                .admin_entity
+                .perform_api_by_api_name(tenant_id, api_name, ApiType::Read, vec![], headers, None)
+                .await
+            {
                 Ok(data) => {
-                    let symbols: Vec<String> = data.into_iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()).or_else(|| Some(v.to_string())))
+                    let symbols: Vec<String> = data
+                        .into_iter()
+                        .filter_map(|v| {
+                            v.as_str()
+                                .map(|s| s.to_string())
+                                .or_else(|| Some(v.to_string()))
+                        })
                         .collect();
 
                     let res_obj = OhclResponse {
@@ -522,18 +572,30 @@ async fn get_list_of_symbols_by_product(
                 }
                 Err(e) => (
                     StatusCode::BAD_GATEWAY,
-                    Json(OhclResponse { error: Some(format!("Query failed: {e}")), ..Default::default() })
-                ).into_response(),
+                    Json(OhclResponse {
+                        error: Some(format!("Query failed: {e}")),
+                        ..Default::default()
+                    }),
+                )
+                    .into_response(),
             }
         }
         Ok(false) => (
             StatusCode::FORBIDDEN,
-            Json(OhclResponse { error: Some("Product or Broker blocked".into()), ..Default::default() })
-        ).into_response(),
+            Json(OhclResponse {
+                error: Some("Product or Broker blocked".into()),
+                ..Default::default()
+            }),
+        )
+            .into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(OhclResponse { error: Some(format!("DB error: {e}")), ..Default::default() })
-        ).into_response(),
+            Json(OhclResponse {
+                error: Some(format!("DB error: {e}")),
+                ..Default::default()
+            }),
+        )
+            .into_response(),
     }
 }
 

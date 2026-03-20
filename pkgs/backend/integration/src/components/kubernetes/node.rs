@@ -67,22 +67,19 @@ impl_node_source!(
         &self,
         id: usize,
         _: &mut mpsc::Receiver<Message>,
-        txs: &Vec<mpsc::Sender<Message>>,
+        txs: &'life2 [mpsc::Sender<Message>],
         err: &mpsc::Sender<Event>,
     ) -> Result<(), std::io::Error> {
         let mut config = Config::new(self.server.parse().expect("Invalid Server URL"));
         config.accept_invalid_certs = true;
 
-        let mut auth_info = kube::config::AuthInfo::default();
-        auth_info.token = Some(self.token.clone().into());
-        config.auth_info = auth_info;
+        config.auth_info = kube::config::AuthInfo {
+            token: Some(self.token.clone().into()),
+            ..Default::default()
+        };
 
-        let client = Client::try_from(config).map_err(|error| {
-            Error::new(
-                ErrorKind::Other,
-                format!("Kube Init Error ({}): {}", id, error),
-            )
-        })?;
+        let client = Client::try_from(config)
+            .map_err(|error| Error::other(format!("Kube Init Error ({}): {}", id, error)))?;
 
         let nodes_api: Api<Node> = Api::all(client.clone());
 
@@ -101,38 +98,37 @@ impl_node_source!(
                     for m in metrics_list.items {
                         let name = m.metadata.name.clone().unwrap_or_default();
 
-                        if let Ok(node_info) = nodes_api.get(&name).await {
-                            if let Some(allocatable) = node_info.status.and_then(|s| s.allocatable)
-                            {
-                                let cpu_total = parse_cpu_to_cores(
-                                    allocatable.get("cpu").map(|x| x.0.as_str()).unwrap_or("1"),
-                                );
-                                let mem_total = parse_mem_to_gb(
-                                    allocatable
-                                        .get("memory")
-                                        .map(|x| x.0.as_str())
-                                        .unwrap_or("1Gi"),
-                                );
+                        if let Ok(node_info) = nodes_api.get(&name).await
+                            && let Some(allocatable) = node_info.status.and_then(|s| s.allocatable)
+                        {
+                            let cpu_total = parse_cpu_to_cores(
+                                allocatable.get("cpu").map(|x| x.0.as_str()).unwrap_or("1"),
+                            );
+                            let mem_total = parse_mem_to_gb(
+                                allocatable
+                                    .get("memory")
+                                    .map(|x| x.0.as_str())
+                                    .unwrap_or("1Gi"),
+                            );
 
-                                let cpu_used = parse_cpu_to_cores(&m.usage.cpu);
-                                let mem_used = parse_mem_to_gb(&m.usage.memory);
+                            let cpu_used = parse_cpu_to_cores(&m.usage.cpu);
+                            let mem_used = parse_mem_to_gb(&m.usage.memory);
 
-                                let cpu_p = (cpu_used / cpu_total) * 100.0;
-                                let mem_p = (mem_used / mem_total) * 100.0;
+                            let cpu_p = (cpu_used / cpu_total) * 100.0;
+                            let mem_p = (mem_used / mem_total) * 100.0;
 
-                                let payload = json!({
-                                    "node_name": name,
-                                    "cpu": cpu_p,
-                                    "mem": mem_p,
-                                });
+                            let payload = json!({
+                                "node_name": name,
+                                "cpu": cpu_p,
+                                "mem": mem_p,
+                            });
 
-                                for tx in txs {
-                                    let _ = tx
-                                        .send(Message {
-                                            payload: payload.clone(),
-                                        })
-                                        .await;
-                                }
+                            for tx in txs {
+                                let _ = tx
+                                    .send(Message {
+                                        payload: payload.clone(),
+                                    })
+                                    .await;
                             }
                         }
                     }
@@ -140,7 +136,7 @@ impl_node_source!(
                 Err(error) => {
                     err.send(Event::Minor((
                         id,
-                        Error::new(ErrorKind::Other, format!("Failed to find pods: {}", error,)),
+                        Error::other(format!("Failed to find pods: {}", error,)),
                     )))
                     .await
                     .map_err(|error| {

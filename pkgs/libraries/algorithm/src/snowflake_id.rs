@@ -43,12 +43,6 @@ impl SnowflakeId {
 
             let (new_ts, new_seq) = if current_ts > old_ts {
                 (current_ts, 0)
-            } else if current_ts == old_ts {
-                let next_seq = (old_seq + 1) & 0xFFF;
-                if next_seq == 0 {
-                    continue;
-                }
-                (old_ts, next_seq)
             } else {
                 let next_seq = (old_seq + 1) & 0xFFF;
                 if next_seq == 0 {

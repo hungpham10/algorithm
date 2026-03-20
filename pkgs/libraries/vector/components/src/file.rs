@@ -19,8 +19,8 @@ impl_file_sink!(
         &self,
         _id: usize,
         rx: &mut mpsc::Receiver<Message>,
-        _txs: &Vec<mpsc::Sender<Message>>,
-        _err: &mpsc::Sender<Event>,
+        _: &'life2 [mpsc::Sender<Message>],
+        _: &mpsc::Sender<Event>,
     ) -> Result<(), std::io::Error> {
         let mut file = OpenOptions::new()
             .create(true)

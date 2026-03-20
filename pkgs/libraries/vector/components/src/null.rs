@@ -13,11 +13,10 @@ impl_null!(
         &self,
         _: usize,
         rx: &mut mpsc::Receiver<Message>,
-        _: &Vec<mpsc::Sender<Message>>,
+        _: &'life2 [mpsc::Sender<Message>],
         _: &mpsc::Sender<Event>,
     ) -> Result<(), std::io::Error> {
-        while let Some(_) = rx.recv().await {}
-
+        while rx.recv().await.is_some() {}
         Ok(())
     }
 );

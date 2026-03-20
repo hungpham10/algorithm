@@ -13,7 +13,7 @@ impl_input!(
         &self,
         id: usize,
         rx: &mut mpsc::Receiver<Message>,
-        txs: &Vec<mpsc::Sender<Message>>,
+        txs: &'life2 [mpsc::Sender<Message>],
         err: &mpsc::Sender<Event>,
     ) -> Result<(), std::io::Error> {
         while let Some(msg) = rx.recv().await {
@@ -23,10 +23,9 @@ impl_input!(
                 if let Err(error) = tx.send(msg.clone()).await {
                     err.send(Event::Minor((
                         id,
-                        Error::new(
-                            ErrorKind::Other,
-                            format!("Failed to send data to one specific output: {error}"),
-                        ),
+                        Error::other(format!(
+                            "Failed to send data to one specific output: {error}"
+                        )),
                     )))
                     .await
                     .map_err(|error| {
@@ -43,7 +42,7 @@ impl_input!(
             if failed {
                 err.send(Event::Major((
                     id,
-                    Error::new(ErrorKind::Other, "Failed to send data to every node"),
+                    Error::other("Failed to send data to every node"),
                 )))
                 .await
                 .map_err(|error| {

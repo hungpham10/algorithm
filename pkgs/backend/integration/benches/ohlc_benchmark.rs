@@ -15,7 +15,7 @@ fn bench_get_ohlc_real_internet(c: &mut Criterion) {
     let service = Arc::new(QueryCandleSticks::new(client, 1000).unwrap());
 
     // Cấu hình tham số thực tế
-    let provider = "ssi";
+    let provider = "dnse";
     let stock = "FPT";
     let res = "1D";
 

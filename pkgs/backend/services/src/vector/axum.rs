@@ -137,7 +137,7 @@ impl AxumBuilder {
 
         self.storage.mapping.read().await.keys().for_each(|path| {
             *axum_router =
-                std::mem::replace(axum_router, Router::new()).route(&path, register_cb(&path));
+                std::mem::replace(axum_router, Router::new()).route(path, register_cb(path));
         });
 
         runtime

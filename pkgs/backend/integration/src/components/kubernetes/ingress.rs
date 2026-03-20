@@ -68,9 +68,9 @@ fn get_truncated_path(uri: &str, depth: usize) -> String {
 impl_ingress_mapping_transform!(
     async fn run(
         &self,
-        id: usize,
+        _: usize,
         rx: &mut mpsc::Receiver<Message>,
-        _: &Vec<mpsc::Sender<Message>>,
+        _: &'life2 [mpsc::Sender<Message>],
         _: &mpsc::Sender<Event>,
     ) -> Result<(), std::io::Error> {
         // Chuyển error_codes vào HashSet để tra cứu O(1)

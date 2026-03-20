@@ -119,12 +119,7 @@ async fn get_tenant_id(
     State(app_state): State<AppState>,
     Path(host): Path<String>,
 ) -> impl IntoResponse {
-    match app_state
-        .admin_entity
-        .get_tenant_id(&host)
-        .await
-        .map(|id| id)
-    {
+    match app_state.admin_entity.get_tenant_id(&host).await {
         Ok(response) => (StatusCode::OK, format!("{}", response)),
         Err(error) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -261,7 +256,7 @@ async fn build_sitemap_xml(
         )
     })?;
 
-    Ok(Response::builder()
+    Response::builder()
         .header(header::CONTENT_TYPE, "application/xml; charset=utf-8")
         .body(Body::from(xml))
         .map_err(|error| {
@@ -269,7 +264,7 @@ async fn build_sitemap_xml(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Fail to write sitemap: {}", error),
             )
-        })?)
+        })
 }
 
 async fn build_news_xml(
@@ -395,7 +390,7 @@ async fn build_news_xml(
         )
     })?;
 
-    Ok(Response::builder()
+    Response::builder()
         .header(header::CONTENT_TYPE, "application/xml; charset=utf-8")
         .body(Body::from(xml))
         .map_err(|error| {
@@ -403,7 +398,7 @@ async fn build_news_xml(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Fail to write news: {}", error),
             )
-        })?)
+        })
 }
 
 pub async fn purge_file(
@@ -619,6 +614,18 @@ pub async fn get_api_schema(
     }
 }
 
+type BoxedAdminError = Box<(StatusCode, JsonResponse<AdminResponse>)>;
+
+fn admin_error(status: StatusCode, message: String) -> BoxedAdminError {
+    Box::new((
+        status,
+        JsonResponse(AdminResponse {
+            error: Some(message),
+            ..Default::default()
+        }),
+    ))
+}
+
 pub async fn get_appended_log(
     State(app_state): State<AppState>,
     Path(name): Path<String>,
@@ -640,46 +647,37 @@ pub async fn get_appended_log(
             )
         })?;
 
-    let result: Result<Vec<String>, (StatusCode, JsonResponse<AdminResponse>)> =
-        tokio::task::spawn_blocking(move || {
-            let logger = AppendedLog::new(&dsn).map_err(|error| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    JsonResponse(AdminResponse {
-                        error: Some(format!("Failed to connect to log server: {error}")),
-                        ..Default::default()
-                    }),
-                )
-            })?;
-
-            let partitions = logger.list_partitions().map_err(|error| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    JsonResponse(AdminResponse {
-                        error: Some(format!("Failed lising partitions: {error}")),
-                        ..Default::default()
-                    }),
-                )
-            })?;
-
-            Ok(partitions)
-        })
-        .await
-        .map_err(|error| {
-            (
+    let result: Result<Vec<String>, BoxedAdminError> = tokio::task::spawn_blocking(move || {
+        let logger = AppendedLog::new(&dsn).map_err(|e| {
+            admin_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                JsonResponse(AdminResponse {
-                    error: Some(format!("Failed while calculating : {error}")),
-                    ..Default::default()
-                }),
+                format!("Failed to connect to log server: {e}"),
             )
         })?;
 
+        let partitions = logger.list_partitions().map_err(|e| {
+            admin_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed listing partitions: {e}"),
+            )
+        })?;
+
+        Ok(partitions)
+    })
+    .await
+    .map_err(|error| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(AdminResponse {
+                error: Some(format!("Failed while spawning blocking task: {error}")),
+                ..Default::default()
+            }),
+        )
+    })?;
+
     match result {
-        Ok(_) => Ok(JsonResponse(AdminResponse {
-            ..Default::default()
-        })),
-        Err(error) => Err(error),
+        Ok(_) => Ok(JsonResponse(AdminResponse::default())),
+        Err(boxed_err) => Err(*boxed_err), // Unbox để trả về Axum
     }
 }
 
@@ -704,45 +702,36 @@ pub async fn rotate_new_partition(
             )
         })?;
 
-    let result: Result<(), (StatusCode, JsonResponse<AdminResponse>)> =
-        tokio::task::spawn_blocking(move || {
-            let logger = AppendedLog::new(&dsn).map_err(|error| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    JsonResponse(AdminResponse {
-                        error: Some(format!("Failed to connect to log server: {error}")),
-                        ..Default::default()
-                    }),
-                )
-            })?;
-
-            logger.rotate_new_partition().map_err(|error| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    JsonResponse(AdminResponse {
-                        error: Some(format!("Failed rotate a new partition: {error}")),
-                        ..Default::default()
-                    }),
-                )
-            })?;
-
-            Ok(())
-        })
-        .await
-        .map_err(|error| {
-            (
+    let result: Result<(), BoxedAdminError> = tokio::task::spawn_blocking(move || {
+        let logger = AppendedLog::new(&dsn).map_err(|e| {
+            admin_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                JsonResponse(AdminResponse {
-                    error: Some(format!("Failed while calculating : {error}")),
-                    ..Default::default()
-                }),
+                format!("Failed to connect to log server: {e}"),
             )
         })?;
 
+        logger.rotate_new_partition().map_err(|e| {
+            admin_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed rotate a new partition: {e}"),
+            )
+        })?;
+
+        Ok(())
+    })
+    .await
+    .map_err(|error| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(AdminResponse {
+                error: Some(format!("Failed while spawning blocking task: {error}")),
+                ..Default::default()
+            }),
+        )
+    })?;
+
     match result {
-        Ok(_) => Ok(JsonResponse(AdminResponse {
-            ..Default::default()
-        })),
-        Err(error) => Err(error),
+        Ok(_) => Ok(JsonResponse(AdminResponse::default())),
+        Err(boxed_err) => Err(*boxed_err),
     }
 }

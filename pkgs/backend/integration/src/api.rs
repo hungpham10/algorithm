@@ -2,6 +2,7 @@ use algorithm::{JsonQuery, LruCache};
 use reqwest::Client;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::Value;
+
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::sync::Arc;
@@ -60,10 +61,7 @@ impl Api {
         parser: &Arc<JsonQuery>,
     ) -> Result<Vec<Value>, Error> {
         if !response.status().is_success() {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!("HTTP Error: {}", response.status()),
-            ));
+            return Err(Error::other(format!("HTTP Error: {}", response.status())));
         }
 
         // Đọc toàn bộ body thành JSON Value
@@ -93,7 +91,7 @@ impl Api {
             .json(&body)
             .send()
             .await
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Request failed: {}", e)))?;
+            .map_err(|e| Error::other(format!("Request failed: {}", e)))?;
 
         self.parse_response(response, parser).await
     }
@@ -112,7 +110,7 @@ impl Api {
             .headers(header_map)
             .send()
             .await
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Request failed: {}", e)))?;
+            .map_err(|e| Error::other(format!("Request failed: {}", e)))?;
 
         self.parse_response(response, parser).await
     }
@@ -133,7 +131,7 @@ impl Api {
             .json(&body)
             .send()
             .await
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Request failed: {}", e)))?;
+            .map_err(|e| Error::other(format!("Request failed: {}", e)))?;
 
         self.parse_response(response, parser).await
     }
@@ -152,7 +150,7 @@ impl Api {
             .headers(header_map)
             .send()
             .await
-            .map_err(|e| Error::new(ErrorKind::Other, format!("Request failed: {}", e)))?;
+            .map_err(|e| Error::other(format!("Request failed: {}", e)))?;
 
         self.parse_response(response, parser).await
     }

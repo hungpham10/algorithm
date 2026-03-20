@@ -11,38 +11,41 @@ mod simd {
     use std::arch::x86_64::*;
 
     #[target_feature(enable = "avx")]
-    #[inline]
     pub unsafe fn sum_f64(slice: &[f64]) -> f64 {
         let mut acc = _mm256_setzero_pd();
         let mut i = 0;
         while i + 4 <= slice.len() {
-            let vals = _mm256_loadu_pd(slice[i..].as_ptr());
+            // Wrap every intrinsic in unsafe {}
+            let vals = unsafe { _mm256_loadu_pd(slice.as_ptr().add(i)) };
             acc = _mm256_add_pd(acc, vals);
             i += 4;
         }
         let mut buf = [0f64; 4];
-        _mm256_storeu_pd(buf.as_mut_ptr(), acc);
+        unsafe { _mm256_storeu_pd(buf.as_mut_ptr(), acc) };
+
         let mut total = buf.iter().sum::<f64>();
-        for &v in &slice[i..] {
-            total += v;
-        }
+        // Clean remaining elements
+        total += slice[i..].iter().sum::<f64>();
         total
     }
 
     #[target_feature(enable = "avx")]
-    #[inline]
     pub unsafe fn add_scalar(volumes: &mut [f64], low_bin: usize, high_bin: usize, val: f64) {
         let vec_val = _mm256_set1_pd(val);
         let mut i = low_bin;
+        // Process in chunks of 4
         while i + 4 <= high_bin + 1 {
-            let ptr = volumes[i..].as_mut_ptr();
-            let old = _mm256_loadu_pd(ptr);
-            let new = _mm256_add_pd(old, vec_val);
-            _mm256_storeu_pd(ptr, new);
+            let ptr = unsafe { volumes.as_mut_ptr().add(i) };
+            unsafe {
+                let old = _mm256_loadu_pd(ptr);
+                let new = _mm256_add_pd(old, vec_val);
+                _mm256_storeu_pd(ptr, new);
+            }
             i += 4;
         }
-        for bin in i..=high_bin {
-            volumes[bin] += val;
+        // FIX: needless_range_loop
+        for v in volumes.iter_mut().take(high_bin + 1).skip(i) {
+            *v += val;
         }
     }
 }
@@ -90,9 +93,8 @@ mod simd {
 
             i += 2;
         }
-        for bin in i..=high_bin {
-            volumes[bin] += val;
-        }
+
+        volumes[i..=high_bin].iter_mut().for_each(|v| *v += val);
     }
 }
 
@@ -109,6 +111,15 @@ pub struct VolumeProfile {
     levels: Vec<f64>,
     ranges: Vec<(usize, usize, usize)>,
     timelines: Vec<Vec<Vec<(usize, usize)>>>,
+}
+type VolumeRange = (usize, usize);
+type VolumeSegments = Vec<VolumeRange>;
+type VolumeTimeline = Vec<VolumeSegments>;
+
+impl Default for VolumeProfile {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl VolumeProfile {
@@ -180,36 +191,41 @@ impl VolumeProfile {
     pub fn calculate_cumulate_volume_timeline(
         heatmap: &[Vec<f64>],
         ranges: &[(usize, usize, usize)],
-    ) -> Result<Vec<Vec<Vec<(usize, usize)>>>, Error> {
+    ) -> Result<Vec<VolumeTimeline>, Error> {
         Ok(ranges
             .par_iter() // Song song hóa các cụm range
             .map(|(_, l_beg, l_end)| {
                 (*l_beg..*l_end)
-                    .into_par_iter() // Song song hóa từng mức giá (cột)
+                    .into_par_iter()
                     .map(|col| {
                         let mut ret = Vec::new();
                         let mut t_cursor = 0;
                         let row_count = heatmap.len();
 
                         while t_cursor < row_count {
-                            // Tìm điểm bắt đầu (vùng có volume > 0)
                             let mut t_beg = None;
-                            for i in t_cursor..row_count {
-                                if heatmap[i][col] > 0.0 {
-                                    t_beg = Some(i);
-                                    break;
-                                }
+
+                            if let Some(pos) = heatmap
+                                .iter()
+                                .take(row_count)
+                                .skip(t_cursor)
+                                .position(|row| row[col] > 0.0)
+                            {
+                                t_beg = Some(t_cursor + pos);
                             }
 
                             if let Some(start) = t_beg {
-                                // Tìm điểm kết thúc (vùng hết volume)
                                 let mut t_end = row_count;
-                                for i in start..row_count {
-                                    if heatmap[i][col] <= 0.0 {
-                                        t_end = i;
-                                        break;
-                                    }
+
+                                if let Some(found_idx) = heatmap
+                                    .iter()
+                                    .take(row_count)
+                                    .skip(start)
+                                    .position(|row| row[col] <= 0.0)
+                                {
+                                    t_end = start + found_idx;
                                 }
+
                                 ret.push((start, t_end));
                                 t_cursor = t_end;
                             } else {
@@ -228,7 +244,7 @@ impl VolumeProfile {
         let half = window / 2;
         (0..totals.len())
             .map(|i| {
-                let start = if i >= half { i - half } else { 0 };
+                let start = i.saturating_sub(half);
                 let end = usize::min(i + half + 1, totals.len());
                 (unsafe { simd::sum_f64(&totals[start..end]) }) / (end - start) as f64
             })
@@ -286,10 +302,8 @@ impl VolumeProfile {
 
             if let Some((group, new_beg, new_end, order)) = update_data {
                 centers.insert(group, (new_beg, new_end, order));
-            } else if !found {
-                if !centers.contains_key(&t) {
-                    centers.insert(t, (t, t, centers.len()));
-                }
+            } else if !found && !centers.contains_key(&t) {
+                centers.insert(t, (t, t, centers.len()));
             }
         }
 
@@ -476,7 +490,7 @@ mod tests {
         let vp2_1 = VolumeProfile::new_from_candles(&candles, 10, 0, 24).unwrap();
 
         // Test với overlap_days = 0 (tính toàn bộ dataset)
-        let (volumes_all, levels_all) =
+        let (volumes_all, _levels_all) =
             VolumeProfile::cumulate_volume_profile(&candles, 10, 0, 24).unwrap();
         println!("All data volume profile: {:?}", volumes_all);
         assert_eq!(volumes_all.len(), 1); // Chỉ có 1 profile cho toàn bộ data

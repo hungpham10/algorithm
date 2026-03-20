@@ -68,7 +68,7 @@ impl Bootstrap {
         let mut lock = self
             .component
             .write()
-            .map_err(|_| Error::new(ErrorKind::Other, "Lock poison"))?;
+            .map_err(|_| Error::other("Lock poison"))?;
         *lock = component.clone();
 
         self.signal_tx.send(()).map_err(|error| {
@@ -114,7 +114,7 @@ impl Bootstrap {
             .map_err(|e| Error::new(ErrorKind::BrokenPipe, format!("Mapping read error: {}", e)))?
             .get(&id)
             .cloned()
-            .unwrap_or_else(|| Vec::new());
+            .unwrap_or_else(Vec::new);
 
         let fanout = self
             .fanout
@@ -158,11 +158,11 @@ impl Bootstrap {
             let mut rx_guard = self
                 .receiver
                 .write()
-                .map_err(|_| Error::new(ErrorKind::Other, "Lock poisoned"))?;
+                .map_err(|_| Error::other("Lock poisoned"))?;
 
             rx_guard
                 .take()
-                .ok_or_else(|| Error::new(ErrorKind::Other, "No receiver available"))?
+                .ok_or_else(|| Error::other("No receiver available"))?
         };
 
         if rx.is_closed() {
@@ -186,7 +186,8 @@ impl Bootstrap {
             let report = self.report.clone();
             let txs = self.get_senders(id)?;
             let run_in_future =
-                AssertUnwindSafe(component.run(id, &mut rx, &txs, &report)).catch_unwind();
+                AssertUnwindSafe(component.run(id, &mut rx, txs.as_slice(), &report))
+                    .catch_unwind();
 
             tokio::select! {
                 panic_res = run_in_future => {
@@ -268,6 +269,12 @@ pub struct Runtime {
     inputs: RwLock<HashMap<usize, Vec<usize>>>,
     nodes: RwLock<HashMap<String, usize>>,
     inc: AtomicUsize,
+}
+
+impl Default for Runtime {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Runtime {
@@ -374,14 +381,14 @@ impl Runtime {
 
             for component in &components {
                 if let Some(idx) = nodes.get(&component.id()) {
-                    let bootstrap = bootstraps.get(&idx).ok_or_else(|| {
+                    let bootstrap = bootstraps.get(idx).ok_or_else(|| {
                         Error::new(
                             ErrorKind::BrokenPipe,
                             format!("Failed to get bootstrap with id {}", idx),
                         )
                     })?;
 
-                    bootstrap.compare(&component).map(|is_same| {
+                    bootstrap.compare(component).map(|is_same| {
                         if !is_same {
                             diffs.push(component);
                         }
@@ -393,11 +400,7 @@ impl Runtime {
                 }
             }
 
-            (
-                adds,
-                diffs,
-                dels.into_iter().map(|id| id.clone()).collect::<Vec<_>>(),
-            )
+            (adds, diffs, dels.into_iter().copied().collect::<Vec<_>>())
         };
 
         self.validate_if_adding_new_nodes(&adds, &diffs)?;
@@ -437,7 +440,7 @@ impl Runtime {
         let mut rx = self
             .report_rx
             .take()
-            .ok_or_else(|| Error::new(ErrorKind::Other, "receiver already taken"))?;
+            .ok_or_else(|| Error::other("receiver already taken"))?;
 
         let task_handler = tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
@@ -576,7 +579,7 @@ impl Runtime {
         for component in adds {
             if component.component_type() != ComponentType::Source {
                 if let Some(inputs) = component.get_inputs() {
-                    if inputs.len() == 0 {
+                    if inputs.is_empty() {
                         return Err(Error::new(
                             ErrorKind::InvalidData,
                             format!(
@@ -636,17 +639,17 @@ impl Runtime {
         }
 
         for (_, idx) in dead_nodes {
-            if adds[idx].component_type() != ComponentType::Sink {
-                if !will_be_linked.contains(&adds[idx].id()) {
-                    return Err(Error::new(
-                        ErrorKind::InvalidData,
-                        format!(
-                            "{} {} must have connect with another nodes",
-                            adds[idx].component_type(),
-                            adds[idx].id()
-                        ),
-                    ));
-                }
+            if adds[idx].component_type() != ComponentType::Sink
+                && !will_be_linked.contains(&adds[idx].id())
+            {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!(
+                        "{} {} must have connect with another nodes",
+                        adds[idx].component_type(),
+                        adds[idx].id()
+                    ),
+                ));
             }
         }
 
@@ -669,7 +672,7 @@ impl Runtime {
 
                 for input_name in inputs {
                     if let Some(&source_idx) = nodes.get(input_name) {
-                        let outs = outputs_map.entry(source_idx).or_insert_with(Vec::new);
+                        let outs = outputs_map.entry(source_idx).or_default();
                         if !outs.contains(&current_idx) {
                             outs.push(current_idx);
                         }
@@ -721,7 +724,7 @@ impl Runtime {
 
     fn update_changing_nodes(&self, diffs: &Vec<&Arc<dyn Component>>) -> Result<(), Error> {
         for component in diffs {
-            let idx = self
+            let idx = *self
                 .nodes
                 .read()
                 .map_err(|error| {
@@ -736,8 +739,7 @@ impl Runtime {
                         ErrorKind::BrokenPipe,
                         format!("Failed to get id of node {}", component.id()),
                     )
-                })?
-                .clone();
+                })?;
 
             self.bootstraps
                 .write()
@@ -780,16 +782,16 @@ impl Runtime {
             let old_input_indices = inputs_map.get(&current_idx).cloned().unwrap_or_default();
 
             for old_source_idx in &old_input_indices {
-                if !new_input_indices.contains(old_source_idx) {
-                    if let Some(outs) = outputs_map.get_mut(old_source_idx) {
-                        outs.retain(|&idx| idx != current_idx);
-                    }
+                if !new_input_indices.contains(old_source_idx)
+                    && let Some(outs) = outputs_map.get_mut(old_source_idx)
+                {
+                    outs.retain(|&idx| idx != current_idx);
                 }
             }
 
             for &new_source_idx in &new_input_indices {
                 if !old_input_indices.contains(&new_source_idx) {
-                    let outs = outputs_map.entry(new_source_idx).or_insert_with(Vec::new);
+                    let outs = outputs_map.entry(new_source_idx).or_default();
                     if !outs.contains(&current_idx) {
                         outs.push(current_idx);
                     }
@@ -910,17 +912,18 @@ impl Runtime {
                 }
             }
 
-            if sent_by_nodes.len() > 0 {
+            if !sent_by_nodes.is_empty() {
                 for node_id in sent_by_nodes {
-                    if let Some(output) = outputs.get(node_id) {
-                        if output.len() == 1 && !will_delete.contains(node_id) {
-                            // @TODO: mapping id to node name
+                    if let Some(output) = outputs.get(node_id)
+                        && output.len() == 1
+                        && !will_delete.contains(node_id)
+                    {
+                        // @TODO: mapping id to node name
 
-                            return Err(Error::new(
-                                ErrorKind::InvalidData,
-                                format!("Node {} is on deadline", node_id),
-                            ));
-                        }
+                        return Err(Error::new(
+                            ErrorKind::InvalidData,
+                            format!("Node {} is on deadline", node_id),
+                        ));
                     }
                 }
             }
@@ -950,7 +953,7 @@ impl Runtime {
             })?;
 
             let name = bootstraps
-                .get(&id)
+                .get(id)
                 .ok_or_else(|| {
                     Error::new(
                         ErrorKind::BrokenPipe,
@@ -966,7 +969,7 @@ impl Runtime {
                 })?;
 
             bootstraps
-                .get(&id)
+                .get(id)
                 .ok_or_else(|| {
                     Error::new(
                         ErrorKind::BrokenPipe,
@@ -974,8 +977,8 @@ impl Runtime {
                     )
                 })?
                 .stop()?;
-            bootstraps.remove(&id);
-            tasks.remove(&id);
+            bootstraps.remove(id);
+            tasks.remove(id);
             nodes.remove(&name);
         }
 

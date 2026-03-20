@@ -1,6 +1,5 @@
-use std::io::{Error, ErrorKind};
-
 use serde_json::Value;
+use std::io::Error;
 
 use tokio::sync::mpsc;
 use tokio::time::sleep;
@@ -24,15 +23,11 @@ impl_appended_log_source!(
         &self,
         id: usize,
         _: &mut mpsc::Receiver<Message>,
-        txs: &Vec<mpsc::Sender<Message>>,
+        txs: &'life2 [mpsc::Sender<Message>],
         err: &mpsc::Sender<Event>,
     ) -> Result<(), std::io::Error> {
-        let logger = AppendedLog::new(&self.dsn).map_err(|e| {
-            Error::new(
-                ErrorKind::Other,
-                format!("Source {} failed to connect: {}", self.id, e),
-            )
-        })?;
+        let logger = AppendedLog::new(&self.dsn)
+            .map_err(|e| Error::other(format!("Source {} failed to connect: {}", self.id, e)))?;
 
         let mut current_offset = self.offset;
 
@@ -56,10 +51,7 @@ impl_appended_log_source!(
                                 let _ = err
                                     .send(Event::Minor((
                                         id,
-                                        Error::new(
-                                            ErrorKind::Other,
-                                            format!("Failed to send event: {}", error),
-                                        ),
+                                        Error::other(format!("Failed to send event: {}", error)),
                                     )))
                                     .await;
                             }
@@ -76,10 +68,7 @@ impl_appended_log_source!(
                     let _ = err
                         .send(Event::Minor((
                             id,
-                            Error::new(
-                                ErrorKind::Other,
-                                format!("Read error at offset {}: {}", current_offset, e),
-                            ),
+                            Error::other(format!("Read error at offset {}: {}", current_offset, e)),
                         )))
                         .await;
 

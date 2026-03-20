@@ -1,6 +1,6 @@
 mod api;
-mod vector;
 mod gateway;
+mod vector;
 
 use clap::{Parser, Subcommand};
 use std::io::{Error, ErrorKind};

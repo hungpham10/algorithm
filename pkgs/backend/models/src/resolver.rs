@@ -40,7 +40,7 @@ impl Resolver {
             mysql_user, mysql_password, mysql_host, mysql_port, mysql_db,
         ));
 
-        for dsn in db_dsn.split(",").into_iter() {
+        for dsn in db_dsn.split(",") {
             let mut opt = ConnectOptions::new(dsn.to_string());
 
             opt.max_connections(100)
@@ -50,16 +50,13 @@ impl Resolver {
                 .max_lifetime(Duration::from_secs(8))
                 .sqlx_logging(true);
 
-            dbs.push(Database::connect(opt).await.map_err(|error| {
-                Error::new(
-                    ErrorKind::InvalidInput,
-                    format!("Fail to connect database: {}", error),
-                )
-            })?);
+            if let Ok(conn) = Database::connect(opt).await {
+                dbs.push(conn);
+            }
         }
 
-        let s3_endpoint = secret.get("S3_ENDPOINT", "/").await?;
-        let s3_region = secret.get("S3_REGION", "/").await?;
+        let s3_endpoint = secret.get("S3_ENDPOINT", "/").await.unwrap_or_default();
+        let s3_region = secret.get("S3_REGION", "/").await.unwrap_or_default();
         let s3_client = Arc::new(S3Client::new(
             &(aws_config::defaults(BehaviorVersion::latest())
                 .timeout_config(
@@ -88,25 +85,17 @@ impl Resolver {
 
         for dsn in redis_dsn.split(",") {
             let client = CacheClient::open(dsn).map_err(|error| {
-                Error::new(
-                    ErrorKind::Other,
-                    format!("New redis client to {dsn} failed: {error}"),
-                )
+                Error::other(format!("New redis client to {dsn} failed: {error}"))
             })?;
 
             let conn = client
                 .get_multiplexed_async_connection()
                 .await
-                .map_err(|error| {
-                    Error::new(
-                        ErrorKind::Other,
-                        format!("Connect to {dsn} failed: {error}"),
-                    )
-                })?;
+                .map_err(|error| Error::other(format!("Connect to {dsn} failed: {error}")))?;
 
             caches.push(conn);
         }
-        for dsn in secret.get("LAVINMQ_DSN", "/").await?.split(",").into_iter() {
+        for dsn in secret.get("LAVINMQ_DSN", "/").await?.split(",") {
             if let Ok(parsed) = Url::parse(dsn) {
                 let mut args = OpenConnectionArguments::new(
                     parsed.host_str().ok_or_else(|| {
@@ -143,7 +132,7 @@ impl Resolver {
         self.caches
             .get((tenant_id % (self.caches.len() as i64)) as usize)
             .expect("Failed to get cache connection")
-            .clone() // Multiplexed connection được thiết kế để clone và dùng chung
+            .clone()
     }
 
     pub fn database(&self, tenant_id: i64) -> &DbClient {

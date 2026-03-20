@@ -13,7 +13,7 @@ impl_cronjob_source!(
         &self,
         _: usize,
         _: &mut mpsc::Receiver<Message>,
-        _: &Vec<mpsc::Sender<Message>>,
+        _: &'life2 [mpsc::Sender<Message>],
         _: &mpsc::Sender<Event>,
     ) -> Result<(), std::io::Error> {
         Ok(())

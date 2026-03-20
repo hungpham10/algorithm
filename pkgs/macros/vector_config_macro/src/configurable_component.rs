@@ -41,7 +41,9 @@ pub fn configurable_component_impl(
         let attr_args =
             parse_macro_input!(attr with Punctuated::<Meta, Token![,]>::parse_terminated);
         for meta in attr_args {
-            if meta.path().is_ident("derive") && let Meta::List(list) = meta {
+            if meta.path().is_ident("derive")
+                && let Meta::List(list) = meta
+            {
                 // Parse nội dung bên trong dấu ngoặc của derives(...)
                 let nested = list
                     .parse_args_with(Punctuated::<syn::Path, Token![,]>::parse_terminated)

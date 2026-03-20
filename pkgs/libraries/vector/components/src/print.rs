@@ -21,7 +21,7 @@ impl_print!(
         &self,
         _: usize,
         rx: &mut mpsc::Receiver<Message>,
-        _: &Vec<mpsc::Sender<Message>>,
+        _: &'life2 [mpsc::Sender<Message>],
         _: &mpsc::Sender<Event>,
     ) -> Result<(), std::io::Error> {
         while let Some(message) = rx.recv().await {

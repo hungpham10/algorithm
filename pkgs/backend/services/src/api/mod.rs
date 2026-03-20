@@ -2,7 +2,7 @@ pub mod admin;
 pub mod investing;
 
 use std::collections::HashMap;
-use std::io::{Error, ErrorKind};
+use std::io::Error;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -111,10 +111,10 @@ impl AppState {
             investing_apis: Arc::new(
                 serde_json::from_str(secret.get("MAP_INVENSTING_API", "/").await?.as_str())
                     .map_err(|error| {
-                        Error::new(
-                            ErrorKind::Other,
-                            format!("Failed to parse investing api from config: {}", error),
-                        )
+                        Error::other(format!(
+                            "Failed to parse investing api from config: {}",
+                            error
+                        ))
                     })?,
             ),
         })

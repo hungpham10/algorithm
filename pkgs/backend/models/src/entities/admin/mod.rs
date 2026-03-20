@@ -21,7 +21,7 @@ use sea_orm::{
     ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QuerySelect, RuntimeErr, Set,
 };
 
-use algorithm::{Operator, LruCache};
+use algorithm::{LruCache, Operator};
 use chrono::{DateTime, Utc};
 use integration::Api as ApiEngine;
 use rand::{RngCore, thread_rng};
@@ -288,7 +288,7 @@ impl Admin {
                     })?;
 
                 let master_key_str = self.get_master_key().await?;
-                let key = Key::<Aes256Gcm>::from_slice(&master_key_str.as_slice());
+                let key = Key::<Aes256Gcm>::from_slice(master_key_str.as_slice());
                 let cipher = Aes256Gcm::new(key);
 
                 if encrypted_bytes.len() < 12 {
@@ -314,10 +314,8 @@ impl Admin {
                     )))
                 })?;
 
-                self.cache_unencrypted_tokens.put(
-                    cache_key_after_done,
-                    Some(token.clone())
-                );
+                self.cache_unencrypted_tokens
+                    .put(cache_key_after_done, Some(token.clone()));
                 Ok(token)
             }
         }
@@ -331,7 +329,7 @@ impl Admin {
     ) -> Result<(), DbErr> {
         let master_key_str = self.get_master_key().await?;
 
-        let key = Key::<Aes256Gcm>::from_slice(&master_key_str.as_slice());
+        let key = Key::<Aes256Gcm>::from_slice(master_key_str.as_slice());
         let cipher = Aes256Gcm::new(key);
 
         let mut nonce_bytes = [0u8; 12];
@@ -368,24 +366,19 @@ impl Admin {
         .exec(self.dbt(tenant_id))
         .await?;
 
-        self.cache_unencrypted_tokens.put(
-            (tenant_id, service_name.clone()),
-            Some(token_plain.clone()),
-        );
+        self.cache_unencrypted_tokens
+            .put((tenant_id, service_name.clone()), Some(token_plain.clone()));
         Ok(())
     }
 
-    pub async fn list_supported_services(
-        &self,
-        tenant_id: i64,
-    ) -> Result<Vec<String>, DbErr> {
-        Ok(TokenMap::find()
+    pub async fn list_supported_services(&self, tenant_id: i64) -> Result<Vec<String>, DbErr> {
+        TokenMap::find()
             .filter(token_map::Column::TenantId.eq(tenant_id))
             .select_only()
             .column(token_map::Column::Service)
             .into_tuple::<String>()
             .all(self.dbt(tenant_id))
-            .await?)
+            .await
     }
 
     // --------------------------------------------------------------
@@ -461,12 +454,10 @@ impl Admin {
                             parser: Some(parser.0.clone()),
                         };
 
-                        self.cache_api_info_by_name.put(
-                            cache_key_after_done,
-                            Some(api_info.clone())
-                        );
+                        self.cache_api_info_by_name
+                            .put(cache_key_after_done, Some(api_info.clone()));
                         Ok(api_info)
-                    },
+                    }
                     None => Err(DbErr::Query(RuntimeErr::Internal(format!(
                         "Not found api {} for tenant_id {} ",
                         name, tenant_id,
@@ -481,7 +472,7 @@ impl Admin {
             Some(Some(api_info)) => Ok(api_info),
             Some(None) => Err(DbErr::Query(RuntimeErr::Internal(format!(
                 "Not found api schema for tenant_id {} and id {}",
-                            tenant_id, id,
+                tenant_id, id,
             )))),
             None => {
                 match ApiMap::find()
@@ -496,8 +487,7 @@ impl Admin {
                         name: Some(name),
                         url: Some(url),
                         parser: Some(parser.0.clone()),
-                    })
-                {
+                    }) {
                     Some(api_info) => {
                         self.cache_api_info_by_id.put(id, Some(api_info.clone()));
                         Ok(api_info)
@@ -534,7 +524,6 @@ impl Admin {
                     .ok_or_else(|| DbErr::Custom(format!("`url` is missing in schema {}", i)))?),
                 mode: Set(schema
                     .mode
-                    .clone()
                     .ok_or_else(|| DbErr::Custom(format!("`mode` is missing in schema {}", i)))?
                     as i32),
                 parser: Set(api_map::Parser(schema.parser.clone().ok_or_else(|| {
@@ -576,11 +565,7 @@ impl Admin {
         body: Option<Value>,
     ) -> Result<Vec<Value>, DbErr> {
         self.perform_api_by_api_info(
-            &self.get_api_schema_by_id(
-                tenant_id,
-                query_id,
-            )
-            .await?,
+            &self.get_api_schema_by_id(tenant_id, query_id).await?,
             args,
             headers,
             body,
@@ -598,12 +583,7 @@ impl Admin {
         body: Option<Value>,
     ) -> Result<Vec<Value>, DbErr> {
         self.perform_api_by_api_info(
-            &self.get_api_schema_by_name(
-                tenant_id,
-                name,
-                mode,
-            )
-            .await?,
+            &self.get_api_schema_by_name(tenant_id, name, mode).await?,
             args,
             headers,
             body,
@@ -618,100 +598,60 @@ impl Admin {
         headers: HashMap<String, String>,
         body: Option<Value>,
     ) -> Result<Vec<Value>, DbErr> {
-        let mut url = api_info.url.clone()
-            .ok_or_else(|| DbErr::Query(RuntimeErr::Internal(
-                "Api is broken, missing `url`".into()
-            )))?;
-        let mode = api_info.mode
-            .ok_or_else(|| DbErr::Query(RuntimeErr::Internal(
-                "Api is broken, missing `mode`".into()
-            )))?;
-        let parser = api_info.parser.as_ref()
-            .ok_or_else(|| DbErr::Query(RuntimeErr::Internal(
-                "Api is broken, missing `template`".into()
-            )))?;
+        let mut url = api_info.url.clone().ok_or_else(|| {
+            DbErr::Query(RuntimeErr::Internal("Api is broken, missing `url`".into()))
+        })?;
+
+        let api_type = api_info.mode.ok_or_else(|| {
+            DbErr::Query(RuntimeErr::Internal("Api is broken, missing `mode`".into()))
+        })?;
+
+        let parser = api_info.parser.as_ref().ok_or_else(|| {
+            DbErr::Query(RuntimeErr::Internal(
+                "Api is broken, missing `template`".into(),
+            ))
+        })?;
 
         for arg in args {
             url = url.replacen("{}", &arg, 1);
         }
 
-        if body.is_none() {
-            if ApiType::from(mode) == ApiType::Create
-                || ApiType::from(mode) == ApiType::Update
-            {
-                return Err(DbErr::Query(RuntimeErr::Internal(format!(
-                    "No body provided for create or update API type: {}",
-                    mode
-                ))));
-            }
+        if body.is_none() && matches!(api_type, ApiType::Create | ApiType::Update) {
+            return Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "No body provided for create or update API type: {api_type}",
+            ))));
         }
 
-        match ApiType::from(mode) {
+        let query_parser = Arc::new(algorithm::JsonQuery::new(parser.clone()));
+
+        match api_type {
             ApiType::Create => self
                 .api
-                .create(
-                    url.as_str(),
-                    &Arc::new(algorithm::JsonQuery::new(parser.clone())),
-                    &headers,
-                    body.unwrap(),
-                )
+                .create(url.as_str(), &query_parser, &headers, body.unwrap())
                 .await
-                .map_err(|error| {
-                    DbErr::Query(RuntimeErr::Internal(format!(
-                        "Error creating JSON by query: {}",
-                        error
-                    )))
-                }),
+                .map_err(|e| DbErr::Query(RuntimeErr::Internal(format!("Error creating: {e}")))),
+
             ApiType::Read => self
                 .api
-                .read(
-                    url.as_str(),
-                    &Arc::new(algorithm::JsonQuery::new(parser.clone())),
-                    &headers,
-                )
+                .read(url.as_str(), &query_parser, &headers)
                 .await
-                .map_err(|error| {
-                    DbErr::Query(RuntimeErr::Internal(format!(
-                        "Error getting JSON by query: {}",
-                        error
-                    )))
-                }),
+                .map_err(|e| DbErr::Query(RuntimeErr::Internal(format!("Error reading: {e}")))),
+
             ApiType::Update => self
                 .api
-                .update(
-                    url.as_str(),
-                    &Arc::new(algorithm::JsonQuery::new(parser.clone())),
-                    &headers,
-                    body.unwrap(),
-                )
+                .update(url.as_str(), &query_parser, &headers, body.unwrap())
                 .await
-                .map_err(|error| {
-                    DbErr::Query(RuntimeErr::Internal(format!(
-                        "Error updating JSON by query: {}",
-                        error
-                    )))
-                }),
+                .map_err(|e| DbErr::Query(RuntimeErr::Internal(format!("Error updating: {e}")))),
 
             ApiType::Delete => self
                 .api
-                .delete(
-                    url.as_str(),
-                    &Arc::new(algorithm::JsonQuery::new(parser.clone())),
-                    &headers,
-                )
+                .delete(url.as_str(), &query_parser, &headers)
                 .await
-                .map_err(|error| {
-                    DbErr::Query(RuntimeErr::Internal(format!(
-                        "Error deleting JSON by query: {}",
-                        error
-                    )))
-                }),
-            _ => {
-                return Err(DbErr::Query(RuntimeErr::Internal(format!(
-                    "Unknown API type: {}",
-                    mode
-                ))));
-            }
+                .map_err(|e| DbErr::Query(RuntimeErr::Internal(format!("Error deleting: {e}")))),
+
+            _ => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Unknown API type: {api_type}"
+            )))),
         }
     }
 }

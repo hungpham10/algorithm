@@ -93,7 +93,7 @@ pub trait Component: Identify + Send + Sync {
         &self,
         id: usize,
         rx: &mut Receiver<Message>,
-        txs: &Vec<Sender<Message>>,
+        txs: &'life2 [Sender<Message>],
         err: &Sender<Event>,
     ) -> Result<(), Error>;
 }

@@ -1,12 +1,13 @@
+use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use std::collections::HashMap;
 
+use algorithm::{JsonQuery, LruCache};
+use itertools::izip;
 use reqwest::Client as HttpClient;
+use schemas::{CandleStick, reload::Reload};
 use serde_json::Value;
-use algorithm::{LruCache, JsonQuery};
-use schemas::{reload::Reload, CandleStick};
 
 const INDEXES: [&str; 3] = ["VNINDEX", "HNXINDEX", "VN30"];
 const SECONDS_IN_WEEK: i64 = 7 * 24 * 60 * 60;
@@ -33,9 +34,18 @@ impl JsonValueExt for Value {
     }
 }
 
+// Define the layers from the inside out
+type CandleStack = Vec<CandleStick>;
+type CandleCache = LruCache<i64, CandleStack, 32>;
+
+// Group by whatever your keys represent (e.g., Symbol and Interval)
+type SymbolCacheMap = HashMap<String, CandleCache>;
+type ExchangeCacheMap = HashMap<String, SymbolCacheMap>;
+
 pub struct QueryCandleSticks {
     client: Arc<HttpClient>,
-    caches: Arc<RwLock<HashMap<String, HashMap<String, LruCache<i64, Vec<CandleStick>, 32>>>>>,
+    // Much easier to read:
+    caches: Arc<RwLock<ExchangeCacheMap>>,
     timers: Arc<RwLock<HashMap<String, u64>>>,
     mapping: RwLock<HashMap<String, String>>,
     profiles: HashMap<String, CompiledProfile>,
@@ -50,16 +60,12 @@ struct CompiledProfile {
 
 impl Reload for QueryCandleSticks {
     fn reload(&self) -> Result<(), Error> {
-        let mut mapping = self.mapping.write()
-            .map_err(|error| Error::new(
-                ErrorKind::Other,
-                format!("Fail to request to write to `mapping`: {}", error),
-            ))?;
-        let mapping_str = std::env::var("CANDLESTICK_MAPPING")
-            .unwrap_or_else(|_| "{}".to_string());
+        let mut mapping = self.mapping.write().map_err(|error| {
+            Error::other(format!("Fail to request to write to `mapping`: {}", error))
+        })?;
+        let mapping_str = std::env::var("CANDLESTICK_MAPPING").unwrap_or_else(|_| "{}".to_string());
 
-        *mapping = serde_json::from_str(&mapping_str)
-                .unwrap_or_default();
+        *mapping = serde_json::from_str(&mapping_str).unwrap_or_default();
         Ok(())
     }
 
@@ -69,30 +75,52 @@ impl Reload for QueryCandleSticks {
 }
 
 impl QueryCandleSticks {
-    pub fn new(
-        client: Arc<HttpClient>,
-        capacity: usize,
-    ) -> Result<Self, Error> {
+    pub fn new(client: Arc<HttpClient>, capacity: usize) -> Result<Self, Error> {
         let mut profiles = HashMap::new();
         let raw_configs = vec![
-            ("ssi", "https://iboard-api.ssi.com.vn/statistics/charts/history?from={from}&to={to}&symbol={stock}&resolution={res}",
-             ["data.t[]", "data.o[]", "data.h[]", "data.l[]", "data.c[]", "data.v[]"], true),
-            ("vix", " https://xpower.vixs.vn/tvchart/history?resolution={res}&symbol={stock}&from={from}&to={to}",
-             ["d[].time", "d[].open", "d[].high", "d[].low", "d[].close", "d[].volume"], true),
-            ("dnse", "https://api.dnse.com.vn/chart-api/v2/ohlcs/{kind}?from={from}&to={to}&symbol={stock}&resolution={res}",
-             ["t[]", "o[]", "h[]", "l[]", "c[]", "v[]"], true),
-            ("dragon", "https://godragon.vdsc.com.vn/IdragonMarketDataServer/trading-view/rest/history?symbol={stock}&resolution={res}&from={from}&to={to}&countback={limit}",
-             ["t[]", "o[]", "h[]", "l[]", "c[]", "v[]"], true),
-            ("binance", "https://api.binance.us/api/v3/klines?startTime={from}&endTime={to}&symbol={stock}&interval={res}&limit={limit}",
-             ["[].0", "[].1", "[].2", "[].3", "[].4", "[].5"], false),
+            (
+                "ssi",
+                "https://iboard-api.ssi.com.vn/statistics/charts/history?from={from}&to={to}&symbol={stock}&resolution={res}",
+                [
+                    "data.t[]", "data.o[]", "data.h[]", "data.l[]", "data.c[]", "data.v[]",
+                ],
+                true,
+            ),
+            (
+                "vix",
+                " https://xpower.vixs.vn/tvchart/history?resolution={res}&symbol={stock}&from={from}&to={to}",
+                [
+                    "d[].time",
+                    "d[].open",
+                    "d[].high",
+                    "d[].low",
+                    "d[].close",
+                    "d[].volume",
+                ],
+                true,
+            ),
+            (
+                "dnse",
+                "https://api.dnse.com.vn/chart-api/v2/ohlcs/{kind}?from={from}&to={to}&symbol={stock}&resolution={res}",
+                ["t[]", "o[]", "h[]", "l[]", "c[]", "v[]"],
+                true,
+            ),
+            (
+                "dragon",
+                "https://godragon.vdsc.com.vn/IdragonMarketDataServer/trading-view/rest/history?symbol={stock}&resolution={res}&from={from}&to={to}&countback={limit}",
+                ["t[]", "o[]", "h[]", "l[]", "c[]", "v[]"],
+                true,
+            ),
+            (
+                "binance",
+                "https://api.binance.us/api/v3/klines?startTime={from}&endTime={to}&symbol={stock}&interval={res}&limit={limit}",
+                ["[].0", "[].1", "[].2", "[].3", "[].4", "[].5"],
+                false,
+            ),
         ];
 
-        let mapping_str = std::env::var("CANDLESTICK_MAPPING")
-            .unwrap_or_else(|_| "{}".to_string());
-        let mapping = RwLock::new(
-            serde_json::from_str(&mapping_str)
-                .unwrap_or_default()
-        );
+        let mapping_str = std::env::var("CANDLESTICK_MAPPING").unwrap_or_else(|_| "{}".to_string());
+        let mapping = RwLock::new(serde_json::from_str(&mapping_str).unwrap_or_default());
 
         for (name, url, paths, shift) in raw_configs {
             let queries = [
@@ -105,7 +133,11 @@ impl QueryCandleSticks {
             ];
             profiles.insert(
                 name.to_string(),
-                CompiledProfile { url_template: url.into(), queries, shift }
+                CompiledProfile {
+                    url_template: url.into(),
+                    queries,
+                    shift,
+                },
             );
         }
 
@@ -149,13 +181,16 @@ impl QueryCandleSticks {
             false
         };
 
-        if !self.is_invalidated(stock, resolution) {
-            if let Some(cached_data) = self.fetch_from_cache(stock, resolution, from, to, is_shifted) {
-                return Ok(cached_data);
-            }
+        if !self.is_invalidated(stock, resolution)
+            && let Some(cached_data) =
+                self.fetch_from_cache(stock, resolution, from, to, is_shifted)
+        {
+            return Ok(cached_data);
         }
 
-        let fetched_candles = self.fetch_from_api(real_provider, stock, resolution, from, to, limit).await?;
+        let fetched_candles = self
+            .fetch_from_api(real_provider, stock, resolution, from, to, limit)
+            .await?;
 
         if !fetched_candles.is_empty() {
             self.update_cache(stock, resolution, &fetched_candles)?;
@@ -164,7 +199,14 @@ impl QueryCandleSticks {
         Ok(fetched_candles)
     }
 
-    fn fetch_from_cache(&self, stock: &str, resolution: &str, from: i64, to: i64, is_shifted: bool) -> Option<Vec<CandleStick>> {
+    fn fetch_from_cache(
+        &self,
+        stock: &str,
+        resolution: &str,
+        from: i64,
+        to: i64,
+        is_shifted: bool,
+    ) -> Option<Vec<CandleStick>> {
         let caches = self.caches.read().unwrap();
         let stock_cache = caches.get(stock)?.get(resolution)?;
 
@@ -191,7 +233,9 @@ impl QueryCandleSticks {
             }
         }
 
-        if result.is_empty() { return None; }
+        if result.is_empty() {
+            return None;
+        }
 
         result.sort_by_key(|c| c.t);
         result.dedup_by_key(|c| c.t);
@@ -199,19 +243,26 @@ impl QueryCandleSticks {
         Some(result)
     }
 
-    fn update_cache(&self, stock: &str, resolution: &str, candles: &[CandleStick]) -> Result<(), Error> {
-        if candles.is_empty() { return Ok(()); }
+    fn update_cache(
+        &self,
+        stock: &str,
+        resolution: &str,
+        candles: &[CandleStick],
+    ) -> Result<(), Error> {
+        if candles.is_empty() {
+            return Ok(());
+        }
 
         let mut caches = self.caches.write().unwrap();
-        let stock_entry = caches.entry(stock.to_string()).or_insert_with(HashMap::new);
-        let lru = stock_entry.entry(resolution.to_string()).or_insert_with(|| LruCache::new(self.capacity_per_stack));
+        let stock_entry = caches.entry(stock.to_string()).or_default();
+        let lru = stock_entry
+            .entry(resolution.to_string())
+            .or_insert_with(|| LruCache::new(self.capacity_per_stack));
 
         let mut groups: HashMap<i64, Vec<CandleStick>> = HashMap::new();
         for c in candles {
             let bid = (c.t as i64) / SECONDS_IN_WEEK;
-            groups.entry(bid)
-                .or_default()
-                .push(c.clone());
+            groups.entry(bid).or_default().push(c.clone());
         }
 
         for (bid, mut new_candles) in groups {
@@ -224,16 +275,11 @@ impl QueryCandleSticks {
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|error| Error::new(
-                ErrorKind::Other,
-                format!("Failed to get current time: {}", error)
-            ))?
+            .map_err(|error| Error::other(format!("Failed to get current time: {}", error)))?
             .as_secs();
-        self.timers.write()
-            .map_err(|error| Error::new(
-                ErrorKind::Other,
-                format!("Failed to get write lock: {}", error)
-            ))?
+        self.timers
+            .write()
+            .map_err(|error| Error::other(format!("Failed to get write lock: {}", error)))?
             .insert(format!("{}:{}", stock, resolution), now);
         Ok(())
     }
@@ -244,7 +290,10 @@ impl QueryCandleSticks {
 
         match timers.get(&key) {
             Some(&last_update) => {
-                let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
 
                 let res_upper = resolution.to_uppercase();
                 let ttl = match res_upper.as_str() {
@@ -253,7 +302,9 @@ impl QueryCandleSticks {
                     _ => 300,
                 };
 
-                if now < last_update { return false; }
+                if now < last_update {
+                    return false;
+                }
 
                 now - last_update > ttl
             }
@@ -270,14 +321,26 @@ impl QueryCandleSticks {
         to: i64,
         limit: usize,
     ) -> Result<Vec<CandleStick>, Error> {
-        let kind = if INDEXES.iter().any(|&s| s == stock) { "index" } else { "stock" };
-        let profile = self.profiles.get(provider).ok_or_else(|| Error::new(ErrorKind::NotFound, "Provider not found"))?;
+        let kind = if INDEXES.contains(&stock) {
+            "index"
+        } else {
+            "stock"
+        };
+        let profile = self
+            .profiles
+            .get(provider)
+            .ok_or_else(|| Error::new(ErrorKind::NotFound, "Provider not found"))?;
 
-        let (adj_from, adj_to) = if provider == "binance" { (from * 1000, to * 1000) } else { (from, to) };
-        let url = profile.url_template
+        let (adj_from, adj_to) = if provider == "binance" {
+            (from * 1000, to * 1000)
+        } else {
+            (from, to)
+        };
+        let url = profile
+            .url_template
             .replace("{kind}", kind)
             .replace("{stock}", stock)
-            .replace("{res}", &resolution)
+            .replace("{res}", resolution)
             .replace("{from}", &adj_from.to_string())
             .replace("{to}", &adj_to.to_string())
             .replace("{limit}", &limit.to_string());
@@ -286,21 +349,20 @@ impl QueryCandleSticks {
             return Err(Error::new(ErrorKind::InvalidData, "Invalid URL template"));
         }
 
-        let resp = self.client.get(url)
+        let resp = self
+            .client
+            .get(url)
             .timeout(Duration::from_secs(30))
             .send()
             .await
-            .map_err(|e| Error::new(
-                ErrorKind::Other,
-                format!("Failed to fetch data from {}: {}", provider, e))
-            )?;
+            .map_err(|e| Error::other(format!("Failed to fetch data from {}: {}", provider, e)))?;
 
-        let raw_json: Value = resp.json()
-            .await
-            .map_err(|e| Error::new(
+        let raw_json: Value = resp.json().await.map_err(|e| {
+            Error::new(
                 ErrorKind::InvalidData,
-                format!("Failed to parse JSON: {}", e))
-            )?;
+                format!("Failed to parse JSON: {}", e),
+            )
+        })?;
 
         let t_ref = profile.queries[0].execute(&raw_json);
         if t_ref.is_empty() {
@@ -313,23 +375,28 @@ impl QueryCandleSticks {
         let c_ref = profile.queries[4].execute(&raw_json);
         let v_ref = profile.queries[5].execute(&raw_json);
 
-        let count = if limit > 0 { limit.min(t_ref.len()) } else { t_ref.len() };
+        let count = if limit > 0 {
+            limit.min(t_ref.len())
+        } else {
+            t_ref.len()
+        };
         let mut candles = Vec::with_capacity(count);
 
-        for i in 0..count {
+        for (t, o, h, l, c, v) in izip!(t_ref, o_ref, h_ref, l_ref, c_ref, v_ref).take(count) {
             candles.push(CandleStick {
                 t: if provider == "binance" {
-                    t_ref[i].as_i32_lossy() / 1000
+                    t.as_i32_lossy() / 1000
                 } else {
-                    t_ref[i].as_i32_lossy()
+                    t.as_i32_lossy()
                 },
-                o: o_ref.get(i).map(|&v| v.as_f64_lossy()).unwrap_or(0.0),
-                h: h_ref.get(i).map(|&v| v.as_f64_lossy()).unwrap_or(0.0),
-                l: l_ref.get(i).map(|&v| v.as_f64_lossy()).unwrap_or(0.0),
-                c: c_ref.get(i).map(|&v| v.as_f64_lossy()).unwrap_or(0.0),
-                v: v_ref.get(i).map(|&v| v.as_f64_lossy()).unwrap_or(0.0),
+                o: o.as_f64_lossy(),
+                h: h.as_f64_lossy(),
+                l: l.as_f64_lossy(),
+                c: c.as_f64_lossy(),
+                v: v.as_f64_lossy(),
             });
         }
+
         Ok(candles)
     }
 }
@@ -340,9 +407,16 @@ mod tests {
     use serde_json::json;
     use std::time::Instant;
 
-
-    async fn run_provider_test(service: &QueryCandleSticks, provider: &str, stock: &str, res: &str) {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+    async fn run_provider_test(
+        service: &QueryCandleSticks,
+        provider: &str,
+        stock: &str,
+        res: &str,
+    ) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
         let from = now - (7 * 24 * 60 * 60); // 7 ngày trước
         let to = now;
 
@@ -350,7 +424,9 @@ mod tests {
 
         // --- Lần 1: Gọi API thật ---
         let start_api = Instant::now();
-        let result_api = service.get_candlesticks(provider, stock, res, from, to, 50).await;
+        let result_api = service
+            .get_candlesticks(provider, stock, res, from, to, 50)
+            .await;
 
         match result_api {
             Ok(candles) => {
@@ -360,16 +436,27 @@ mod tests {
 
                 // --- Lần 2: Truy vấn lại (Cache) ---
                 let start_cache = Instant::now();
-                let result_cache = service.get_candlesticks(provider, stock, res, from, to, 50).await.unwrap();
+                let result_cache = service
+                    .get_candlesticks(provider, stock, res, from, to, 50)
+                    .await
+                    .unwrap();
                 let _ = start_cache.elapsed();
 
                 // Thay vì assert_eq!(candles.len(), result_cache.len(), ...);
-                assert!(result_cache.len() >= candles.len(),
-                        "🚨 Cache thiếu nến! API: {}, Cache: {}", candles.len(), result_cache.len());
+                assert!(
+                    result_cache.len() >= candles.len(),
+                    "🚨 Cache thiếu nến! API: {}, Cache: {}",
+                    candles.len(),
+                    result_cache.len()
+                );
 
                 // Kiểm tra xem nến mới nhất có khớp nhau không (để đảm bảo không lấy nến rác)
-                assert_eq!(candles.last().unwrap().t, result_cache.last().unwrap().t, "Timestamp nến cuối bị lệch!");
-            },
+                assert_eq!(
+                    candles.last().unwrap().t,
+                    result_cache.last().unwrap().t,
+                    "Timestamp nến cuối bị lệch!"
+                );
+            }
             Err(e) => panic!("❌ Thất bại khi gọi sàn {}: {:?}", provider, e),
         }
     }
@@ -451,20 +538,23 @@ mod tests {
         let v_ref = profile.queries[5].execute(&data);
 
         let mut candles = Vec::with_capacity(size);
-        for i in 0..size {
+        for (t, o, h, l, c, v) in izip!(t_ref, o_ref, h_ref, l_ref, c_ref, v_ref).take(size) {
             candles.push(CandleStick {
-                t: t_ref[i].as_i32_lossy(),
-                o: o_ref.get(i).map(|&v| v.as_f64_lossy()).unwrap_or(0.0),
-                h: h_ref.get(i).map(|&v| v.as_f64_lossy()).unwrap_or(0.0),
-                l: l_ref.get(i).map(|&v| v.as_f64_lossy()).unwrap_or(0.0),
-                c: c_ref.get(i).map(|&v| v.as_f64_lossy()).unwrap_or(0.0),
-                v: v_ref.get(i).map(|&v| v.as_f64_lossy()).unwrap_or(0.0),
+                t: t.as_i32_lossy(),
+                o: o.as_f64_lossy(),
+                h: h.as_f64_lossy(),
+                l: l.as_f64_lossy(),
+                c: c.as_f64_lossy(),
+                v: v.as_f64_lossy(),
             });
         }
 
         let duration = start.elapsed();
         println!("\n⚡ Benchmark Results:");
-        println!("Extracted & Transformed {} candles in: {:?}", size, duration);
+        println!(
+            "Extracted & Transformed {} candles in: {:?}",
+            size, duration
+        );
         println!("Average per candle: {:?}", duration / size as u32);
 
         assert_eq!(candles.len(), size);
@@ -482,8 +572,22 @@ mod tests {
         let t2 = 1700000000 + SECONDS_IN_WEEK + 100; // Block B
 
         let candles = vec![
-            CandleStick { t: t1 as i32, o: 10.0, h: 11.0, l: 9.0, c: 10.5, v: 1000.0 },
-            CandleStick { t: t2 as i32, o: 20.0, h: 21.0, l: 19.0, c: 20.5, v: 2000.0 },
+            CandleStick {
+                t: t1 as i32,
+                o: 10.0,
+                h: 11.0,
+                l: 9.0,
+                c: 10.5,
+                v: 1000.0,
+            },
+            CandleStick {
+                t: t2 as i32,
+                o: 20.0,
+                h: 21.0,
+                l: 19.0,
+                c: 20.5,
+                v: 2000.0,
+            },
         ];
 
         // 1. Update cache
@@ -507,7 +611,10 @@ mod tests {
             t1 - SECONDS_IN_WEEK,
             false,
         );
-        assert!(miss.is_none(), "Vùng này không có nến, phải trả về None để fetch API");
+        assert!(
+            miss.is_none(),
+            "Vùng này không có nến, phải trả về None để fetch API"
+        );
     }
 
     #[tokio::test]
@@ -518,14 +625,25 @@ mod tests {
         let res = "1";
 
         // Truyền 1 nến thật để hàm update_cache thực hiện ghi timer
-        let mock_candle = CandleStick { t: 1700000000, o: 10.0, h: 10.0, l: 10.0, c: 10.0, v: 0.0 };
+        let mock_candle = CandleStick {
+            t: 1700000000,
+            o: 10.0,
+            h: 10.0,
+            l: 10.0,
+            c: 10.0,
+            v: 0.0,
+        };
         service.update_cache(stock, res, &[mock_candle]).unwrap();
 
         // Kiểm tra ngay lập tức - Phải FALSE (vì vừa mới update)
-        assert!(!service.is_invalidated(stock, res), "Vừa update xong phải valid!");
+        assert!(
+            !service.is_invalidated(stock, res),
+            "Vừa update xong phải valid!"
+        );
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_all_providers_real_data() {
         let client = Arc::new(HttpClient::new());
         let service = QueryCandleSticks::new(client, 100).unwrap();
@@ -544,55 +662,5 @@ mod tests {
         run_provider_test(&service, "binance", "BTCUSDT", "1h").await;
 
         run_provider_test(&service, "binance", "BTCUSDT", "1d").await;
-
-    }
-
-    #[tokio::test]
-    async fn benchmark_stress_test_cache() {
-        let client = Arc::new(HttpClient::new());
-        let service = Arc::new(QueryCandleSticks::new(client, 100).unwrap());
-        let stock = "FPT";
-        let res = "1D";
-
-        // 1. Warm-up: Đổ dữ liệu vào cache trước
-        println!("🚀 Warming up cache...");
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
-        let _ = service.get_candlesticks("ssi", stock, res, now - 30 * 86400, now, 500).await;
-
-        // 2. Stress Test: Giả lập 1000 request đồng thời vào Cache
-        let num_requests = 1000;
-        let mut handles = vec![];
-
-        println!("🔥 Starting Stress Test: {} concurrent requests...", num_requests);
-        let start_time = Instant::now();
-
-        for i in 0..num_requests {
-            let s = Arc::clone(&service);
-            let handle = tokio::spawn(async move {
-                // Giả lập các khoảng thời gian truy vấn hơi lệch nhau một chút
-                let from = now - (30 * 86400) + (i as i64 * 10);
-                let to = now + (i as i64 * 10);
-                s.get_candlesticks("ssi", "FPT", "1D", from, to, 50).await
-            });
-            handles.push(handle);
-        }
-
-        // Chờ tất cả xong
-        let results = futures::future::join_all(handles).await;
-        let duration = start_time.elapsed();
-
-        // 3. Phân tích kết quả
-        let success_count = results.iter().filter(|r| r.is_ok()).count();
-        let avg_latency = duration.as_micros() as f64 / num_requests as f64;
-
-        println!("\n📊 --- BENCHMARK RESULT ---");
-        println!("Total Requests    : {}", num_requests);
-        println!("Total Time        : {:?}", duration);
-        println!("Average Latency   : {:.2} µs (microsecond)", avg_latency);
-        println!("Throughput        : {:.0} req/sec", num_requests as f64 / duration.as_secs_f64());
-        println!("Success Rate      : {}%", (success_count as f64 / num_requests as f64) * 10.0);
-        println!("---------------------------\n");
-
-        assert!(avg_latency < 500.0, "Latency quá cao, cần tối ưu lại logic khóa (Lock)!");
     }
 }

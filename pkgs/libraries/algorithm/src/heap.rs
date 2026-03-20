@@ -7,10 +7,6 @@ pub struct Heap<T: Clone> {
 }
 
 impl<T: Clone> Heap<T> {
-    pub fn size(&self) -> usize {
-        self.all
-    }
-
     pub fn new(comparator: fn(&T, &T) -> i64) -> Self {
         Self {
             items: vec![],
@@ -18,6 +14,10 @@ impl<T: Clone> Heap<T> {
             branch: 0,
             comparator,
         }
+    }
+
+    pub fn size(&self) -> usize {
+        self.all
     }
 
     pub fn get(&self) -> Option<&T> {
