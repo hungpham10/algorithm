@@ -2,12 +2,11 @@
 # Focuses on CI (Lint/Test) and CD via Docker images.
 # Removed: PyPI publishing and .deb package generation.
 
-name: Rust Python CI/CD
+name: CI/CD
 
 env:
   CARGO_TERM_COLOR: always
   RUST_VERSION: 'stable'
-  PYTHON_VERSION: '3.11'
 
 on:
   push:
@@ -34,12 +33,6 @@ jobs:
         with:
           toolchain: ${{ env.RUST_VERSION }}
           components: clippy, rustfmt
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
 
       - name: Cache Cargo
         uses: actions/cache@v4
@@ -81,7 +74,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Rust & Python
+      - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_VERSION }}
