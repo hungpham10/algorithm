@@ -102,23 +102,22 @@ function boot() {
   fi
 
   # Setup tor directorys
-  mkdir -p /var/lib/tor/hidden_service
-  chmod 700 /var/lib/tor/hidden_service 2>/dev/null || true
+  if [ "${USE_TOR}" = "true" ]; then
+    mkdir -p /var/lib/tor/hidden_service
+    chmod 700 /var/lib/tor/hidden_service 2>/dev/null || true
 
-  if [ -n "${TOR_SERVER}" ]; then
-    echo "${TOR_SERVER}" > /var/lib/tor/hidden_service/hostname
-    echo "${TOR_PUBLIC_KEY}" | base64 -d > /var/lib/tor/hidden_service/hs_ed25519_public_key
-    echo "${TOR_SECRET_KEY}" | base64 -d > /var/lib/tor/hidden_service/hs_ed25519_secret_key
-    chmod 600 /var/lib/tor/hidden_service/hs_ed25519_secret_key 2>/dev/null || true
-  fi
-  chown debian-tor:debian-tor /var/lib/tor
-  chown debian-tor:debian-tor /var/lib/tor/hidden_service
+    if [ -n "${TOR_SERVER}" ]; then
+      echo "${TOR_SERVER}" > /var/lib/tor/hidden_service/hostname
+      echo "${TOR_PUBLIC_KEY}" | base64 -d > /var/lib/tor/hidden_service/hs_ed25519_public_key
+      echo "${TOR_SECRET_KEY}" | base64 -d > /var/lib/tor/hidden_service/hs_ed25519_secret_key
+      chmod 600 /var/lib/tor/hidden_service/hs_ed25519_secret_key 2>/dev/null || true
+    fi
+    chown debian-tor:debian-tor /var/lib/tor
+    chown debian-tor:debian-tor /var/lib/tor/hidden_service
 
-  # Setup command for the backend
-  if [ "${USE_CLOUDFLARE_TUNNEL}" = "true" ]; then
-    sed -i "s/%%COMMAND%%/$COMMAND/g" ${SUPERVISOR_DIR}/with-cloudflare-tunnel.conf
+    sed -i "s/%%COMMAND%%/$COMMAND/g" ${SUPERVISOR_DIR}/with-tor.conf
   else
-    sed -i "s/%%COMMAND%%/$COMMAND/g" ${SUPERVISOR_DIR}/without-cloudflare-tunnel.conf
+    sed -i "s/%%COMMAND%%/$COMMAND/g" ${SUPERVISOR_DIR}/without-tor.conf
   fi
 
   shift
