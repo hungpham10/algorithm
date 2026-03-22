@@ -460,9 +460,7 @@ pub async fn fetch_file(
         }
     };
 
-    let bucket = app_state.secret.get("S3_BUCKET", "/")
-        .await
-        .map_err(|_| {
+    let bucket = app_state.secret.get("S3_BUCKET", "/").await.map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             JsonResponse(AdminResponse {
