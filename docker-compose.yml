@@ -19,13 +19,13 @@ services:
       - net.core.somaxconn=65535
       - net.ipv4.ip_local_port_range=1024 65535
     environment:
-      - LAVINMQ_DSN=""
-      - MYSQL_DSN=mysql://admin:rootroot@db:3306/default
-      - MYSQL_HOST=db
-      - MYSQL_USER=admin
-      - MYSQL_PORT=3306
-      - MYSQL_PASSWORD=rootroot
-      - MYSQL_DATABASE=default
+    #  - LAVINMQ_DSN=""
+    #  - MYSQL_DSN=mysql://admin:rootroot@db:3306/default
+    #  - MYSQL_HOST=db
+    #  - MYSQL_USER=admin
+    #  - MYSQL_PORT=3306
+    #  - MYSQL_PASSWORD=rootroot
+    #  - MYSQL_DATABASE=default
       - REDIS_DSN=redis://default:rootroot@valkey:6379,redis://default:rootroot@valkey:6379
       - REDIS_HOST=valkey
       - REDIS_PORT=6379
