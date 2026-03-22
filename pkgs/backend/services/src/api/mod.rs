@@ -123,11 +123,11 @@ impl AppState {
 
 impl Reload for AppState {
     fn reload(&self) -> Result<(), Error> {
-        todo!()
+        Ok(())
     }
 
     fn keys(&self) -> Vec<&str> {
-        todo!()
+        vec!["S3_BUCKET"]
     }
 }
 
@@ -157,6 +157,19 @@ pub async fn reload(
             format!("fail to reload `query_candlesticks`: {}", error),
         )
     })?;
+
+    for key in app_state.keys() {
+        app_state
+            .secret
+            .force(key, "query_candlesticks")
+            .await
+            .map_err(|error| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("fail to access key `{}`: {}", key, error),
+                )
+            })?;
+    }
     app_state.reload().map_err(|error| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
