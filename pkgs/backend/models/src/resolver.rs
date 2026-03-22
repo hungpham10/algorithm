@@ -73,6 +73,7 @@ impl Resolver {
                 .load()
                 .await),
         ));
+        let _ = secret.get("S3_BUCKET", "/").await.unwrap_or_default();
 
         let redis_host = std::env::var("REDIS_HOST").unwrap_or_else(|_| "".to_string());
         let redis_port = std::env::var("REDIS_PORT").unwrap_or_else(|_| "".to_string());
