@@ -61,10 +61,10 @@ function localtonet() {
 function boot() {
   local cmd=$1
 
-  if [ "${USE_CLOUDFLARE_TUNNEL}" = "true" ]; then
-    rm -fr ${SUPERVISOR_DIR}/without-cloudflare-tunnel.conf
+  if [ "${USE_TOR}" = "true" ]; then
+    rm -fr ${SUPERVISOR_DIR}/without-tor.conf
   else
-    rm -fr ${SUPERVISOR_DIR}/with-cloudflare-tunnel.conf
+    rm -fr ${SUPERVISOR_DIR}/with-tor.conf
   fi
 
   if [ "${HTTP_PROTOCOL}" = "https" ]; then
