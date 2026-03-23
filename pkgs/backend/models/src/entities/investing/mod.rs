@@ -11,10 +11,12 @@ use resolutions::Entity as Resolutions;
 use std::sync::Arc;
 
 use crate::resolver::Resolver;
+use sea_orm::entity::prelude::Expr;
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, JoinType, QueryFilter,
     QuerySelect, RuntimeErr,
 };
+use sea_query::Alias;
 
 pub struct Investing {
     resolver: Arc<Resolver>,
@@ -29,6 +31,38 @@ impl Investing {
 
     fn dbt(&self, tenant_id: i64) -> &DatabaseConnection {
         self.resolver.database(tenant_id)
+    }
+
+    pub async fn convert_to_real_broker(
+        &self,
+        tenant_id: i64,
+        broker: String,
+    ) -> Result<String, DbErr> {
+        let alias_table = Alias::new("real_broker");
+
+        match Brokers::find()
+            .join_as(
+                JoinType::LeftJoin,
+                brokers::Entity::belongs_to(Brokers)
+                    .from(brokers::Column::Alias)
+                    .to(brokers::Column::Id)
+                    .into(),
+                alias_table.clone(),
+            )
+            .select_only()
+            .column_as(brokers::Column::Name, "original")
+            .column_as(Expr::col((alias_table, brokers::Column::Name)), "real")
+            .filter(brokers::Column::Name.eq(broker.clone()))
+            .into_tuple::<(String, Option<String>)>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some((_, Some(real))) => Ok(real),
+            Some((original, None)) => Ok(original),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Not found broker {broker}",
+            )))),
+        }
     }
 
     pub async fn convert_to_broker_resolution(

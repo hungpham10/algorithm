@@ -10,6 +10,7 @@ pub struct Model {
     pub created_at: Option<DateTimeUtc>,
     pub updated_at: Option<DateTimeUtc>,
     pub name: String,
+    pub alias: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

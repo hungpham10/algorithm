@@ -4,21 +4,28 @@ CREATE TABLE IF NOT EXISTS `ohcl_products` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `name` varchar(500) NOT NULL,
-  `enabled` boolean
+  `enabled` boolean,
+
+  UNIQUE KEY `unique_name` (`name`)
 );
 
 CREATE TABLE IF NOT EXISTS `ohcl_brokers` (
   `id` integer PRIMARY KEY AUTO_INCREMENT,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `name` varchar(100) NOT NULL
+  `name` varchar(100) NOT NULL,
+  `alias` integer,
+
+  UNIQUE KEY `unique_name` (`name`)
 );
 
 CREATE TABLE IF NOT EXISTS `ohcl_resolution` (
   `id` integer PRIMARY KEY AUTO_INCREMENT,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `resolution` varchar(5) NOT NULL
+  `resolution` varchar(5) NOT NULL,
+
+  UNIQUE KEY `unique_resolution` (`resolution`)
 );
 
 CREATE TABLE IF NOT EXISTS `ohcl_mapping_broker_resolution` (
@@ -27,5 +34,7 @@ CREATE TABLE IF NOT EXISTS `ohcl_mapping_broker_resolution` (
   `resolution_id` integer,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `resolution` varchar(5) NOT NULL
+  `resolution` varchar(5) NOT NULL,
+
+  UNIQUE KEY `unique_broker_resolution` (`broker_id`, `resolution_id`)
 );

@@ -108,12 +108,28 @@ async fn get_ohcl_from_broker(
     Query(args): Query<GetOhclRequest>,
     InvestingHeaders { tenant_id }: InvestingHeaders,
 ) -> impl IntoResponse {
-    let broker = broker.to_lowercase();
+    let tenant_id = tenant_id.into();
+    let broker = match app_state
+        .investing_entity
+        .convert_to_real_broker(tenant_id, broker.to_lowercase())
+        .await
+    {
+        Ok(broker) => broker,
+        Err(error) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(OhclResponse {
+                    error: Some(format!("Failed to calculate OHCL: {error}")),
+                    ..Default::default()
+                }),
+            );
+        }
+    };
     let symbol = symbol.to_uppercase();
 
     match app_state
         .investing_entity
-        .convert_to_broker_resolution(tenant_id.into(), &broker, &args.resolution)
+        .convert_to_broker_resolution(tenant_id, &broker, &args.resolution)
         .await
     {
         Ok(resolution) => {
@@ -179,6 +195,7 @@ async fn get_heatmap_from_broker(
     Query(args): Query<HeatmapRequest>,
     InvestingHeaders { tenant_id }: InvestingHeaders,
 ) -> impl IntoResponse {
+    let tenant_id = tenant_id.into();
     let to = args.now;
     let from = match args.resolution.as_str() {
         "1H" => to - 60 * 60 * args.look_back,
@@ -194,7 +211,22 @@ async fn get_heatmap_from_broker(
             );
         }
     };
-
+    let broker = match app_state
+        .investing_entity
+        .convert_to_real_broker(tenant_id, broker.to_lowercase())
+        .await
+    {
+        Ok(broker) => broker,
+        Err(error) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(OhclResponse {
+                    error: Some(format!("Failed to calculate OHCL: {error}")),
+                    ..Default::default()
+                }),
+            );
+        }
+    };
     let resolution = match args.resolution.as_str() {
         "1H" => "1m",
         "1D" => "1H",
@@ -213,7 +245,7 @@ async fn get_heatmap_from_broker(
 
     match app_state
         .investing_entity
-        .convert_to_broker_resolution(tenant_id.into(), &broker, &resolution)
+        .convert_to_broker_resolution(tenant_id, &broker, &resolution)
         .await
     {
         Ok(resolution) => {
