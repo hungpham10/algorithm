@@ -117,6 +117,34 @@ impl QueryCandleSticks {
                 ["[].0", "[].1", "[].2", "[].3", "[].4", "[].5"],
                 false,
             ),
+            (
+                "msn",
+                "https://assets.msn.com/service/MSNFinance/Quotes/Chart?apikey=0Q_697_8_Z_S_1_1&ocid=finance-utils-peregrine&symbol={stock}&interval={res}&period={limit}",
+                // MSN trả về mảng series.dataPoints, mỗi điểm là một mảng: [time, open, high, low, close, volume]
+                [
+                    "series.dataPoints[].0",
+                    "series.dataPoints[].1",
+                    "series.dataPoints[].2",
+                    "series.dataPoints[].3",
+                    "series.dataPoints[].4",
+                    "series.dataPoints[].5",
+                ],
+                false,
+            ),
+            (
+                "yahoo",
+                "https://query1.finance.yahoo.com/v8/finance/chart/{stock}?interval={res}&period1={from}&period2={to}",
+                // Yahoo trả về cấu trúc: chart.result.indicators.quote
+                [
+                    "chart.result.timestamp[]",
+                    "chart.result.indicators.quote.open[]",
+                    "chart.result.indicators.quote.high[]",
+                    "chart.result.indicators.quote.low[]",
+                    "chart.result.indicators.quote.close[]",
+                    "chart.result.indicators.quote.volume[]",
+                ],
+                true,
+            ),
         ];
 
         let mapping_str = std::env::var("CANDLESTICK_MAPPING").unwrap_or_else(|_| "{}".to_string());
