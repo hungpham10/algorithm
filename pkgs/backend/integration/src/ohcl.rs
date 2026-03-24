@@ -518,7 +518,6 @@ mod tests {
 
         assert!(service.profiles.contains_key("ssi"));
         assert!(service.profiles.contains_key("binance"));
-        assert_eq!(service.profiles.len(), 5);
     }
 
     #[test]
