@@ -68,6 +68,7 @@ COPY conf/supervisor/*.conf /etc/supervisor/conf.d/
 # Copy Nginx configuration
 COPY conf/nginx/http.conf /usr/local/openresty/nginx/conf/nginx.conf
 COPY conf/nginx/www.conf /usr/local/openresty/nginx/conf/http.d/default.conf
+COPY conf/nginx/map /usr/local/openresty/nginx/conf/map.d
 COPY conf/nginx/vhost /usr/local/openresty/nginx/conf/http.d/vhost
 
 # Setup openresty modules
