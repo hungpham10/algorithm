@@ -58,7 +58,6 @@ pub fn routes() -> Router<AppState> {
         .route("/seo/tenant/{host}/id", get(get_tenant_id))
         .route("/seo/news", get(build_news_xml).post(publish_news))
         .route("/seo/sitemap", get(build_sitemap_xml).post(publish_site))
-        .route("/seo/news", get(build_news_xml))
         .route("/seo/files/{*path}", get(fetch_file).head(purge_file))
         .route(
             "/seo/schemas",
