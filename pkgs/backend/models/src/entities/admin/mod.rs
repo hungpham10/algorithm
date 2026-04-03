@@ -56,7 +56,7 @@ pub struct Admin {
     cache_connections: Arc<LruCache<i64, DatabaseConnection, 32>>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct Article {
     pub title: String,
     pub loc: String,
@@ -66,7 +66,7 @@ pub struct Article {
     pub published_at: DateTime<Utc>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct Site {
     pub loc: String,
     pub freq: String,

@@ -7,11 +7,13 @@ use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
 
 use axum::Router;
 use axum::body::Body;
-use axum::extract::{Json as JsonRequest, Path, Query, State};
+use axum::extract::{DefaultBodyLimit, Json as JsonRequest, Multipart, Path, Query, State};
 use axum::http::{self, header};
 use axum::response::{IntoResponse, Json as JsonResponse, Response};
 use axum::routing::get;
 
+use aws_sdk_s3::primitives::ByteStream;
+use chrono::Utc;
 use http::StatusCode;
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
@@ -19,10 +21,10 @@ use tokio_util::io::ReaderStream;
 
 use integration::components::appended_log::AppendedLog;
 use models::cache::Cache;
-use models::entities::admin::Api;
+use models::entities::admin::{Api, Article, Site};
 
 use crate::api::AppState;
-use crate::api::admin::{AdminHeaders, FetchFileFromS3Headers, PurgeFileFromS3Headers};
+use crate::api::admin::{AdminHeaders, FileFromS3Headers, PurgeFileFromS3Headers};
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct QueryPagingInput {
@@ -54,7 +56,8 @@ pub struct AdminResponse {
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/seo/tenant/{host}/id", get(get_tenant_id))
-        .route("/seo/sitemap", get(build_sitemap_xml))
+        .route("/seo/news", get(build_news_xml).post(publish_news))
+        .route("/seo/sitemap", get(build_sitemap_xml).post(publish_site))
         .route("/seo/news", get(build_news_xml))
         .route("/seo/files/{*path}", get(fetch_file).head(purge_file))
         .route(
@@ -67,10 +70,171 @@ pub fn routes() -> Router<AppState> {
             "/seo/logs/{name}",
             get(get_appended_log).patch(rotate_new_partition),
         )
+        .layer(DefaultBodyLimit::max(512 * 1024 * 1024))
     //.route("/seo/features",
     //    get(get_features)
     //        .put(configure_features)
     //)
+}
+
+async fn publish_site(
+    State(app_state): State<AppState>,
+    AdminHeaders { tenant_id }: AdminHeaders,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse, (StatusCode, JsonResponse<AdminResponse>)> {
+    let tenant_id_i64: i64 = tenant_id.into();
+    let mut sites_to_save = Vec::new();
+
+    let bucket = app_state.secret.get("S3_BUCKET", "/").await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(AdminResponse {
+                error: Some("S3_BUCKET not set".into()),
+                ..Default::default()
+            }),
+        )
+    })?;
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let file_name = field.file_name().unwrap_or("untitled.xml").to_string();
+        let content_type = field
+            .content_type()
+            .unwrap_or("application/xml")
+            .to_string();
+        let data = field.bytes().await.map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                JsonResponse(AdminResponse {
+                    error: Some(format!("Field read error: {}", e)),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+        let s3_key = format!("{}/sitemaps/{}", tenant_id_i64, file_name);
+
+        app_state
+            .s3
+            .put_object()
+            .bucket(&bucket)
+            .key(&s3_key)
+            .body(ByteStream::from(data))
+            .content_type(content_type)
+            .send()
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    JsonResponse(AdminResponse {
+                        error: Some(format!("S3 error: {}", e)),
+                        ..Default::default()
+                    }),
+                )
+            })?;
+
+        sites_to_save.push(Site {
+            loc: s3_key,
+            last_mod: Utc::now(),
+            freq: "daily".to_string(),
+            ..Default::default()
+        });
+    }
+
+    if !sites_to_save.is_empty() {
+        app_state
+            .admin_entity
+            .insert_or_update_sites(tenant_id_i64, sites_to_save)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    JsonResponse(AdminResponse {
+                        error: Some(format!("DB error: {}", e)),
+                        ..Default::default()
+                    }),
+                )
+            })?;
+    }
+
+    Ok(StatusCode::OK)
+}
+
+async fn publish_news(
+    State(app_state): State<AppState>,
+    AdminHeaders { tenant_id }: AdminHeaders,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse, (StatusCode, JsonResponse<AdminResponse>)> {
+    let tenant_id_i64: i64 = tenant_id.into();
+    let mut articles_to_save = Vec::new();
+
+    let bucket = app_state.secret.get("S3_BUCKET", "/").await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(AdminResponse {
+                error: Some("S3_BUCKET not set".into()),
+                ..Default::default()
+            }),
+        )
+    })?;
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let file_name = field.file_name().unwrap_or("news.xml").to_string();
+        let data = field.bytes().await.map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                JsonResponse(AdminResponse {
+                    error: Some(format!("Field read error: {}", e)),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+        let s3_key = format!("{}/news/{}", tenant_id_i64, file_name);
+
+        app_state
+            .s3
+            .put_object()
+            .bucket(&bucket)
+            .key(&s3_key)
+            .body(ByteStream::from(data))
+            .content_type("application/xml")
+            .send()
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    JsonResponse(AdminResponse {
+                        error: Some(format!("S3 error: {}", e)),
+                        ..Default::default()
+                    }),
+                )
+            })?;
+
+        articles_to_save.push(Article {
+            loc: s3_key,
+            published_at: Utc::now(),
+            title: file_name,
+            ..Default::default()
+        });
+    }
+
+    if !articles_to_save.is_empty() {
+        app_state
+            .admin_entity
+            .insert_or_update_acticles(tenant_id_i64, articles_to_save)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    JsonResponse(AdminResponse {
+                        error: Some(format!("DB error: {}", e)),
+                        ..Default::default()
+                    }),
+                )
+            })?;
+    }
+
+    Ok(StatusCode::OK)
 }
 
 async fn get_token(
@@ -442,7 +606,7 @@ pub async fn purge_file(
 pub async fn fetch_file(
     State(app_state): State<AppState>,
     Path(path): Path<String>,
-    FetchFileFromS3Headers { tenant_id, host }: FetchFileFromS3Headers,
+    FileFromS3Headers { tenant_id, host }: FileFromS3Headers,
 ) -> Result<Response, (StatusCode, impl IntoResponse)> {
     let tenant_id = tenant_id.into();
     let cache = Cache::new(app_state.connector.clone(), tenant_id);
