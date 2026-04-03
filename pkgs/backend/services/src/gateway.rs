@@ -15,6 +15,9 @@ use tokio::signal;
 use tower::ServiceBuilder;
 use vector_runtime::{Component, Event};
 
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
+
 use std::fs;
 use std::io::Error;
 use std::os::unix::fs::PermissionsExt;
@@ -51,6 +54,15 @@ pub async fn routes(
     let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
     let environment = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "dev".to_string());
 
+    #[derive(OpenApi)]
+    #[openapi(
+        paths(),
+        nest(
+            (path = "/api/investing", api = investing::InvestingApi)
+        )
+    )]
+    struct ApiDoc;
+
     // TODO: xem thử có cách nào load cấu hình từ yaml bên ngoài luôn đươc không
     let mut router = Router::new()
         .route("/health", get(health_check))
@@ -58,7 +70,8 @@ pub async fn routes(
         .route("/debug/pprof/profile", get(pprof))
         .route("/metrics", get(|| async move { metric_handle.render() }))
         .nest("/api/admin", admin::routes())
-        .nest("/api/investing", investing::routes());
+        .nest("/api/investing", investing::routes())
+        .merge(SwaggerUi::new("/swagger-ui").url("/docs/openapi.json", ApiDoc::openapi()));
 
     let runtime = Arc::new(
         AxumBuilder::new()

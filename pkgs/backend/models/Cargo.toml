@@ -11,6 +11,7 @@ algorithm = { path = "../../libraries/algorithm" }
 integration = { path = "../integration" }
 schemas = { path = "../schemas" }
 
+regex = "1.12.3"
 rand = "0.8.5"
 aes-gcm = "0.10.3"
 url = "2.5.8"

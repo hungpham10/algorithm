@@ -11,6 +11,7 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 }
+
 #[derive(Subcommand, Debug)]
 enum Commands {
     Gateway {},

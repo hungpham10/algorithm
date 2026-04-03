@@ -51,7 +51,7 @@ pub struct AdminHeaders {
 }
 
 #[derive(FromRequestParts)]
-pub struct FetchFileFromS3Headers {
+pub struct FileFromS3Headers {
     #[from_request(via(TypedHeader))]
     pub tenant_id: XTenantId,
 

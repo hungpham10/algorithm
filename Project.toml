@@ -1,0 +1,8 @@
+[workspace]
+projects = ["pkgs/backend/clients/AutoInvestingModels"]
+
+[deps]
+AutoInvestingModels = "8bae6ca5-bfa2-4113-9fe2-3ecc4897c09c"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+TimeSeries = "9e3dc215-6440-5c97-bce1-76c03772f85e"

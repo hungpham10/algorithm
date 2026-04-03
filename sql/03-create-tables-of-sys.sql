@@ -50,6 +50,28 @@ CREATE TABLE IF NOT EXISTS `sys_api_map` (
   UNIQUE KEY `unique_tenant_name_mode` (`tenant_id`, `name`, `mode`)
 );
 
+CREATE TABLE IF NOT EXISTS `sys_database_map` (
+  `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
+  `tenant_id` BIGINT,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `token` varchar(200),
+
+  UNIQUE KEY `unique_tenant` (`tenant_id`)
+);
+
+CREATE TABLE IF NOT EXISTS `sys_table_map` (
+  `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
+  `tenant_id` BIGINT,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `backend` integer,
+  `name` varchar(200),
+  `schema` json,
+
+  UNIQUE KEY `unique_tenant_name_mode` (`tenant_id`, `name`)
+);
+
 CREATE TABLE IF NOT EXISTS `sys_token_map` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `tenant_id` BIGINT,

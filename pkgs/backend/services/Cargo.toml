@@ -4,6 +4,12 @@ authors = ["Hung Pham"]
 version = "0.1.0"
 edition = "2024"
 
+[package.metadata.deb]
+maintainer = "Hung Pham <hung0913208@gmail.com>"
+assets = [
+    ["target/release/services", "/usr/bin/algorithm", "755"],
+]
+
 #[lints.rust]
 #warnings = "deny"
 
@@ -18,7 +24,7 @@ algorithm = { path = "../../libraries/algorithm" }
 integration = { path = "../integration", features = ["vdsc"] }
 
 # API
-axum = { version = "0.8.8", features = ["macros"] }
+axum = { version = "0.8.8", features = ["macros", "multipart"] }
 axum-macros = "0.5.0"
 axum-extra = { version = "0.12.5", features = ["typed-header"] }
 axum-prometheus = "0.10.0"
@@ -35,9 +41,17 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 quick-xml = "0.39.2"
 aws-sdk-s3 = "1.126.0"
+utoipa = { version = "5.4.0", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "9.0.2", features = ["axum", "vendored"], default-features = false }
 rustls = { version = "0.23.36", features = ["ring"] }
 futures = "0.3.32"
-aho-corasick = "1.1.4"
+bytes = "1.11.1"
+
+# Investing
+ta = "0.5.0"
+stats = "*"
+chrono = "*"
+histogram = "*"
 
 # Profiling
 pprof = { version = "0.13", features = ["flamegraph", "protobuf-codec"] }

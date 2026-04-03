@@ -11,12 +11,38 @@ use axum::response::{IntoResponse, Json, Response};
 use axum::routing::get;
 use http::header;
 
-use analysis::VolumeProfile;
+use utoipa::{IntoParams, OpenApi, ToSchema};
+
+use analysis::{VolumeProfile, calculate_rrg};
 use models::cache::Cache;
 use models::entities::admin::ApiType;
 use schemas::CandleStick;
 
 use super::{AppState, InvestingHeaders};
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        get_ohcl_from_broker,
+        get_heatmap_from_broker,
+        get_list_of_resolutions,
+        get_list_of_brokers,
+        get_list_of_symbols,
+        get_rrg_from_broker,
+        get_list_of_symbols_by_product,
+        get_list_of_product_by_broker
+    ),
+    components(
+        schemas(
+            OhclResponse, HeatmapResponse, GetOhclRequest,
+            HeatmapRequest, ListBrokersRequest, CandleStick
+        )
+    ),
+    tags(
+        (name = "Investing V1", description = "API to help investors analyse markets")
+    )
+)]
+pub struct InvestingV1Api;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -25,6 +51,7 @@ pub fn routes() -> Router<AppState> {
             "/ohcl/heatmap/{broker}/{symbol}",
             get(get_heatmap_from_broker),
         )
+        .route("/ohcl/rrg/{broker}/{symbol}", get(get_rrg_from_broker))
         .route("/ohcl/resolution", get(get_list_of_resolutions))
         .route("/ohcl/brokers", get(get_list_of_brokers))
         .route("/ohcl/brokers/{broker}/all", get(get_list_of_symbols))
@@ -38,7 +65,7 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, ToSchema, IntoParams)]
 struct GetOhclRequest {
     resolution: String,
     from: i64,
@@ -46,7 +73,7 @@ struct GetOhclRequest {
     limit: usize,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
 struct HeatmapResponse {
     heatmap: Vec<Vec<f64>>,
     levels: Vec<f64>,
@@ -54,7 +81,7 @@ struct HeatmapResponse {
     timelines: Vec<Vec<Vec<(usize, usize)>>>,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
 struct RecapResponse {
     price: Vec<f64>,
     volume: Vec<f64>,
@@ -72,7 +99,7 @@ struct RecapResponse {
     volume_minus3: Vec<f64>,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, Default)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default, ToSchema)]
 struct OhclResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
@@ -102,6 +129,20 @@ struct OhclResponse {
     next: Option<i32>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/ohcl/candles/{broker}/{symbol}",
+    params(
+        ("broker" = String, Path, description = "Broker name"),
+        ("symbol" = String, Path, description = "Symbol ticker"),
+        GetOhclRequest // This automatically picks up Query params
+    ),
+    responses(
+        (status = 200, description = "Success", body = OhclResponse),
+        (status = 404, description = "Broker or Symbol not found", body = OhclResponse),
+        (status = 500, description = "Internal Server Error", body = OhclResponse)
+    )
+)]
 async fn get_ohcl_from_broker(
     State(app_state): State<AppState>,
     Path((broker, symbol)): Path<(String, String)>,
@@ -179,7 +220,7 @@ async fn get_ohcl_from_broker(
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, ToSchema, IntoParams)]
 pub struct HeatmapRequest {
     resolution: String,
     now: i64,
@@ -189,6 +230,18 @@ pub struct HeatmapRequest {
     interval_in_hour: i32,
 }
 
+#[utoipa::path(
+    get,
+    path = "/ohcl/heatmap/{broker}/{symbol}",
+    params(
+        ("broker" = String, Path, description = "Broker name"),
+        ("symbol" = String, Path, description = "Symbol ticker"),
+        HeatmapRequest
+    ),
+    responses(
+        (status = 200, description = "Success", body = OhclResponse)
+    )
+)]
 async fn get_heatmap_from_broker(
     State(app_state): State<AppState>,
     Path((broker, symbol)): Path<(String, String)>,
@@ -328,6 +381,151 @@ async fn get_heatmap_from_broker(
     }
 }
 
+#[derive(Deserialize, Debug, ToSchema, IntoParams)]
+pub struct RrgRequest {
+    resolution: String,
+    reference: String,
+    period: usize,
+    now: i64,
+    look_back: i64,
+}
+
+#[derive(Serialize, Default, ToSchema)]
+pub struct RrgResponse {
+    pub data: Option<Vec<RrgPoint>>,
+    pub error: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RrgPoint {
+    pub x: f64, // RS-Ratio
+    pub y: f64, // RS-Momentum
+    pub timestamp: i32,
+}
+
+#[utoipa::path(
+    get,
+    path = "/ohcl/rrg/{broker}/{symbol}",
+    params(
+        ("broker" = String, Path, description = "Broker name"),
+        ("symbol" = String, Path, description = "Target symbol ticker"),
+        RrgRequest
+    ),
+    responses(
+        (status = 200, description = "Success", body = RrgResponse)
+    )
+)]
+async fn get_rrg_from_broker(
+    State(app_state): State<AppState>,
+    Path((broker_name, symbol)): Path<(String, String)>,
+    Query(args): Query<RrgRequest>,
+    InvestingHeaders { tenant_id }: InvestingHeaders,
+) -> impl IntoResponse {
+    let tenant_id = tenant_id.into();
+    let to = args.now;
+
+    let extra_candles = (args.period * 4) as i64;
+    let from = match args.resolution.as_str() {
+        "1H" => to - 3600 * (args.look_back + extra_candles),
+        "1D" => to - 86400 * (args.look_back + extra_candles),
+        "1W" => to - 604800 * (args.look_back + extra_candles),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(RrgResponse {
+                    error: Some("Unsupported resolution".into()),
+                    ..Default::default()
+                }),
+            );
+        }
+    };
+
+    let real_broker = match app_state
+        .investing_entity
+        .convert_to_real_broker(tenant_id, broker_name.to_lowercase())
+        .await
+    {
+        Ok(b) => b,
+        Err(e) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(RrgResponse {
+                    error: Some(e.to_string()),
+                    ..Default::default()
+                }),
+            );
+        }
+    };
+
+    let target_fut = app_state.query_candlesticks.get_candlesticks(
+        &real_broker,
+        &symbol,
+        &args.resolution,
+        from,
+        to,
+        0,
+    );
+    let ref_fut = app_state.query_candlesticks.get_candlesticks(
+        &real_broker,
+        &args.reference,
+        &args.resolution,
+        from,
+        to,
+        0,
+    );
+
+    let (target_res, ref_res) = tokio::join!(target_fut, ref_fut);
+
+    let (target_candles, ref_candles) = match (target_res, ref_res) {
+        (Ok(t), Ok(r)) => (t, r),
+        _ => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(RrgResponse {
+                    error: Some("Failed to fetch candles".into()),
+                    ..Default::default()
+                }),
+            );
+        }
+    };
+
+    match calculate_rrg(&target_candles, &ref_candles, args.period) {
+        Ok(results) => {
+            let ts_offset = target_candles.len() - results.len();
+            let points: Vec<RrgPoint> = results
+                .into_iter()
+                .enumerate()
+                .map(|(i, (x, y))| RrgPoint {
+                    x,
+                    y,
+                    timestamp: target_candles[i + ts_offset].t,
+                })
+                .collect();
+
+            (
+                StatusCode::OK,
+                Json(RrgResponse {
+                    data: Some(points),
+                    error: None,
+                }),
+            )
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(RrgResponse {
+                error: Some(e.to_string()),
+                ..Default::default()
+            }),
+        ),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/ohcl/products/{broker}",
+    params(("broker" = String, Path, description = "Broker name")),
+    responses((status = 200, body = OhclResponse))
+)]
 async fn get_list_of_product_by_broker(
     State(app_state): State<AppState>,
     Path(broker): Path<String>,
@@ -357,6 +555,11 @@ async fn get_list_of_product_by_broker(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/ohcl/resolution",
+    responses((status = 200, body = OhclResponse))
+)]
 async fn get_list_of_resolutions(
     State(app_state): State<AppState>,
     InvestingHeaders { tenant_id }: InvestingHeaders,
@@ -383,12 +586,18 @@ async fn get_list_of_resolutions(
     }
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug, ToSchema, IntoParams)]
 struct ListBrokersRequest {
     after: Option<i32>,
     limit: Option<u64>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/ohcl/brokers",
+    params(ListBrokersRequest),
+    responses((status = 200, body = OhclResponse))
+)]
 async fn get_list_of_brokers(
     State(app_state): State<AppState>,
     Query(args): Query<ListBrokersRequest>,
@@ -424,6 +633,12 @@ async fn get_list_of_brokers(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/ohcl/brokers/{broker}/all",
+    params(("broker" = String, Path, description = "Broker name")),
+    responses((status = 200, body = OhclResponse))
+)]
 async fn get_list_of_symbols(
     State(app_state): State<AppState>,
     Path(broker): Path<String>,
@@ -528,6 +743,15 @@ async fn get_list_of_symbols(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/ohcl/symbols/{broker}/{product}",
+    params(
+        ("broker" = String, Path, description = "Broker name"),
+        ("product" = String, Path, description = "Product type")
+    ),
+    responses((status = 200, body = OhclResponse))
+)]
 async fn get_list_of_symbols_by_product(
     State(app_state): State<AppState>,
     Path((broker, product)): Path<(String, String)>,

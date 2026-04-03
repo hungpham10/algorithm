@@ -1,24 +1,28 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::Operator;
+use super::ColumnDescription;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromJsonQueryResult)]
 #[serde(transparent)]
-pub struct Parser(pub Vec<Operator>);
+pub struct Schema(pub SchemaDesciption);
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SchemaDesciption {
+    pub columns: Vec<ColumnDescription>,
+}
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-#[sea_orm(table_name = "sys_api_map")]
+#[sea_orm(table_name = "sys_table_map")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub tenant_id: i64,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
-    pub mode: i32,
+    pub backend: i32,
     pub name: String,
-    pub url: String,
-    pub parser: Parser,
+    pub schema: Schema,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
