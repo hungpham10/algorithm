@@ -54,12 +54,21 @@ pub async fn routes(
     let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
     let environment = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "dev".to_string());
 
+    // @TODO: xem thử có cách nào để giấu thông tin code đi k
     #[derive(OpenApi)]
     #[openapi(
         paths(),
         nest(
             (path = "/api/investing", api = investing::InvestingApi)
-        )
+        ),
+        info(
+            title = "Investing API Documentation",
+            version = "1.0.0",
+            description = "Api for serving investing solution and ",
+            license(
+                name = "Proprietary / All Rights Reserved",
+            )
+        ),
     )]
     struct ApiDoc;
 
