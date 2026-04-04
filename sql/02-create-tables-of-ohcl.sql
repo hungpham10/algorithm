@@ -50,4 +50,31 @@ CREATE TABLE IF NOT EXISTS `ohcl_broker_limitation` (
   `guest_invisible` boolean DEFAULT FALSE,
 
   UNIQUE KEY `unique_broker` (`broker_id`)
-)
+);
+
+CREATE TABLE IF NOT EXISTS `ohcl_symbols` (
+  `id` integer PRIMARY KEY AUTO_INCREMENT,
+  `broker_id` integer NOT NULL,
+  `product_id` integer NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `symbol` varchar(50) NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  UNIQUE KEY `unique_symbol_per_broker` (`broker_id`, `product_id`, `symbol`)
+);
+
+CREATE TABLE IF NOT EXISTS `ohcl_price_current` (
+  `id` integer PRIMARY KEY AUTO_INCREMENT,
+  `buy` decimal(20, 2) DEFAULT 0,
+  `sell` decimal(20, 2) DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS `ohcl_price_history` (
+  `id` bigint PRIMARY KEY AUTO_INCREMENT,
+  `symbol_id` integer NOT NULL,
+  `buy` decimal(20, 2) NOT NULL,
+  `sell` decimal(20, 2) NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);

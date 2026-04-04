@@ -46,7 +46,10 @@ pub struct InvestingV1Api;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/ohcl/candles/{broker}/{symbol}", get(get_ohcl_from_broker))
+        .route(
+            "/ohcl/candles/{broker}/{symbol}",
+            get(get_ohcl_from_broker).post(ingest_price_data),
+        )
         .route(
             "/ohcl/heatmap/{broker}/{symbol}",
             get(get_heatmap_from_broker),
@@ -722,28 +725,11 @@ async fn get_list_of_symbols(
             )
         })?;
 
-    let api_mapping = match app_state.investing_apis.get("get_list_of_symbols") {
-        Some(name) => name,
-        None => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(OhclResponse {
-                    error: Some("API mapping configuration missing".to_string()),
-                    ..Default::default()
-                }),
-            ));
-        }
-    };
-
-    // Key này đại diện cho nguyên một cục OhclResponse đã được serialize
-    let key = format!("res:{api_mapping}:{tenant_id}:{broker}");
-
-    // --- [FAST PATH] ---
+    let key = format!("res:{tenant_id}:{broker}");
     if let Ok(cached) = cache.get(&key).await {
         return Ok(fast_cache_response(cached).into_response());
     }
 
-    // --- [CACHE MISS PATH] ---
     match app_state
         .investing_entity
         .is_broker_enabled(tenant_id, &broker)
@@ -751,6 +737,52 @@ async fn get_list_of_symbols(
     {
         Ok(true) => {
             let mut headers = HashMap::new();
+            let broker_id = app_state
+                .investing_entity
+                .get_broker_id(tenant_id, &broker)
+                .await
+                .map_err(|error| {
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(OhclResponse {
+                            error: Some(format!("Failed to get list of products: {}", error)),
+                            ..Default::default()
+                        }),
+                    )
+                })?;
+
+            let local_symbols = app_state
+                .investing_entity
+                .list_symbols_by_broker(tenant_id, broker_id)
+                .await
+                .unwrap_or_default();
+
+            if !local_symbols.is_empty() {
+                let res_obj = OhclResponse {
+                    symbols: Some(local_symbols),
+                    ..Default::default()
+                };
+
+                if let Ok(serialized) = serde_json::to_string(&res_obj) {
+                    let _ = cache.set(&key, &serialized, 3600).await;
+                    return Ok(fast_cache_response(serialized).into_response());
+                }
+                return Ok(Json(res_obj).into_response());
+            }
+
+            let api_mapping = match app_state.investing_apis.get("get_list_of_symbols") {
+                Some(name) => name,
+                None => {
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(OhclResponse {
+                            error: Some("API mapping configuration missing".to_string()),
+                            ..Default::default()
+                        }),
+                    ));
+                }
+            };
+
             if let Ok(token) = app_state
                 .admin_entity
                 .get_unencrypted_token(tenant_id, &broker)
@@ -780,7 +812,6 @@ async fn get_list_of_symbols(
                         ..Default::default()
                     };
 
-                    // Serialize nguyên struct OhclResponse để lần sau "trả thẳng"
                     if let Ok(serialized) = serde_json::to_string(&res_obj) {
                         let _ = cache.set(&key, &serialized, 3600).await;
                         return Ok(fast_cache_response(serialized).into_response());
@@ -831,8 +862,6 @@ async fn get_list_of_symbols_by_product(
     let tenant_id: i64 = tenant_id.into();
     let cache = Cache::new(app_state.connector.clone(), tenant_id);
     let func = format!("get_list_of_symbols_by_{product}_in_{broker}");
-
-    // Key bao gồm cả product để tránh đè dữ liệu
     let key = format!("res:{func}:{tenant_id}:{broker}");
 
     app_state
@@ -849,18 +878,63 @@ async fn get_list_of_symbols_by_product(
             )
         })?;
 
-    // --- [FAST PATH] ---
     if let Ok(cached) = cache.get(&key).await {
         return Ok(fast_cache_response(cached).into_response());
     }
 
-    // --- [CACHE MISS PATH] ---
     match app_state
         .investing_entity
         .is_product_enabled(tenant_id, &product, &broker)
         .await
     {
         Ok(true) => {
+            let broker_id = app_state
+                .investing_entity
+                .get_broker_id(tenant_id, &broker)
+                .await
+                .map_err(|error| {
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(OhclResponse {
+                            error: Some(format!("Failed to get list of products: {}", error)),
+                            ..Default::default()
+                        }),
+                    )
+                })?;
+
+            let product_id = app_state
+                .investing_entity
+                .get_product_id(tenant_id, &product)
+                .await
+                .map_err(|error| {
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(OhclResponse {
+                            error: Some(format!("Failed to get list of products: {}", error)),
+                            ..Default::default()
+                        }),
+                    )
+                })?;
+
+            let local_symbols = app_state
+                .investing_entity
+                .list_symbols_by_product(tenant_id, broker_id, product_id)
+                .await
+                .unwrap_or_default();
+
+            if !local_symbols.is_empty() {
+                let res_obj = OhclResponse {
+                    symbols: Some(local_symbols),
+                    ..Default::default()
+                };
+
+                if let Ok(serialized) = serde_json::to_string(&res_obj) {
+                    let _ = cache.set(&key, &serialized, 3600).await;
+                    return Ok(fast_cache_response(serialized).into_response());
+                }
+                return Ok(Json(res_obj).into_response());
+            }
+
             let api_name = match app_state.investing_apis.get(&func) {
                 Some(name) => name,
                 None => {
@@ -934,6 +1008,87 @@ async fn get_list_of_symbols_by_product(
             }),
         )),
     }
+}
+
+#[derive(Deserialize, Debug, ToSchema, IntoParams)]
+pub struct IngestPriceRequest {
+    pub buy: f32,
+    pub sell: f32,
+}
+
+#[utoipa::path(
+    post,
+    path = "/ohcl/ingest/{broker}/{symbol}",
+    request_body = IngestPriceRequest,
+    params(
+        ("broker" = String, Path, description = "Broker name"),
+        ("symbol" = String, Path, description = "Symbol code")
+    ),
+    responses((status = 200, body = OhclResponse))
+)]
+async fn ingest_price_data(
+    State(app_state): State<AppState>,
+    Path((broker_name, symbol_code)): Path<(String, String)>,
+    InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
+    Json(payload): Json<IngestPriceRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<OhclResponse>)> {
+    let tenant_id = tenant_id.into();
+
+    // @TODO: xem xét việc dùng user_id để xác định ai là người ghi dữ liệu lên
+    let broker_id = app_state
+        .investing_entity
+        .get_broker_id(tenant_id, &broker_name)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(OhclResponse {
+                    error: Some(format!(
+                        "Ingest pricing data failed (user {}): {error}",
+                        user_id.0.clone().unwrap_or("guest".to_string())
+                    )),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    let symbol_id = app_state
+        .investing_entity
+        .get_symbol_id(tenant_id, broker_id, symbol_code.clone())
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(OhclResponse {
+                    error: Some(format!(
+                        "Ingest pricing data failed (user {}): {error}",
+                        user_id.0.clone().unwrap_or("guest".to_string())
+                    )),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    app_state
+        .investing_entity
+        .update_price(symbol_id, payload.buy, payload.sell)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(OhclResponse {
+                    error: Some(format!(
+                        "Ingest pricing data failed (user {}): {error}",
+                        user_id.0.clone().unwrap_or("guest".to_string())
+                    )),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    Ok(Json(OhclResponse {
+        ..Default::default()
+    }))
 }
 
 fn fast_cache_response(cached_json: String) -> Response {

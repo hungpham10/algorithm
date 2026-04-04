@@ -2,22 +2,29 @@
 mod broker_limitation;
 mod brokers;
 mod mapping_broker_resolution;
+mod price_current;
+mod price_history;
 mod products;
 mod resolutions;
+mod symbols;
 use broker_limitation::Entity as BrokerLimitation;
 use brokers::Entity as Brokers;
 use mapping_broker_resolution::Entity as MappingBrokerResolution;
+use price_current::Entity as PriceCurrent;
+use price_history::Entity as PriceHistory;
 use products::Entity as Products;
 use resolutions::Entity as Resolutions;
+use symbols::Entity as Symbols;
 
 use chrono::Utc;
 use std::sync::Arc;
 
 use crate::resolver::Resolver;
 use sea_orm::entity::prelude::Expr;
+use sea_orm::sea_query::OnConflict;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, JoinType, QueryFilter,
-    QuerySelect, RuntimeErr,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, JoinType,
+    QueryFilter, QueryOrder, QuerySelect, RuntimeErr, Set,
 };
 use sea_query::Alias;
 
@@ -178,6 +185,38 @@ impl Investing {
         Ok(res)
     }
 
+    pub async fn get_product_id(&self, tenant_id: i64, product: &String) -> Result<i32, DbErr> {
+        match Products::find()
+            .select_only()
+            .column(products::Column::Id)
+            .filter(products::Column::Name.eq(product))
+            .into_tuple::<i32>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some(id) => Ok(id),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Not found product {product}",
+            )))),
+        }
+    }
+
+    pub async fn get_broker_id(&self, tenant_id: i64, broker: &String) -> Result<i32, DbErr> {
+        match Brokers::find()
+            .select_only()
+            .column(brokers::Column::Id)
+            .filter(brokers::Column::Name.eq(broker))
+            .into_tuple::<i32>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some(id) => Ok(id),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Not found broker {broker}",
+            )))),
+        }
+    }
+
     pub async fn is_broker_enabled(&self, tenant_id: i64, broker: &String) -> Result<bool, DbErr> {
         Ok(Brokers::find()
             .filter(brokers::Column::Name.eq(broker))
@@ -274,5 +313,164 @@ impl Investing {
         } else {
             Ok(())
         }
+    }
+
+    pub async fn update_price(
+        &self,
+        symbol_id: i32,
+        new_buy: f32,
+        new_sell: f32,
+    ) -> Result<(), DbErr> {
+        let price_active = price_current::ActiveModel {
+            id: Set(symbol_id),
+            buy: Set(new_buy),
+            sell: Set(new_sell),
+            ..Default::default()
+        };
+
+        match PriceCurrent::find_by_id(symbol_id)
+            .one(self.dbt(symbol_id.into()))
+            .await?
+        {
+            Some(row) => {
+                if row.buy == new_buy && row.sell == new_sell {
+                    return Ok(());
+                }
+
+                price_active.update(self.dbt(symbol_id.into())).await?;
+            }
+
+            None => {
+                price_active.insert(self.dbt(symbol_id.into())).await?;
+            }
+        }
+
+        let history_row = price_history::ActiveModel {
+            symbol_id: Set(symbol_id),
+            buy: Set(new_buy),
+            sell: Set(new_sell),
+            ..Default::default()
+        };
+
+        history_row.insert(self.dbt(symbol_id.into())).await?;
+        Ok(())
+    }
+
+    pub async fn get_last_price(&self, symbol_id: i32) -> Result<(f32, f32), DbErr> {
+        match PriceCurrent::find_by_id(symbol_id)
+            .select_only()
+            .column(price_current::Column::Buy)
+            .column(price_current::Column::Sell)
+            .into_tuple::<(f32, f32)>()
+            .one(self.dbt(symbol_id.into()))
+            .await?
+        {
+            Some((buy, sell)) => Ok((buy, sell)),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Not found symbol {symbol_id}",
+            )))),
+        }
+    }
+
+    pub async fn get_price_history(
+        &self,
+        symbol_id: i32,
+        limit: u64,
+    ) -> Result<Vec<(f32, f32)>, DbErr> {
+        Ok(PriceHistory::find()
+            .select_only()
+            .column(price_history::Column::Buy)
+            .column(price_history::Column::Sell)
+            .filter(price_history::Column::SymbolId.eq(symbol_id))
+            .order_by_desc(price_history::Column::CreatedAt) // Lấy giá mới nhất lên đầu
+            .limit(limit)
+            .into_tuple::<(f32, f32)>()
+            .all(self.dbt(symbol_id.into()))
+            .await?
+            .iter()
+            .map(|(buy, sell)| (*buy, *sell))
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn upsert_symbol(
+        &self,
+        tenant_id: i64,
+        broker_id: i32,
+        product_id: i32,
+        symbol_code: String,
+    ) -> Result<(), DbErr> {
+        Symbols::insert(symbols::ActiveModel {
+            broker_id: Set(broker_id),
+            product_id: Set(product_id),
+            symbol: Set(symbol_code.clone()),
+            updated_at: Set(Some(Utc::now())),
+            ..Default::default()
+        })
+        .on_conflict(
+            OnConflict::columns([
+                symbols::Column::BrokerId,
+                symbols::Column::ProductId,
+                symbols::Column::Symbol,
+            ])
+            .update_column(symbols::Column::UpdatedAt)
+            .to_owned(),
+        )
+        .exec_with_returning(self.dbt(tenant_id))
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_symbol_id(
+        &self,
+        tenant_id: i64,
+        broker_id: i32,
+        symbol: String,
+    ) -> Result<i32, DbErr> {
+        match Symbols::find()
+            .select_only()
+            .column(symbols::Column::Id)
+            .filter(symbols::Column::BrokerId.eq(broker_id))
+            .filter(symbols::Column::Symbol.eq(symbol.clone()))
+            .into_tuple::<i32>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some(id) => Ok(id),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Not found symbol {symbol}",
+            )))),
+        }
+    }
+
+    pub async fn list_symbols_by_broker(
+        &self,
+        tenant_id: i64,
+        broker_id: i32,
+    ) -> Result<Vec<String>, DbErr> {
+        Symbols::find()
+            .select_only()
+            .column(symbols::Column::Symbol)
+            .filter(symbols::Column::BrokerId.eq(broker_id))
+            .into_tuple::<String>()
+            .all(self.dbt(tenant_id))
+            .await
+    }
+
+    pub async fn list_symbols_by_product(
+        &self,
+        tenant_id: i64,
+        broker_id: i32,
+        product_id: i32,
+    ) -> Result<Vec<String>, DbErr> {
+        let res = Symbols::find()
+            .select_only()
+            .column(symbols::Column::Symbol)
+            .filter(symbols::Column::BrokerId.eq(broker_id))
+            .filter(symbols::Column::ProductId.eq(product_id))
+            .into_tuple::<String>()
+            .all(self.dbt(tenant_id))
+            .await?;
+
+        Ok(res)
     }
 }
