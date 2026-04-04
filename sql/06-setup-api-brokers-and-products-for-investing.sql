@@ -76,4 +76,8 @@ INSERT IGNORE INTO `ohcl_resolution` (`id`, `resolution`) VALUES
 (4, '1M'),
 (5, '5m'),
 (6, '1m'),
-(7, '1Ư');
+(7, '1W');
+
+
+INSERT IGNORE INTO `ohcl_broker_limitation` (`id`, `broker_id`, `guest_max_history_days`, `guest_invisible`) VALUES
+(1, 3, NULL, 1);
