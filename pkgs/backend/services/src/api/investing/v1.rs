@@ -123,6 +123,9 @@ struct OhclResponse {
     products: Option<Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    rrgs: Option<Vec<RrgPoint>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     symbols: Option<Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -147,8 +150,8 @@ async fn get_ohcl_from_broker(
     State(app_state): State<AppState>,
     Path((broker, symbol)): Path<(String, String)>,
     Query(args): Query<GetOhclRequest>,
-    InvestingHeaders { tenant_id }: InvestingHeaders,
-) -> impl IntoResponse {
+    InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let tenant_id = tenant_id.into();
     let broker = match app_state
         .investing_entity
@@ -157,16 +160,30 @@ async fn get_ohcl_from_broker(
     {
         Ok(broker) => broker,
         Err(error) => {
-            return (
+            return Err((
                 StatusCode::NOT_FOUND,
                 Json(OhclResponse {
                     error: Some(format!("Failed to calculate OHCL: {error}")),
                     ..Default::default()
                 }),
-            );
+            ));
         }
     };
     let symbol = symbol.to_uppercase();
+
+    app_state
+        .investing_entity
+        .validate_broker_candlesticks_limit(tenant_id, &broker, &user_id.0, args.from)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(OhclResponse {
+                    error: Some(format!("Limit data access: {error}")),
+                    ..Default::default()
+                }),
+            )
+        })?;
 
     match app_state
         .investing_entity
@@ -186,37 +203,36 @@ async fn get_ohcl_from_broker(
                 )
                 .await
             {
-                Ok(candles) => (
+                Ok(candles) => Ok((
                     StatusCode::OK,
                     Json(OhclResponse {
                         ohcl: Some(candles),
                         ..Default::default()
                     }),
-                ),
+                )),
                 Err(e) => {
-                    // Xử lý lỗi (ví dụ: Provider không tồn tại, lỗi mạng, v.v.)
                     let status = match e.kind() {
                         ErrorKind::NotFound => StatusCode::NOT_FOUND,
                         _ => StatusCode::INTERNAL_SERVER_ERROR,
                     };
 
-                    (
+                    Ok((
                         status,
                         Json(OhclResponse {
                             error: Some(format!("Failed to fetch OHLC: {}", e)),
                             ..Default::default()
                         }),
-                    )
+                    ))
                 }
             }
         }
-        Err(error) => (
+        Err(error) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(OhclResponse {
                 error: Some(format!("Failed to convert resolution: {}", error)),
                 ..Default::default()
             }),
-        ),
+        )),
     }
 }
 
@@ -246,8 +262,8 @@ async fn get_heatmap_from_broker(
     State(app_state): State<AppState>,
     Path((broker, symbol)): Path<(String, String)>,
     Query(args): Query<HeatmapRequest>,
-    InvestingHeaders { tenant_id }: InvestingHeaders,
-) -> impl IntoResponse {
+    InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let tenant_id = tenant_id.into();
     let to = args.now;
     let from = match args.resolution.as_str() {
@@ -255,13 +271,13 @@ async fn get_heatmap_from_broker(
         "1D" => to - 24 * 60 * 60 * args.look_back,
         "1W" => to - 7 * 24 * 60 * 60 * args.look_back,
         _ => {
-            return (
+            return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(OhclResponse {
                     error: Some(format!("Not support resolution `{}`", args.resolution)),
                     ..Default::default()
                 }),
-            );
+            ));
         }
     };
     let broker = match app_state
@@ -271,13 +287,13 @@ async fn get_heatmap_from_broker(
     {
         Ok(broker) => broker,
         Err(error) => {
-            return (
+            return Err((
                 StatusCode::NOT_FOUND,
                 Json(OhclResponse {
                     error: Some(format!("Failed to calculate OHCL: {error}")),
                     ..Default::default()
                 }),
-            );
+            ));
         }
     };
     let resolution = match args.resolution.as_str() {
@@ -285,16 +301,30 @@ async fn get_heatmap_from_broker(
         "1D" => "1H",
         "1W" => "1D",
         _ => {
-            return (
+            return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(OhclResponse {
                     error: Some(format!("Not support resolution `{}`", args.resolution)),
                     ..Default::default()
                 }),
-            );
+            ));
         }
     }
     .to_string();
+
+    app_state
+        .investing_entity
+        .validate_broker_candlesticks_limit(tenant_id, &broker, &user_id.0, from)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(OhclResponse {
+                    error: Some(format!("Limit data access: {error}")),
+                    ..Default::default()
+                }),
+            )
+        })?;
 
     match app_state
         .investing_entity
@@ -337,7 +367,7 @@ async fn get_heatmap_from_broker(
                                 }
                             }
 
-                            (
+                            Ok((
                                 StatusCode::OK,
                                 Json(OhclResponse {
                                     heatmap: Some(HeatmapResponse {
@@ -348,9 +378,9 @@ async fn get_heatmap_from_broker(
                                     }),
                                     ..Default::default()
                                 }),
-                            )
+                            ))
                         }
-                        Err(error) => (
+                        Err(error) => Err((
                             StatusCode::INTERNAL_SERVER_ERROR,
                             Json(OhclResponse {
                                 error: Some(format!(
@@ -359,25 +389,25 @@ async fn get_heatmap_from_broker(
                                 )),
                                 ..Default::default()
                             }),
-                        ),
+                        )),
                     }
                 }
-                Err(error) => (
+                Err(error) => Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(OhclResponse {
                         error: Some(format!("Failed to fetch OHLC: {}", error)),
                         ..Default::default()
                     }),
-                ),
+                )),
             }
         }
-        Err(error) => (
+        Err(error) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(OhclResponse {
                 error: Some(format!("Failed to convert resolution: {}", error)),
                 ..Default::default()
             }),
-        ),
+        )),
     }
 }
 
@@ -390,13 +420,7 @@ pub struct RrgRequest {
     look_back: i64,
 }
 
-#[derive(Serialize, Default, ToSchema)]
-pub struct RrgResponse {
-    pub data: Option<Vec<RrgPoint>>,
-    pub error: Option<String>,
-}
-
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize, ToSchema, Deserialize, Clone, Debug)]
 pub struct RrgPoint {
     pub x: f64, // RS-Ratio
     pub y: f64, // RS-Momentum
@@ -412,15 +436,15 @@ pub struct RrgPoint {
         RrgRequest
     ),
     responses(
-        (status = 200, description = "Success", body = RrgResponse)
+        (status = 200, description = "Success", body = OhclResponse)
     )
 )]
 async fn get_rrg_from_broker(
     State(app_state): State<AppState>,
     Path((broker_name, symbol)): Path<(String, String)>,
     Query(args): Query<RrgRequest>,
-    InvestingHeaders { tenant_id }: InvestingHeaders,
-) -> impl IntoResponse {
+    InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let tenant_id = tenant_id.into();
     let to = args.now;
 
@@ -430,35 +454,35 @@ async fn get_rrg_from_broker(
         "1D" => to - 86400 * (args.look_back + extra_candles),
         "1W" => to - 604800 * (args.look_back + extra_candles),
         _ => {
-            return (
+            return Err((
                 StatusCode::BAD_REQUEST,
-                Json(RrgResponse {
+                Json(OhclResponse {
                     error: Some("Unsupported resolution".into()),
                     ..Default::default()
                 }),
-            );
+            ));
         }
     };
 
-    let real_broker = match app_state
+    let broker = match app_state
         .investing_entity
         .convert_to_real_broker(tenant_id, broker_name.to_lowercase())
         .await
     {
         Ok(b) => b,
         Err(e) => {
-            return (
+            return Err((
                 StatusCode::NOT_FOUND,
-                Json(RrgResponse {
+                Json(OhclResponse {
                     error: Some(e.to_string()),
                     ..Default::default()
                 }),
-            );
+            ));
         }
     };
 
     let target_fut = app_state.query_candlesticks.get_candlesticks(
-        &real_broker,
+        &broker,
         &symbol,
         &args.resolution,
         from,
@@ -466,7 +490,7 @@ async fn get_rrg_from_broker(
         0,
     );
     let ref_fut = app_state.query_candlesticks.get_candlesticks(
-        &real_broker,
+        &broker,
         &args.reference,
         &args.resolution,
         from,
@@ -479,20 +503,34 @@ async fn get_rrg_from_broker(
     let (target_candles, ref_candles) = match (target_res, ref_res) {
         (Ok(t), Ok(r)) => (t, r),
         _ => {
-            return (
+            return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(RrgResponse {
+                Json(OhclResponse {
                     error: Some("Failed to fetch candles".into()),
                     ..Default::default()
                 }),
-            );
+            ));
         }
     };
+
+    app_state
+        .investing_entity
+        .validate_broker_candlesticks_limit(tenant_id, &broker, &user_id.0, from)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(OhclResponse {
+                    error: Some(format!("Limit data access: {error}")),
+                    ..Default::default()
+                }),
+            )
+        })?;
 
     match calculate_rrg(&target_candles, &ref_candles, args.period) {
         Ok(results) => {
             let ts_offset = target_candles.len() - results.len();
-            let points: Vec<RrgPoint> = results
+            let points = results
                 .into_iter()
                 .enumerate()
                 .map(|(i, (x, y))| RrgPoint {
@@ -500,23 +538,23 @@ async fn get_rrg_from_broker(
                     y,
                     timestamp: target_candles[i + ts_offset].t,
                 })
-                .collect();
+                .collect::<Vec<_>>();
 
-            (
+            Ok((
                 StatusCode::OK,
-                Json(RrgResponse {
-                    data: Some(points),
-                    error: None,
+                Json(OhclResponse {
+                    rrgs: Some(points),
+                    ..Default::default()
                 }),
-            )
+            ))
         }
-        Err(e) => (
+        Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(RrgResponse {
+            Json(OhclResponse {
                 error: Some(e.to_string()),
                 ..Default::default()
             }),
-        ),
+        )),
     }
 }
 
@@ -529,29 +567,44 @@ async fn get_rrg_from_broker(
 async fn get_list_of_product_by_broker(
     State(app_state): State<AppState>,
     Path(broker): Path<String>,
-    InvestingHeaders { tenant_id }: InvestingHeaders,
-) -> impl IntoResponse {
+    InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
+    let tenant_id = tenant_id.into();
     let broker = broker.to_lowercase();
+
+    app_state
+        .investing_entity
+        .validate_broker_listing_limit(tenant_id, &broker, &user_id.0)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(OhclResponse {
+                    error: Some(format!("Failed to get list of products: {}", error)),
+                    ..Default::default()
+                }),
+            )
+        })?;
 
     match app_state
         .investing_entity
-        .list_products(tenant_id.into(), &broker)
+        .list_products(tenant_id, &broker)
         .await
     {
-        Ok(products) => (
+        Ok(products) => Ok((
             StatusCode::OK,
             Json(OhclResponse {
                 products: Some(products),
                 ..Default::default()
             }),
-        ),
-        Err(error) => (
+        )),
+        Err(error) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(OhclResponse {
                 error: Some(format!("Failed to get list of products: {}", error)),
                 ..Default::default()
             }),
-        ),
+        )),
     }
 }
 
@@ -562,7 +615,7 @@ async fn get_list_of_product_by_broker(
 )]
 async fn get_list_of_resolutions(
     State(app_state): State<AppState>,
-    InvestingHeaders { tenant_id }: InvestingHeaders,
+    InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
 ) -> impl IntoResponse {
     match app_state
         .investing_entity
@@ -579,7 +632,11 @@ async fn get_list_of_resolutions(
         Err(error) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(OhclResponse {
-                error: Some(format!("Fail to query database: {}", error)),
+                error: Some(format!(
+                    "Fail to query database (user {}): {}",
+                    user_id.0.unwrap_or("guess".to_string()),
+                    error,
+                )),
                 ..Default::default()
             }),
         ),
@@ -601,14 +658,14 @@ struct ListBrokersRequest {
 async fn get_list_of_brokers(
     State(app_state): State<AppState>,
     Query(args): Query<ListBrokersRequest>,
-    InvestingHeaders { tenant_id }: InvestingHeaders,
+    InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
 ) -> impl IntoResponse {
     let limit = args.limit.unwrap_or(100);
     let after = args.after.unwrap_or(0);
 
     match app_state
         .investing_entity
-        .list_brokers(tenant_id.into(), after, limit)
+        .list_brokers(tenant_id.into(), after, limit, &user_id.0)
         .await
     {
         Ok((brokers, next)) => (
@@ -626,7 +683,11 @@ async fn get_list_of_brokers(
         Err(error) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(OhclResponse {
-                error: Some(format!("Fail to query database: {}", error)),
+                error: Some(format!(
+                    "Fail to query database (user {}): {}",
+                    user_id.0.unwrap_or("guess".to_string()),
+                    error,
+                )),
                 ..Default::default()
             }),
         ),
@@ -642,22 +703,35 @@ async fn get_list_of_brokers(
 async fn get_list_of_symbols(
     State(app_state): State<AppState>,
     Path(broker): Path<String>,
-    InvestingHeaders { tenant_id }: InvestingHeaders,
-) -> impl IntoResponse {
+    InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let tenant_id: i64 = tenant_id.into();
     let cache = Cache::new(app_state.connector.clone(), tenant_id);
+
+    app_state
+        .investing_entity
+        .validate_broker_listing_limit(tenant_id, &broker, &user_id.0)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(OhclResponse {
+                    error: Some(format!("Failed to get list of products: {}", error)),
+                    ..Default::default()
+                }),
+            )
+        })?;
 
     let api_mapping = match app_state.investing_apis.get("get_list_of_symbols") {
         Some(name) => name,
         None => {
-            return (
+            return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(OhclResponse {
                     error: Some("API mapping configuration missing".to_string()),
                     ..Default::default()
                 }),
-            )
-                .into_response();
+            ));
         }
     };
 
@@ -666,7 +740,7 @@ async fn get_list_of_symbols(
 
     // --- [FAST PATH] ---
     if let Ok(cached) = cache.get(&key).await {
-        return fast_cache_response(cached).into_response();
+        return Ok(fast_cache_response(cached).into_response());
     }
 
     // --- [CACHE MISS PATH] ---
@@ -709,37 +783,34 @@ async fn get_list_of_symbols(
                     // Serialize nguyên struct OhclResponse để lần sau "trả thẳng"
                     if let Ok(serialized) = serde_json::to_string(&res_obj) {
                         let _ = cache.set(&key, &serialized, 3600).await;
-                        return fast_cache_response(serialized).into_response();
+                        return Ok(fast_cache_response(serialized).into_response());
                     }
 
-                    Json(res_obj).into_response()
+                    Ok(Json(res_obj).into_response())
                 }
-                Err(e) => (
+                Err(e) => Err((
                     StatusCode::BAD_GATEWAY,
                     Json(OhclResponse {
                         error: Some(format!("Broker query failed: {e}")),
                         ..Default::default()
                     }),
-                )
-                    .into_response(),
+                )),
             }
         }
-        Ok(false) => (
+        Ok(false) => Err((
             StatusCode::FORBIDDEN,
             Json(OhclResponse {
                 error: Some(format!("Broker {broker} is blocked")),
                 ..Default::default()
             }),
-        )
-            .into_response(),
-        Err(e) => (
+        )),
+        Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(OhclResponse {
                 error: Some(format!("DB error: {e}")),
                 ..Default::default()
             }),
-        )
-            .into_response(),
+        )),
     }
 }
 
@@ -755,8 +826,8 @@ async fn get_list_of_symbols(
 async fn get_list_of_symbols_by_product(
     State(app_state): State<AppState>,
     Path((broker, product)): Path<(String, String)>,
-    InvestingHeaders { tenant_id }: InvestingHeaders,
-) -> impl IntoResponse {
+    InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let tenant_id: i64 = tenant_id.into();
     let cache = Cache::new(app_state.connector.clone(), tenant_id);
     let func = format!("get_list_of_symbols_by_{product}_in_{broker}");
@@ -764,9 +835,23 @@ async fn get_list_of_symbols_by_product(
     // Key bao gồm cả product để tránh đè dữ liệu
     let key = format!("res:{func}:{tenant_id}:{broker}");
 
+    app_state
+        .investing_entity
+        .validate_broker_listing_limit(tenant_id, &broker, &user_id.0)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(OhclResponse {
+                    error: Some(format!("Failed to get list of products: {}", error)),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
     // --- [FAST PATH] ---
     if let Ok(cached) = cache.get(&key).await {
-        return fast_cache_response(cached).into_response();
+        return Ok(fast_cache_response(cached).into_response());
     }
 
     // --- [CACHE MISS PATH] ---
@@ -779,14 +864,13 @@ async fn get_list_of_symbols_by_product(
             let api_name = match app_state.investing_apis.get(&func) {
                 Some(name) => name,
                 None => {
-                    return (
+                    return Err((
                         StatusCode::NOT_FOUND,
                         Json(OhclResponse {
                             error: Some(format!("API {func} not found")),
                             ..Default::default()
                         }),
-                    )
-                        .into_response();
+                    ));
                 }
             };
 
@@ -805,14 +889,14 @@ async fn get_list_of_symbols_by_product(
                 .await
             {
                 Ok(data) => {
-                    let symbols: Vec<String> = data
+                    let symbols = data
                         .into_iter()
                         .filter_map(|v| {
                             v.as_str()
                                 .map(|s| s.to_string())
                                 .or_else(|| Some(v.to_string()))
                         })
-                        .collect();
+                        .collect::<Vec<_>>();
 
                     let res_obj = OhclResponse {
                         symbols: Some(symbols),
@@ -821,37 +905,34 @@ async fn get_list_of_symbols_by_product(
 
                     if let Ok(serialized) = serde_json::to_string(&res_obj) {
                         let _ = cache.set(&key, &serialized, 3600).await;
-                        return fast_cache_response(serialized).into_response();
+                        return Ok(fast_cache_response(serialized).into_response());
                     }
 
-                    Json(res_obj).into_response()
+                    Ok(Json(res_obj).into_response())
                 }
-                Err(e) => (
+                Err(e) => Err((
                     StatusCode::BAD_GATEWAY,
                     Json(OhclResponse {
                         error: Some(format!("Query failed: {e}")),
                         ..Default::default()
                     }),
-                )
-                    .into_response(),
+                )),
             }
         }
-        Ok(false) => (
+        Ok(false) => Err((
             StatusCode::FORBIDDEN,
             Json(OhclResponse {
                 error: Some("Product or Broker blocked".into()),
                 ..Default::default()
             }),
-        )
-            .into_response(),
-        Err(e) => (
+        )),
+        Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(OhclResponse {
                 error: Some(format!("DB error: {e}")),
                 ..Default::default()
             }),
-        )
-            .into_response(),
+        )),
     }
 }
 
