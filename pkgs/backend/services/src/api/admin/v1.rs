@@ -5,6 +5,9 @@ use std::path::PathBuf;
 use quick_xml::Writer;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
 
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};
+use utoipa::{IntoParams, OpenApi, ToSchema};
+
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, Json as JsonRequest, Multipart, Path, Query, State};
@@ -26,7 +29,14 @@ use models::entities::admin::{Api, Article, Site};
 use crate::api::AppState;
 use crate::api::admin::{AdminHeaders, FileFromS3Headers, PurgeFileFromS3Headers};
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+#[derive(ToSchema)]
+pub struct AdminFileUpload {
+    #[schema(format = Binary)]
+    #[allow(dead_code)]
+    pub file: Vec<u8>,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone, Debug, IntoParams, ToSchema)]
 pub struct QueryPagingInput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub after: Option<i64>,
@@ -35,13 +45,13 @@ pub struct QueryPagingInput {
     pub limit: Option<u64>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema)]
 pub struct ListApiSchema {
     data: Vec<Api>,
     next_after: Option<i64>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema)]
 pub struct AdminResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     apis: Option<ListApiSchema>,
@@ -51,6 +61,59 @@ pub struct AdminResponse {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+}
+
+#[derive(OpenApi)]
+#[openapi(
+    // 1. List all the handler functions from your SEO/Admin module
+    paths(
+        get_tenant_id,
+        publish_news,
+        publish_site,
+        fetch_file,
+        purge_file,
+        list_paginated_api_schemas,
+        create_api_schemas,
+        get_api_schema,
+        get_token,
+        put_token,
+        get_appended_log,
+        rotate_new_partition,
+        build_sitemap_xml,
+        build_news_xml
+    ),
+    // 2. Register all the data structures used in requests/responses
+    components(
+        schemas(
+            QueryPagingInput,
+            AdminResponse,
+            ListApiSchema,
+            PutTokenPayload,
+            // Ensure these external models also derive ToSchema
+            models::entities::admin::Api,
+            models::entities::admin::Site,
+            models::entities::admin::Article
+        )
+    ),
+    // 3. Organize them under a clear Tag
+    tags(
+        (name = "Admin V1", description = "SEO Engine, Sitemap Management, and System Logs")
+    ),
+    modifiers(&SecurityAddon) // Add the SecurityAddon for x-tenant-id
+)]
+pub struct AdminV1Api;
+
+struct SecurityAddon;
+
+impl utoipa::Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        if let Some(components) = openapi.components.as_mut() {
+            components.add_security_scheme(
+                "admin_auth",
+                SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("x-tenant-id"))),
+            )
+        }
+    }
 }
 
 pub fn routes() -> Router<AppState> {
@@ -76,6 +139,23 @@ pub fn routes() -> Router<AppState> {
     //)
 }
 
+#[utoipa::path(
+    post,
+    path = "/seo/sitemap",
+    request_body(
+        content = AdminFileUpload,
+        content_type = "multipart/form-data"
+    ),
+    responses(
+        (status = 200, description = "Sitemap uploaded successfully"),
+        (status = 400, description = "Invalid multipart data", body = AdminResponse),
+        (status = 500, description = "S3 or DB error", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "SEO Engine"
+)]
 async fn publish_site(
     State(app_state): State<AppState>,
     AdminHeaders { tenant_id }: AdminHeaders,
@@ -158,6 +238,23 @@ async fn publish_site(
     Ok(StatusCode::OK)
 }
 
+#[utoipa::path(
+    post,
+    path = "/seo/news",
+    request_body(
+        content = AdminFileUpload,
+        content_type = "multipart/form-data"
+    ),
+    responses(
+        (status = 200, description = "News published successfully"),
+        (status = 400, description = "Invalid multipart request", body = AdminResponse),
+        (status = 500, description = "Internal server error (S3 or DB)", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "SEO Engine"
+)]
 async fn publish_news(
     State(app_state): State<AppState>,
     AdminHeaders { tenant_id }: AdminHeaders,
@@ -236,6 +333,21 @@ async fn publish_news(
     Ok(StatusCode::OK)
 }
 
+#[utoipa::path(
+    get,
+    path = "/seo/tokens/{name}",
+    params(
+        ("name" = String, Path, description = "The unique name/identifier of the token")
+    ),
+    responses(
+        (status = 200, description = "Returns the unencrypted token value", body = String),
+        (status = 500, description = "Internal Server Error - usually if the token is missing or DB fails", body = String)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "Tokens"
+)]
 async fn get_token(
     State(app_state): State<AppState>,
     Path(name): Path<String>,
@@ -254,12 +366,28 @@ async fn get_token(
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema, IntoParams)]
 struct PutTokenPayload {
     name: String,
     token: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/seo/tokens/{name}",
+    params(
+        ("name" = String, Path, description = "Token identifier")
+    ),
+    request_body = PutTokenPayload,
+    responses(
+        (status = 200, description = "Token updated successfully"),
+        (status = 500, description = "Internal Server Error")
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "Tokens"
+)]
 async fn put_token(
     State(app_state): State<AppState>,
     AdminHeaders { tenant_id }: AdminHeaders,
@@ -278,6 +406,18 @@ async fn put_token(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/seo/tenant/{host}/id",
+    params(
+        ("host" = String, Path, description = "The hostname to look up")
+    ),
+    responses(
+        (status = 200, description = "Returns the Tenant ID", body = String),
+        (status = 500, description = "Internal Server Error")
+    ),
+    tag = "Tenant"
+)]
 async fn get_tenant_id(
     State(app_state): State<AppState>,
     Path(host): Path<String>,
@@ -329,6 +469,22 @@ fn write_tag<W: Write>(
     Ok(())
 }
 
+#[utoipa::path(
+    get,
+    path = "/seo/sitemap",
+    responses(
+        (
+            status = 200,
+            description = "Returns a standard XML sitemap (Sitemaps.org 0.9)",
+            content_type = "application/xml"
+        ),
+        (status = 500, description = "Database error or XML generation error", body = String)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "SEO Engine"
+)]
 async fn build_sitemap_xml(
     State(app_state): State<AppState>,
     AdminHeaders { tenant_id }: AdminHeaders,
@@ -430,6 +586,22 @@ async fn build_sitemap_xml(
         })
 }
 
+#[utoipa::path(
+    get,
+    path = "/seo/news",
+    responses(
+        (
+            status = 200,
+            description = "Returns a Google News compatible XML sitemap",
+            content_type = "application/xml"
+        ),
+        (status = 500, description = "Database or XML generation error", body = String)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "SEO Engine"
+)]
 async fn build_news_xml(
     State(app_state): State<AppState>,
     AdminHeaders { tenant_id }: AdminHeaders,
@@ -564,6 +736,20 @@ async fn build_news_xml(
         })
 }
 
+#[utoipa::path(
+    // We use 'head' because your router.route().head(purge_file) uses the HEAD method
+    head,
+    path = "/seo/files/{path}",
+    params(
+        ("path" = String, Path, description = "The full S3 object path to purge from local cache"),
+        ("x-host" = String, Header, description = "The hostname associated with the file")
+    ),
+    responses(
+        (status = 200, description = "File successfully purged from Nginx cache or was not found"),
+        (status = 500, description = "Internal server error while accessing the filesystem")
+    ),
+    tag = "SEO Engine"
+)]
 pub async fn purge_file(
     Path(path): Path<String>,
     PurgeFileFromS3Headers { host }: PurgeFileFromS3Headers,
@@ -602,6 +788,20 @@ pub async fn purge_file(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/seo/files/{path}",
+    params(
+        ("path" = String, Path, description = "Full path of the file in S3"),
+        ("x-tenant-id" = i64, Header, description = "The unique tenant identifier"),
+        ("x-host" = String, Header, description = "The hostname for cache key generation")
+    ),
+    responses(
+        (status = 200, description = "Returns the file stream from S3", content_type = "application/octet-stream"),
+        (status = 500, description = "S3 or Configuration error", body = AdminResponse)
+    ),
+    tag = "SEO Engine"
+)]
 pub async fn fetch_file(
     State(app_state): State<AppState>,
     Path(path): Path<String>,
@@ -678,6 +878,21 @@ pub async fn fetch_file(
         })
 }
 
+#[utoipa::path(
+    get,
+    path = "/seo/schemas",
+    params(
+        QueryPagingInput // Utoipa automatically extracts fields from the struct
+    ),
+    responses(
+        (status = 200, description = "Paginated list of API schemas", body = AdminResponse),
+        (status = 500, description = "Database error", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "Schemas"
+)]
 pub async fn list_paginated_api_schemas(
     State(app_state): State<AppState>,
     AdminHeaders { tenant_id }: AdminHeaders,
@@ -726,6 +941,19 @@ pub async fn list_paginated_api_schemas(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/seo/schemas",
+    request_body = [Api],
+    responses(
+        (status = 200, description = "Successfully created schemas", body = AdminResponse),
+        (status = 500, description = "Database error", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "Schemas"
+)]
 pub async fn create_api_schemas(
     State(app_state): State<AppState>,
     AdminHeaders { tenant_id }: AdminHeaders,
@@ -753,6 +981,21 @@ pub async fn create_api_schemas(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/seo/schemas/{id}",
+    params(
+        ("id" = i64, Path, description = "The internal database ID of the API schema")
+    ),
+    responses(
+        (status = 200, description = "Returns the requested API schema", body = AdminResponse),
+        (status = 500, description = "Database error or schema not found", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "Schemas"
+)]
 pub async fn get_api_schema(
     State(app_state): State<AppState>,
     Path(id): Path<i64>,
@@ -789,6 +1032,21 @@ fn admin_error(status: StatusCode, message: String) -> BoxedAdminError {
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/seo/logs/{name}",
+    params(
+        ("name" = String, Path, description = "The unique identifier for the log DSN (e.g., 'primary_db_log')")
+    ),
+    responses(
+        (status = 200, description = "Successfully retrieved log partitions", body = AdminResponse),
+        (status = 500, description = "Failed to connect to log server or retrieve DSN", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "System Logs"
+)]
 pub async fn get_appended_log(
     State(app_state): State<AppState>,
     Path(name): Path<String>,
@@ -844,6 +1102,21 @@ pub async fn get_appended_log(
     }
 }
 
+#[utoipa::path(
+    patch,
+    path = "/seo/logs/{name}",
+    params(
+        ("name" = String, Path, description = "The unique identifier for the log DSN to rotate")
+    ),
+    responses(
+        (status = 200, description = "New log partition created successfully", body = AdminResponse),
+        (status = 500, description = "Rotation failed or DSN not found", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "System Logs"
+)]
 pub async fn rotate_new_partition(
     State(app_state): State<AppState>,
     Path(name): Path<String>,

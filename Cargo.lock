@@ -246,6 +246,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "utoipa",
 ]
 
 [[package]]
@@ -3872,6 +3873,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "url",
+ "utoipa",
 ]
 
 [[package]]

@@ -36,6 +36,7 @@ use rand::{RngCore, thread_rng};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use utoipa::{IntoParams, ToSchema};
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
@@ -56,25 +57,29 @@ pub struct Admin {
     cache_connections: Arc<LruCache<i64, DatabaseConnection, 32>>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default, ToSchema)]
 pub struct Article {
     pub title: String,
     pub loc: String,
     pub name: String,
     pub language: String,
     pub keywords: Option<String>,
+
+    #[schema(value_type = String, format = DateTime)]
     pub published_at: DateTime<Utc>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default, ToSchema)]
 pub struct Site {
     pub loc: String,
     pub freq: String,
     pub priority: f64,
+
+    #[schema(value_type = String, format = DateTime)]
     pub last_mod: DateTime<Utc>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, ToSchema)]
 #[repr(i32)]
 pub enum ApiType {
     Unknown,
@@ -139,7 +144,7 @@ impl serde::Serialize for ApiType {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
 pub struct Api {
     pub id: Option<i64>,
     pub name: Option<String>,
@@ -148,7 +153,7 @@ pub struct Api {
     pub parser: Option<Vec<Operator>>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, ToSchema)]
 #[repr(i32)]
 pub enum ColumnType {
     Unknown,
@@ -209,13 +214,13 @@ impl serde::Serialize for ColumnType {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, ToSchema, IntoParams)]
 pub struct ColumnDescription {
     pub name: Option<String>,
     pub kind: Option<ColumnType>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, ToSchema)]
 #[repr(i32)]
 pub enum BackendType {
     Unknown,
@@ -272,7 +277,7 @@ impl serde::Serialize for BackendType {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
 pub struct Table {
     pub id: Option<i64>,
     pub table: Option<String>,
