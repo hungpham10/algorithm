@@ -4,6 +4,7 @@ use axum::Router;
 use axum_extra::TypedHeader;
 use axum_macros::FromRequestParts;
 use headers::{Header, HeaderName, HeaderValue, Host};
+use utoipa::OpenApi;
 
 use super::{AppState, XTenantId};
 
@@ -64,6 +65,14 @@ pub struct PurgeFileFromS3Headers {
     #[from_request(via(TypedHeader))]
     pub host: Host,
 }
+
+#[derive(OpenApi)]
+#[openapi(
+    nest(
+        (path = "/v1", api = v1::AdminV1Api)
+    )
+)]
+pub struct AdminApi;
 
 pub fn routes() -> Router<AppState> {
     Router::new().nest("/v1", v1::routes())

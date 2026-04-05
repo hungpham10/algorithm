@@ -29,13 +29,14 @@ use super::{AppState, InvestingHeaders};
         get_list_of_brokers,
         get_list_of_symbols,
         get_rrg_from_broker,
+        ingest_price_data,
         get_list_of_symbols_by_product,
         get_list_of_product_by_broker
     ),
     components(
         schemas(
             OhclResponse, HeatmapResponse, GetOhclRequest,
-            HeatmapRequest, ListBrokersRequest, CandleStick
+            HeatmapRequest, ListBrokersRequest, CandleStick, IngestPriceRequest,
         )
     ),
     tags(

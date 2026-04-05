@@ -7,6 +7,7 @@ use axum::{
     serve::IncomingStream,
 };
 
+use axum::response::Json;
 use axum_prometheus::PrometheusMetricLayer;
 use sentry::integrations::tower::{NewSentryLayer, SentryHttpLayer};
 use tokio::net::UnixListener;
@@ -48,29 +49,53 @@ impl connect_info::Connected<IncomingStream<'_, UnixListener>> for UdsConnectInf
     }
 }
 
+#[derive(OpenApi)]
+#[openapi(
+    paths(),
+    nest(
+        (path = "/api/investing", api = investing::InvestingApi)
+    ),
+    info(
+        title = "Investing API Documentation",
+        version = "1.0.0",
+        description = "Api for serving investing solution and property management",
+        license(
+            name = "Proprietary / All Rights Reserved",
+        )
+    ),
+)]
+struct InvestingApiDoc;
+
+async fn investing_openapi() -> Json<utoipa::openapi::OpenApi> {
+    Json(InvestingApiDoc::openapi())
+}
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(),
+    nest(
+        (path = "/api/admin", api = admin::AdminApi)
+    ),
+    info(
+        title = "Admin API Documentation",
+        version = "1.0.0",
+        description = "Api for serving website admin",
+        license(
+            name = "Proprietary / All Rights Reserved",
+        )
+    ),
+)]
+struct AdminApiDoc;
+
+async fn admin_openapi() -> Json<utoipa::openapi::OpenApi> {
+    Json(AdminApiDoc::openapi())
+}
+
 pub async fn routes(
     components: Vec<Arc<dyn Component>>,
 ) -> Result<(Router, Arc<AxumRuntime>), Error> {
     let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
     let environment = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "dev".to_string());
-
-    // @TODO: xem thử có cách nào để giấu thông tin code đi k
-    #[derive(OpenApi)]
-    #[openapi(
-        paths(),
-        nest(
-            (path = "/api/investing", api = investing::InvestingApi)
-        ),
-        info(
-            title = "Investing API Documentation",
-            version = "1.0.0",
-            description = "Api for serving investing solution and ",
-            license(
-                name = "Proprietary / All Rights Reserved",
-            )
-        ),
-    )]
-    struct ApiDoc;
 
     // TODO: xem thử có cách nào load cấu hình từ yaml bên ngoài luôn đươc không
     let mut router = Router::new()
@@ -78,9 +103,11 @@ pub async fn routes(
         .route("/reload", post(reload))
         .route("/debug/pprof/profile", get(pprof))
         .route("/metrics", get(|| async move { metric_handle.render() }))
+        .route("/docs/investing/openapi.json", get(investing_openapi))
+        .route("/docs/admin/openapi.json", get(admin_openapi))
         .nest("/api/admin", admin::routes())
         .nest("/api/investing", investing::routes())
-        .merge(SwaggerUi::new("/swagger-ui").url("/docs/openapi.json", ApiDoc::openapi()));
+        .merge(SwaggerUi::new("/swagger-ui").url("/docs/openapi.json", InvestingApiDoc::openapi()));
 
     let runtime = Arc::new(
         AxumBuilder::new()
