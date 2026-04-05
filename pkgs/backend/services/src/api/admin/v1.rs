@@ -32,6 +32,7 @@ use crate::api::admin::{AdminHeaders, FileFromS3Headers, PurgeFileFromS3Headers}
 #[derive(ToSchema)]
 pub struct AdminFileUpload {
     #[schema(format = Binary)]
+    #[allow(dead_code)]
     pub file: Vec<u8>,
 }
 
