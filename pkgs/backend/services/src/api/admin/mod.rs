@@ -49,19 +49,7 @@ impl From<XRequestId> for i64 {
 pub struct AdminHeaders {
     #[from_request(via(TypedHeader))]
     pub tenant_id: XTenantId,
-}
 
-#[derive(FromRequestParts)]
-pub struct FileFromS3Headers {
-    #[from_request(via(TypedHeader))]
-    pub tenant_id: XTenantId,
-
-    #[from_request(via(TypedHeader))]
-    pub host: Host,
-}
-
-#[derive(FromRequestParts)]
-pub struct PurgeFileFromS3Headers {
     #[from_request(via(TypedHeader))]
     pub host: Host,
 }

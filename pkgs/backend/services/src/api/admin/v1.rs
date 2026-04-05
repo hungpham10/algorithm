@@ -27,7 +27,7 @@ use models::cache::Cache;
 use models::entities::admin::{Api, Article, Site};
 
 use crate::api::AppState;
-use crate::api::admin::{AdminHeaders, FileFromS3Headers, PurgeFileFromS3Headers};
+use crate::api::admin::AdminHeaders;
 
 #[derive(ToSchema)]
 pub struct AdminFileUpload {
@@ -158,7 +158,7 @@ pub fn routes() -> Router<AppState> {
 )]
 async fn publish_site(
     State(app_state): State<AppState>,
-    AdminHeaders { tenant_id }: AdminHeaders,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, (StatusCode, JsonResponse<AdminResponse>)> {
     let tenant_id_i64: i64 = tenant_id.into();
@@ -257,7 +257,7 @@ async fn publish_site(
 )]
 async fn publish_news(
     State(app_state): State<AppState>,
-    AdminHeaders { tenant_id }: AdminHeaders,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, (StatusCode, JsonResponse<AdminResponse>)> {
     let tenant_id_i64: i64 = tenant_id.into();
@@ -351,7 +351,7 @@ async fn publish_news(
 async fn get_token(
     State(app_state): State<AppState>,
     Path(name): Path<String>,
-    AdminHeaders { tenant_id }: AdminHeaders,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
 ) -> impl IntoResponse {
     match app_state
         .admin_entity
@@ -390,7 +390,7 @@ struct PutTokenPayload {
 )]
 async fn put_token(
     State(app_state): State<AppState>,
-    AdminHeaders { tenant_id }: AdminHeaders,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
     JsonRequest(PutTokenPayload { name, token }): JsonRequest<PutTokenPayload>,
 ) -> impl IntoResponse {
     match app_state
@@ -433,7 +433,7 @@ async fn get_tenant_id(
 
 //async fn get_features(
 //    State(app_state): State<AppState>,
-//    AdminHeaders { tenant_id, }: AdminHeaders,
+//    AdminHeaders { tenant_id, .., }: AdminHeaders,
 //) -> impl IntoResponse {
 //}
 
@@ -487,7 +487,7 @@ fn write_tag<W: Write>(
 )]
 async fn build_sitemap_xml(
     State(app_state): State<AppState>,
-    AdminHeaders { tenant_id }: AdminHeaders,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let tenant_id = tenant_id.into();
     let sites = app_state
@@ -604,7 +604,7 @@ async fn build_sitemap_xml(
 )]
 async fn build_news_xml(
     State(app_state): State<AppState>,
-    AdminHeaders { tenant_id }: AdminHeaders,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let articles = app_state
         .admin_entity
@@ -752,7 +752,7 @@ async fn build_news_xml(
 )]
 pub async fn purge_file(
     Path(path): Path<String>,
-    PurgeFileFromS3Headers { host }: PurgeFileFromS3Headers,
+    AdminHeaders { host, .. }: AdminHeaders,
 ) -> impl IntoResponse {
     let mut hasher = Md5::new();
 
@@ -805,7 +805,7 @@ pub async fn purge_file(
 pub async fn fetch_file(
     State(app_state): State<AppState>,
     Path(path): Path<String>,
-    FileFromS3Headers { tenant_id, host }: FileFromS3Headers,
+    AdminHeaders { tenant_id, host }: AdminHeaders,
 ) -> Result<Response, (StatusCode, impl IntoResponse)> {
     let tenant_id = tenant_id.into();
     let cache = Cache::new(app_state.connector.clone(), tenant_id);
@@ -895,7 +895,7 @@ pub async fn fetch_file(
 )]
 pub async fn list_paginated_api_schemas(
     State(app_state): State<AppState>,
-    AdminHeaders { tenant_id }: AdminHeaders,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
     Query(QueryPagingInput { after, limit }): Query<QueryPagingInput>,
 ) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let after = after.unwrap_or(0);
@@ -956,7 +956,7 @@ pub async fn list_paginated_api_schemas(
 )]
 pub async fn create_api_schemas(
     State(app_state): State<AppState>,
-    AdminHeaders { tenant_id }: AdminHeaders,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
     JsonRequest(schemas): JsonRequest<Vec<Api>>,
 ) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     match app_state
@@ -999,7 +999,7 @@ pub async fn create_api_schemas(
 pub async fn get_api_schema(
     State(app_state): State<AppState>,
     Path(id): Path<i64>,
-    AdminHeaders { tenant_id }: AdminHeaders,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
 ) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     match app_state
         .admin_entity
@@ -1050,7 +1050,7 @@ fn admin_error(status: StatusCode, message: String) -> BoxedAdminError {
 pub async fn get_appended_log(
     State(app_state): State<AppState>,
     Path(name): Path<String>,
-    AdminHeaders { tenant_id }: AdminHeaders,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
 ) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let dsn = app_state
         .admin_entity
@@ -1120,7 +1120,7 @@ pub async fn get_appended_log(
 pub async fn rotate_new_partition(
     State(app_state): State<AppState>,
     Path(name): Path<String>,
-    AdminHeaders { tenant_id }: AdminHeaders,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
 ) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let dsn = app_state
         .admin_entity
