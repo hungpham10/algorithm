@@ -78,3 +78,17 @@ CREATE TABLE IF NOT EXISTS `ohcl_price_history` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS `ohcl_store_locations` (
+  `id` integer NOT NULL,
+
+  `address_line` varchar(500) NOT NULL,
+  `district` varchar(100) NOT NULL,
+  `province` varchar(100) NOT NULL,
+
+  `latitude` decimal(10, 8) NOT NULL,
+  `longitude` decimal(11, 8) NOT NULL,
+
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);

@@ -8,7 +8,7 @@ use axum::body::Body;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use http::header;
 
 use utoipa::{IntoParams, OpenApi, ToSchema};
@@ -30,6 +30,7 @@ use super::{AppState, InvestingHeaders};
         get_list_of_symbols,
         get_rrg_from_broker,
         ingest_price_data,
+        upsert_symbol,
         get_list_of_symbols_by_product,
         get_list_of_product_by_broker
     ),
@@ -64,9 +65,19 @@ pub fn routes() -> Router<AppState> {
             get(get_list_of_symbols_by_product),
         )
         .route(
+            "/ohcl/symbols/{broker}/{product}/{symbol}",
+            post(upsert_symbol),
+        )
+        .route(
             "/ohcl/products/{broker}",
             get(get_list_of_product_by_broker),
         )
+}
+
+#[derive(Deserialize, Debug, Clone, ToSchema)]
+struct Symbol {
+    id: i32,
+    name: String,
 }
 
 #[derive(Deserialize, Debug, ToSchema, IntoParams)]
@@ -131,6 +142,9 @@ struct OhclResponse {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     symbols: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    symbol: Option<Symbol>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     next: Option<i32>,
@@ -1055,7 +1069,7 @@ async fn ingest_price_data(
 
     let symbol_id = app_state
         .investing_entity
-        .get_symbol_id(tenant_id, broker_id, symbol_code.clone())
+        .get_symbol_id(tenant_id, broker_id, &symbol_code)
         .await
         .map_err(|error| {
             (
@@ -1090,6 +1104,66 @@ async fn ingest_price_data(
     Ok(Json(OhclResponse {
         ..Default::default()
     }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/ohcl/symbols/{broker}/{product}/{symbol}",
+    params(
+        ("broker" = i32, Path, description = "Unique ID of the Broker (Business Category)"),
+        ("product" = i32, Path, description = "Unique ID of the Product (Store/Venue)"),
+        ("symbol" = String, Path, description = "Symbol Code (Product Identifier, e.g., BTCUSD)"),
+    ),
+    responses(
+        (status = 200, description = "Symbol upserted successfully", body = OhclResponse),
+        (status = 404, description = "Broker or Product not found"),
+        (status = 500, description = "Internal database error")
+    ),
+    tag = "Investing"
+)]
+pub async fn upsert_symbol(
+    State(app_state): State<AppState>,
+    Path((broker_id, product_id, symbol_code)): Path<(i32, i32, String)>,
+    InvestingHeaders { tenant_id, .. }: InvestingHeaders,
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
+    let tenant_id = tenant_id.into();
+
+    app_state
+        .investing_entity
+        .upsert_symbol(tenant_id, broker_id, product_id, &symbol_code)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(OhclResponse {
+                    error: Some(format!("Upsert failed: {error}")),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    Ok((
+        StatusCode::OK,
+        Json(OhclResponse {
+            symbol: Some(Symbol {
+                id: app_state
+                    .investing_entity
+                    .get_symbol_id(tenant_id, broker_id, &symbol_code)
+                    .await
+                    .map_err(|error| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(OhclResponse {
+                                error: Some(format!("Upsert failed: {error}")),
+                                ..Default::default()
+                            }),
+                        )
+                    })?,
+                name: symbol_code.clone(),
+            }),
+            ..Default::default()
+        }),
+    ))
 }
 
 fn fast_cache_response(cached_json: String) -> Response {
