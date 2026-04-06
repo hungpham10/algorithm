@@ -397,7 +397,7 @@ impl Investing {
         tenant_id: i64,
         broker_id: i32,
         product_id: i32,
-        symbol_code: String,
+        symbol_code: &String,
     ) -> Result<(), DbErr> {
         Symbols::insert(symbols::ActiveModel {
             broker_id: Set(broker_id),
@@ -424,7 +424,7 @@ impl Investing {
         &self,
         tenant_id: i64,
         broker_id: i32,
-        symbol: String,
+        symbol: &String,
     ) -> Result<i32, DbErr> {
         match Symbols::find()
             .select_only()
