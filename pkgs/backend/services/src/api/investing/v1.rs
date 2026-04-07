@@ -74,7 +74,7 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
-#[derive(Deserialize, Debug, Clone, ToSchema)]
+#[derive(Deserialize, Serialize, Debug, Clone, ToSchema)]
 struct Symbol {
     id: i32,
     name: String,
@@ -1033,34 +1033,49 @@ pub struct IngestPriceRequest {
 
 #[utoipa::path(
     post,
-    path = "/ohcl/ingest/{broker}/{symbol}",
+    path = "/ohcl/candles/{broker}/{symbol}",
     request_body = IngestPriceRequest,
     params(
-        ("broker" = String, Path, description = "Broker name"),
-        ("symbol" = String, Path, description = "Symbol code")
+        ("symbol" = i32, Path, description = "Symbol code")
     ),
     responses((status = 200, body = OhclResponse))
 )]
 async fn ingest_price_data(
     State(app_state): State<AppState>,
-    Path((broker_name, symbol_code)): Path<(String, String)>,
+    Path((broker, symbol)): Path<(String, String)>,
     InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
     Json(payload): Json<IngestPriceRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<OhclResponse>)> {
     let tenant_id = tenant_id.into();
 
-    // @TODO: xem xét việc dùng user_id để xác định ai là người ghi dữ liệu lên
-    let broker_id = app_state
+    app_state
         .investing_entity
-        .get_broker_id(tenant_id, &broker_name)
+        .validate_broker_listing_limit(tenant_id, &broker, &user_id.0)
         .await
         .map_err(|error| {
             (
-                StatusCode::NOT_FOUND,
+                StatusCode::INTERNAL_SERVER_ERROR,
                 Json(OhclResponse {
                     error: Some(format!(
-                        "Ingest pricing data failed (user {}): {error}",
-                        user_id.0.clone().unwrap_or("guest".to_string())
+                        "Failed to ingest data to symbol {symbol}: {}",
+                        error
+                    )),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    let broker_id = app_state
+        .investing_entity
+        .get_broker_id(tenant_id, &broker)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(OhclResponse {
+                    error: Some(format!(
+                        "Failed to ingest data to symbol {symbol}: {}",
+                        error
                     )),
                     ..Default::default()
                 }),
@@ -1069,15 +1084,15 @@ async fn ingest_price_data(
 
     let symbol_id = app_state
         .investing_entity
-        .get_symbol_id(tenant_id, broker_id, &symbol_code)
+        .get_symbol_id(tenant_id, broker_id, &symbol)
         .await
         .map_err(|error| {
             (
-                StatusCode::NOT_FOUND,
+                StatusCode::INTERNAL_SERVER_ERROR,
                 Json(OhclResponse {
                     error: Some(format!(
-                        "Ingest pricing data failed (user {}): {error}",
-                        user_id.0.clone().unwrap_or("guest".to_string())
+                        "Failed to ingest data to symbol {symbol}: {}",
+                        error
                     )),
                     ..Default::default()
                 }),
@@ -1110,8 +1125,8 @@ async fn ingest_price_data(
     post,
     path = "/ohcl/symbols/{broker}/{product}/{symbol}",
     params(
-        ("broker" = i32, Path, description = "Unique ID of the Broker (Business Category)"),
-        ("product" = i32, Path, description = "Unique ID of the Product (Store/Venue)"),
+        ("broker" = String, Path, description = "Unique ID of the Broker (Business Category)"),
+        ("product" = String, Path, description = "Unique ID of the Product (Store/Venue)"),
         ("symbol" = String, Path, description = "Symbol Code (Product Identifier, e.g., BTCUSD)"),
     ),
     responses(
@@ -1123,10 +1138,52 @@ async fn ingest_price_data(
 )]
 pub async fn upsert_symbol(
     State(app_state): State<AppState>,
-    Path((broker_id, product_id, symbol_code)): Path<(i32, i32, String)>,
-    InvestingHeaders { tenant_id, .. }: InvestingHeaders,
+    Path((broker, product, symbol_code)): Path<(String, String, String)>,
+    InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
 ) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let tenant_id = tenant_id.into();
+
+    app_state
+        .investing_entity
+        .validate_broker_listing_limit(tenant_id, &broker, &user_id.0)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(OhclResponse {
+                    error: Some(format!("Upsert failed: {error}")),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    let broker_id = app_state
+        .investing_entity
+        .get_broker_id(tenant_id, &broker)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(OhclResponse {
+                    error: Some(format!("Upsert failed: {error}")),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    let product_id = app_state
+        .investing_entity
+        .get_product_id(tenant_id, &product)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(OhclResponse {
+                    error: Some(format!("Upsert failed: {error}")),
+                    ..Default::default()
+                }),
+            )
+        })?;
 
     app_state
         .investing_entity

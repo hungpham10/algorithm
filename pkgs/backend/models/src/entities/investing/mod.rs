@@ -2,22 +2,28 @@
 mod broker_limitation;
 mod brokers;
 mod mapping_broker_resolution;
+mod mapping_product_in_store_to_symbol;
 mod price_current;
 mod price_history;
 mod products;
 mod resolutions;
+mod store_locations;
 mod symbols;
 use broker_limitation::Entity as BrokerLimitation;
 use brokers::Entity as Brokers;
 use mapping_broker_resolution::Entity as MappingBrokerResolution;
+use mapping_product_in_store_to_symbol::Entity as MappingProductInStoreToSymbol;
 use price_current::Entity as PriceCurrent;
 use price_history::Entity as PriceHistory;
 use products::Entity as Products;
 use resolutions::Entity as Resolutions;
+use store_locations::Entity as StoreLocations;
 use symbols::Entity as Symbols;
 
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::resolver::Resolver;
 use sea_orm::entity::prelude::Expr;
@@ -30,6 +36,32 @@ use sea_query::Alias;
 
 pub struct Investing {
     resolver: Arc<Resolver>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
+pub struct Store {
+    pub id: Option<i32>,
+    pub name: Option<String>,
+    pub district: Option<String>,
+    pub province: Option<String>,
+    pub latitude: Option<f32>,
+    pub longtitude: Option<f32>,
+    pub products: Option<ListProduct>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
+pub struct ListProduct {
+    data: Vec<Product>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_after: Option<i32>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
+pub struct Product {
+    pub id: Option<i32>,
+    pub name: Option<String>,
+    pub symbol: Option<String>,
 }
 
 impl Investing {
@@ -284,6 +316,37 @@ impl Investing {
         }
     }
 
+    pub async fn validate_symbol_listing_limit(
+        &self,
+        tenant_id: i64,
+        symbol: &String,
+        user_id: &Option<String>,
+    ) -> Result<(), DbErr> {
+        if user_id.is_none()
+            && let Some(limit) = BrokerLimitation::find()
+                .select_only()
+                .column(broker_limitation::Column::GuestInvisible)
+                .join_rev(
+                    JoinType::InnerJoin,
+                    symbols::Entity::belongs_to(BrokerLimitation)
+                        .from(symbols::Column::BrokerId)
+                        .to(broker_limitation::Column::BrokerId)
+                        .into(),
+                )
+                .filter(symbols::Column::Symbol.eq(symbol))
+                .into_tuple::<bool>()
+                .one(self.dbt(tenant_id))
+                .await?
+            && limit
+        {
+            Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Symbol {symbol} is limited to see",
+            ))))
+        } else {
+            Ok(())
+        }
+    }
+
     pub async fn validate_broker_listing_limit(
         &self,
         tenant_id: i64,
@@ -402,7 +465,7 @@ impl Investing {
         Symbols::insert(symbols::ActiveModel {
             broker_id: Set(broker_id),
             product_id: Set(product_id),
-            symbol: Set(symbol_code.clone()),
+            symbol: Set(symbol_code.to_string()),
             updated_at: Set(Some(Utc::now())),
             ..Default::default()
         })
@@ -472,5 +535,251 @@ impl Investing {
             .await?;
 
         Ok(res)
+    }
+
+    pub async fn store_product_name_to_symbol(
+        &self,
+        tenant_id: i64,
+        store: &String,
+        product: &String,
+    ) -> Result<String, DbErr> {
+        match MappingProductInStoreToSymbol::find()
+            .select_only()
+            .filter(store_locations::Column::Name.eq(store))
+            .filter(mapping_product_in_store_to_symbol::Column::ProductName.eq(product))
+            .join_rev(
+                JoinType::InnerJoin,
+                symbols::Entity::belongs_to(MappingProductInStoreToSymbol)
+                    .from(symbols::Column::Id)
+                    .to(mapping_product_in_store_to_symbol::Column::Id)
+                    .into(),
+            )
+            .join_rev(
+                JoinType::InnerJoin,
+                store_locations::Entity::belongs_to(MappingProductInStoreToSymbol)
+                    .from(store_locations::Column::Id)
+                    .to(mapping_product_in_store_to_symbol::Column::StoreId)
+                    .into(),
+            )
+            .column(symbols::Column::Symbol)
+            .into_tuple::<String>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some(symbol) => Ok(symbol),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Not found {product} of store {store}",
+            )))),
+        }
+    }
+
+    pub async fn list_paginated_stores(
+        &self,
+        tenant_id: i64,
+        after: i32,
+        limit: u64,
+    ) -> Result<Vec<Store>, DbErr> {
+        Ok(StoreLocations::find()
+            .select_only()
+            .column(store_locations::Column::Id)
+            .column(store_locations::Column::Name)
+            .column(store_locations::Column::District)
+            .column(store_locations::Column::Province)
+            .column(store_locations::Column::Latitude)
+            .column(store_locations::Column::Longtitude)
+            .filter(store_locations::Column::Id.gt(after))
+            .limit(limit)
+            .into_tuple::<(i32, String, String, String, f32, f32)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .iter()
+            .map(
+                |(id, name, district, province, latitude, longtitude)| Store {
+                    id: Some(*id),
+                    name: Some(name.clone()),
+                    district: Some(district.clone()),
+                    province: Some(province.clone()),
+                    latitude: Some(*latitude),
+                    longtitude: Some(*longtitude),
+                    ..Default::default()
+                },
+            )
+            .collect::<Vec<_>>())
+    }
+
+    pub async fn create_products(
+        &self,
+        tenant_id: i64,
+        broker_id: i32,
+        store: &String,
+        products: Vec<Product>,
+    ) -> Result<ListProduct, DbErr> {
+        let mut active_models = Vec::new();
+        let mut ret = Vec::new();
+        let store = self.get_store_detail(tenant_id, store, 0, 0, false).await?;
+
+        for product in products {
+            let symbol = product.symbol.ok_or_else(|| {
+                DbErr::Query(RuntimeErr::Internal("`id` mustn't be None".to_string()))
+            })?;
+            let id = self.get_symbol_id(tenant_id, broker_id, &symbol).await?;
+            let product_name = product.name.ok_or_else(|| {
+                DbErr::Query(RuntimeErr::Internal("`name` mustn't be None".to_string()))
+            })?;
+            let store_id = store.id.ok_or_else(|| {
+                DbErr::Query(RuntimeErr::Internal(
+                    "`store.id` mustn't be None".to_string(),
+                ))
+            })?;
+
+            active_models.push(mapping_product_in_store_to_symbol::ActiveModel {
+                id: Set(id),
+                store_id: Set(store_id),
+                product_name: Set(product_name.clone()),
+                ..Default::default()
+            });
+
+            ret.push(Product {
+                id: Some(id),
+                name: Some(product_name.clone()),
+                symbol: Some(symbol),
+            });
+        }
+
+        mapping_product_in_store_to_symbol::Entity::insert_many(active_models)
+            .exec_with_returning(self.dbt(tenant_id))
+            .await?;
+        Ok(ListProduct {
+            data: ret,
+            next_after: None,
+        })
+    }
+
+    pub async fn get_store_detail(
+        &self,
+        tenant_id: i64,
+        name: &String,
+        after: i32,
+        limit: u64,
+        detail: bool,
+    ) -> Result<Store, DbErr> {
+        match StoreLocations::find()
+            .select_only()
+            .column(store_locations::Column::Id)
+            .column(store_locations::Column::Name)
+            .column(store_locations::Column::District)
+            .column(store_locations::Column::Province)
+            .column(store_locations::Column::Latitude)
+            .column(store_locations::Column::Longtitude)
+            .filter(store_locations::Column::Name.eq(name))
+            .into_tuple::<(i32, String, String, String, f32, f32)>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some((id, name, district, province, latitude, longtitude)) => {
+                let data = if detail {
+                    mapping_product_in_store_to_symbol::Entity::find()
+                        .select_only()
+                        .column(mapping_product_in_store_to_symbol::Column::Id)
+                        .column(mapping_product_in_store_to_symbol::Column::ProductName)
+                        .filter(mapping_product_in_store_to_symbol::Column::StoreId.eq(id))
+                        .filter(mapping_product_in_store_to_symbol::Column::Id.gt(after))
+                        .limit(limit)
+                        .into_tuple::<(i32, String)>()
+                        .all(self.dbt(tenant_id))
+                        .await?
+                        .into_iter()
+                        .map(|(id, product_name)| Product {
+                            id: Some(id),
+                            name: Some(product_name),
+                            ..Default::default()
+                        })
+                        .collect::<Vec<Product>>()
+                } else {
+                    Vec::new()
+                };
+
+                let next_after = if data.len() as u64 == limit
+                    && let Some(item) = data.last()
+                {
+                    item.id
+                } else {
+                    None
+                };
+
+                Ok(Store {
+                    id: Some(id),
+                    name: Some(name),
+                    district: Some(district),
+                    province: Some(province),
+                    latitude: Some(latitude),
+                    longtitude: Some(longtitude),
+                    products: if detail {
+                        Some(ListProduct { data, next_after })
+                    } else {
+                        None
+                    },
+                })
+            }
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Not found store {name}",
+            )))),
+        }
+    }
+
+    pub async fn create_stores(
+        &self,
+        tenant_id: i64,
+        stores: Vec<Store>,
+    ) -> Result<Vec<Store>, DbErr> {
+        let mut active_models = Vec::new();
+
+        for store in stores {
+            active_models.push(store_locations::ActiveModel {
+                name: Set(store.name.ok_or_else(|| {
+                    DbErr::Query(RuntimeErr::Internal("`name` mustn't be None".to_string()))
+                })?),
+                district: Set(store.district.ok_or_else(|| {
+                    DbErr::Query(RuntimeErr::Internal(
+                        "`district` mustn't be None".to_string(),
+                    ))
+                })?),
+                province: Set(store.province.ok_or_else(|| {
+                    DbErr::Query(RuntimeErr::Internal(
+                        "`province` mustn't be None".to_string(),
+                    ))
+                })?),
+                latitude: Set(store.latitude.ok_or_else(|| {
+                    DbErr::Query(RuntimeErr::Internal(
+                        "`latitude` mustn't be None".to_string(),
+                    ))
+                })?),
+                longtitude: Set(store.longtitude.ok_or_else(|| {
+                    DbErr::Query(RuntimeErr::Internal(
+                        "`longtitude` mustn't be None".to_string(),
+                    ))
+                })?),
+                ..Default::default()
+            });
+        }
+
+        if active_models.is_empty() {
+            return Ok(vec![]);
+        }
+
+        Ok(store_locations::Entity::insert_many(active_models)
+            .exec_with_returning(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|m| Store {
+                id: Some(m.id),
+                name: Some(m.name),
+                district: Some(m.district),
+                province: Some(m.province),
+                latitude: Some(m.latitude),
+                longtitude: Some(m.longtitude),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>())
     }
 }
