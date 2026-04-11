@@ -1,6 +1,8 @@
 target
-.env
+key*.txt
+.env*
 venv
+secrets
 
 ###vim###
 

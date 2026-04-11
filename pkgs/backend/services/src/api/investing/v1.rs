@@ -34,15 +34,15 @@ use super::{AppState, InvestingHeaders};
         get_list_of_symbols_by_product,
         get_list_of_product_by_broker
     ),
-    components(
-        schemas(
-            OhclResponse, HeatmapResponse, GetOhclRequest,
-            HeatmapRequest, ListBrokersRequest, CandleStick, IngestPriceRequest,
-        )
-    ),
-    tags(
-        (name = "Investing V1", description = "API to help investors analyse markets")
-    )
+    components(schemas(
+        OhclResponse,
+        HeatmapResponse,
+        GetOhclRequest,
+        HeatmapRequest,
+        ListBrokersRequest,
+        CandleStick,
+        IngestPriceRequest,
+    ))
 )]
 pub struct InvestingV1Api;
 
@@ -1134,7 +1134,6 @@ async fn ingest_price_data(
         (status = 404, description = "Broker or Product not found"),
         (status = 500, description = "Internal database error")
     ),
-    tag = "Investing"
 )]
 pub async fn upsert_symbol(
     State(app_state): State<AppState>,

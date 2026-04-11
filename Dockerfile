@@ -43,18 +43,29 @@ RUN make server
 # --- Release stage
 # -----------------------------------------------------------------------
 FROM openresty/openresty:1.27.1.2-4-bookworm-fat
+ARG TARGETARCH
 ENV NGINX_DIR=/usr/local/openresty/nginx/conf
 ENV SUPERVISOR_DIR=/etc/supervisor/conf.d
 
 WORKDIR /app
+RUN mkdir -p /app/secrets
+
 COPY --from=backend /app/target/release/services ./aio
 COPY --from=proxy /app/target/release/libproxy.so /usr/local/openresty/nginx/modules/libproxy.so
+COPY secrets* /app/secrets/
 COPY sql /sql
 COPY scripts/nginx.sh /app/nginx.sh
 COPY scripts/release.sh /app/endpoint.sh
 
 # Install runtime dependencies
-RUN apt update && apt install -y supervisor curl git gettext-base default-mysql-client tor
+RUN apt update && apt install -y supervisor curl git gettext-base default-mysql-client tor && 			\
+    if [ "$TARGETARCH" = "amd64" ]; then SOPS_ARCH="amd64"; 							\
+    elif [ "$TARGETARCH" = "arm64" ]; then SOPS_ARCH="arm64"; 							\
+    fi && 													\
+    curl -LO "https://github.com/getsops/sops/releases/download/v3.12.2/sops_3.12.2_${SOPS_ARCH}.deb" && 	\
+    dpkg -i "sops_3.12.2_${SOPS_ARCH}.deb" && 									\
+    rm "sops_3.12.2_${SOPS_ARCH}.deb" && 									\
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Create supervisor configuration directory
 RUN mkdir -p /etc/supervisor/conf.d

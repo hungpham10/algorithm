@@ -80,23 +80,34 @@ CREATE TABLE IF NOT EXISTS `ohcl_price_history` (
 );
 
 CREATE TABLE IF NOT EXISTS `ohcl_mapping_product_in_store_to_symbol` (
-  `id` integer NOT NULL, -- Link directly to ohcl_symbols.id
-  `store_id` integer NOT NULL, -- Link directly to ohcl_store_locations.id
+  `id` integer PRIMARY KEY NOT NULL, -- Link directly to ohcl_symbols.id
+  `store` integer NOT NULL, -- Link directly to ohcl_store_locations.id
   `product_name` varchar(500) NOT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS `ohcl_store_locations` (
-  `id` integer NOT NULL,
+CREATE TABLE IF NOT EXISTS `ohcl_stores` (
+  `id` integer PRIMARY KEY NOT NULL,
   `name` varchar(500) NOT NULL,
-  `address_line` varchar(500) NOT NULL,
-  `district` varchar(100) NOT NULL,
-  `province` varchar(100) NOT NULL,
-  `latitude` decimal(10, 8) NOT NULL,
-  `longitude` decimal(11, 8) NOT NULL,
+  `website` varchar(200),
+  `phone` varchar(40),
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
   UNIQUE KEY `unique_name` (`name`)
+);
+
+CREATE TABLE IF NOT EXISTS `ohcl_store_locations` (
+  `id` integer PRIMARY KEY NOT NULL,
+  `store` integer NOT NULL,
+  `address_line` varchar(500),
+  `district` varchar(100),
+  `province` varchar(100),
+  `latitude` decimal(10, 8),
+  `longitude` decimal(11, 8),
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  UNIQUE KEY `unique_address` (`address_line`, `district`, `province`)
 );

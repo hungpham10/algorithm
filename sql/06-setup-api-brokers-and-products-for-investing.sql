@@ -34,7 +34,10 @@ INSERT IGNORE INTO `ohcl_mapping_broker_resolution` (`id`, `broker_id`, `resolut
 (31, 5, 4, '1M'),
 (32, 5, 5, '5m'),
 (33, 5, 6, '1m'),
-(34, 5, 7, '1W');
+(34, 5, 7, '1W'),
+(35, 10, 1, '1D'),
+(36, 10, 7, '1W'),
+(37, 10, 4, '1M');
 
 INSERT IGNORE INTO `ohcl_brokers` (`id`, `name`) VALUES
 (1, 'dnse'),
@@ -43,7 +46,12 @@ INSERT IGNORE INTO `ohcl_brokers` (`id`, `name`) VALUES
 (4, 'vix'),
 (5, 'dragon'),
 (6, 'yahoo'),
-(7, 'msn');
+(7, 'msn'),
+(10, 'gold');
+
+INSERT IGNORE INTO `ohcl_brokers` (`id`, `name`, `alias`) VALUES
+(8, 'stock', 1),
+(9, 'crypto', 2);
 
 INSERT IGNORE INTO `ohcl_products` (`id`, `broker_id`, `name`, `enabled`) VALUES
 (1, 1, 'vn30', 1),
@@ -67,7 +75,9 @@ INSERT IGNORE INTO `ohcl_products` (`id`, `broker_id`, `name`, `enabled`) VALUES
 (19, 5, 'etf', 1),
 (20, 5, 'cw', 1),
 (36, 2, 'spot', 1),
-(37, 2, 'future', 1);
+(37, 2, 'future', 1),
+(38, 10, 'jewelry', 1),
+(39, 10, 'gold bullion', 1);
 
 INSERT IGNORE INTO `ohcl_resolution` (`id`, `resolution`) VALUES
 (1, '1D'),
@@ -80,4 +90,5 @@ INSERT IGNORE INTO `ohcl_resolution` (`id`, `resolution`) VALUES
 
 
 INSERT IGNORE INTO `ohcl_broker_limitation` (`id`, `broker_id`, `guest_max_history_days`, `guest_invisible`) VALUES
-(1, 3, NULL, 1);
+(1, 3, NULL, 1),
+(2, 10, 7, 1);
