@@ -1,16 +1,13 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-#[sea_orm(table_name = "ohcl_store_locations")]
+#[sea_orm(table_name = "ohcl_stores")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    pub store: i32,
-    pub address_line: String,
-    pub district: String,
-    pub province: String,
-    pub latitude: f32,
-    pub longtitude: f32,
+    pub name: String,
+    pub website: Option<String>,
+    pub phone: Option<String>,
     pub created_at: Option<DateTimeUtc>,
     pub updated_at: Option<DateTimeUtc>,
 }

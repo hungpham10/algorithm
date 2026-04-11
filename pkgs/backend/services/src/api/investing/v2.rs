@@ -21,8 +21,7 @@ use super::{AppState, InvestingHeaders};
         list_paginated_products,
         create_products,
     ),
-    components(schemas(OhclResponse)),
-    tags((name = "Investing V2", description = "API to help investors analyse materials"))
+    components(schemas(OhclResponse))
 )]
 pub struct InvestingV2Api;
 
