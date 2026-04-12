@@ -96,7 +96,15 @@ async fn ingest_price_data(
 ) -> Result<impl IntoResponse, (StatusCode, JsonResponse<OhclResponse>)> {
     // @TODO: get broker_id by tenant_id
     let tenant_id = tenant_id.into();
-    let broker = "".to_string();
+    let broker = app_state.secret.get("BROKER", "/").await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(OhclResponse {
+                error: Some("BROKER not set".into()),
+                ..Default::default()
+            }),
+        )
+    })?;
 
     app_state
         .investing_entity
@@ -328,7 +336,15 @@ async fn create_products(
 ) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     // @TODO: get broker_id by tenant_id
     let tenant_id = tenant_id.into();
-    let broker = "".to_string();
+    let broker = app_state.secret.get("BROKER", "/").await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(OhclResponse {
+                error: Some("BROKER not set".into()),
+                ..Default::default()
+            }),
+        )
+    })?;
 
     // @TODO: setup product to specific location stores, some stores share same price with-in
     // district, or only price in specific stores or share same price among every stores with-in
