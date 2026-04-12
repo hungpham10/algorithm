@@ -8,7 +8,10 @@ use axum::response::{IntoResponse, Json as JsonResponse};
 use axum::routing::get;
 
 use models::entities::investing::{Product, Store};
-use utoipa::{IntoParams, OpenApi, ToSchema};
+use utoipa::{
+    IntoParams, Modify, OpenApi, ToSchema,
+    openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
+};
 
 use super::{AppState, InvestingHeaders};
 
@@ -22,9 +25,27 @@ use super::{AppState, InvestingHeaders};
         create_products,
         ingest_price_data,
     ),
-    components(schemas(OhclResponse, IngestPriceRequest,))
+    components(schemas(OhclResponse, IngestPriceRequest,)),
+    modifiers(&SecurityAddon) // Kết nối cấu hình bảo mật vào đây
 )]
 pub struct InvestingV2Api;
+
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.as_mut().unwrap();
+        components.add_security_scheme(
+            "bearer_auth", // Phải khớp với tên trong #[utoipa::path]
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .bearer_format("JWT") // Mô tả định dạng là JWT
+                    .build(),
+            ),
+        );
+    }
+}
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, IntoParams, ToSchema)]
 pub struct QueryPagingInput {
@@ -86,7 +107,10 @@ pub struct IngestPriceRequest {
         ("store" = String, Path, description = "Store name"),
         ("product" = String, Path, description = "Product name"),
     ),
-    responses((status = 200, body = OhclResponse))
+    responses((status = 200, body = OhclResponse)),
+    security(
+        ("bearer_auth" = [])
+    )
 )]
 async fn ingest_price_data(
     State(app_state): State<AppState>,
@@ -250,7 +274,10 @@ async fn list_paginated_stores(
 #[utoipa::path(
     post,
     path = "/stores",
-    responses((status = 201, body = OhclResponse))
+    responses((status = 201, body = OhclResponse)),
+    security(
+        ("bearer_auth" = [])
+    )
 )]
 async fn create_stores(
     State(app_state): State<AppState>,
@@ -326,7 +353,10 @@ async fn list_paginated_products(
     post,
     path = "/stores/{store}",
     params(("store" = String, Path)),
-    responses((status = 201, body = OhclResponse))
+    responses((status = 201, body = OhclResponse)),
+    security(
+        ("bearer_auth" = [])
+    )
 )]
 async fn create_products(
     State(app_state): State<AppState>,
