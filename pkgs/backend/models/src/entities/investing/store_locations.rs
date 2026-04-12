@@ -10,7 +10,7 @@ pub struct Model {
     pub district: String,
     pub province: String,
     pub latitude: f32,
-    pub longtitude: f32,
+    pub longitude: f32,
     pub created_at: Option<DateTimeUtc>,
     pub updated_at: Option<DateTimeUtc>,
 }

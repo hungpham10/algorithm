@@ -22,7 +22,7 @@ use store_locations::Entity as StoreLocations;
 use stores::Entity as Stores;
 use symbols::Entity as Symbols;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use chrono::Utc;
@@ -47,7 +47,7 @@ pub struct Location {
     pub district: Option<String>,
     pub province: Option<String>,
     pub latitude: Option<f32>,
-    pub longtitude: Option<f32>,
+    pub longitude: Option<f32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
@@ -616,50 +616,131 @@ impl Investing {
         tenant_id: i64,
         after: i32,
         limit: u64,
+        detail: bool,
     ) -> Result<Vec<Store>, DbErr> {
-        let rows = StoreLocations::find()
-            .select_only()
-            .column(stores::Column::Id)
-            .column(stores::Column::Name)
-            .column(store_locations::Column::District)
-            .column(store_locations::Column::Province)
-            .column(store_locations::Column::Latitude)
-            .column(store_locations::Column::Longtitude)
-            .join_rev(
-                JoinType::InnerJoin,
-                Stores::belongs_to(StoreLocations)
-                    .from(stores::Column::Id)
-                    .to(store_locations::Column::Store)
-                    .into(),
-            )
-            .filter(store_locations::Column::Id.gt(after))
-            .limit(limit)
-            .into_tuple::<(i32, String, String, String, f32, f32)>()
-            .all(self.dbt(tenant_id))
-            .await?;
+        if detail {
+            let store_ids = Stores::find()
+                .select_only()
+                .column(stores::Column::Id)
+                .filter(stores::Column::Id.gt(after))
+                .order_by_asc(stores::Column::Id)
+                .limit(limit)
+                .into_tuple::<i32>()
+                .all(self.dbt(tenant_id))
+                .await?;
 
-        let mut store_map = BTreeMap::new();
-
-        for (id, name, district, province, lat, long) in rows {
-            let entry = store_map.entry(id).or_insert(Store {
-                id: Some(id),
-                name: Some(name),
-                locations: Some(Vec::new()),
-                products: None,
-            });
-
-            if let Some(ref mut locs) = entry.locations {
-                locs.push(Location {
-                    district: Some(district),
-                    province: Some(province),
-                    latitude: Some(lat),
-                    longtitude: Some(long),
-                });
+            if store_ids.is_empty() {
+                return Ok(Vec::new());
             }
-        }
+            let rows = Stores::find()
+                .select_only()
+                .column(stores::Column::Id)
+                .column(stores::Column::Name)
+                .column(store_locations::Column::District)
+                .column(store_locations::Column::Province)
+                .column(store_locations::Column::Latitude)
+                .column(store_locations::Column::Longitude)
+                .column(mapping_product_in_store_to_symbol::Column::Id)
+                .column(mapping_product_in_store_to_symbol::Column::ProductName)
+                .column(symbols::Column::Symbol)
+                .join_rev(
+                    JoinType::InnerJoin,
+                    StoreLocations::belongs_to(Stores)
+                        .from(store_locations::Column::Store)
+                        .to(stores::Column::Id)
+                        .into(),
+                )
+                .join_rev(
+                    JoinType::InnerJoin,
+                    MappingProductInStoreToSymbol::belongs_to(Stores)
+                        .from(mapping_product_in_store_to_symbol::Column::Store)
+                        .to(stores::Column::Id)
+                        .into(),
+                )
+                .join_rev(
+                    JoinType::InnerJoin,
+                    Symbols::belongs_to(MappingProductInStoreToSymbol)
+                        .from(symbols::Column::Id)
+                        .to(mapping_product_in_store_to_symbol::Column::Symbol)
+                        .into(),
+                )
+                .filter(stores::Column::Id.is_in(store_ids))
+                .order_by_asc(stores::Column::Id)
+                .into_tuple::<(i32, String, String, String, f32, f32, i32, String, String)>()
+                .all(self.dbt(tenant_id))
+                .await?;
 
-        // 3. Chuyển Map thành Vec kết quả
-        Ok(store_map.into_values().collect())
+            let mut store_map = BTreeMap::new();
+            let mut location_seen = std::collections::HashSet::new();
+            let mut product_seen = std::collections::HashSet::new();
+
+            for (
+                store_id,
+                name,
+                district,
+                province,
+                latitude,
+                longitude,
+                product_id,
+                product_name,
+                symbol,
+            ) in rows
+            {
+                let entry = store_map.entry(store_id).or_insert(Store {
+                    id: Some(store_id),
+                    name: Some(name),
+                    locations: Some(Vec::new()),
+                    products: Some(ListProduct {
+                        data: Vec::new(),
+                        next_after: None,
+                    }),
+                });
+
+                let loc_key = (store_id, district.clone(), province.clone());
+                if !location_seen.contains(&loc_key) {
+                    if let Some(ref mut locs) = entry.locations {
+                        locs.push(Location {
+                            district: Some(district),
+                            province: Some(province),
+                            latitude: Some(latitude),
+                            longitude: Some(longitude),
+                        });
+                    }
+                    location_seen.insert(loc_key);
+                }
+
+                let prod_key = (store_id, product_id);
+                if !product_seen.contains(&prod_key) {
+                    if let Some(ref mut list_prod) = entry.products {
+                        list_prod.data.push(Product {
+                            id: Some(product_id),
+                            name: Some(product_name),
+                            symbol: Some(symbol),
+                        });
+                    }
+                    product_seen.insert(prod_key);
+                }
+            }
+
+            Ok(store_map.into_values().collect())
+        } else {
+            Ok(Stores::find()
+                .select_only()
+                .column(stores::Column::Id)
+                .column(stores::Column::Name)
+                .filter(stores::Column::Id.gt(after))
+                .limit(limit)
+                .into_tuple::<(i32, String)>()
+                .all(self.dbt(tenant_id))
+                .await?
+                .into_iter()
+                .map(|(id, name)| Store {
+                    id: Some(id),
+                    name: Some(name.to_string()),
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>())
+        }
     }
 
     pub async fn create_products(
@@ -725,7 +806,7 @@ impl Investing {
             .column(store_locations::Column::District)
             .column(store_locations::Column::Province)
             .column(store_locations::Column::Latitude)
-            .column(store_locations::Column::Longtitude)
+            .column(store_locations::Column::Longitude)
             .join_rev(
                 JoinType::InnerJoin,
                 stores::Entity::belongs_to(StoreLocations)
@@ -754,7 +835,7 @@ impl Investing {
                 district: Some(district.clone()),
                 province: Some(province.clone()),
                 latitude: Some(*lat),
-                longtitude: Some(*long),
+                longitude: Some(*long),
             })
             .collect();
 
@@ -799,69 +880,79 @@ impl Investing {
     pub async fn create_stores(
         &self,
         tenant_id: i64,
-        stores: Vec<Store>,
+        stores_input: Vec<Store>,
     ) -> Result<Vec<Store>, DbErr> {
         let db = self.dbt(tenant_id);
 
         db.transaction::<_, Vec<Store>, DbErr>(|txn| {
             Box::pin(async move {
-                let mut created_stores = Vec::new();
-
-                for store in stores {
-                    let store_name = store
-                        .name
-                        .ok_or_else(|| DbErr::Custom("`name` mustn't be None".to_string()))?;
-
-                    let inserted_store = stores::Entity::insert(stores::ActiveModel {
-                        name: Set(store_name),
+                let store_active_models: Vec<stores::ActiveModel> = stores_input
+                    .iter()
+                    .map(|s| stores::ActiveModel {
+                        name: Set(s.name.clone().unwrap_or_default()),
                         ..Default::default()
                     })
+                    .collect();
+
+                if store_active_models.is_empty() {
+                    return Ok(Vec::new());
+                }
+
+                let inserted_stores = stores::Entity::insert_many(store_active_models)
                     .exec_with_returning(txn)
                     .await?;
 
-                    let mut current_locations = Vec::new();
-                    if let Some(locations) = store.locations {
-                        let location_models: Vec<store_locations::ActiveModel> = locations
-                            .into_iter()
-                            .map(|loc| store_locations::ActiveModel {
-                                store: Set(inserted_store.id),
+                let mut location_active_models = Vec::new();
+
+                for (input_store, inserted_entity) in
+                    stores_input.into_iter().zip(inserted_stores.iter())
+                {
+                    if let Some(locations) = input_store.locations {
+                        for loc in locations {
+                            location_active_models.push(store_locations::ActiveModel {
+                                store: Set(inserted_entity.id),
                                 district: Set(loc.district.unwrap_or_default()),
                                 province: Set(loc.province.unwrap_or_default()),
                                 latitude: Set(loc.latitude.unwrap_or_default()),
-                                longtitude: Set(loc.longtitude.unwrap_or_default()),
+                                longitude: Set(loc.longitude.unwrap_or_default()),
                                 ..Default::default()
-                            })
-                            .collect();
-
-                        if !location_models.is_empty() {
-                            let inserted_locs =
-                                store_locations::Entity::insert_many(location_models)
-                                    .exec_with_returning(txn)
-                                    .await?;
-
-                            for l in inserted_locs {
-                                current_locations.push(Location {
-                                    district: Some(l.district),
-                                    province: Some(l.province),
-                                    latitude: Some(l.latitude),
-                                    longtitude: Some(l.longtitude),
-                                });
-                            }
+                            });
                         }
                     }
+                }
 
-                    created_stores.push(Store {
-                        id: Some(inserted_store.id),
-                        name: Some(inserted_store.name),
-                        locations: if current_locations.is_empty() {
-                            None
-                        } else {
-                            Some(current_locations)
-                        },
-                        products: None,
+                let mut all_inserted_locations = Vec::new();
+                if !location_active_models.is_empty() {
+                    all_inserted_locations =
+                        store_locations::Entity::insert_many(location_active_models)
+                            .exec_with_returning(txn)
+                            .await?;
+                }
+
+                let mut location_map: HashMap<i32, Vec<Location>> = HashMap::new();
+                for l in all_inserted_locations {
+                    location_map.entry(l.store).or_default().push(Location {
+                        district: Some(l.district),
+                        province: Some(l.province),
+                        latitude: Some(l.latitude),
+                        longitude: Some(l.longitude),
                     });
                 }
-                Ok(created_stores)
+
+                let result = inserted_stores
+                    .into_iter()
+                    .map(|s| {
+                        let id = s.id;
+                        Store {
+                            id: Some(id),
+                            name: Some(s.name),
+                            locations: location_map.remove(&id),
+                            products: None,
+                        }
+                    })
+                    .collect();
+
+                Ok(result)
             })
         })
         .await

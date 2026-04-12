@@ -26,7 +26,7 @@ use super::{AppState, InvestingHeaders};
         ingest_price_data,
     ),
     components(schemas(OhclResponse, IngestPriceRequest,)),
-    modifiers(&SecurityAddon) // Kết nối cấu hình bảo mật vào đây
+    modifiers(&SecurityAddon)
 )]
 pub struct InvestingV2Api;
 
@@ -54,6 +54,9 @@ pub struct QueryPagingInput {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema)]
@@ -233,15 +236,30 @@ async fn get_symbol_id_by_product_in_store(
 )]
 async fn list_paginated_stores(
     State(app_state): State<AppState>,
-    Query(QueryPagingInput { after, limit }): Query<QueryPagingInput>,
+    Query(QueryPagingInput {
+        after,
+        limit,
+        detail,
+    }): Query<QueryPagingInput>,
     InvestingHeaders { tenant_id, .. }: InvestingHeaders,
 ) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let after = after.unwrap_or(0);
     let limit = limit.unwrap_or(10);
+    let detail = detail.unwrap_or(false);
+
+    if limit > 100 {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(OhclResponse {
+                error: Some("`limit` mustn't be larger than 100".to_string()),
+                ..Default::default()
+            }),
+        ));
+    }
 
     match app_state
         .investing_entity
-        .list_paginated_stores(tenant_id.into(), after, limit)
+        .list_paginated_stores(tenant_id.into(), after, limit, detail)
         .await
     {
         Ok(data) => {
@@ -318,18 +336,33 @@ async fn create_stores(
 async fn list_paginated_products(
     State(app_state): State<AppState>,
     Path(store): Path<String>,
-    Query(QueryPagingInput { after, limit }): Query<QueryPagingInput>,
+    Query(QueryPagingInput {
+        after,
+        limit,
+        detail,
+    }): Query<QueryPagingInput>,
     InvestingHeaders { tenant_id, .. }: InvestingHeaders,
 ) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let after = after.unwrap_or(0);
     let limit = limit.unwrap_or(10);
+    let detail = detail.unwrap_or(false);
+
+    if limit > 100 {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(OhclResponse {
+                error: Some("`limit` mustn't be larger than 100".to_string()),
+                ..Default::default()
+            }),
+        ));
+    }
 
     // @TODO: setup product to specific location stores, some stores share same price with-in
     // district, or only price in specific stores or share same price among every stores with-in
     // same system
     match app_state
         .investing_entity
-        .get_store_detail(tenant_id.into(), &store, after, limit, true)
+        .get_store_detail(tenant_id.into(), &store, after, limit, detail)
         .await
     {
         Ok(data) => Ok((
