@@ -86,7 +86,7 @@ pub fn routes() -> Router<AppState> {
 
     Router::new()
         .route(
-            "/stores/symbols/{store}/{product}",
+            "/stores/{store}/{product}",
             get(get_symbol_id_by_product_in_store).post(ingest_price_data),
         )
         .route("/stores", get(list_paginated_stores).post(create_stores))
@@ -104,7 +104,7 @@ pub struct IngestPriceRequest {
 
 #[utoipa::path(
     post,
-    path = "/stores/symbols/{store}/{product}",
+    path = "/stores/{store}/{product}",
     request_body = IngestPriceRequest,
     params(
         ("store" = String, Path, description = "Store name"),
@@ -189,7 +189,7 @@ async fn ingest_price_data(
 
 #[utoipa::path(
     get,
-    path = "/stores/symbols/{store}/{product}",
+    path = "/stores/{store}/{product}",
     params(
         ("store" = String, Path, description = "Store name"),
         ("product" = String, Path, description = "Product name"),
