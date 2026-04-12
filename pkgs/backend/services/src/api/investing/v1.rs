@@ -29,7 +29,6 @@ use super::{AppState, InvestingHeaders};
         get_list_of_brokers,
         get_list_of_symbols,
         get_rrg_from_broker,
-        ingest_price_data,
         upsert_symbol,
         get_list_of_symbols_by_product,
         get_list_of_product_by_broker
@@ -41,17 +40,13 @@ use super::{AppState, InvestingHeaders};
         HeatmapRequest,
         ListBrokersRequest,
         CandleStick,
-        IngestPriceRequest,
     ))
 )]
 pub struct InvestingV1Api;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route(
-            "/ohcl/candles/{broker}/{symbol}",
-            get(get_ohcl_from_broker).post(ingest_price_data),
-        )
+        .route("/ohcl/candles/{broker}/{symbol}", get(get_ohcl_from_broker))
         .route(
             "/ohcl/heatmap/{broker}/{symbol}",
             get(get_heatmap_from_broker),
@@ -1023,102 +1018,6 @@ async fn get_list_of_symbols_by_product(
             }),
         )),
     }
-}
-
-#[derive(Deserialize, Debug, ToSchema, IntoParams)]
-pub struct IngestPriceRequest {
-    pub buy: f32,
-    pub sell: f32,
-}
-
-#[utoipa::path(
-    post,
-    path = "/ohcl/candles/{broker}/{symbol}",
-    request_body = IngestPriceRequest,
-    params(
-        ("symbol" = i32, Path, description = "Symbol code")
-    ),
-    responses((status = 200, body = OhclResponse))
-)]
-async fn ingest_price_data(
-    State(app_state): State<AppState>,
-    Path((broker, symbol)): Path<(String, String)>,
-    InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
-    Json(payload): Json<IngestPriceRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<OhclResponse>)> {
-    let tenant_id = tenant_id.into();
-
-    app_state
-        .investing_entity
-        .validate_broker_listing_limit(tenant_id, &broker, &user_id.0)
-        .await
-        .map_err(|error| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(OhclResponse {
-                    error: Some(format!(
-                        "Failed to ingest data to symbol {symbol}: {}",
-                        error
-                    )),
-                    ..Default::default()
-                }),
-            )
-        })?;
-
-    let broker_id = app_state
-        .investing_entity
-        .get_broker_id(tenant_id, &broker)
-        .await
-        .map_err(|error| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(OhclResponse {
-                    error: Some(format!(
-                        "Failed to ingest data to symbol {symbol}: {}",
-                        error
-                    )),
-                    ..Default::default()
-                }),
-            )
-        })?;
-
-    let symbol_id = app_state
-        .investing_entity
-        .get_symbol_id(tenant_id, broker_id, &symbol)
-        .await
-        .map_err(|error| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(OhclResponse {
-                    error: Some(format!(
-                        "Failed to ingest data to symbol {symbol}: {}",
-                        error
-                    )),
-                    ..Default::default()
-                }),
-            )
-        })?;
-
-    app_state
-        .investing_entity
-        .update_price(symbol_id, payload.buy, payload.sell)
-        .await
-        .map_err(|error| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(OhclResponse {
-                    error: Some(format!(
-                        "Ingest pricing data failed (user {}): {error}",
-                        user_id.0.clone().unwrap_or("guest".to_string())
-                    )),
-                    ..Default::default()
-                }),
-            )
-        })?;
-
-    Ok(Json(OhclResponse {
-        ..Default::default()
-    }))
 }
 
 #[utoipa::path(

@@ -67,7 +67,7 @@ function prepare() {
 
   # Thực thi các script SQL khởi tạo
   if [ -d "$1" ]; then
-    for script_path in $(ls "$1"/*.sql 2>/dev/null | sort); do
+    for script_path in $(ls -1c "$1"/*.sql 2>/dev/null | sort); do
       echo "Executing: $script_path"
       if ! mysql $mysql_args "$MYSQL_DATABASE" < "$script_path"; then
         echo "Error: Failed to execute $script_path" >&2

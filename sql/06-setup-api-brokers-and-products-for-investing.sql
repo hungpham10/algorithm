@@ -92,3 +92,16 @@ INSERT IGNORE INTO `ohcl_resolution` (`id`, `resolution`) VALUES
 INSERT IGNORE INTO `ohcl_broker_limitation` (`id`, `broker_id`, `guest_max_history_days`, `guest_invisible`) VALUES
 (1, 3, NULL, 1),
 (2, 10, 7, 1);
+
+INSERT IGNORE INTO `ohcl_symbols` (`id`, `broker_id`, `product_id`, `name`, `symbol`) VALUES
+(1, 10, 39, 'Vàng miếng SJC', 'SJC'),
+(2, 10, 39, 'Vàng miếng 9999', 'VM-9999'),
+(3, 10, 39, 'Nhẫn tròn 9999', 'NT-9999'),
+(4, 10, 38, 'Trang sức 9999', 'TS-9999'),
+(5, 10, 38, 'Trang sức 999', 'TS-999'),
+(6, 10, 39, 'Nhẫn tròn 999', 'NT-999'),
+(7, 10, 39, 'Nhẫn tròn 99', 'NT-99'),
+(8, 10, 39, 'Nhẫn tròn 98', 'NT-98')
+(9, 10, 38, 'Trang sức 750', 'TS-750'),
+(10, 10, 38, 'Trang sức 610', 'TS-610'),
+(11, 10, 38, 'Trang sức 585', 'TS-585');

@@ -546,6 +546,35 @@ impl Investing {
         Ok(res)
     }
 
+    pub async fn get_product_id_from_website(
+        &self,
+        tenant_id: i64,
+        store: &String,
+        product: &String,
+    ) -> Result<i32, DbErr> {
+        match MappingProductInStoreToSymbol::find()
+            .select_only()
+            .column(mapping_product_in_store_to_symbol::Column::Id)
+            .join_rev(
+                JoinType::InnerJoin,
+                stores::Entity::belongs_to(MappingProductInStoreToSymbol)
+                    .from(stores::Column::Id)
+                    .to(mapping_product_in_store_to_symbol::Column::Store)
+                    .into(),
+            )
+            .filter(mapping_product_in_store_to_symbol::Column::ProductName.eq(product.clone()))
+            .filter(stores::Column::Name.eq(store))
+            .into_tuple::<i32>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some(id) => Ok(id),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Not found {product} in {store}",
+            )))),
+        }
+    }
+
     pub async fn store_product_name_to_symbol(
         &self,
         tenant_id: i64,
@@ -560,7 +589,7 @@ impl Investing {
                 JoinType::InnerJoin,
                 symbols::Entity::belongs_to(MappingProductInStoreToSymbol)
                     .from(symbols::Column::Id)
-                    .to(mapping_product_in_store_to_symbol::Column::Id)
+                    .to(mapping_product_in_store_to_symbol::Column::Symbol)
                     .into(),
             )
             .join_rev(

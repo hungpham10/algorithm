@@ -65,14 +65,14 @@ CREATE TABLE IF NOT EXISTS `ohcl_symbols` (
 );
 
 CREATE TABLE IF NOT EXISTS `ohcl_price_current` (
-  `id` integer PRIMARY KEY AUTO_INCREMENT, -- Link directly to ohcl_symbols.id
+  `id` integer PRIMARY KEY AUTO_INCREMENT, -- Link directly to ohcl_mapping_product_in_store_to_symbol.id
   `buy` decimal(20, 2) DEFAULT 0,
   `sell` decimal(20, 2) DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS `ohcl_price_history` (
   `id` bigint PRIMARY KEY AUTO_INCREMENT,
-  `symbol_id` integer NOT NULL,
+  `symbol_id` integer NOT NULL, -- Link directly to ohcl_mapping_product_in_store_to_symbol.id
   `buy` decimal(20, 2) NOT NULL,
   `sell` decimal(20, 2) NOT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -80,9 +80,12 @@ CREATE TABLE IF NOT EXISTS `ohcl_price_history` (
 );
 
 CREATE TABLE IF NOT EXISTS `ohcl_mapping_product_in_store_to_symbol` (
-  `id` integer PRIMARY KEY NOT NULL, -- Link directly to ohcl_symbols.id
+  `id` integer PRIMARY KEY NOT NULL,
+  `symbol` integer NOT NULL, -- Link directly to ohcl_symbols.id
   `store` integer NOT NULL, -- Link directly to ohcl_store_locations.id
   `product_name` varchar(500) NOT NULL,
+  `scope` int NOT NULL DEFAULT '0',
+  `location` int,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

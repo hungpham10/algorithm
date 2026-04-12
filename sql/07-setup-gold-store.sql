@@ -19,7 +19,13 @@ INSERT IGNORE INTO `ohcl_stores` (`id`, `name`, `website`, `phone`) VALUES
 
 -- AJC (ID từ 1)
 INSERT IGNORE INTO `ohcl_store_locations` (`id`, `store`, `address_line`, `district`, `province`) VALUES
-(1, 1, '239 Phố Vọng, Phường Tương Mai', 'Quận Hai Bà Trưng', 'Hà Nội');
+(1, 1, '89 Đinh Tiên Hoàng', 'Hoàn Kiếm', 'Hà Nội'),
+(2, 1, '239 Phố Vọng', 'Hai Bà Trưng', 'Hà Nội'),
+(3, 1, '537 Quang Trung', 'Hà Đông', 'Hà Nội'),
+(4, 1, '10A Quang Trung', 'Hà Đông', 'Hà Nội'),
+(5, 1, 'Tầng 1 Nhà B, Toà Tecco, C1', 'Vinh', 'Nghệ An'),
+(6, 1, 'Số 1A Cao Thắng', 'Vinh', 'Nghệ An'),
+(7, 1, 'Số 83 Lê Lợi', 'Thành phố Hưng Yên', 'Hưng Yên');
 
 -- ANCARAT (ID từ 10)
 INSERT IGNORE INTO `ohcl_store_locations` (`id`, `store`, `address_line`, `district`, `province`) VALUES
