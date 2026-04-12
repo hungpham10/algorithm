@@ -211,7 +211,7 @@ async fn get_symbol_id_by_product_in_store(
         .await
         .map_err(|error| {
             (
-                StatusCode::NOT_FOUND,
+                StatusCode::INTERNAL_SERVER_ERROR,
                 JsonResponse(OhclResponse {
                     error: Some(format!("Not found {product} in store {store}: {error}")),
                     ..Default::default()

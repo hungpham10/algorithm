@@ -114,3 +114,7 @@ CREATE TABLE IF NOT EXISTS `ohcl_store_locations` (
 
   UNIQUE KEY `unique_address` (`address_line`, `district`, `province`)
 );
+
+ALTER TABLE ohcl_stores CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE ohcl_store_locations CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE ohcl_mapping_product_in_store_to_symbol CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

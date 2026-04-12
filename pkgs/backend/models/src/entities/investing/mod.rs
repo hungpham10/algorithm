@@ -552,6 +552,8 @@ impl Investing {
         store: &String,
         product: &String,
     ) -> Result<i32, DbErr> {
+        // @TODO: product has been identified by scope, we will use it to
+        //        distribute pricing in map
         match MappingProductInStoreToSymbol::find()
             .select_only()
             .column(mapping_product_in_store_to_symbol::Column::Id)
@@ -594,8 +596,8 @@ impl Investing {
             )
             .join_rev(
                 JoinType::InnerJoin,
-                store_locations::Entity::belongs_to(MappingProductInStoreToSymbol)
-                    .from(store_locations::Column::Id)
+                stores::Entity::belongs_to(MappingProductInStoreToSymbol)
+                    .from(stores::Column::Id)
                     .to(mapping_product_in_store_to_symbol::Column::Store)
                     .into(),
             )
