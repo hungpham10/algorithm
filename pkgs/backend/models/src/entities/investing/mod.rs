@@ -1176,7 +1176,7 @@ impl Investing {
                 .filter(symbols::Column::Id.gt(after))
                 .limit(limit)
                 .order_by_desc(symbols::Column::Id)
-                .into_tuple::<(i32, String)>()
+                .into_tuple::<(i32, String, String)>()
                 .all(self.dbt(tenant_id))
                 .await?
                 .into_iter()
