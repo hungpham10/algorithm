@@ -7,7 +7,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json as JsonResponse};
 use axum::routing::get;
 
-use models::entities::investing::{Product, Store};
+use models::entities::investing::{Price, Product, Store};
 use utoipa::{
     IntoParams, Modify, OpenApi, ToSchema,
     openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
@@ -24,8 +24,9 @@ use super::{AppState, InvestingHeaders};
         list_paginated_products,
         create_products,
         ingest_price_data,
+        get_price_data,
     ),
-    components(schemas(OhclResponse, IngestPriceRequest,)),
+    components(schemas(OhclResponse, Price,)),
     modifiers(&SecurityAddon)
 )]
 pub struct InvestingV2Api;
@@ -80,6 +81,9 @@ struct OhclResponse {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     store: Option<Store>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    price: Option<Price>,
 }
 
 pub fn routes() -> Router<AppState> {
@@ -87,26 +91,108 @@ pub fn routes() -> Router<AppState> {
 
     Router::new()
         .route(
-            "/stores/{store}/{product}",
-            get(get_symbol_id_by_product_in_store).post(ingest_price_data),
+            "/stores/{store}/products/{product}/price",
+            get(get_price_data).post(ingest_price_data),
+        )
+        .route(
+            "/stores/{store}/products/{product}/symbol",
+            get(get_symbol_id_by_product_in_store),
         )
         .route("/stores", get(list_paginated_stores).post(create_stores))
         .route(
-            "/stores/{store}",
+            "/stores/{store}/products",
             get(list_paginated_products).post(create_products),
         )
 }
 
-#[derive(Deserialize, Debug, ToSchema, IntoParams)]
-pub struct IngestPriceRequest {
-    pub buy: f32,
-    pub sell: f32,
+#[utoipa::path(
+    get,
+    path = "/stores/{store}/products/{product}/price",
+    params(
+        ("store" = String, Path, description = "Store name"),
+        ("product" = String, Path, description = "Product name"),
+    ),
+    responses((status = 200, body = OhclResponse)),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+async fn get_price_data(
+    State(app_state): State<AppState>,
+    Path((store, product)): Path<(String, String)>,
+    InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
+) -> Result<impl IntoResponse, (StatusCode, JsonResponse<OhclResponse>)> {
+    // @TODO: get broker_id by tenant_id
+    let tenant_id = tenant_id.into();
+    let broker = app_state.secret.get("BROKER", "/").await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(OhclResponse {
+                error: Some("BROKER not set".into()),
+                ..Default::default()
+            }),
+        )
+    })?;
+
+    app_state
+        .investing_entity
+        .validate_broker_listing_limit(tenant_id, &broker, &user_id.0)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(OhclResponse {
+                    error: Some(format!(
+                        "Failed to ingest data to {product} of {store}: {error}",
+                    )),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    let product_id = app_state
+        .investing_entity
+        .get_product_id_from_website(tenant_id, &store, &product)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(OhclResponse {
+                    error: Some(format!(
+                        "Failed to ingest data to {product} of {store}: {error}",
+                    )),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    Ok(JsonResponse(OhclResponse {
+        price: Some(
+            app_state
+                .investing_entity
+                .get_price(tenant_id, product_id)
+                .await
+                .map_err(|error| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        JsonResponse(OhclResponse {
+                            error: Some(format!(
+                                "Ingest pricing data failed (user {}): {error}",
+                                user_id.0.clone().unwrap_or("guest".to_string())
+                            )),
+                            ..Default::default()
+                        }),
+                    )
+                })?,
+        ),
+        ..Default::default()
+    }))
 }
 
 #[utoipa::path(
     post,
-    path = "/stores/{store}/{product}",
-    request_body = IngestPriceRequest,
+    path = "/stores/{store}/products/{product}/price",
+    request_body = Price,
     params(
         ("store" = String, Path, description = "Store name"),
         ("product" = String, Path, description = "Product name"),
@@ -120,7 +206,7 @@ async fn ingest_price_data(
     State(app_state): State<AppState>,
     Path((store, product)): Path<(String, String)>,
     InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
-    JsonRequest(payload): JsonRequest<IngestPriceRequest>,
+    JsonRequest(payload): JsonRequest<Price>,
 ) -> Result<impl IntoResponse, (StatusCode, JsonResponse<OhclResponse>)> {
     // @TODO: get broker_id by tenant_id
     let tenant_id = tenant_id.into();
@@ -168,7 +254,7 @@ async fn ingest_price_data(
 
     app_state
         .investing_entity
-        .update_price(product_id, payload.buy, payload.sell)
+        .update_price(product_id, payload)
         .await
         .map_err(|error| {
             (
@@ -190,7 +276,7 @@ async fn ingest_price_data(
 
 #[utoipa::path(
     get,
-    path = "/stores/{store}/{product}",
+    path = "/stores/{store}/products/{product}/symbol",
     params(
         ("store" = String, Path, description = "Store name"),
         ("product" = String, Path, description = "Product name"),
@@ -330,7 +416,7 @@ async fn create_stores(
 
 #[utoipa::path(
     get,
-    path = "/stores/{store}",
+    path = "/stores/{store}/products",
     params(("store" = String, Path), QueryPagingInput),
     responses((status = 200, body = OhclResponse))
 )]
@@ -385,7 +471,7 @@ async fn list_paginated_products(
 
 #[utoipa::path(
     post,
-    path = "/stores/{store}",
+    path = "/stores/{store}/products",
     params(("store" = String, Path)),
     responses((status = 201, body = OhclResponse)),
     security(

@@ -73,6 +73,12 @@ pub struct Product {
     pub symbol: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
+pub struct Price {
+    pub buy: f32,
+    pub sell: f32,
+}
+
 impl Investing {
     pub fn new(resolver: &Arc<Resolver>) -> Self {
         Self {
@@ -387,16 +393,28 @@ impl Investing {
         }
     }
 
-    pub async fn update_price(
-        &self,
-        symbol_id: i32,
-        new_buy: f32,
-        new_sell: f32,
-    ) -> Result<(), DbErr> {
+    pub async fn get_price(&self, tenant_id: i64, product_id: i32) -> Result<Price, DbErr> {
+        match PriceCurrent::find()
+            .select_only()
+            .column(price_current::Column::Buy)
+            .column(price_current::Column::Sell)
+            .filter(price_current::Column::Id.eq(product_id))
+            .into_tuple::<(f32, f32)>()
+            .one(self.dbt(tenant_id))
+            .await?
+        {
+            Some((buy, sell)) => Ok(Price { buy, sell }),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Not found price data of product {product_id}",
+            )))),
+        }
+    }
+
+    pub async fn update_price(&self, symbol_id: i32, price: Price) -> Result<(), DbErr> {
         let price_active = price_current::ActiveModel {
             id: Set(symbol_id),
-            buy: Set(new_buy),
-            sell: Set(new_sell),
+            buy: Set(price.buy),
+            sell: Set(price.sell),
             ..Default::default()
         };
 
