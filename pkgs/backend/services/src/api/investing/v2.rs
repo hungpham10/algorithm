@@ -78,6 +78,7 @@ struct OhclResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     stores: Option<ListStore>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
     store: Option<Store>,
 }
 

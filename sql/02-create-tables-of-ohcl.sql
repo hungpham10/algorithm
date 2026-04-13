@@ -66,15 +66,17 @@ CREATE TABLE IF NOT EXISTS `ohcl_symbols` (
 
 CREATE TABLE IF NOT EXISTS `ohcl_price_current` (
   `id` integer PRIMARY KEY AUTO_INCREMENT, -- Link directly to ohcl_mapping_product_in_store_to_symbol.id
-  `buy` decimal(20, 2) DEFAULT 0,
-  `sell` decimal(20, 2) DEFAULT 0
+  `buy` float NOT NULL DEFAULT '0',
+  `sell` float NOT NULL DEFAULT '0',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS `ohcl_price_history` (
   `id` bigint PRIMARY KEY AUTO_INCREMENT,
   `symbol_id` integer NOT NULL, -- Link directly to ohcl_mapping_product_in_store_to_symbol.id
-  `buy` decimal(20, 2) NOT NULL,
-  `sell` decimal(20, 2) NOT NULL,
+  `buy` float NOT NULL DEFAULT '0',
+  `sell` float NOT NULL DEFAULT '0',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -107,8 +109,8 @@ CREATE TABLE IF NOT EXISTS `ohcl_store_locations` (
   `address_line` varchar(500),
   `district` varchar(100),
   `province` varchar(100),
-  `latitude` decimal(10, 8),
-  `longitude` decimal(11, 8),
+  `latitude` float NOT NULL DEFAULT '0',
+  `longitude` float NOT NULL DEFAULT '0',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
