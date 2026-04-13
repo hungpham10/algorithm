@@ -44,6 +44,7 @@ pub struct Investing {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
 pub struct Location {
+    pub address: Option<String>,
     pub district: Option<String>,
     pub province: Option<String>,
     pub latitude: Option<f32>,
@@ -690,6 +691,7 @@ impl Investing {
                 .select_only()
                 .column(stores::Column::Id)
                 .column(stores::Column::Name)
+                .column(store_locations::Column::AddressLine)
                 .column(store_locations::Column::District)
                 .column(store_locations::Column::Province)
                 .column(store_locations::Column::Latitude)
@@ -720,7 +722,18 @@ impl Investing {
                 )
                 .filter(stores::Column::Id.is_in(store_ids))
                 .order_by_asc(stores::Column::Id)
-                .into_tuple::<(i32, String, String, String, f32, f32, i32, String, String)>()
+                .into_tuple::<(
+                    i32,
+                    String,
+                    String,
+                    String,
+                    String,
+                    f32,
+                    f32,
+                    i32,
+                    String,
+                    String,
+                )>()
                 .all(self.dbt(tenant_id))
                 .await?;
 
@@ -731,6 +744,7 @@ impl Investing {
             for (
                 store_id,
                 name,
+                address,
                 district,
                 province,
                 latitude,
@@ -754,6 +768,7 @@ impl Investing {
                 if !location_seen.contains(&loc_key) {
                     if let Some(ref mut locs) = entry.locations {
                         locs.push(Location {
+                            address: Some(address),
                             district: Some(district),
                             province: Some(province),
                             latitude: Some(latitude),
@@ -857,6 +872,7 @@ impl Investing {
             .select_only()
             .column(stores::Column::Id)
             .column(stores::Column::Name)
+            .column(store_locations::Column::AddressLine)
             .column(store_locations::Column::District)
             .column(store_locations::Column::Province)
             .column(store_locations::Column::Latitude)
@@ -869,7 +885,7 @@ impl Investing {
                     .into(),
             )
             .filter(stores::Column::Name.eq(name))
-            .into_tuple::<(i32, String, String, String, f32, f32)>()
+            .into_tuple::<(i32, String, String, String, String, f32, f32)>()
             .all(self.dbt(tenant_id))
             .await?;
 
@@ -879,13 +895,14 @@ impl Investing {
             ))));
         }
 
-        let (store_id, store_name, _, _, _, _) = rows.first().ok_or_else(|| {
+        let (store_id, store_name, _, _, _, _, _) = rows.first().ok_or_else(|| {
             DbErr::Query(RuntimeErr::Internal(format!("Not found store `{name}`")))
         })?;
 
         let locations: Vec<Location> = rows
             .iter()
-            .map(|(_, _, district, province, lat, long)| Location {
+            .map(|(_, _, address, district, province, lat, long)| Location {
+                address: Some(address.clone()),
                 district: Some(district.clone()),
                 province: Some(province.clone()),
                 latitude: Some(*lat),
