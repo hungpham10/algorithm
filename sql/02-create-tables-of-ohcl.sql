@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS `ohcl_price_history` (
 
 CREATE TABLE IF NOT EXISTS `ohcl_mapping_product_in_store_to_symbol` (
   `id` integer PRIMARY KEY NOT NULL,
-  `symbol` integer NOT NULL, -- Link directly to ohcl_symbols.id
+  `symbol` integer, -- Link directly to ohcl_symbols.id
   `store` integer NOT NULL, -- Link directly to ohcl_store_locations.id
   `product_name` varchar(500) NOT NULL,
   `scope` int NOT NULL DEFAULT '0',

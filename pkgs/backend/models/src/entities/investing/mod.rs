@@ -44,18 +44,37 @@ pub struct Investing {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
 pub struct Location {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub address: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub district: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub province: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub latitude: Option<f32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub longitude: Option<f32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
 pub struct Store {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<Price>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub locations: Option<Vec<Location>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub products: Option<ListProduct>,
 }
 
@@ -69,9 +88,16 @@ pub struct ListProduct {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
 pub struct Product {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub price: Option<Price>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
 }
 
@@ -79,6 +105,18 @@ pub struct Product {
 pub struct Price {
     pub buy: f32,
     pub sell: f32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
+pub struct Symbol {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stores: Option<Vec<Store>>,
 }
 
 impl Investing {
@@ -776,6 +814,7 @@ impl Investing {
                         data: Vec::new(),
                         next_after: None,
                     }),
+                    ..Default::default()
                 });
 
                 let loc_key = (store_id, district.clone(), province.clone());
@@ -964,6 +1003,7 @@ impl Investing {
             name: Some(store_name.clone()),
             locations: Some(locations),
             products: products_list,
+            ..Default::default()
         })
     }
 
@@ -1038,7 +1078,7 @@ impl Investing {
                             id: Some(id),
                             name: Some(s.name),
                             locations: location_map.remove(&id),
-                            products: None,
+                            ..Default::default()
                         }
                     })
                     .collect();
@@ -1051,5 +1091,95 @@ impl Investing {
             sea_orm::TransactionError::Connection(e) => e,
             sea_orm::TransactionError::Transaction(e) => e,
         })
+    }
+
+    pub async fn list_paginated_symbols(
+        &self,
+        tenant_id: i64,
+        after: i32,
+        limit: u64,
+        detail: bool,
+    ) -> Result<Vec<Symbol>, DbErr> {
+        if detail {
+            let rows = Symbols::find()
+                .select_only()
+                .column(symbols::Column::Id)
+                .column(symbols::Column::Symbol)
+                .column(stores::Column::Id)
+                .column(stores::Column::Name)
+                .column(price_current::Column::Buy)
+                .column(price_current::Column::Sell)
+                .join_rev(
+                    JoinType::InnerJoin,
+                    MappingProductInStoreToSymbol::belongs_to(Symbols)
+                        .from(mapping_product_in_store_to_symbol::Column::Symbol)
+                        .to(symbols::Column::Id)
+                        .into(),
+                )
+                .join_rev(
+                    JoinType::InnerJoin,
+                    Stores::belongs_to(MappingProductInStoreToSymbol)
+                        .from(stores::Column::Id)
+                        .to(mapping_product_in_store_to_symbol::Column::Store)
+                        .into(),
+                )
+                .join_rev(
+                    JoinType::LeftJoin,
+                    PriceCurrent::belongs_to(MappingProductInStoreToSymbol)
+                        .from(price_current::Column::Id)
+                        .to(mapping_product_in_store_to_symbol::Column::Id)
+                        .into(),
+                )
+                .filter(symbols::Column::Id.gt(after))
+                .order_by_desc(symbols::Column::Id)
+                .limit(limit)
+                .into_tuple::<(i32, String, i32, String, Option<f32>, Option<f32>)>()
+                .all(self.dbt(tenant_id))
+                .await?;
+
+            let mut symbol_map = BTreeMap::new();
+            for (sym_id, sym_code, store_id, store_name, buy, sell) in rows {
+                let symbol_entry = symbol_map.entry(sym_id).or_insert(Symbol {
+                    id: Some(sym_id),
+                    symbol: Some(sym_code),
+                    stores: Some(Vec::new()),
+                });
+
+                if let Some(ref mut stores_list) = symbol_entry.stores {
+                    stores_list.push(Store {
+                        id: Some(store_id),
+                        name: Some(store_name),
+                        price: Some(Price {
+                            buy: buy.unwrap_or(0.0),
+                            sell: sell.unwrap_or(0.0),
+                        }),
+                        ..Default::default()
+                    });
+                }
+            }
+
+            let mut result = symbol_map.into_values().collect::<Vec<_>>();
+            result.sort_by(|a, b| b.id.cmp(&a.id));
+
+            Ok(result)
+        } else {
+            Ok(Symbols::find()
+                .select_only()
+                .column(symbols::Column::Id)
+                .column(symbols::Column::Symbol)
+                .filter(symbols::Column::Id.gt(after))
+                .limit(limit)
+                .order_by_desc(symbols::Column::Id)
+                .into_tuple::<(i32, String)>()
+                .all(self.dbt(tenant_id))
+                .await?
+                .into_iter()
+                .map(|(id, symbol)| Symbol {
+                    id: Some(id),
+                    symbol: Some(symbol),
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>())
+        }
     }
 }

@@ -8,7 +8,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json as JsonResponse};
 use axum::routing::get;
 
-use models::entities::investing::{Price, Product, Store};
+use models::entities::investing::{Price, Product, Store, Symbol};
 use utoipa::{
     IntoParams, Modify, OpenApi, ToSchema,
     openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
@@ -19,14 +19,15 @@ use super::{AppState, InvestingHeaders};
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        get_symbol_id_by_product_in_store,
-        list_paginated_stores,
-        create_stores,
         list_paginated_products,
+        list_price_data,
+        list_paginated_stores,
+        list_paginated_symbols,
+        create_stores,
         create_products,
         ingest_price_data,
         get_price_data,
-        list_price_data,
+        get_symbol_id_by_product_in_store,
     ),
     components(schemas(OhclResponse, Price,)),
     modifiers(&SecurityAddon)
@@ -70,6 +71,13 @@ pub struct ListStore {
     next_after: Option<i32>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema)]
+pub struct ListSymbols {
+    data: Vec<Symbol>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_after: Option<i32>,
+}
 #[derive(Deserialize, Serialize, Clone, Debug, Default, ToSchema)]
 struct OhclResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -89,6 +97,9 @@ struct OhclResponse {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     prices: Option<HashMap<String, Price>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    symbols: Option<ListSymbols>,
 }
 
 pub fn routes() -> Router<AppState> {
@@ -109,6 +120,91 @@ pub fn routes() -> Router<AppState> {
             "/stores/{store}/products",
             get(list_paginated_products).post(create_products),
         )
+        .route("/symbols", get(list_paginated_symbols))
+}
+
+#[utoipa::path(
+    get,
+    path = "/symbols",
+    responses((status = 200, body = OhclResponse)),
+)]
+async fn list_paginated_symbols(
+    State(app_state): State<AppState>,
+    Query(QueryPagingInput {
+        after,
+        limit,
+        detail,
+    }): Query<QueryPagingInput>,
+    InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
+) -> Result<impl IntoResponse, (StatusCode, JsonResponse<OhclResponse>)> {
+    let after = after.unwrap_or(0);
+    let limit = limit.unwrap_or(10);
+    let detail = detail.unwrap_or(false);
+    let tenant_id = tenant_id.into();
+    let broker = app_state.secret.get("BROKER", "/").await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(OhclResponse {
+                error: Some("BROKER not set".into()),
+                ..Default::default()
+            }),
+        )
+    })?;
+
+    if (limit > 10 && detail) || limit > 100 {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(OhclResponse {
+                error: Some("`limit` mustn't be larger than 100".to_string()),
+                ..Default::default()
+            }),
+        ));
+    }
+
+    app_state
+        .investing_entity
+        .validate_broker_listing_limit(tenant_id, &broker, &user_id.0)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(OhclResponse {
+                    error: Some(format!("Failed to list symbols: {error}",)),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    match app_state
+        .investing_entity
+        .list_paginated_symbols(tenant_id, after, limit, detail)
+        .await
+    {
+        Ok(data) => {
+            let next_after = if data.len() as u64 == limit
+                && let Some(item) = data.last()
+            {
+                item.id
+            } else {
+                None
+            };
+
+            Ok((
+                StatusCode::OK,
+                JsonResponse(OhclResponse {
+                    symbols: Some(ListSymbols { data, next_after }),
+                    ..Default::default()
+                }),
+            ))
+        }
+        Err(error) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(OhclResponse {
+                error: Some(format!("Failed listing stores: {error}")),
+                ..Default::default()
+            }),
+        )),
+    }
 }
 
 #[utoipa::path(
@@ -424,7 +520,7 @@ async fn list_paginated_stores(
     let limit = limit.unwrap_or(10);
     let detail = detail.unwrap_or(false);
 
-    if limit > 100 {
+    if (limit > 10 && detail) || limit > 100 {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             JsonResponse(OhclResponse {
