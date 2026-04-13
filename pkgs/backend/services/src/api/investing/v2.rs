@@ -171,7 +171,7 @@ async fn ingest_price_data(
         .await
         .map_err(|error| {
             (
-                StatusCode::NOT_FOUND,
+                StatusCode::INTERNAL_SERVER_ERROR,
                 JsonResponse(OhclResponse {
                     error: Some(format!(
                         "Ingest pricing data failed (user {}): {error}",
