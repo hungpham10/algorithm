@@ -1003,6 +1003,7 @@ impl Investing {
                 let mut location_map: HashMap<i32, Vec<Location>> = HashMap::new();
                 for l in all_inserted_locations {
                     location_map.entry(l.store).or_default().push(Location {
+                        address: Some(l.address_line),
                         district: Some(l.district),
                         province: Some(l.province),
                         latitude: Some(l.latitude),
