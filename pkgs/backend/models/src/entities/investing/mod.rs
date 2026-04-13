@@ -1108,7 +1108,7 @@ impl Investing {
                 .select_only()
                 .column(symbols::Column::Id)
                 .filter(symbols::Column::Id.gt(after))
-                .order_by_asc(stores::Column::Id)
+                .order_by_asc(symbols::Column::Id)
                 .limit(limit)
                 .into_tuple::<i32>()
                 .all(self.dbt(tenant_id))
