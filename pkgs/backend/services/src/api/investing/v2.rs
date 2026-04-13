@@ -26,6 +26,7 @@ use super::{AppState, InvestingHeaders};
         create_products,
         ingest_price_data,
         get_price_data,
+        list_price_data,
     ),
     components(schemas(OhclResponse, Price,)),
     modifiers(&SecurityAddon)
