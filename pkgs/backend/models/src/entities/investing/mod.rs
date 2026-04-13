@@ -113,6 +113,9 @@ pub struct Symbol {
     pub id: Option<i32>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1104,6 +1107,7 @@ impl Investing {
             let rows = Symbols::find()
                 .select_only()
                 .column(symbols::Column::Id)
+                .column(symbols::Column::Name)
                 .column(symbols::Column::Symbol)
                 .column(stores::Column::Id)
                 .column(stores::Column::Name)
@@ -1133,14 +1137,15 @@ impl Investing {
                 .filter(symbols::Column::Id.gt(after))
                 .order_by_desc(symbols::Column::Id)
                 .limit(limit)
-                .into_tuple::<(i32, String, i32, String, Option<f32>, Option<f32>)>()
+                .into_tuple::<(i32, String, String, i32, String, Option<f32>, Option<f32>)>()
                 .all(self.dbt(tenant_id))
                 .await?;
 
             let mut symbol_map = BTreeMap::new();
-            for (sym_id, sym_code, store_id, store_name, buy, sell) in rows {
+            for (sym_id, sym_name, sym_code, store_id, store_name, buy, sell) in rows {
                 let symbol_entry = symbol_map.entry(sym_id).or_insert(Symbol {
                     id: Some(sym_id),
+                    name: Some(sym_name),
                     symbol: Some(sym_code),
                     stores: Some(Vec::new()),
                 });
@@ -1166,6 +1171,7 @@ impl Investing {
             Ok(Symbols::find()
                 .select_only()
                 .column(symbols::Column::Id)
+                .column(symbols::Column::Name)
                 .column(symbols::Column::Symbol)
                 .filter(symbols::Column::Id.gt(after))
                 .limit(limit)
@@ -1174,8 +1180,9 @@ impl Investing {
                 .all(self.dbt(tenant_id))
                 .await?
                 .into_iter()
-                .map(|(id, symbol)| Symbol {
+                .map(|(id, name, symbol)| Symbol {
                     id: Some(id),
+                    name: Some(name),
                     symbol: Some(symbol),
                     ..Default::default()
                 })
