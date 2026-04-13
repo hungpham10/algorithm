@@ -1104,6 +1104,16 @@ impl Investing {
         detail: bool,
     ) -> Result<Vec<Symbol>, DbErr> {
         if detail {
+            let symbol_ids = Symbols::find()
+                .select_only()
+                .column(symbols::Column::Id)
+                .filter(symbols::Column::Id.gt(after))
+                .order_by_asc(stores::Column::Id)
+                .limit(limit)
+                .into_tuple::<i32>()
+                .all(self.dbt(tenant_id))
+                .await?;
+
             let rows = Symbols::find()
                 .select_only()
                 .column(symbols::Column::Id)
@@ -1134,9 +1144,8 @@ impl Investing {
                         .to(mapping_product_in_store_to_symbol::Column::Id)
                         .into(),
                 )
-                .filter(symbols::Column::Id.gt(after))
+                .filter(stores::Column::Id.is_in(symbol_ids))
                 .order_by_asc(symbols::Column::Id)
-                .limit(limit)
                 .into_tuple::<(i32, String, String, i32, String, Option<f32>, Option<f32>)>()
                 .all(self.dbt(tenant_id))
                 .await?;
