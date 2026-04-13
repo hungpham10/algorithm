@@ -423,7 +423,7 @@ impl Investing {
             .await?
         {
             Some(row) => {
-                if row.buy == new_buy && row.sell == new_sell {
+                if row.buy == price.buy && row.sell == price.sell {
                     return Ok(());
                 }
 
@@ -437,8 +437,8 @@ impl Investing {
 
         let history_row = price_history::ActiveModel {
             symbol_id: Set(symbol_id),
-            buy: Set(new_buy),
-            sell: Set(new_sell),
+            buy: Set(price.buy),
+            sell: Set(price.sell),
             ..Default::default()
         };
 
