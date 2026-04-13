@@ -393,6 +393,40 @@ impl Investing {
         }
     }
 
+    pub async fn list_price(
+        &self,
+        tenant_id: i64,
+        store_id: i32,
+    ) -> Result<HashMap<String, Price>, DbErr> {
+        Ok(PriceCurrent::find()
+            .select_only()
+            .column(mapping_product_in_store_to_symbol::Column::ProductName)
+            .column(price_current::Column::Buy)
+            .column(price_current::Column::Sell)
+            .join_rev(
+                JoinType::InnerJoin,
+                MappingProductInStoreToSymbol::belongs_to(PriceCurrent)
+                    .from(mapping_product_in_store_to_symbol::Column::Id)
+                    .to(price_current::Column::Id)
+                    .into(),
+            )
+            .filter(mapping_product_in_store_to_symbol::Column::Store.eq(store_id))
+            .into_tuple::<(String, f32, f32)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|(product_name, buy_price, sell_price)| {
+                (
+                    product_name,
+                    Price {
+                        buy: buy_price,
+                        sell: sell_price,
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>())
+    }
+
     pub async fn get_price(&self, tenant_id: i64, product_id: i32) -> Result<Price, DbErr> {
         match PriceCurrent::find()
             .select_only()

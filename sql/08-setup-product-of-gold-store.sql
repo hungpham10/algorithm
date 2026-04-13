@@ -32,7 +32,7 @@ VALUES
 	(18, 2, 2, 'Vàng Kim Phụng Cát Tường 9999 (0.1 chỉ)'),
 	(19, 2, 2, 'Vàng Kim Thần Tài 9999 (1 chỉ)'),
 	(20, 2, 2, 'Vàng Kim Thần Tài 9999 (0.5 chỉ)'),
-	(21, 2, 2, 'Set combo Bắc Sư Tử 1 chỉ Vàng 9999 và 1 lượn'),
+	(21, 2, 2, 'Set combo Bắc Sư Tử 1 chỉ Vàng 9999 và 1 lượng bạc 999 (500 bản)'),
 	(22, 3, 2, 'Vàng Nhẫn Tích Tài 9999 (1 chỉ)'),
 	(23, 3, 2, 'Nhẫn Vàng ACR 9999 (1 chỉ)'),
 	(24, 6, 2, 'Nhẫn Vàng ACR 999 (1 chỉ)'),

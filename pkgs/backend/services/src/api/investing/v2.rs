@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use axum::Router;
 use axum::extract::Json as JsonRequest;
@@ -84,6 +85,9 @@ struct OhclResponse {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     price: Option<Price>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prices: Option<HashMap<String, Price>>,
 }
 
 pub fn routes() -> Router<AppState> {
@@ -98,11 +102,102 @@ pub fn routes() -> Router<AppState> {
             "/stores/{store}/products/{product}/symbol",
             get(get_symbol_id_by_product_in_store),
         )
+        .route("/stores/{store}/price", get(list_price_data))
         .route("/stores", get(list_paginated_stores).post(create_stores))
         .route(
             "/stores/{store}/products",
             get(list_paginated_products).post(create_products),
         )
+}
+
+#[utoipa::path(
+    get,
+    path = "/stores/{store}/products/{product}/price",
+    params(
+        ("store" = String, Path, description = "Store name"),
+        ("product" = String, Path, description = "Product name"),
+    ),
+    responses((status = 200, body = OhclResponse)),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+async fn list_price_data(
+    State(app_state): State<AppState>,
+    Path(store): Path<String>,
+    InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
+) -> Result<impl IntoResponse, (StatusCode, JsonResponse<OhclResponse>)> {
+    // @TODO: get broker_id by tenant_id
+    let tenant_id = tenant_id.into();
+    let broker = app_state.secret.get("BROKER", "/").await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(OhclResponse {
+                error: Some("BROKER not set".into()),
+                ..Default::default()
+            }),
+        )
+    })?;
+
+    app_state
+        .investing_entity
+        .validate_broker_listing_limit(tenant_id, &broker, &user_id.0)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(OhclResponse {
+                    error: Some(format!("Failed to get price of {store}: {error}",)),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    let store_id = app_state
+        .investing_entity
+        .get_store_detail(tenant_id, &store, 0, 0, false)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(OhclResponse {
+                    error: Some(format!("Failed to get price of {store}: {error}",)),
+                    ..Default::default()
+                }),
+            )
+        })?
+        .id
+        .ok_or_else(|| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(OhclResponse {
+                    error: Some(format!("Failed to get price of {store}: return id is null",)),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    Ok(JsonResponse(OhclResponse {
+        prices: Some(
+            app_state
+                .investing_entity
+                .list_price(tenant_id, store_id)
+                .await
+                .map_err(|error| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        JsonResponse(OhclResponse {
+                            error: Some(format!(
+                                "Ingest pricing data failed (user {}): {error}",
+                                user_id.0.clone().unwrap_or("guest".to_string())
+                            )),
+                            ..Default::default()
+                        }),
+                    )
+                })?,
+        ),
+        ..Default::default()
+    }))
 }
 
 #[utoipa::path(
