@@ -71,6 +71,7 @@ pub struct ListProduct {
 pub struct Product {
     pub id: Option<i32>,
     pub name: Option<String>,
+    pub price: Option<Price>,
     pub symbol: Option<String>,
 }
 
@@ -699,6 +700,15 @@ impl Investing {
                 .column(mapping_product_in_store_to_symbol::Column::Id)
                 .column(mapping_product_in_store_to_symbol::Column::ProductName)
                 .column(symbols::Column::Symbol)
+                .column(price_current::Column::Buy)
+                .column(price_current::Column::Sell)
+                .join_rev(
+                    JoinType::LeftJoin,
+                    PriceCurrent::belongs_to(MappingProductInStoreToSymbol)
+                        .from(price_current::Column::Id)
+                        .to(mapping_product_in_store_to_symbol::Column::Id)
+                        .into(),
+                )
                 .join_rev(
                     JoinType::InnerJoin,
                     StoreLocations::belongs_to(Stores)
@@ -733,6 +743,8 @@ impl Investing {
                     i32,
                     String,
                     String,
+                    Option<f32>,
+                    Option<f32>,
                 )>()
                 .all(self.dbt(tenant_id))
                 .await?;
@@ -752,6 +764,8 @@ impl Investing {
                 product_id,
                 product_name,
                 symbol,
+                buy,
+                sell,
             ) in rows
             {
                 let entry = store_map.entry(store_id).or_insert(Store {
@@ -785,6 +799,10 @@ impl Investing {
                             id: Some(product_id),
                             name: Some(product_name),
                             symbol: Some(symbol),
+                            price: Some(Price {
+                                buy: buy.unwrap_or(0.0),
+                                sell: sell.unwrap_or(0.0),
+                            }),
                         });
                     }
                     product_seen.insert(prod_key);
@@ -848,6 +866,7 @@ impl Investing {
                 id: Some(id),
                 name: Some(product_name.clone()),
                 symbol: Some(symbol),
+                ..Default::default()
             });
         }
 
