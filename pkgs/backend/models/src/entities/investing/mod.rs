@@ -1135,7 +1135,7 @@ impl Investing {
                         .into(),
                 )
                 .filter(symbols::Column::Id.gt(after))
-                .order_by_desc(symbols::Column::Id)
+                .order_by_asc(symbols::Column::Id)
                 .limit(limit)
                 .into_tuple::<(i32, String, String, i32, String, Option<f32>, Option<f32>)>()
                 .all(self.dbt(tenant_id))
@@ -1164,7 +1164,7 @@ impl Investing {
             }
 
             let mut result = symbol_map.into_values().collect::<Vec<_>>();
-            result.sort_by(|a, b| b.id.cmp(&a.id));
+            result.sort_by(|a, b| a.id.cmp(&b.id));
 
             Ok(result)
         } else {
@@ -1175,7 +1175,7 @@ impl Investing {
                 .column(symbols::Column::Symbol)
                 .filter(symbols::Column::Id.gt(after))
                 .limit(limit)
-                .order_by_desc(symbols::Column::Id)
+                .order_by_asc(symbols::Column::Id)
                 .into_tuple::<(i32, String, String)>()
                 .all(self.dbt(tenant_id))
                 .await?

@@ -126,6 +126,7 @@ pub fn routes() -> Router<AppState> {
 #[utoipa::path(
     get,
     path = "/symbols",
+    params(QueryPagingInput),
     responses((status = 200, body = OhclResponse)),
 )]
 async fn list_paginated_symbols(
