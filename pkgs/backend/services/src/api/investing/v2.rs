@@ -112,15 +112,12 @@ pub fn routes() -> Router<AppState> {
 
 #[utoipa::path(
     get,
-    path = "/stores/{store}/products/{product}/price",
+    path = "/stores/{store}/price",
     params(
         ("store" = String, Path, description = "Store name"),
         ("product" = String, Path, description = "Product name"),
     ),
     responses((status = 200, body = OhclResponse)),
-    security(
-        ("bearer_auth" = [])
-    )
 )]
 async fn list_price_data(
     State(app_state): State<AppState>,
@@ -208,9 +205,6 @@ async fn list_price_data(
         ("product" = String, Path, description = "Product name"),
     ),
     responses((status = 200, body = OhclResponse)),
-    security(
-        ("bearer_auth" = [])
-    )
 )]
 async fn get_price_data(
     State(app_state): State<AppState>,
