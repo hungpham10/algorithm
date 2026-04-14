@@ -5,6 +5,7 @@ mod mapping_broker_resolution;
 mod mapping_product_in_store_to_symbol;
 mod price_current;
 mod price_history;
+mod product_anchors;
 mod products;
 mod resolutions;
 mod store_locations;
@@ -16,6 +17,7 @@ use mapping_broker_resolution::Entity as MappingBrokerResolution;
 use mapping_product_in_store_to_symbol::Entity as MappingProductInStoreToSymbol;
 use price_current::Entity as PriceCurrent;
 use price_history::Entity as PriceHistory;
+use product_anchors::Entity as ProductAnchors;
 use products::Entity as Products;
 use resolutions::Entity as Resolutions;
 use store_locations::Entity as StoreLocations;
@@ -1103,17 +1105,21 @@ impl Investing {
         limit: u64,
         detail: bool,
     ) -> Result<Vec<Symbol>, DbErr> {
-        if detail {
-            let symbol_ids = Symbols::find()
-                .select_only()
-                .column(symbols::Column::Id)
-                .filter(symbols::Column::Id.gt(after))
-                .order_by_asc(symbols::Column::Id)
-                .limit(limit)
-                .into_tuple::<i32>()
-                .all(self.dbt(tenant_id))
-                .await?;
+        let symbol_ids = Symbols::find()
+            .select_only()
+            .column(symbols::Column::Id)
+            .filter(symbols::Column::Id.gt(after))
+            .order_by_asc(symbols::Column::Id)
+            .limit(limit)
+            .into_tuple::<i32>()
+            .all(self.dbt(tenant_id))
+            .await?;
 
+        if symbol_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        if detail {
             let rows = Symbols::find()
                 .select_only()
                 .column(symbols::Column::Id)
@@ -1125,16 +1131,23 @@ impl Investing {
                 .column(price_current::Column::Sell)
                 .join_rev(
                     JoinType::InnerJoin,
-                    MappingProductInStoreToSymbol::belongs_to(Symbols)
-                        .from(mapping_product_in_store_to_symbol::Column::Symbol)
+                    ProductAnchors::belongs_to(Symbols)
+                        .from(product_anchors::Column::Symbol)
                         .to(symbols::Column::Id)
                         .into(),
                 )
                 .join_rev(
                     JoinType::InnerJoin,
-                    Stores::belongs_to(MappingProductInStoreToSymbol)
+                    MappingProductInStoreToSymbol::belongs_to(ProductAnchors)
+                        .from(mapping_product_in_store_to_symbol::Column::Id)
+                        .to(product_anchors::Column::Id)
+                        .into(),
+                )
+                .join_rev(
+                    JoinType::InnerJoin,
+                    Stores::belongs_to(ProductAnchors)
                         .from(stores::Column::Id)
-                        .to(mapping_product_in_store_to_symbol::Column::Store)
+                        .to(product_anchors::Column::Store)
                         .into(),
                 )
                 .join_rev(
@@ -1144,7 +1157,7 @@ impl Investing {
                         .to(mapping_product_in_store_to_symbol::Column::Id)
                         .into(),
                 )
-                .filter(stores::Column::Id.is_in(symbol_ids))
+                .filter(symbols::Column::Id.is_in(symbol_ids))
                 .order_by_asc(symbols::Column::Id)
                 .into_tuple::<(i32, String, String, i32, String, Option<f32>, Option<f32>)>()
                 .all(self.dbt(tenant_id))
@@ -1172,30 +1185,22 @@ impl Investing {
                 }
             }
 
-            let mut result = symbol_map.into_values().collect::<Vec<_>>();
-            result.sort_by(|a, b| a.id.cmp(&b.id));
-
-            Ok(result)
+            Ok(symbol_map.into_values().collect())
         } else {
-            Ok(Symbols::find()
-                .select_only()
-                .column(symbols::Column::Id)
-                .column(symbols::Column::Name)
-                .column(symbols::Column::Symbol)
-                .filter(symbols::Column::Id.gt(after))
-                .limit(limit)
+            let result = Symbols::find()
+                .filter(symbols::Column::Id.is_in(symbol_ids))
                 .order_by_asc(symbols::Column::Id)
-                .into_tuple::<(i32, String, String)>()
                 .all(self.dbt(tenant_id))
                 .await?
                 .into_iter()
-                .map(|(id, name, symbol)| Symbol {
-                    id: Some(id),
-                    name: Some(name),
-                    symbol: Some(symbol),
+                .map(|m| Symbol {
+                    id: Some(m.id),
+                    name: Some(m.name),
+                    symbol: Some(m.symbol),
                     ..Default::default()
                 })
-                .collect::<Vec<_>>())
+                .collect();
+            Ok(result)
         }
     }
 }

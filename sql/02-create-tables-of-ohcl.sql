@@ -92,6 +92,16 @@ CREATE TABLE IF NOT EXISTS `ohcl_mapping_product_in_store_to_symbol` (
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS `ohcl_product_anchors` (
+  `id` integer PRIMARY KEY NOT NULL, -- Link directly to ohcl_mapping_product_in_store_to_symbol.id
+  `store` integer NOT NULL, -- Link directly to ohcl_stores.id
+  `symbol` integer NOT NULL, -- Link directly to ohcl_symbols.id
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  UNIQUE KEY `unique_store_symbol` (`store`, `symbol`)
+);
+
 CREATE TABLE IF NOT EXISTS `ohcl_stores` (
   `id` integer PRIMARY KEY NOT NULL,
   `name` varchar(500) NOT NULL,
