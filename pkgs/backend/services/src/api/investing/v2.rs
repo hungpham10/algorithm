@@ -1,38 +1,89 @@
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::convert::Into;
 
+use axum::Extension;
 use axum::Router;
 use axum::extract::Json as JsonRequest;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json as JsonResponse};
-use axum::routing::get;
+use axum::routing::{get, post};
 
-use models::entities::investing::{Price, Product, Store, Symbol};
+use async_graphql::{
+    Context, EmptyMutation, EmptySubscription, ErrorExtensions, Object, Result, Schema,
+    SimpleObject,
+};
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
+
+use chrono::Utc;
+use models::entities::investing::{Filter, Price, Product, Store, Symbol};
+use serde::{Deserialize, Serialize};
 use utoipa::{
     IntoParams, Modify, OpenApi, ToSchema,
     openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
 };
 
+use super::v1::get_latest_price_with_fallback;
 use super::{AppState, InvestingHeaders};
 
 #[derive(OpenApi)]
 #[openapi(
     paths(
         list_paginated_products,
-        list_price_data,
+        list_price_of_store,
         list_paginated_stores,
-        list_paginated_symbols,
         create_stores,
         create_products,
         ingest_price_data,
         get_price_data,
         get_symbol_id_by_product_in_store,
+        list_paginated_symbols,
+        render_data_using_graphql,
     ),
-    components(schemas(OhclResponse, Price,)),
+    components(schemas(
+        OhclResponse,
+        Price,
+        GraphQLRequestDTO,
+        GraphQLResponseDTO,
+    )),
     modifiers(&SecurityAddon)
 )]
 pub struct InvestingV2Api;
+
+#[derive(ToSchema, Deserialize)]
+#[allow(dead_code)]
+struct GraphQLRequestDTO {
+    #[schema(example = "query { symbols { id name } }")]
+    query: String,
+
+    #[schema(value_type = Option<Object>, example = json!({"limit": 10}))]
+    variables: Option<serde_json::Value>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operation_name: Option<String>,
+}
+
+#[derive(ToSchema, Serialize)]
+pub struct GraphQLResponseDTO {
+    #[schema(value_type = Option<Object>, example = json!({"symbols": [{"id": 1, "name": "BTC"}]}))]
+    pub data: Option<serde_json::Value>,
+
+    #[schema(value_type = Option<Vec<GraphQLErrorDTO>>)]
+    pub errors: Option<Vec<GraphQLErrorDTO>>,
+}
+
+#[derive(ToSchema, Serialize)]
+pub struct GraphQLErrorDTO {
+    pub message: String,
+    pub locations: Option<Vec<SourceLocationDTO>>,
+    pub path: Option<Vec<String>>,
+}
+
+#[derive(ToSchema, Serialize)]
+pub struct SourceLocationDTO {
+    pub line: usize,
+    pub column: usize,
+}
 
 struct SecurityAddon;
 
@@ -114,12 +165,13 @@ pub fn routes() -> Router<AppState> {
             "/stores/{store}/products/{product}/symbol",
             get(get_symbol_id_by_product_in_store),
         )
-        .route("/stores/{store}/price", get(list_price_data))
+        .route("/stores/{store}/price", get(list_price_of_store))
         .route("/stores", get(list_paginated_stores).post(create_stores))
         .route(
             "/stores/{store}/products",
             get(list_paginated_products).post(create_products),
         )
+        .route("/astra-render", post(render_data_using_graphql))
         .route("/symbols", get(list_paginated_symbols))
 }
 
@@ -178,7 +230,7 @@ async fn list_paginated_symbols(
 
     match app_state
         .investing_entity
-        .list_paginated_symbols(tenant_id, after, limit, detail)
+        .list_paginated_symbols(tenant_id, &broker, after, limit, detail, false)
         .await
     {
         Ok(data) => {
@@ -217,7 +269,7 @@ async fn list_paginated_symbols(
     ),
     responses((status = 200, body = OhclResponse)),
 )]
-async fn list_price_data(
+async fn list_price_of_store(
     State(app_state): State<AppState>,
     Path(store): Path<String>,
     InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
@@ -276,7 +328,7 @@ async fn list_price_data(
         prices: Some(
             app_state
                 .investing_entity
-                .list_price(tenant_id, store_id)
+                .list_current_price_of_store(tenant_id, store_id)
                 .await
                 .map_err(|error| {
                     (
@@ -471,7 +523,7 @@ async fn ingest_price_data(
     responses(
         (status = 200, description = "Success", body = OhclResponse),
         (status = 404, description = "Broker or Symbol not found", body = OhclResponse),
-        (status = 500, description = "Internal Server Error", body = OhclResponse)
+        (status = 500, description = "Internal Server Error", body = OhclResponse),
     )
 )]
 async fn get_symbol_id_by_product_in_store(
@@ -737,4 +789,242 @@ async fn create_products(
             }),
         )),
     }
+}
+
+struct RenderGraphQL {
+    symbol: Symbol,
+    current: Option<Price>,
+    yesterday: Option<Price>,
+    history: Vec<Price>,
+}
+
+#[Object]
+impl RenderGraphQL {
+    async fn id(&self) -> Option<i32> {
+        self.symbol.id
+    }
+
+    #[graphql(name = "type")]
+    async fn r_type(&self) -> Option<String> {
+        self.symbol.name.clone()
+    }
+
+    async fn buy(&self) -> Option<String> {
+        self.current.as_ref().map(|p| format!("{:.2}", p.buy))
+    }
+
+    async fn sell(&self) -> Option<String> {
+        self.current.as_ref().map(|p| format!("{:.2}", p.sell))
+    }
+
+    async fn diff_buy(&self) -> Option<String> {
+        let current = self.current.as_ref()?;
+        let yesterday = self.yesterday.as_ref()?;
+
+        let diff = current.buy - yesterday.buy;
+        let icon = if diff >= 0.0 { "▲" } else { "▼" };
+        Some(format!("{} {:.2}", icon, diff.abs()))
+    }
+
+    async fn diff_sell(&self) -> Option<String> {
+        let current = self.current.as_ref()?;
+        let yesterday = self.yesterday.as_ref()?;
+
+        let diff = current.sell - yesterday.sell;
+        let icon = if diff >= 0.0 { "▲" } else { "▼" };
+        Some(format!("{} {:.2}", icon, diff.abs()))
+    }
+
+    async fn yesterday_buy(&self) -> Option<String> {
+        self.yesterday.as_ref().map(|p| format!("{:.2}", p.buy))
+    }
+
+    async fn yesterday_sell(&self) -> Option<String> {
+        self.yesterday.as_ref().map(|p| format!("{:.2}", p.sell))
+    }
+
+    async fn trend(&self) -> String {
+        let first_price = self.history.first().map(|c| c.buy);
+        let last_price = self.history.last().map(|c| c.buy);
+
+        match (first_price, last_price) {
+            (Some(start), Some(end)) if start != 0.0 => {
+                let change = ((end - start) / start) * 100.0;
+
+                format!("{:+1.1}%", change)
+            }
+            _ => "0%".to_string(),
+        }
+    }
+
+    async fn trend_data(&self) -> Vec<f32> {
+        self.history.iter().map(|it| it.buy).collect::<Vec<_>>()
+    }
+}
+
+#[derive(SimpleObject, Default)]
+pub struct GoldSummary {
+    pub vn: VnSummary,
+    pub world: WorldSummary,
+}
+
+#[derive(SimpleObject, Default)]
+pub struct VnSummary {
+    pub buy: f32,
+    pub sell: f32,
+    pub diff_buy: f32,
+    pub diff_sell: f32,
+    pub percent_buy: f32,
+    pub percent_sell: f32,
+    pub gap: f32, // Chênh lệch VN và Thế giới
+}
+
+#[derive(SimpleObject, Default)]
+pub struct WorldSummary {
+    pub price: f32,
+    pub diff: f32,
+    pub percent: f32,
+    pub converted_vnd: f32,
+}
+
+pub struct QueryRoot;
+
+#[Object]
+impl QueryRoot {
+    async fn gold_market_list(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(default = 0)] after: i32,
+        #[graphql(default = 10)] limit: u64,
+    ) -> async_graphql::Result<Vec<RenderGraphQL>> {
+        let app_state = ctx.data::<AppState>()?;
+        let tenant_id = ctx.data::<i64>()?;
+        let lookahead = ctx.look_ahead();
+
+        let broker_raw = app_state.secret.get("BROKER", "/").await.map_err(|e| {
+            async_graphql::Error::new(format!("BROKER not set: {e}"))
+                .extend_with(|_, e| e.set("code", "INTERNAL_SERVER_ERROR"))
+        })?;
+
+        let broker = app_state
+            .investing_entity
+            .convert_to_real_broker(*tenant_id, broker_raw)
+            .await
+            .map_err(|e| async_graphql::Error::new(format!("Broker validation failed: {e}")))?;
+
+        let needs_history =
+            lookahead.field("trendData").exists() || lookahead.field("trend").exists();
+        let needs_diff = lookahead.field("diffBuy").exists()
+            || lookahead.field("diffSell").exists()
+            || lookahead.field("yesterdayBuy").exists()
+            || lookahead.field("yesterdaySell").exists();
+        let needs_current = lookahead.field("buy").exists() || lookahead.field("sell").exists();
+
+        let all_symbols = app_state
+            .investing_entity
+            .list_paginated_symbols(*tenant_id, &broker, after, limit, false, true)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        let mut current_map = HashMap::new();
+        let mut yesterday_map = HashMap::new();
+        let mut history_map = HashMap::new();
+
+        if needs_history || needs_diff {
+            let from = Utc::now().timestamp() - (7 * 24 * 60 * 60);
+            let to = Utc::now().timestamp();
+
+            let history_res = app_state
+                .investing_entity
+                .list_history_price_of_symbols(
+                    *tenant_id,
+                    &broker,
+                    Filter {
+                        from,
+                        to,
+                        after,
+                        limit,
+                        interval: 24 * 60 * 60,
+                        publish: true,
+                    },
+                )
+                .await
+                .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+            for (id, prices) in history_res {
+                if let Some(latest) = prices.last() {
+                    current_map.insert(id, latest.clone());
+
+                    if prices.len() >= 2 {
+                        yesterday_map.insert(id, prices[prices.len() - 2].clone());
+                    }
+                }
+
+                if needs_history {
+                    history_map.insert(id, prices);
+                }
+            }
+        } else if needs_current {
+            current_map = app_state
+                .investing_entity
+                .list_current_price_of_symbols(*tenant_id, &broker, after, limit, true)
+                .await
+                .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+        }
+
+        let mut results = Vec::new();
+
+        for symbol in all_symbols {
+            let id = symbol.id.unwrap_or(0);
+            let current = match current_map.remove(&id) {
+                Some(current) => Some(current),
+                None => {
+                    if needs_current {
+                        get_latest_price_with_fallback(
+                            app_state,
+                            *tenant_id,
+                            &broker,
+                            &symbol.symbol.clone().unwrap(),
+                            id,
+                        )
+                        .await
+                    } else {
+                        None
+                    }
+                }
+            };
+
+            results.push(RenderGraphQL {
+                symbol,
+                current,
+                yesterday: yesterday_map.remove(&id),
+                history: history_map.remove(&id).unwrap_or_default(),
+            });
+        }
+
+        Ok(results)
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/astra-render",
+    request_body = GraphQLRequestDTO,
+    responses(
+        (status = 200, description = "Query successed", body = GraphQLResponseDTO),
+        (status = 400, description = "Query failed", body = GraphQLResponseDTO),
+    ),
+    security(("bearer_auth" = []))
+)]
+async fn render_data_using_graphql(
+    State(app_state): State<AppState>,
+    InvestingHeaders { tenant_id, .. }: InvestingHeaders,
+    Extension(schema): Extension<Schema<QueryRoot, EmptyMutation, EmptySubscription>>,
+    req: GraphQLRequest,
+) -> GraphQLResponse {
+    let mut req = req.into_inner();
+    req = req.data(app_state);
+    req = req.data(Into::<i64>::into(tenant_id));
+
+    schema.execute(req).await.into()
 }

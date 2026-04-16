@@ -8,7 +8,7 @@ use axum::body::Body;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
-use axum::routing::{get, post};
+use axum::routing::get;
 use http::header;
 
 use utoipa::{IntoParams, OpenApi, ToSchema};
@@ -16,6 +16,7 @@ use utoipa::{IntoParams, OpenApi, ToSchema};
 use analysis::{VolumeProfile, calculate_rrg};
 use models::cache::Cache;
 use models::entities::admin::ApiType;
+use models::entities::investing::Price;
 use schemas::CandleStick;
 
 use super::{AppState, InvestingHeaders};
@@ -30,6 +31,7 @@ use super::{AppState, InvestingHeaders};
         get_list_of_symbols,
         get_rrg_from_broker,
         upsert_symbol,
+        get_symbol_price,
         get_list_of_symbols_by_product,
         get_list_of_product_by_broker
     ),
@@ -61,7 +63,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route(
             "/ohcl/symbols/{broker}/{product}/{symbol}",
-            post(upsert_symbol),
+            get(get_symbol_price).post(upsert_symbol),
         )
         .route(
             "/ohcl/products/{broker}",
@@ -140,6 +142,9 @@ struct OhclResponse {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     symbol: Option<Symbol>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    price: Option<Price>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     next: Option<i32>,
@@ -1127,4 +1132,127 @@ fn fast_cache_response(cached_json: String) -> Response {
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(cached_json))
         .unwrap()
+}
+
+#[utoipa::path(
+    get,
+    path = "/ohcl/symbols/{broker}/{product}/{symbol}",
+    params(
+        ("broker" = String, Path, description = "Unique ID of the Broker (Business Category)"),
+        ("product" = String, Path, description = "Unique ID of the Product (Store/Venue)"),
+        ("symbol" = String, Path, description = "Symbol Code (Product Identifier, e.g., BTCUSD)"),
+    ),
+    responses(
+        (status = 200, description = "Symbol upserted successfully", body = OhclResponse),
+        (status = 404, description = "Broker or Product not found"),
+        (status = 500, description = "Internal database error")
+    ),
+)]
+async fn get_symbol_price(
+    State(app_state): State<AppState>,
+    Path((broker, _product, symbol)): Path<(String, String, String)>,
+    InvestingHeaders { tenant_id, .. }: InvestingHeaders,
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
+    let tenant_id = tenant_id.into();
+    let cache = Cache::new(app_state.connector.clone(), tenant_id);
+    let key = format!("price:{tenant_id}:{broker}:{symbol}");
+
+    if let Ok(cached) = cache.get(&key).await {
+        return Ok(fast_cache_response(cached).into_response());
+    }
+
+    let broker_id = app_state
+        .investing_entity
+        .get_broker_id(tenant_id, &broker)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(OhclResponse {
+                    error: Some(e.to_string()),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    let symbol_id = app_state
+        .investing_entity
+        .get_symbol_id(tenant_id, broker_id, &symbol)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(OhclResponse {
+                    error: Some(e.to_string()),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    let current_price =
+        get_latest_price_with_fallback(&app_state, tenant_id, &broker, &symbol, symbol_id).await;
+
+    match current_price {
+        Some(price) => {
+            let res_obj = OhclResponse {
+                price: Some(price),
+                ..Default::default()
+            };
+            if let Ok(serialized) = serde_json::to_string(&res_obj) {
+                let _ = cache.set(&key, &serialized, 60).await;
+                return Ok(fast_cache_response(serialized).into_response());
+            }
+            Ok(Json(res_obj).into_response())
+        }
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(OhclResponse {
+                error: Some("Price not found".into()),
+                ..Default::default()
+            }),
+        )),
+    }
+}
+
+pub async fn get_latest_price_with_fallback(
+    app_state: &AppState,
+    tenant_id: i64,
+    broker: &String,
+    symbol_name: &str,
+    symbol_id: i32,
+) -> Option<Price> {
+    if let Ok((buy, sell)) = app_state.investing_entity.get_last_price(symbol_id).await {
+        return Some(Price { buy, sell });
+    }
+
+    let func = format!("get_price_of_{symbol_name}_in_{broker}");
+
+    if let Some(api_name) = app_state.investing_apis.get(&func) {
+        let mut headers = HashMap::new();
+        if let Ok(token) = app_state
+            .admin_entity
+            .get_unencrypted_token(tenant_id, broker)
+            .await
+        {
+            headers.insert("Authorization".to_string(), format!("Bearer {}", token));
+        }
+
+        if let Ok(api_data_vec) = app_state
+            .admin_entity
+            .perform_api_by_api_name(tenant_id, api_name, ApiType::Read, vec![], headers, None)
+            .await
+            && let Some(first_item) = api_data_vec.first()
+            && let (Some(buy), Some(sell)) = (
+                first_item.get("buy").and_then(|v| v.as_f64()),
+                first_item.get("sell").and_then(|v| v.as_f64()),
+            )
+        {
+            return Some(Price {
+                buy: buy as f32,
+                sell: sell as f32,
+            });
+        }
+    }
+
+    None
 }

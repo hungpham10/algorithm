@@ -13,6 +13,7 @@ pub struct Model {
     pub product_id: i32,
     pub symbol: String,
     pub name: String,
+    pub anchor: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

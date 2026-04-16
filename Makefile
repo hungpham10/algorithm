@@ -35,10 +35,6 @@ server:
 	@echo "Building Services/Server (Release)..."
 	$(CARGO) build -p services --release
 
-client:
-	@echo "Building Frontend (Trunk Release)..."
-	cd $(FRONTEND_DIR) && $(TRUNK) build --release
-
 test-algorithm:
 	$(CARGO) test -p algorithm
 

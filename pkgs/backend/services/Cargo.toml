@@ -46,6 +46,8 @@ utoipa-swagger-ui = { version = "9.0.2", features = ["axum", "vendored"], defaul
 rustls = { version = "0.23.36", features = ["ring"] }
 futures = "0.3.32"
 bytes = "1.11.1"
+async-graphql = "7.2.1"
+async-graphql-axum = "7.2.1"
 
 # Investing
 ta = "0.5.0"

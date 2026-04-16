@@ -19,3 +19,8 @@ Session.vim
 /pkgs/backend/dist
 .aider*
 /templates
+
+
+# Added by nodejs
+node_modules
+public

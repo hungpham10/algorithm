@@ -1,0 +1,58 @@
+
+---
+// src/components/TableRow.astro
+import Sparkline from './Sparkline.astro';
+import PriceCell from './PriceCell.svelte';
+
+const { data } = Astro.props;
+
+const rawTrend = data.trend || "0";
+const isNegative = rawTrend.includes('-');
+const numericPart = parseFloat(rawTrend.replace(/[^0-9.]/g, '')) || 0;
+const trendValue = isNegative ? -numericPart : numericPart;
+
+let trendColor = "text-yellow-600";
+if (trendValue > 0) trendColor = "text-green-700";
+else if (trendValue < 0) trendColor = "text-red-700";
+---
+
+<tr class="border-b border-gray-100 hover:bg-gray-50/50 transition-colors group">
+  <td class="sticky left-0 z-10 bg-gray-50 p-2 md:p-3 pl-4 font-medium text-gray-700 border-r border-gray-200 group-hover:text-blue-600 text-[15px] md:text-[16px] tracking-tight shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] md:shadow-none">
+    {data.type}
+  </td>
+
+  <td class="p-2 border-r border-gray-100 text-right pr-4 bg-white/50">
+    <PriceCell
+      initialPrice={data.buy}
+      initialDiff={data.diffBuy}
+      type="buy"
+      goldType={data.type}
+      client:load
+    />
+  </td>
+
+  <td class="p-2 border-r border-gray-100 text-right pr-4 bg-white/50">
+    <PriceCell
+      initialPrice={data.sell}
+      initialDiff={data.diffSell}
+      type="sell"
+      goldType={data.type}
+      client:load
+    />
+  </td>
+
+  <td class="p-2 border-r border-gray-100 text-right pr-4 text-gray-400 font-medium text-[16px] md:text-[18px] tracking-tighter">
+    {data.yesterdayBuy || "---"}
+  </td>
+
+  <td class="p-2 border-r border-gray-100 text-right pr-4 text-gray-400 font-medium text-[16px] md:text-[18px] tracking-tighter">
+    {data.yesterdaySell || "---"}
+  </td>
+
+  <td class="p-2 text-center min-w-[90px] md:min-w-[120px]">
+    <div class={`text-[14px] md:text-[15px] font-medium ${trendColor}`}>{data.trend}</div>
+    <div class="flex justify-center opacity-60 scale-75 md:scale-90">
+        <Sparkline data={data.trendData} />
+    </div>
+  </td>
+</tr>

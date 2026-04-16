@@ -45,6 +45,16 @@ pub struct Investing {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
+pub struct Filter {
+    pub from: i64,
+    pub to: i64,
+    pub interval: u64,
+    pub after: i32,
+    pub limit: u64,
+    pub publish: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
 pub struct Location {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub address: Option<String>,
@@ -107,6 +117,7 @@ pub struct Product {
 pub struct Price {
     pub buy: f32,
     pub sell: f32,
+    pub timestamp: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
@@ -438,7 +449,147 @@ impl Investing {
         }
     }
 
-    pub async fn list_price(
+    pub async fn list_history_price_of_symbols(
+        &self,
+        tenant_id: i64,
+        broker: &str,
+        filter: Filter,
+    ) -> Result<HashMap<i32, Vec<Price>>, DbErr> {
+        let mut query = Symbols::find()
+            .select_only()
+            .column(symbols::Column::Id)
+            .join_rev(
+                JoinType::InnerJoin,
+                Brokers::belongs_to(Symbols)
+                    .from(brokers::Column::Id)
+                    .to(symbols::Column::BrokerId)
+                    .into(),
+            )
+            .filter(brokers::Column::Name.eq(broker))
+            .filter(symbols::Column::Id.gt(filter.after))
+            .order_by_asc(symbols::Column::Id)
+            .limit(filter.limit);
+
+        if filter.publish {
+            query = query.filter(symbols::Column::Anchor.eq(true));
+        }
+
+        let symbol_ids: Vec<i32> = query.into_tuple::<i32>().all(self.dbt(tenant_id)).await?;
+
+        if symbol_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let raw_history = price_history::Entity::find()
+            .filter(price_history::Column::SymbolId.is_in(symbol_ids))
+            .filter(price_history::Column::CreatedAt.between(
+                chrono::DateTime::from_timestamp(filter.from, 0).unwrap_or_default(),
+                chrono::DateTime::from_timestamp(filter.to, 0).unwrap_or_default(),
+            ))
+            .order_by_asc(price_history::Column::SymbolId)
+            .order_by_asc(price_history::Column::CreatedAt)
+            .all(self.dbt(tenant_id))
+            .await?;
+
+        let mut result_map = HashMap::<i32, Vec<Price>>::new();
+        raw_history
+            .into_iter()
+            .fold(HashMap::<i32, i64>::new(), |mut last_buckets, row| {
+                let ts = row.created_at.map(|dt| dt.timestamp()).unwrap_or(0);
+                let bucket = ts / (filter.interval as i64);
+
+                if last_buckets.get(&row.symbol_id) != Some(&bucket) {
+                    result_map.entry(row.symbol_id).or_default().push(Price {
+                        buy: row.buy,
+                        sell: row.sell,
+                        ..Default::default()
+                    });
+                    last_buckets.insert(row.symbol_id, bucket);
+                }
+                last_buckets
+            });
+
+        Ok(result_map)
+    }
+
+    pub async fn list_current_price_of_symbols(
+        &self,
+        tenant_id: i64,
+        broker: &str,
+        after: i32,
+        limit: u64,
+        publish: bool,
+    ) -> Result<HashMap<i32, Price>, DbErr> {
+        let mut query = Symbols::find()
+            .select_only()
+            .column(symbols::Column::Id)
+            .join_rev(
+                JoinType::InnerJoin,
+                Brokers::belongs_to(Symbols)
+                    .from(brokers::Column::Id)
+                    .to(symbols::Column::BrokerId)
+                    .into(),
+            )
+            .filter(brokers::Column::Name.eq(broker))
+            .filter(symbols::Column::Id.gt(after))
+            .order_by_asc(symbols::Column::Id)
+            .limit(limit);
+
+        if publish {
+            query = query.filter(symbols::Column::Anchor.eq(true));
+        }
+
+        let symbol_ids: Vec<i32> = query.into_tuple::<i32>().all(self.dbt(tenant_id)).await?;
+
+        if symbol_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        Ok(Symbols::find()
+            .select_only()
+            .column(symbols::Column::Id)
+            .column(price_current::Column::Buy)
+            .column(price_current::Column::Sell)
+            .join_rev(
+                JoinType::InnerJoin,
+                ProductAnchors::belongs_to(Symbols)
+                    .from(product_anchors::Column::Symbol)
+                    .to(symbols::Column::Id)
+                    .into(),
+            )
+            .join_rev(
+                JoinType::InnerJoin,
+                MappingProductInStoreToSymbol::belongs_to(ProductAnchors)
+                    .from(mapping_product_in_store_to_symbol::Column::Id)
+                    .to(product_anchors::Column::Id)
+                    .into(),
+            )
+            .join_rev(
+                JoinType::InnerJoin,
+                PriceCurrent::belongs_to(MappingProductInStoreToSymbol)
+                    .from(price_current::Column::Id)
+                    .to(mapping_product_in_store_to_symbol::Column::Id)
+                    .into(),
+            )
+            .filter(symbols::Column::Id.is_in(symbol_ids))
+            .into_tuple::<(i32, Option<f32>, Option<f32>)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .map(|(id, buy, sell)| {
+                (
+                    id,
+                    Price {
+                        buy: buy.unwrap_or(0.0),
+                        sell: sell.unwrap_or(0.0),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>())
+    }
+
+    pub async fn list_current_price_of_store(
         &self,
         tenant_id: i64,
         store_id: i32,
@@ -466,6 +617,7 @@ impl Investing {
                     Price {
                         buy: buy_price,
                         sell: sell_price,
+                        ..Default::default()
                     },
                 )
             })
@@ -482,7 +634,11 @@ impl Investing {
             .one(self.dbt(tenant_id))
             .await?
         {
-            Some((buy, sell)) => Ok(Price { buy, sell }),
+            Some((buy, sell)) => Ok(Price {
+                buy,
+                sell,
+                ..Default::default()
+            }),
             None => Err(DbErr::Query(RuntimeErr::Internal(format!(
                 "Not found price data of product {product_id}",
             )))),
@@ -846,6 +1002,7 @@ impl Investing {
                             price: Some(Price {
                                 buy: buy.unwrap_or(0.0),
                                 sell: sell.unwrap_or(0.0),
+                                ..Default::default()
                             }),
                         });
                     }
@@ -1101,19 +1258,42 @@ impl Investing {
     pub async fn list_paginated_symbols(
         &self,
         tenant_id: i64,
+        broker: &str,
         after: i32,
         limit: u64,
         detail: bool,
+        publish: bool,
     ) -> Result<Vec<Symbol>, DbErr> {
-        let symbol_ids = Symbols::find()
-            .select_only()
-            .column(symbols::Column::Id)
-            .filter(symbols::Column::Id.gt(after))
-            .order_by_asc(symbols::Column::Id)
-            .limit(limit)
-            .into_tuple::<i32>()
-            .all(self.dbt(tenant_id))
-            .await?;
+        let symbol_ids = if publish {
+            Symbols::find()
+                .select_only()
+                .column(symbols::Column::Id)
+                .filter(brokers::Column::Name.eq(broker))
+                .filter(symbols::Column::Id.gt(after))
+                .filter(symbols::Column::Anchor.eq(true))
+                .join_rev(
+                    JoinType::InnerJoin,
+                    Brokers::belongs_to(Symbols)
+                        .from(brokers::Column::Id)
+                        .to(symbols::Column::BrokerId)
+                        .into(),
+                )
+                .order_by_asc(symbols::Column::Id)
+                .limit(limit)
+                .into_tuple::<i32>()
+                .all(self.dbt(tenant_id))
+                .await?
+        } else {
+            Symbols::find()
+                .select_only()
+                .column(symbols::Column::Id)
+                .filter(symbols::Column::Id.gt(after))
+                .order_by_asc(symbols::Column::Id)
+                .limit(limit)
+                .into_tuple::<i32>()
+                .all(self.dbt(tenant_id))
+                .await?
+        };
 
         if symbol_ids.is_empty() {
             return Ok(Vec::new());
@@ -1179,6 +1359,7 @@ impl Investing {
                         price: Some(Price {
                             buy: buy.unwrap_or(0.0),
                             sell: sell.unwrap_or(0.0),
+                            ..Default::default()
                         }),
                         ..Default::default()
                     });
@@ -1186,9 +1367,18 @@ impl Investing {
             }
 
             Ok(symbol_map.into_values().collect())
-        } else {
-            let result = Symbols::find()
+        } else if publish {
+            Ok(Symbols::find()
+                .filter(brokers::Column::Name.eq(broker))
                 .filter(symbols::Column::Id.is_in(symbol_ids))
+                .filter(symbols::Column::Anchor.eq(true))
+                .join_rev(
+                    JoinType::InnerJoin,
+                    Brokers::belongs_to(Symbols)
+                        .from(brokers::Column::Id)
+                        .to(symbols::Column::BrokerId)
+                        .into(),
+                )
                 .order_by_asc(symbols::Column::Id)
                 .all(self.dbt(tenant_id))
                 .await?
@@ -1199,8 +1389,29 @@ impl Investing {
                     symbol: Some(m.symbol),
                     ..Default::default()
                 })
-                .collect();
-            Ok(result)
+                .collect())
+        } else {
+            Ok(Symbols::find()
+                .filter(brokers::Column::Name.eq(broker))
+                .filter(symbols::Column::Id.is_in(symbol_ids))
+                .join_rev(
+                    JoinType::InnerJoin,
+                    Brokers::belongs_to(Symbols)
+                        .from(brokers::Column::Id)
+                        .to(symbols::Column::BrokerId)
+                        .into(),
+                )
+                .order_by_asc(symbols::Column::Id)
+                .all(self.dbt(tenant_id))
+                .await?
+                .into_iter()
+                .map(|m| Symbol {
+                    id: Some(m.id),
+                    name: Some(m.name),
+                    symbol: Some(m.symbol),
+                    ..Default::default()
+                })
+                .collect())
         }
     }
 }
