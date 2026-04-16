@@ -355,6 +355,33 @@ impl Investing {
         Ok(enabled)
     }
 
+    pub async fn is_product_storing_data(
+        &self,
+        tenant_id: i64,
+        product: &String,
+        broker: &String,
+    ) -> Result<bool, DbErr> {
+        let res = Products::find()
+            .join_rev(
+                JoinType::InnerJoin,
+                brokers::Entity::belongs_to(Products)
+                    .from(brokers::Column::Id)
+                    .to(products::Column::BrokerId)
+                    .into(),
+            )
+            .filter(
+                Condition::all()
+                    .add(products::Column::Name.eq(product))
+                    .add(brokers::Column::Name.eq(broker))
+                    .add(products::Column::Stored.eq(1)),
+            )
+            .one(self.dbt(tenant_id))
+            .await?;
+
+        let enabled = res.is_some();
+        Ok(enabled)
+    }
+
     pub async fn validate_broker_candlesticks_limit(
         &self,
         tenant_id: i64,
@@ -624,12 +651,12 @@ impl Investing {
             .collect::<HashMap<_, _>>())
     }
 
-    pub async fn get_price(&self, tenant_id: i64, product_id: i32) -> Result<Price, DbErr> {
+    pub async fn get_price(&self, tenant_id: i64, symbol_id: i32) -> Result<Price, DbErr> {
         match PriceCurrent::find()
             .select_only()
             .column(price_current::Column::Buy)
             .column(price_current::Column::Sell)
-            .filter(price_current::Column::Id.eq(product_id))
+            .filter(price_current::Column::Id.eq(symbol_id))
             .into_tuple::<(f32, f32)>()
             .one(self.dbt(tenant_id))
             .await?
@@ -640,7 +667,7 @@ impl Investing {
                 ..Default::default()
             }),
             None => Err(DbErr::Query(RuntimeErr::Internal(format!(
-                "Not found price data of product {product_id}",
+                "Not found price data of product {symbol_id}",
             )))),
         }
     }
@@ -679,22 +706,6 @@ impl Investing {
 
         history_row.insert(self.dbt(symbol_id.into())).await?;
         Ok(())
-    }
-
-    pub async fn get_last_price(&self, symbol_id: i32) -> Result<(f32, f32), DbErr> {
-        match PriceCurrent::find_by_id(symbol_id)
-            .select_only()
-            .column(price_current::Column::Buy)
-            .column(price_current::Column::Sell)
-            .into_tuple::<(f32, f32)>()
-            .one(self.dbt(symbol_id.into()))
-            .await?
-        {
-            Some((buy, sell)) => Ok((buy, sell)),
-            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
-                "Not found symbol {symbol_id}",
-            )))),
-        }
     }
 
     pub async fn get_price_history(
@@ -749,17 +760,20 @@ impl Investing {
         &self,
         tenant_id: i64,
         broker_id: i32,
+        product_id: Option<i32>,
         symbol: &String,
     ) -> Result<i32, DbErr> {
-        match Symbols::find()
+        let mut query = Symbols::find()
             .select_only()
             .column(symbols::Column::Id)
             .filter(symbols::Column::BrokerId.eq(broker_id))
-            .filter(symbols::Column::Symbol.eq(symbol.clone()))
-            .into_tuple::<i32>()
-            .one(self.dbt(tenant_id))
-            .await?
-        {
+            .filter(symbols::Column::Symbol.eq(symbol.clone()));
+
+        if let Some(product_id) = product_id {
+            query = query.filter(symbols::Column::ProductId.eq(product_id));
+        }
+
+        match query.into_tuple::<i32>().one(self.dbt(tenant_id)).await? {
             Some(id) => Ok(id),
             None => Err(DbErr::Query(RuntimeErr::Internal(format!(
                 "Not found symbol {symbol}",
@@ -1046,7 +1060,9 @@ impl Investing {
             let symbol = product.symbol.ok_or_else(|| {
                 DbErr::Query(RuntimeErr::Internal("`id` mustn't be None".to_string()))
             })?;
-            let id = self.get_symbol_id(tenant_id, broker_id, &symbol).await?;
+            let id = self
+                .get_symbol_id(tenant_id, broker_id, None, &symbol)
+                .await?;
             let product_name = product.name.ok_or_else(|| {
                 DbErr::Query(RuntimeErr::Internal("`name` mustn't be None".to_string()))
             })?;

@@ -22,7 +22,7 @@ use utoipa::{
     openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
 };
 
-use super::v1::get_latest_price_with_fallback;
+use super::v1::get_latest_price;
 use super::{AppState, InvestingHeaders};
 
 #[derive(OpenApi)]
@@ -171,8 +171,8 @@ pub fn routes() -> Router<AppState> {
             "/stores/{store}/products",
             get(list_paginated_products).post(create_products),
         )
-        .route("/astra-render", post(render_data_using_graphql))
         .route("/symbols", get(list_paginated_symbols))
+        .route("/astra-render", post(render_data_using_graphql))
         .layer(Extension(schema))
 }
 
@@ -877,14 +877,15 @@ impl QueryRoot {
         let tenant_id = ctx.data::<i64>()?;
         let lookahead = ctx.look_ahead();
 
-        let broker_raw = app_state.secret.get("BROKER", "/").await.map_err(|e| {
-            async_graphql::Error::new(format!("BROKER not set: {e}"))
-                .extend_with(|_, e| e.set("code", "INTERNAL_SERVER_ERROR"))
-        })?;
-
         let broker = app_state
             .investing_entity
-            .convert_to_real_broker(*tenant_id, broker_raw)
+            .convert_to_real_broker(
+                *tenant_id,
+                app_state.secret.get("BROKER", "/").await.map_err(|e| {
+                    async_graphql::Error::new(format!("BROKER not set: {e}"))
+                        .extend_with(|_, e| e.set("code", "INTERNAL_SERVER_ERROR"))
+                })?,
+            )
             .await
             .map_err(|e| async_graphql::Error::new(format!("Broker validation failed: {e}")))?;
 
@@ -952,16 +953,20 @@ impl QueryRoot {
 
         for symbol in all_symbols {
             let id = symbol.id.unwrap_or(0);
+
             let current = match current_map.remove(&id) {
                 Some(current) => Some(current),
                 None => {
+                    // @NOTE: we are sure totatly that we don't store of
+                    //        any symbol in database
+
                     if needs_current {
-                        get_latest_price_with_fallback(
+                        get_latest_price(
                             app_state,
                             *tenant_id,
                             &broker,
                             &symbol.symbol.clone().unwrap(),
-                            id,
+                            0,
                         )
                         .await
                     } else {

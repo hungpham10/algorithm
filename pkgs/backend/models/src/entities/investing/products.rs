@@ -12,6 +12,7 @@ pub struct Model {
     pub updated_at: Option<DateTimeUtc>,
     pub name: String,
     pub enabled: Option<i8>,
+    pub stored: Option<i8>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

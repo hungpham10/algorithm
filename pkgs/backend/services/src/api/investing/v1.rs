@@ -1108,7 +1108,7 @@ pub async fn upsert_symbol(
             symbol: Some(Symbol {
                 id: app_state
                     .investing_entity
-                    .get_symbol_id(tenant_id, broker_id, &symbol_code)
+                    .get_symbol_id(tenant_id, broker_id, None, &symbol_code)
                     .await
                     .map_err(|error| {
                         (
@@ -1150,7 +1150,7 @@ fn fast_cache_response(cached_json: String) -> Response {
 )]
 async fn get_symbol_price(
     State(app_state): State<AppState>,
-    Path((broker, _product, symbol)): Path<(String, String, String)>,
+    Path((broker, product, symbol)): Path<(String, String, String)>,
     InvestingHeaders { tenant_id, .. }: InvestingHeaders,
 ) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let tenant_id = tenant_id.into();
@@ -1175,22 +1175,43 @@ async fn get_symbol_price(
             )
         })?;
 
-    let symbol_id = app_state
-        .investing_entity
-        .get_symbol_id(tenant_id, broker_id, &symbol)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(OhclResponse {
-                    error: Some(e.to_string()),
-                    ..Default::default()
-                }),
-            )
-        })?;
-
-    let current_price =
-        get_latest_price_with_fallback(&app_state, tenant_id, &broker, &symbol, symbol_id).await;
+    let current_price = get_latest_price(
+        &app_state,
+        tenant_id,
+        &broker,
+        &symbol,
+        if app_state
+            .investing_entity
+            .is_product_storing_data(tenant_id, &product, &broker)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(OhclResponse {
+                        error: Some(e.to_string()),
+                        ..Default::default()
+                    }),
+                )
+            })?
+        {
+            app_state
+                .investing_entity
+                .get_symbol_id(tenant_id, broker_id, None, &symbol)
+                .await
+                .map_err(|e| {
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(OhclResponse {
+                            error: Some(e.to_string()),
+                            ..Default::default()
+                        }),
+                    )
+                })?
+        } else {
+            0
+        },
+    )
+    .await;
 
     match current_price {
         Some(price) => {
@@ -1214,19 +1235,20 @@ async fn get_symbol_price(
     }
 }
 
-pub async fn get_latest_price_with_fallback(
+pub async fn get_latest_price(
     app_state: &AppState,
     tenant_id: i64,
     broker: &String,
     symbol_name: &str,
     symbol_id: i32,
 ) -> Option<Price> {
-    if let Ok((buy, sell)) = app_state.investing_entity.get_last_price(symbol_id).await {
-        return Some(Price {
-            buy,
-            sell,
-            ..Default::default()
-        });
+    if symbol_id > 0
+        && let Ok(price) = app_state
+            .investing_entity
+            .get_price(tenant_id, symbol_id)
+            .await
+    {
+        return Some(price);
     }
 
     let func = format!("get_price_of_{symbol_name}_in_{broker}");
