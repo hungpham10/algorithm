@@ -1223,7 +1223,7 @@ pub async fn get_latest_price_with_fallback(
 ) -> Option<Price> {
     if let Ok((buy, sell)) = app_state.investing_entity.get_last_price(symbol_id).await {
         return Some(Price {
-            buy, 
+            buy,
             sell,
             ..Default::default()
         });
