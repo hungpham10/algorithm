@@ -1222,7 +1222,11 @@ pub async fn get_latest_price_with_fallback(
     symbol_id: i32,
 ) -> Option<Price> {
     if let Ok((buy, sell)) = app_state.investing_entity.get_last_price(symbol_id).await {
-        return Some(Price { buy, sell });
+        return Some(Price {
+            buy, 
+            sell,
+            ..Default::default()
+        });
     }
 
     let func = format!("get_price_of_{symbol_name}_in_{broker}");
@@ -1250,6 +1254,7 @@ pub async fn get_latest_price_with_fallback(
             return Some(Price {
                 buy: buy as f32,
                 sell: sell as f32,
+                ..Default::default()
             });
         }
     }

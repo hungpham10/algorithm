@@ -11,7 +11,6 @@ use axum::routing::{get, post};
 
 use async_graphql::{
     Context, EmptyMutation, EmptySubscription, ErrorExtensions, Object, Result, Schema,
-    SimpleObject,
 };
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 
@@ -860,31 +859,6 @@ impl RenderGraphQL {
     async fn trend_data(&self) -> Vec<f32> {
         self.history.iter().map(|it| it.buy).collect::<Vec<_>>()
     }
-}
-
-#[derive(SimpleObject, Default)]
-pub struct GoldSummary {
-    pub vn: VnSummary,
-    pub world: WorldSummary,
-}
-
-#[derive(SimpleObject, Default)]
-pub struct VnSummary {
-    pub buy: f32,
-    pub sell: f32,
-    pub diff_buy: f32,
-    pub diff_sell: f32,
-    pub percent_buy: f32,
-    pub percent_sell: f32,
-    pub gap: f32, // Chênh lệch VN và Thế giới
-}
-
-#[derive(SimpleObject, Default)]
-pub struct WorldSummary {
-    pub price: f32,
-    pub diff: f32,
-    pub percent: f32,
-    pub converted_vnd: f32,
 }
 
 pub struct QueryRoot;
