@@ -1,4 +1,3 @@
-
 ---
 // src/pages/index.astro
 import '../styles/global.css';
@@ -7,7 +6,7 @@ import TableHead from '../components/TableHead.astro';
 import TableRow from '../components/TableRow.astro';
 
 // 1. Định nghĩa endpoint của bạn
-const GRAPHQL_ENDPOINT = "http://localhost:8080/astra-render";
+const GRAPHQL_ENDPOINT = "https://lighttrading.pp.ua/api/investing/v2/astra-render";
 
 // 2. Fetch dữ liệu từ GraphQL
 const response = await fetch(GRAPHQL_ENDPOINT, {

@@ -155,6 +155,7 @@ struct OhclResponse {
 pub fn routes() -> Router<AppState> {
     // @TODO: cần api để cập nhật product với store cụ thể không?
 
+    let schema = Schema::build(QueryRoot, EmptyMutation, EmptySubscription).finish();
     Router::new()
         .route(
             "/stores/{store}/products/{product}/price",
@@ -172,6 +173,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/astra-render", post(render_data_using_graphql))
         .route("/symbols", get(list_paginated_symbols))
+        .layer(Extension(schema))
 }
 
 #[utoipa::path(
