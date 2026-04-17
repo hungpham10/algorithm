@@ -117,7 +117,9 @@ pub struct Product {
 pub struct Price {
     pub buy: f32,
     pub sell: f32,
-    pub timestamp: u64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
