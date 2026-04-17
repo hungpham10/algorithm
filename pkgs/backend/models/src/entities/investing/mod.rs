@@ -501,40 +501,66 @@ impl Investing {
             query = query.filter(symbols::Column::Anchor.eq(true));
         }
 
-        let symbol_ids: Vec<i32> = query.into_tuple::<i32>().all(self.dbt(tenant_id)).await?;
+        let symbol_ids = query.into_tuple::<i32>().all(self.dbt(tenant_id)).await?;
 
         if symbol_ids.is_empty() {
             return Ok(HashMap::new());
         }
 
         let raw_history = price_history::Entity::find()
-            .filter(price_history::Column::SymbolId.is_in(symbol_ids))
+            .select_only()
+            .column(symbols::Column::Id)
+            .column(price_history::Column::Buy)
+            .column(price_history::Column::Sell)
+            .column(price_history::Column::CreatedAt)
+            .join_rev(
+                JoinType::InnerJoin,
+                MappingProductInStoreToSymbol::belongs_to(PriceHistory)
+                    .from(mapping_product_in_store_to_symbol::Column::Id)
+                    .to(price_history::Column::Id)
+                    .into(),
+            )
+            .join_rev(
+                JoinType::InnerJoin,
+                ProductAnchors::belongs_to(MappingProductInStoreToSymbol)
+                    .from(product_anchors::Column::Id)
+                    .to(mapping_product_in_store_to_symbol::Column::Id)
+                    .into(),
+            )
+            .join_rev(
+                JoinType::InnerJoin,
+                Symbols::belongs_to(ProductAnchors)
+                    .from(symbols::Column::Id)
+                    .to(product_anchors::Column::Symbol)
+                    .into(),
+            )
+            .filter(symbols::Column::Id.is_in(symbol_ids))
             .filter(price_history::Column::CreatedAt.between(
                 chrono::DateTime::from_timestamp(filter.from, 0).unwrap_or_default(),
                 chrono::DateTime::from_timestamp(filter.to, 0).unwrap_or_default(),
             ))
-            .order_by_asc(price_history::Column::SymbolId)
+            .order_by_asc(symbols::Column::Id)
             .order_by_asc(price_history::Column::CreatedAt)
+            .into_tuple::<(i32, f32, f32, chrono::NaiveDateTime)>()
             .all(self.dbt(tenant_id))
             .await?;
 
         let mut result_map = HashMap::<i32, Vec<Price>>::new();
-        raw_history
-            .into_iter()
-            .fold(HashMap::<i32, i64>::new(), |mut last_buckets, row| {
-                let ts = row.created_at.map(|dt| dt.timestamp()).unwrap_or(0);
-                let bucket = ts / (filter.interval as i64);
+        let mut last_buckets = HashMap::<i32, i64>::new();
 
-                if last_buckets.get(&row.symbol_id) != Some(&bucket) {
-                    result_map.entry(row.symbol_id).or_default().push(Price {
-                        buy: row.buy,
-                        sell: row.sell,
-                        ..Default::default()
-                    });
-                    last_buckets.insert(row.symbol_id, bucket);
-                }
-                last_buckets
-            });
+        for (symbol_id, buy, sell, created_at) in raw_history {
+            let ts = created_at.and_utc().timestamp();
+            let bucket = ts / (filter.interval as i64);
+
+            if last_buckets.get(&symbol_id) != Some(&bucket) {
+                result_map.entry(symbol_id).or_default().push(Price {
+                    buy,
+                    sell,
+                    ..Default::default()
+                });
+                last_buckets.insert(symbol_id, bucket);
+            }
+        }
 
         Ok(result_map)
     }
@@ -566,7 +592,7 @@ impl Investing {
             query = query.filter(symbols::Column::Anchor.eq(true));
         }
 
-        let symbol_ids: Vec<i32> = query.into_tuple::<i32>().all(self.dbt(tenant_id)).await?;
+        let symbol_ids = query.into_tuple::<i32>().all(self.dbt(tenant_id)).await?;
 
         if symbol_ids.is_empty() {
             return Ok(HashMap::new());

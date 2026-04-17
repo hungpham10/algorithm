@@ -13,6 +13,8 @@ services:
         limits:
           cpus: '0.25'
           memory: 512M
+    volumes:
+      - ./secrets:/app/secrets
     sysctls:
       - net.core.somaxconn=65535
       - net.ipv4.ip_local_port_range=1024 65535

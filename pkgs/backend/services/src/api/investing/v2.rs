@@ -872,6 +872,7 @@ impl QueryRoot {
         ctx: &Context<'_>,
         #[graphql(default = 0)] after: i32,
         #[graphql(default = 10)] limit: u64,
+        #[graphql(default = 7)] lookback: i64,
     ) -> async_graphql::Result<Vec<RenderGraphQL>> {
         let app_state = ctx.data::<AppState>()?;
         let tenant_id = ctx.data::<i64>()?;
@@ -908,7 +909,7 @@ impl QueryRoot {
         let mut history_map = HashMap::new();
 
         if needs_history || needs_diff {
-            let from = Utc::now().timestamp() - (7 * 24 * 60 * 60);
+            let from = Utc::now().timestamp() - (lookback * 24 * 60 * 60);
             let to = Utc::now().timestamp();
 
             let history_res = app_state
