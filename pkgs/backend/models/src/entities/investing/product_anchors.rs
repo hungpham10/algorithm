@@ -9,6 +9,7 @@ pub struct Model {
     pub id: i32,
     pub store: i32,
     pub symbol: i32,
+    pub scope: i32,
     pub created_at: Option<DateTimeUtc>,
     pub updated_at: Option<DateTimeUtc>,
 }

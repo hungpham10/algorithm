@@ -58,7 +58,6 @@ CREATE TABLE IF NOT EXISTS `ohcl_symbols` (
   `product_id` integer NOT NULL,
   `name` varchar(255) NOT NULL,
   `symbol` varchar(50) NOT NULL,
-  `anchor` boolean DEFAULT FALSE,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
@@ -88,7 +87,7 @@ CREATE TABLE IF NOT EXISTS `ohcl_mapping_product_in_store_to_symbol` (
   `store` integer NOT NULL, -- Link directly to ohcl_store_locations.id
   `product_name` varchar(500) NOT NULL,
   `alias` varchar(500),
-  `scope` int NOT NULL DEFAULT '0',
+  `scope` integer NOT NULL DEFAULT '0',
   `location` int,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -98,6 +97,7 @@ CREATE TABLE IF NOT EXISTS `ohcl_product_anchors` (
   `id` integer PRIMARY KEY NOT NULL, -- Link directly to ohcl_mapping_product_in_store_to_symbol.id
   `store` integer NOT NULL, -- Link directly to ohcl_stores.id
   `symbol` integer NOT NULL, -- Link directly to ohcl_symbols.id
+  `scope` integer NOT NULL DEFAULT '0',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 

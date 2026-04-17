@@ -231,7 +231,7 @@ async fn list_paginated_symbols(
 
     match app_state
         .investing_entity
-        .list_paginated_symbols(tenant_id, &broker, after, limit, detail, false)
+        .list_paginated_symbols(tenant_id, &broker, after, limit, detail)
         .await
     {
         Ok(data) => {
@@ -870,6 +870,7 @@ impl QueryRoot {
     async fn gold_market_list(
         &self,
         ctx: &Context<'_>,
+        #[graphql(default = 0)] scope: i32,
         #[graphql(default = 0)] after: i32,
         #[graphql(default = 10)] limit: u64,
         #[graphql(default = 7)] lookback: i64,
@@ -900,7 +901,7 @@ impl QueryRoot {
 
         let all_symbols = app_state
             .investing_entity
-            .list_paginated_symbols(*tenant_id, &broker, after, limit, false, true)
+            .list_paginated_symbols(*tenant_id, &broker, after, limit, false)
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
@@ -922,8 +923,8 @@ impl QueryRoot {
                         to,
                         after,
                         limit,
+                        scope,
                         interval: 24 * 60 * 60,
-                        publish: true,
                     },
                 )
                 .await
@@ -945,7 +946,16 @@ impl QueryRoot {
         } else if needs_current {
             current_map = app_state
                 .investing_entity
-                .list_current_price_of_symbols(*tenant_id, &broker, after, limit, true)
+                .list_current_price_of_symbols(
+                    *tenant_id,
+                    &broker,
+                    Filter {
+                        after,
+                        limit,
+                        scope,
+                        ..Default::default()
+                    },
+                )
                 .await
                 .map_err(|e| async_graphql::Error::new(e.to_string()))?;
         }

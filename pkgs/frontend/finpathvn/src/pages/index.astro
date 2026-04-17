@@ -1,39 +1,48 @@
+
 ---
-// src/pages/index.astro
 import '../styles/global.css';
 import GoldSummary from '../components/GoldSummary.svelte';
 import TableHead from '../components/TableHead.astro';
 import TableRow from '../components/TableRow.astro';
 
-// 1. Định nghĩa endpoint của bạn
+// 1. Kiểm soát render quảng cáo từ môi trường build (SSG)
+// Astro sẽ đọc giá trị này khi build. Nếu là 'false', code quảng cáo sẽ không tồn tại trong file HTML cuối cùng.
+const SHOW_ADS = import.meta.env.SHOW_ADS === 'true';
+
+// 2. Định nghĩa endpoint
 const GRAPHQL_ENDPOINT = "https://lighttrading.pp.ua/api/investing/v2/astra-render";
 
-// 2. Fetch dữ liệu từ GraphQL
-const response = await fetch(GRAPHQL_ENDPOINT, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    query: `
-      query GetGoldData {
-        goldMarketList(after: 0, limit: 10) {
-          type
-          buy
-          sell
-          diffBuy
-          diffSell
-          yesterdayBuy
-          yesterdaySell
-          trend
-          trendData
+// 3. Fetch dữ liệu từ GraphQL
+let data;
+try {
+  const response = await fetch(GRAPHQL_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: `
+        query GetGoldData {
+          goldMarketList(after: 0, limit: 10) {
+            type
+            buy
+            sell
+            diffBuy
+            diffSell
+            yesterdayBuy
+            yesterdaySell
+            trend
+            trendData
+          }
         }
-      }
-    `
-  }),
-});
+      `
+    }),
+  });
+  const resJson = await response.json();
+  data = resJson.data;
+} catch (e) {
+  console.error("Fetch error:", e);
+}
 
-const { data } = await response.json();
-
-// 3. Gán dữ liệu (fallback nếu BE lỗi)
+// 4. Gán dữ liệu (fallback)
 const summaryData = data?.goldSummary || {
   vn: { buy: "0", sell: "0", diffBuy: "-", diffSell: "-", percentBuy: "0%", percentSell: "0%", gap: "0" },
   world: { price: "0", diff: "-", percent: "0%", convertedVnd: "0" }
@@ -41,22 +50,34 @@ const summaryData = data?.goldSummary || {
 
 const goldList = data?.goldMarketList || [];
 
-// Lấy ngày hiện tại
+// 5. Xử lý thời gian
 const now = new Date();
 const currentDate = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
 const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullYear()}`;
 ---
+
 <!DOCTYPE html>
 <html lang="vi">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bảng giá vàng</title>
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />  
+    <link rel="alternate icon" href="/favicon.ico" />
   </head>
   <body class="bg-gray-100 p-2 md:p-6 pb-20 lg:pb-6">
+    <nav class="max-w-[1440px] mx-auto mb-4 px-2 flex justify-between items-center">
+      <a href="/" class="flex items-center gap-2">
+        <img src="/logo.svg" alt="Logo" class="h-10 w-auto md:h-12" />
+      </a>
+      
+      <div class="text-[11px] text-gray-400 italic">Dữ liệu thời gian thực</div>
+    </nav>
+
     <div class="max-w-[1440px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-5">
 
-      <main class="lg:col-span-9 space-y-4">
+      <main class={SHOW_ADS ? "lg:col-span-9 space-y-4" : "lg:col-span-12 space-y-4"}>
 
         <GoldSummary initialData={summaryData} client:load />
 
@@ -87,55 +108,59 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
         </div>
       </main>
 
-      <aside class="hidden lg:block lg:col-span-3">
-        <div class="sticky top-6 space-y-4">
+      {SHOW_ADS && (
+        <aside class="hidden lg:block lg:col-span-3">
+          <div class="sticky top-6 space-y-4">
 
-          <div class="bg-white p-2 shadow-sm border border-gray-200 rounded-sm">
-            <div class="bg-gray-100 h-[250px] flex flex-col items-center justify-center text-gray-400 border border-dashed border-gray-300">
-              <p class="text-[10px] uppercase font-bold mb-1">Quảng cáo</p>
-              <p class="text-xs">Banner 300x250</p>
+            <div class="bg-white p-2 shadow-sm border border-gray-200 rounded-sm">
+              <div class="bg-gray-100 h-[250px] flex flex-col items-center justify-center text-gray-400 border border-dashed border-gray-300">
+                <p class="text-[10px] uppercase font-bold mb-1">Quảng cáo</p>
+                <p class="text-xs">Banner 300x250</p>
+              </div>
             </div>
-          </div>
 
-          <div class="bg-white p-4 shadow-sm border border-gray-200 rounded-sm">
-              <h4 class="text-sm font-bold text-gray-700 mb-3 uppercase border-b pb-2 text-center">Tin nhanh</h4>
-              <ul class="space-y-3">
-                <li class="text-[14px] leading-snug hover:text-blue-600 cursor-pointer text-gray-600 font-medium italic">
-                  • Vàng thế giới lập đỉnh mới sáng nay...
-                </li>
-                <li class="text-[14px] leading-snug hover:text-blue-600 cursor-pointer text-gray-600 font-medium italic">
-                  • Lãi suất ngân hàng tiếp tục giảm...
-                </li>
-              </ul>
-          </div>
+            <div class="bg-white p-4 shadow-sm border border-gray-200 rounded-sm">
+                <h4 class="text-sm font-bold text-gray-700 mb-3 uppercase border-b pb-2 text-center">Tin nhanh</h4>
+                <ul class="space-y-3">
+                  <li class="text-[14px] leading-snug hover:text-blue-600 cursor-pointer text-gray-600 font-medium italic">
+                    • Vàng thế giới lập đỉnh mới sáng nay...
+                  </li>
+                  <li class="text-[14px] leading-snug hover:text-blue-600 cursor-pointer text-gray-600 font-medium italic">
+                    • Lãi suất ngân hàng tiếp tục giảm...
+                  </li>
+                </ul>
+            </div>
 
-          <div class="bg-gray-200 h-[500px] flex items-center justify-center text-gray-400 text-xs border-2 border-dashed border-gray-300 rounded-sm uppercase font-bold text-center p-4">
-            Banner dọc 160x600
-          </div>
+            <div class="bg-gray-200 h-[500px] flex items-center justify-center text-gray-400 text-xs border-2 border-dashed border-gray-300 rounded-sm uppercase font-bold text-center p-4">
+              Banner dọc 160x600
+            </div>
 
-        </div>
-      </aside>
+          </div>
+        </aside>
+      )}
 
     </div>
 
-    <div class="lg:hidden fixed bottom-0 left-0 w-full z- bg-white border-t border-gray-200 shadow-[0_-2px_10px_rgba(0,0,0,0.1)] p-1.5 pb-safe">
-      <div class="max-w-md mx-auto relative">
-        <button
-          onclick="this.parentElement.parentElement.style.display='none'"
-          class="absolute -top-4 -right-1 bg-gray-800 text-white text-[12px] rounded-full w-6 h-6 flex items-center justify-center border-2 border-white shadow-md active:scale-90 transition-transform"
-          aria-label="Đóng quảng cáo"
-        >
-          ✕
-        </button>
+    {SHOW_ADS && (
+      <div class="lg:hidden fixed bottom-0 left-0 w-full z-50 bg-white border-t border-gray-200 shadow-[0_-2px_10px_rgba(0,0,0,0.1)] p-1.5 pb-safe">
+        <div class="max-w-md mx-auto relative">
+          <button
+            onclick="this.parentElement.parentElement.style.display='none'"
+            class="absolute -top-4 -right-1 bg-gray-800 text-white text-[12px] rounded-full w-6 h-6 flex items-center justify-center border-2 border-white shadow-md active:scale-90 transition-transform"
+            aria-label="Đóng quảng cáo"
+          >
+            ✕
+          </button>
 
-        <div class="bg-gray-100 h-[55px] flex items-center justify-center text-gray-400 border border-dashed border-gray-300 rounded-sm">
-           <div class="text-center">
-             <p class="text-[9px] uppercase font-bold leading-none text-gray-500">Quảng cáo tài trợ</p>
-             <p class="text-[12px] font-medium text-gray-600 italic">Banner luôn hiển thị 320x50</p>
-           </div>
+          <div class="bg-gray-100 h-[55px] flex items-center justify-center text-gray-400 border border-dashed border-gray-300 rounded-sm">
+              <div class="text-center">
+                <p class="text-[9px] uppercase font-bold leading-none text-gray-500">Quảng cáo tài trợ</p>
+                <p class="text-[12px] font-medium text-gray-600 italic">Banner luôn hiển thị 320x50</p>
+              </div>
+          </div>
         </div>
       </div>
-    </div>
+    )}
 
   </body>
 </html>
