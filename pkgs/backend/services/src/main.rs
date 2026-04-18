@@ -22,7 +22,6 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 fn main() -> Result<(), Error> {
     dotenvy::dotenv().ok();
-    env_logger::init();
 
     let _tls = rustls::crypto::ring::default_provider().install_default();
     let _guard = sentry::init((

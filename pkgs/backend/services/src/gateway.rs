@@ -24,13 +24,17 @@ use std::io::Error;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use opentelemetry::{KeyValue, global};
 use opentelemetry_otlp::{WithExportConfig, WithTonicConfig};
+use opentelemetry_sdk::Resource;
+use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
-use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
+use opentelemetry_sdk::trace::SdkTracerProvider;
 use tonic::metadata::MetadataMap;
+use tracing_opentelemetry::layer;
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::prelude::*;
 
 use crate::api::admin;
 use crate::vector::{AxumBuilder, AxumRuntime};
@@ -38,33 +42,75 @@ use crate::vector::{AxumBuilder, AxumRuntime};
 use crate::api::investing;
 use crate::api::{AppState, health_check, into_stream, pprof, reload};
 
-fn init_tracer(dsn: String) -> Result<SdkTracerProvider, Box<dyn std::error::Error + Send + Sync>> {
+fn init_telemetry() -> Option<(SdkTracerProvider, SdkMeterProvider)> {
+    let endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").unwrap_or_default();
+    if endpoint.is_empty() {
+        return None;
+    }
+
+    let mut headers = std::collections::HashMap::new();
     let mut metadata = MetadataMap::with_capacity(1);
-    metadata.insert("uptrace-dsn", dsn.parse().unwrap());
 
-    // Create OTLP span exporter
-    let exporter = opentelemetry_otlp::SpanExporter::builder()
-        .with_tonic()
-        .with_tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
-        .with_endpoint("https://api.uptrace.dev:4317")
-        .with_metadata(metadata)
-        .with_timeout(Duration::from_secs(10))
-        .build()?;
+    if let Some((key, value)) = std::env::var("OTEL_EXPORTER_OTLP_HEADERS")
+        .unwrap_or_default()
+        .split_once('=')
+    {
+        headers.insert(key.to_string(), value.to_string());
+    }
 
-    // Build the tracer provider
-    let provider = SdkTracerProvider::builder()
-        .with_batch_exporter(exporter)
-        .with_resource(
-            Resource::builder() // Sử dụng builder thay vì new
-                .with_attributes(vec![
-                    KeyValue::new("service.name", "universal-gateway"),
-                    KeyValue::new("service.version", "1.0.0"),
-                ])
-                .build(),
-        )
+    metadata.insert("otel-dsn", endpoint.parse().unwrap());
+
+    let resource = Resource::builder()
+        .with_attributes(vec![
+            KeyValue::new("service.name", "universal-gateway"),
+            KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
+        ])
         .build();
 
-    Ok(provider)
+    let span_exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_tonic()
+        .with_endpoint(format!("{}/v1/traces", endpoint)) // Grafana Cloud yêu cầu path cụ thể
+        .with_metadata(metadata.clone())
+        .build()
+        .expect("Failed to create exporter");
+
+    let trace_provider = SdkTracerProvider::builder()
+        .with_batch_exporter(span_exporter)
+        .with_resource(resource.clone())
+        .build();
+
+    let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
+        .with_tonic()
+        .with_endpoint(format!("{}/v1/metrics", endpoint))
+        .with_metadata(metadata)
+        .build()
+        .expect("Failed to create metric exporter");
+
+    let meter_provider = SdkMeterProvider::builder()
+        .with_periodic_exporter(metric_exporter)
+        .with_resource(resource)
+        .build();
+
+    global::set_tracer_provider(trace_provider.clone());
+    global::set_meter_provider(meter_provider.clone());
+    global::set_text_map_propagator(TraceContextPropagator::new());
+
+    let telemetry_layer = layer().with_tracer(opentelemetry::trace::TracerProvider::tracer(
+        &trace_provider,
+        "universal-gateway",
+    ));
+
+    tracing_subscriber::registry()
+        .with(
+            EnvFilter::new("info")
+                .add_directive("sqlx::query=info".parse().unwrap())
+                .add_directive("tower_http=info".parse().unwrap()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .with(telemetry_layer)
+        .init();
+
+    Some((trace_provider, meter_provider))
 }
 
 #[derive(Clone, Debug)]
@@ -184,17 +230,7 @@ pub async fn routes(
 }
 
 pub async fn run() -> std::io::Result<()> {
-    let uptrace_dsn = std::env::var("UPTRACE_DSN").unwrap_or_default();
-    let provider = if !uptrace_dsn.is_empty() {
-        let provider = init_tracer(uptrace_dsn).expect("Failed to init tracer");
-
-        global::set_tracer_provider(provider.clone());
-        global::set_text_map_propagator(TraceContextPropagator::new());
-        Some(provider)
-    } else {
-        None
-    };
-
+    let telemetry_guards = init_telemetry();
     let path = PathBuf::from("/var/run/axum");
     let _ = tokio::fs::remove_file(&path).await;
     tokio::fs::create_dir_all(path.parent().unwrap()).await?;
@@ -218,10 +254,10 @@ pub async fn run() -> std::io::Result<()> {
     streamer.stop().await?;
     streamer.wait_for_shutdown().await?;
 
-    if let Some(p) = provider {
-        p.force_flush().unwrap();
+    if let Some((tp, mp)) = telemetry_guards {
+        let _ = tp.force_flush();
+        let _ = mp.force_flush();
     }
-
     result
 }
 
