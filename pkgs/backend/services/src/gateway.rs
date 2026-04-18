@@ -25,6 +25,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use axum_tracing_opentelemetry::middleware::{OtelAxumLayer, OtelInResponseLayer};
 use opentelemetry::{KeyValue, global};
 use opentelemetry_otlp::{WithExportConfig, WithTonicConfig};
 use opentelemetry_sdk::Resource;
@@ -43,8 +44,9 @@ use crate::api::investing;
 use crate::api::{AppState, health_check, into_stream, pprof, reload};
 
 fn init_telemetry() -> Option<(SdkTracerProvider, SdkMeterProvider)> {
-    let endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").unwrap_or_default();
-    if endpoint.is_empty() {
+    let trace_endpoint = std::env::var("OTEL_TRACE_EXPORTER_OTLP_ENDPOINT").unwrap_or_default();
+    let metric_endpoint = std::env::var("OTEL_METRIC_EXPORTER_OTLP_ENDPOINT").unwrap_or_default();
+    if trace_endpoint.is_empty() || metric_endpoint.is_empty() {
         return None;
     }
 
@@ -58,7 +60,10 @@ fn init_telemetry() -> Option<(SdkTracerProvider, SdkMeterProvider)> {
         headers.insert(key.to_string(), value.to_string());
     }
 
-    metadata.insert("otel-dsn", endpoint.parse().unwrap());
+    let uptrace_dsn = std::env::var("UPTRACE_DSN").unwrap_or_default();
+    if !uptrace_dsn.is_empty() {
+        metadata.insert("uptrace-dsn", uptrace_dsn.parse().unwrap());
+    }
 
     let resource = Resource::builder()
         .with_attributes(vec![
@@ -69,7 +74,7 @@ fn init_telemetry() -> Option<(SdkTracerProvider, SdkMeterProvider)> {
 
     let span_exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
-        .with_endpoint(format!("{}/v1/traces", endpoint)) // Grafana Cloud yêu cầu path cụ thể
+        .with_endpoint(trace_endpoint) // Grafana Cloud yêu cầu path cụ thể
         .with_metadata(metadata.clone())
         .build()
         .expect("Failed to create exporter");
@@ -78,10 +83,11 @@ fn init_telemetry() -> Option<(SdkTracerProvider, SdkMeterProvider)> {
         .with_batch_exporter(span_exporter)
         .with_resource(resource.clone())
         .build();
+    global::set_tracer_provider(trace_provider.clone());
 
     let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
         .with_tonic()
-        .with_endpoint(format!("{}/v1/metrics", endpoint))
+        .with_endpoint(metric_endpoint)
         .with_metadata(metadata)
         .build()
         .expect("Failed to create metric exporter");
@@ -90,8 +96,6 @@ fn init_telemetry() -> Option<(SdkTracerProvider, SdkMeterProvider)> {
         .with_periodic_exporter(metric_exporter)
         .with_resource(resource)
         .build();
-
-    global::set_tracer_provider(trace_provider.clone());
     global::set_meter_provider(meter_provider.clone());
     global::set_text_map_propagator(TraceContextPropagator::new());
 
@@ -214,6 +218,8 @@ pub async fn routes(
 
     let router = router
         .with_state(AppState::new(runtime.clone()).await?)
+        .layer(OtelInResponseLayer::default())
+        .layer(OtelAxumLayer::default())
         .layer(prometheus_layer);
 
     let final_router = if environment == "prod" {
