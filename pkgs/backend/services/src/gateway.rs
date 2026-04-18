@@ -24,12 +24,47 @@ use std::io::Error;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
+
+use opentelemetry::KeyValue;
+use opentelemetry_otlp::{WithExportConfig, WithTonicConfig};
+use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
+use tonic::metadata::MetadataMap;
 
 use crate::api::admin;
 use crate::vector::{AxumBuilder, AxumRuntime};
 //use crate::api::chat;
 use crate::api::investing;
 use crate::api::{AppState, health_check, into_stream, pprof, reload};
+
+fn init_tracer(dsn: String) -> Result<SdkTracerProvider, Box<dyn std::error::Error + Send + Sync>> {
+    let mut metadata = MetadataMap::with_capacity(1);
+    metadata.insert("uptrace-dsn", dsn.parse().unwrap());
+
+    // Create OTLP span exporter
+    let exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_tonic()
+        .with_tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
+        .with_endpoint("https://api.uptrace.dev:4317")
+        .with_metadata(metadata)
+        .with_timeout(Duration::from_secs(10))
+        .build()?;
+
+    // Build the tracer provider
+    let provider = SdkTracerProvider::builder()
+        .with_batch_exporter(exporter)
+        .with_resource(
+            Resource::builder() // Sử dụng builder thay vì new
+                .with_attributes(vec![
+                    KeyValue::new("service.name", "universal-gateway"),
+                    KeyValue::new("service.version", "1.0.0"),
+                ])
+                .build(),
+        )
+        .build();
+
+    Ok(provider)
+}
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
@@ -148,6 +183,13 @@ pub async fn routes(
 }
 
 pub async fn run() -> std::io::Result<()> {
+    let uptrace_dsn = std::env::var("UPTRACE_DSN").unwrap_or_default();
+
+    if !uptrace_dsn.is_empty() {
+        let _tracer_provider = init_tracer(uptrace_dsn).expect("Failed to init tracer");
+        println!("OpenTelemetry tracing initialized with Uptrace");
+    }
+
     let path = PathBuf::from("/var/run/axum");
     let _ = tokio::fs::remove_file(&path).await;
     tokio::fs::create_dir_all(path.parent().unwrap()).await?;

@@ -49,6 +49,13 @@ bytes = "1.11.1"
 async-graphql = "7.2.1"
 async-graphql-axum = "7.2.1"
 
+# Tracing
+tonic = { version = "0.13.1", features = ["tls-native-roots", "gzip"] }
+opentelemetry = "0.30.0"
+opentelemetry_sdk = { version = "0.30.0", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.30.0", features = ["grpc-tonic", "gzip-tonic", "tls-roots", "trace"] }
+opentelemetry-resource-detectors = "0.9"
+
 # Investing
 ta = "0.5.0"
 stats = "*"
