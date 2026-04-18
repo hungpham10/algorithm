@@ -218,8 +218,8 @@ pub async fn routes(
 
     let router = router
         .with_state(AppState::new(runtime.clone()).await?)
-        .layer(OtelInResponseLayer::default())
-        .layer(OtelAxumLayer::default())
+        .layer(OtelInResponseLayer)
+        .layer(OtelAxumLayer)
         .layer(prometheus_layer);
 
     let final_router = if environment == "prod" {
