@@ -9,9 +9,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json as JsonResponse};
 use axum::routing::{get, post};
 
-use async_graphql::{
-    Context, EmptyMutation, EmptySubscription, ErrorExtensions, Object, Result, Schema,
-};
+use async_graphql::{Context, EmptyMutation, EmptySubscription, Object, Result, Schema};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 
 use chrono::Utc;
@@ -34,7 +32,8 @@ use super::{AppState, InvestingHeaders};
         create_stores,
         create_products,
         ingest_price_data,
-        get_price_data,
+        get_price_data_by_name,
+        get_price_data_by_product_id,
         get_symbol_id_by_product_in_store,
         list_paginated_symbols,
         render_data_using_graphql,
@@ -159,7 +158,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
             "/stores/{store}/products/{product}/price",
-            get(get_price_data).post(ingest_price_data),
+            get(get_price_data_by_name).post(ingest_price_data),
         )
         .route(
             "/stores/{store}/products/{product}/symbol",
@@ -172,6 +171,7 @@ pub fn routes() -> Router<AppState> {
             get(list_paginated_products).post(create_products),
         )
         .route("/symbols", get(list_paginated_symbols))
+        .route("/prices/{product_id}", get(get_price_data_by_product_id))
         .route("/astra-render", post(render_data_using_graphql))
         .layer(Extension(schema))
 }
@@ -350,6 +350,70 @@ async fn list_price_of_store(
 
 #[utoipa::path(
     get,
+    path = "/prices/{product_id}",
+    params(
+        ("product_id" = String, Path, description = "Product Id"),
+    ),
+    responses((status = 200, body = OhclResponse)),
+)]
+async fn get_price_data_by_product_id(
+    State(app_state): State<AppState>,
+    Path(product_id): Path<i32>,
+    InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
+) -> Result<impl IntoResponse, (StatusCode, JsonResponse<OhclResponse>)> {
+    // @TODO: get broker_id by tenant_id
+    let tenant_id = tenant_id.into();
+    let broker = app_state.secret.get("BROKER", "/").await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(OhclResponse {
+                error: Some("BROKER not set".into()),
+                ..Default::default()
+            }),
+        )
+    })?;
+
+    app_state
+        .investing_entity
+        .validate_broker_listing_limit(tenant_id, &broker, &user_id.0)
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(OhclResponse {
+                    error: Some(format!(
+                        "Failed fetch price from product with id {product_id}: {error}",
+                    )),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    Ok(JsonResponse(OhclResponse {
+        price: Some(
+            app_state
+                .investing_entity
+                .get_price(tenant_id, product_id)
+                .await
+                .map_err(|error| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        JsonResponse(OhclResponse {
+                            error: Some(format!(
+                                "Failed fetch price from product with id {product_id} (user {}): {error}",
+                                user_id.0.clone().unwrap_or("guest".to_string())
+                            )),
+                            ..Default::default()
+                        }),
+                    )
+                })?,
+        ),
+        ..Default::default()
+    }))
+}
+
+#[utoipa::path(
+    get,
     path = "/stores/{store}/products/{product}/price",
     params(
         ("store" = String, Path, description = "Store name"),
@@ -357,7 +421,7 @@ async fn list_price_of_store(
     ),
     responses((status = 200, body = OhclResponse)),
 )]
-async fn get_price_data(
+async fn get_price_data_by_name(
     State(app_state): State<AppState>,
     Path((store, product)): Path<(String, String)>,
     InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
@@ -794,9 +858,10 @@ async fn create_products(
 
 struct RenderGraphQL {
     symbol: Symbol,
+    product: Option<i32>,
+    history: Vec<Price>,
     current: Option<Price>,
     yesterday: Option<Price>,
-    history: Vec<Price>,
 }
 
 #[Object]
@@ -808,6 +873,11 @@ impl RenderGraphQL {
     #[graphql(name = "type")]
     async fn r_type(&self) -> Option<String> {
         self.symbol.name.clone()
+    }
+
+    async fn live_price(&self) -> Option<String> {
+        self.product
+            .map(|product_id| format!("/api/investing/v2/prices/{product_id}"))
     }
 
     async fn buy(&self) -> Option<String> {
@@ -883,10 +953,11 @@ impl QueryRoot {
             .investing_entity
             .convert_to_real_broker(
                 *tenant_id,
-                app_state.secret.get("BROKER", "/").await.map_err(|e| {
-                    async_graphql::Error::new(format!("BROKER not set: {e}"))
-                        .extend_with(|_, e| e.set("code", "INTERNAL_SERVER_ERROR"))
-                })?,
+                app_state
+                    .secret
+                    .get("BROKER", "/")
+                    .await
+                    .map_err(|e| async_graphql::Error::new(format!("BROKER not set: {e}")))?,
             )
             .await
             .map_err(|e| async_graphql::Error::new(format!("Broker validation failed: {e}")))?;
@@ -908,6 +979,7 @@ impl QueryRoot {
         let mut current_map = HashMap::new();
         let mut yesterday_map = HashMap::new();
         let mut history_map = HashMap::new();
+        let mut product_id_map = HashMap::new();
 
         if needs_history || needs_diff {
             let from = Utc::now().timestamp() - (lookback * 24 * 60 * 60);
@@ -930,21 +1002,22 @@ impl QueryRoot {
                 .await
                 .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
-            for (id, prices) in history_res {
-                if let Some(latest) = prices.last() {
-                    current_map.insert(id, latest.clone());
-
-                    if prices.len() >= 2 {
-                        yesterday_map.insert(id, prices[prices.len() - 2].clone());
+            for (s_id, products_map) in history_res {
+                if let Some((p_id, prices)) = products_map.into_iter().next() {
+                    product_id_map.insert(s_id, p_id);
+                    if let Some(latest) = prices.last() {
+                        current_map.insert(s_id, latest.clone());
+                        if prices.len() >= 2 {
+                            yesterday_map.insert(s_id, prices[prices.len() - 2].clone());
+                        }
                     }
-                }
-
-                if needs_history {
-                    history_map.insert(id, prices);
+                    if needs_history {
+                        history_map.insert(s_id, prices);
+                    }
                 }
             }
         } else if needs_current {
-            current_map = app_state
+            let current_res = app_state
                 .investing_entity
                 .list_current_price_of_symbols(
                     *tenant_id,
@@ -958,25 +1031,28 @@ impl QueryRoot {
                 )
                 .await
                 .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+            for (s_id, products_map) in current_res {
+                if let Some((p_id, price)) = products_map.into_iter().next() {
+                    product_id_map.insert(s_id, p_id);
+                    current_map.insert(s_id, price);
+                }
+            }
         }
 
         let mut results = Vec::new();
 
         for symbol in all_symbols {
             let id = symbol.id.unwrap_or(0);
-
             let current = match current_map.remove(&id) {
-                Some(current) => Some(current),
+                Some(curr) => Some(curr),
                 None => {
-                    // @NOTE: we are sure totatly that we don't store of
-                    //        any symbol in database
-
                     if needs_current {
                         get_latest_price(
                             app_state,
                             *tenant_id,
                             &broker,
-                            &symbol.symbol.clone().unwrap(),
+                            &symbol.symbol.clone().unwrap_or_default(),
                             0,
                         )
                         .await
@@ -989,6 +1065,7 @@ impl QueryRoot {
             results.push(RenderGraphQL {
                 symbol,
                 current,
+                product: product_id_map.remove(&id),
                 yesterday: yesterday_map.remove(&id),
                 history: history_map.remove(&id).unwrap_or_default(),
             });

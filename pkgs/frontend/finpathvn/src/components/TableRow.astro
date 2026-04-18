@@ -27,7 +27,8 @@ else if (trendValue < 0) trendColor = "text-red-700";
       initialDiff={data.diffBuy}
       type="buy"
       goldType={data.type}
-      client:load
+      liveEndpoint={data.livePrice}
+      client:idle
     />
   </td>
 
@@ -37,7 +38,8 @@ else if (trendValue < 0) trendColor = "text-red-700";
       initialDiff={data.diffSell}
       type="sell"
       goldType={data.type}
-      client:load
+      liveEndpoint={data.livePrice}
+      client:idle
     />
   </td>
 

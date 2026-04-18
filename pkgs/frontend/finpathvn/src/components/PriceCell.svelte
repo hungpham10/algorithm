@@ -5,6 +5,7 @@
   export let initialDiff = "";
   export let type = "buy";
   export let goldType = "";
+  export let liveEndpoint = "";
 
   let price = initialPrice;
   let diff = initialDiff;
@@ -16,8 +17,9 @@
   $: priceColor = (type === "sell") ? colorClass : "text-gray-900";
 
   async function updateData() {
+    if (!liveEndpoint) return;
     try {
-      const res = await fetch(`/api/gold-single?type=${encodeURIComponent(goldType)}`);
+      const res = await fetch(liveEndpoint);
 
       if (res.ok) {
         const newData = await res.json();

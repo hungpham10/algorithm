@@ -1,18 +1,16 @@
-
 ---
 import '../styles/global.css';
 import GoldSummary from '../components/GoldSummary.svelte';
 import TableHead from '../components/TableHead.astro';
 import TableRow from '../components/TableRow.astro';
 
-// 1. Kiểm soát render quảng cáo từ môi trường build (SSG)
-// Astro sẽ đọc giá trị này khi build. Nếu là 'false', code quảng cáo sẽ không tồn tại trong file HTML cuối cùng.
+// 1. Kiểm soát render quảng cáo
 const SHOW_ADS = import.meta.env.SHOW_ADS === 'true';
 
 // 2. Định nghĩa endpoint
 const GRAPHQL_ENDPOINT = "https://lighttrading.pp.ua/api/investing/v2/astra-render";
 
-// 3. Fetch dữ liệu từ GraphQL
+// 3. Fetch dữ liệu
 let data;
 try {
   const response = await fetch(GRAPHQL_ENDPOINT, {
@@ -21,7 +19,7 @@ try {
     body: JSON.stringify({
       query: `
         query GetGoldData {
-	  goldMarketList(after: 0, limit: 10) {
+          goldMarketList(after: 0, limit: 10) {
             type
             buy
             sell
@@ -30,7 +28,8 @@ try {
             yesterdayBuy
             yesterdaySell
             trend
-            trendData
+	    trendData
+	    livePrice
           }
         }
       `
@@ -42,15 +41,12 @@ try {
   console.error("Fetch error:", e);
 }
 
-// 4. Gán dữ liệu (fallback)
 const summaryData = data?.goldSummary || {
   vn: { buy: "0", sell: "0", diffBuy: "-", diffSell: "-", percentBuy: "0%", percentSell: "0%", gap: "0" },
   world: { price: "0", diff: "-", percent: "0%", convertedVnd: "0" }
 };
-
 const goldList = data?.goldMarketList || [];
 
-// 5. Xử lý thời gian
 const now = new Date();
 const currentDate = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
 const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullYear()}`;
@@ -61,57 +57,55 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bảng giá vàng</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />  
+    <title>Bảng giá vàng trực tuyến</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="alternate icon" href="/favicon.ico" />
   </head>
-  
-  <body class="bg-[#f8f9fa] text-gray-900 antialiased">
-    
-    <nav class="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200">
-      <div class="max-w-[1440px] mx-auto px-4 h-14 flex items-center justify-between">
-        
-        <div class="flex items-center gap-8">
-          <a href="/" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <img src="/logo.svg" alt="Logo" class="h-8 w-auto md:h-9" />
-          </a>
 
-          <div class="hidden md:flex items-center gap-6 text-sm font-medium text-gray-500">
-            <a href="#" class="text-orange-600 border-b-2 border-orange-600 h-14 flex items-center mt-[2px]">Bảng giá</a>
-            <a href="#" class="hover:text-gray-900 transition-colors">Biểu đồ</a>
-            <a href="#" class="hover:text-gray-900 transition-colors">Tin tức</a>
-          </div>
-        </div>
+  <body class="bg-[#f3f4f6] text-gray-900 antialiased">
+    <nav class="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm">
+      <div class="max-w-[1440px] mx-auto px-4 h-16 flex items-center justify-between">
 
-        <div class="flex items-center gap-4">
-          <div class="text-[11px] font-medium text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full uppercase tracking-wider">
-            Dữ liệu trực tuyến
+        <a href="/" class="flex items-center hover:opacity-90 transition-opacity">
+          <img
+            src="/logo.svg"
+            alt="Logo"
+            class="h-12 w-auto md:h-14 object-contain"
+          />
+        </a>
+
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1 rounded-full border border-green-100 shadow-sm">
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
+            </span>
+            <span class="text-[11px] font-bold uppercase tracking-wider">Live Data</span>
           </div>
         </div>
       </div>
     </nav>
 
-    <div class="max-w-[1440px] mx-auto px-3 py-4 md:py-6 grid grid-cols-1 lg:grid-cols-12 gap-4">
+    <div class="max-w-[1440px] mx-auto px-3 py-4 md:py-6 grid grid-cols-1 lg:grid-cols-12 gap-5">
 
       <main class={SHOW_ADS ? "lg:col-span-9 space-y-4" : "lg:col-span-12 space-y-4"}>
 
-        <GoldSummary initialData={summaryData} client:load />
-
-        <div class="bg-white shadow-sm border border-gray-200 rounded-md overflow-hidden">
-          <header class="p-3 md:p-4 border-b border-gray-100 flex justify-between items-center bg-white">
+        <GoldSummary initialData={summaryData} client:idle />
+        <div class="bg-white shadow-md border border-gray-200 rounded-lg overflow-hidden">
+          <header class="p-4 md:p-5 border-b border-gray-100 flex justify-between items-center bg-white">
             <div class="flex items-baseline gap-2">
-              <h1 class="text-lg md:text-xl font-bold text-gray-800 tracking-tight">Giá vàng hôm nay</h1>
-              <span class="text-gray-400 italic text-[10px] md:text-xs">| triệu đồng/lượng</span>
+              <h1 class="text-xl md:text-2xl font-bold text-gray-800 tracking-tight">Giá vàng hôm nay</h1>
+              <span class="text-gray-400 italic text-xs md:text-sm">| triệu đồng/lượng</span>
             </div>
-            <div class="text-[10px] md:text-[11px] text-gray-400 font-medium">
-              Cập nhật: {currentDate}
+            <div class="text-xs md:text-sm text-gray-500 font-medium bg-gray-50 px-2 py-1 rounded border border-gray-100">
+              {currentDate}
             </div>
           </header>
 
           <div class="overflow-x-auto relative scrollbar-hide">
             <table class="w-full border-collapse min-w-[600px]">
               <TableHead currentDate={currentDate} yesterdayDate={yesterdayDate} />
-              <tbody class="divide-y divide-gray-50">
+              <tbody class="divide-y divide-gray-100">
                 {goldList.length > 0 ? (
                   goldList.map((item) => <TableRow data={item} />)
                 ) : (
@@ -129,31 +123,29 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
       </main>
 
       {SHOW_ADS && (
-        <aside class="hidden lg:block lg:col-span-3 space-y-4">
-          <div class="sticky top-[74px] space-y-4">
-            <div class="bg-white p-2 shadow-sm border border-gray-200 rounded-md">
-              <div class="bg-gray-50 h-[250px] flex flex-col items-center justify-center text-gray-300 border border-dashed border-gray-200">
-                <p class="text-[9px] uppercase font-bold tracking-widest">Advertisement</p>
+        <aside class="hidden lg:block lg:col-span-3">
+          <div class="sticky top-20 space-y-4">
+            <div class="bg-white p-2 shadow-md border border-gray-200 rounded-lg">
+              <div class="bg-gray-100 h-[250px] flex flex-col items-center justify-center text-gray-400 border border-dashed border-gray-300 rounded">
+                <p class="text-[10px] uppercase font-bold mb-1 tracking-widest">Quảng cáo</p>
+                <p class="text-xs">300 x 250</p>
               </div>
             </div>
-            <div class="bg-white p-4 shadow-sm border border-gray-200 rounded-md">
-              <h4 class="text-xs font-bold text-gray-400 mb-3 uppercase tracking-widest border-b pb-2">Tin nhanh</h4>
-              <ul class="space-y-3">
-                <li class="text-sm leading-snug hover:text-orange-600 cursor-pointer text-gray-600 transition-colors italic line-clamp-2 underline decoration-gray-100 underline-offset-4">
-                  • Vàng thế giới lập đỉnh mới sáng nay...
-                </li>
-                <li class="text-sm leading-snug hover:text-orange-600 cursor-pointer text-gray-600 transition-colors italic line-clamp-2 underline decoration-gray-100 underline-offset-4">
-                  • Lãi suất ngân hàng tiếp tục giảm...
-                </li>
-              </ul>
+
+            <div class="bg-white p-5 shadow-md border border-gray-200 rounded-lg">
+                <h4 class="text-sm font-bold text-gray-700 mb-4 uppercase tracking-wider border-b pb-2">Tin nhanh thị trường</h4>
+                <ul class="space-y-4">
+                  <li class="text-sm text-gray-600 hover:text-blue-600 cursor-pointer transition-colors leading-snug">• <b>Vàng thế giới:</b> Lập đỉnh mới kỷ lục sáng nay...</li>
+                  <li class="text-sm text-gray-600 hover:text-blue-600 cursor-pointer transition-colors leading-snug">• <b>USD:</b> Tiếp tục đà giảm giá so với các đồng tiền mạnh...</li>
+                </ul>
             </div>
           </div>
         </aside>
       )}
 
     </div>
-    
-    <div class="h-10 lg:hidden"></div>
+
+    <div class="h-8 lg:hidden"></div>
 
   </body>
 </html>

@@ -483,13 +483,13 @@ impl Investing {
         tenant_id: i64,
         broker: &str,
         filter: Filter,
-    ) -> Result<HashMap<i32, Vec<Price>>, DbErr> {
-        let symbol_ids = Symbols::find()
+    ) -> Result<HashMap<i32, HashMap<i32, Vec<Price>>>, DbErr> {
+        let symbol_ids: Vec<i32> = symbols::Entity::find()
             .select_only()
             .column(symbols::Column::Id)
             .join_rev(
                 JoinType::InnerJoin,
-                Brokers::belongs_to(Symbols)
+                brokers::Entity::belongs_to(symbols::Entity)
                     .from(brokers::Column::Id)
                     .to(symbols::Column::BrokerId)
                     .into(),
@@ -509,26 +509,27 @@ impl Investing {
         let raw_history = price_history::Entity::find()
             .select_only()
             .column(symbols::Column::Id)
+            .column(mapping_product_in_store_to_symbol::Column::Id)
             .column(price_history::Column::Buy)
             .column(price_history::Column::Sell)
             .column(price_history::Column::CreatedAt)
             .join_rev(
                 JoinType::InnerJoin,
-                MappingProductInStoreToSymbol::belongs_to(price_history::Entity)
+                mapping_product_in_store_to_symbol::Entity::belongs_to(price_history::Entity)
                     .from(mapping_product_in_store_to_symbol::Column::Id)
                     .to(price_history::Column::Id)
                     .into(),
             )
             .join_rev(
                 JoinType::InnerJoin,
-                ProductAnchors::belongs_to(MappingProductInStoreToSymbol)
+                product_anchors::Entity::belongs_to(mapping_product_in_store_to_symbol::Entity)
                     .from(product_anchors::Column::Id)
                     .to(mapping_product_in_store_to_symbol::Column::Id)
                     .into(),
             )
             .join_rev(
                 JoinType::InnerJoin,
-                Symbols::belongs_to(ProductAnchors)
+                symbols::Entity::belongs_to(product_anchors::Entity)
                     .from(symbols::Column::Id)
                     .to(product_anchors::Column::Symbol)
                     .into(),
@@ -540,25 +541,33 @@ impl Investing {
                 chrono::DateTime::from_timestamp(filter.to, 0).unwrap_or_default(),
             ))
             .order_by_asc(symbols::Column::Id)
+            .order_by_asc(mapping_product_in_store_to_symbol::Column::Id) // Quan trọng để grouping
             .order_by_asc(price_history::Column::CreatedAt)
-            .into_tuple::<(i32, f32, f32, chrono::DateTime<chrono::Utc>)>()
+            .into_tuple::<(i32, i32, f32, f32, chrono::DateTime<chrono::Utc>)>()
             .all(self.dbt(tenant_id))
             .await?;
 
-        let mut result_map = HashMap::<i32, Vec<Price>>::new();
-        let mut last_buckets = HashMap::<i32, i64>::new();
+        let mut result_map = HashMap::<i32, HashMap<i32, Vec<Price>>>::new();
+        let mut last_buckets = HashMap::<(i32, i32), i64>::new();
 
-        for (symbol_id, buy, sell, created_at) in raw_history {
+        for (symbol_id, product_id, buy, sell, created_at) in raw_history {
             let ts = created_at.timestamp();
             let bucket = ts / (filter.interval as i64);
+            let pair_key = (symbol_id, product_id);
 
-            if last_buckets.get(&symbol_id) != Some(&bucket) {
-                result_map.entry(symbol_id).or_default().push(Price {
-                    buy,
-                    sell,
-                    ..Default::default()
-                });
-                last_buckets.insert(symbol_id, bucket);
+            if last_buckets.get(&pair_key) != Some(&bucket) {
+                result_map
+                    .entry(symbol_id)
+                    .or_default()
+                    .entry(product_id)
+                    .or_default()
+                    .push(Price {
+                        buy,
+                        sell,
+                        ..Default::default()
+                    });
+
+                last_buckets.insert(pair_key, bucket);
             }
         }
 
@@ -570,7 +579,7 @@ impl Investing {
         tenant_id: i64,
         broker: &str,
         filter: Filter,
-    ) -> Result<HashMap<i32, Price>, DbErr> {
+    ) -> Result<HashMap<i32, HashMap<i32, Price>>, DbErr> {
         let symbol_ids = Symbols::find()
             .select_only()
             .column(symbols::Column::Id)
@@ -593,9 +602,10 @@ impl Investing {
             return Ok(HashMap::new());
         }
 
-        Ok(Symbols::find()
+        let raw_data = Symbols::find()
             .select_only()
             .column(symbols::Column::Id)
+            .column(mapping_product_in_store_to_symbol::Column::Id)
             .column(price_current::Column::Buy)
             .column(price_current::Column::Sell)
             .join_rev(
@@ -621,21 +631,23 @@ impl Investing {
             )
             .filter(symbols::Column::Id.is_in(symbol_ids))
             .filter(product_anchors::Column::Scope.eq(filter.scope))
-            .into_tuple::<(i32, Option<f32>, Option<f32>)>()
+            .into_tuple::<(i32, i32, Option<f32>, Option<f32>)>()
             .all(self.dbt(tenant_id))
-            .await?
-            .into_iter()
-            .map(|(id, buy, sell)| {
-                (
-                    id,
-                    Price {
-                        buy: buy.unwrap_or(0.0),
-                        sell: sell.unwrap_or(0.0),
-                        ..Default::default()
-                    },
-                )
-            })
-            .collect::<HashMap<_, _>>())
+            .await?;
+
+        let mut result_map = HashMap::<i32, HashMap<i32, Price>>::new();
+
+        for (s_id, p_id, buy, sell) in raw_data {
+            let price = Price {
+                buy: buy.unwrap_or(0.0),
+                sell: sell.unwrap_or(0.0),
+                ..Default::default()
+            };
+
+            result_map.entry(s_id).or_default().insert(p_id, price);
+        }
+
+        Ok(result_map)
     }
 
     pub async fn list_current_price_of_store(
