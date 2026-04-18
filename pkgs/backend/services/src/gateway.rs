@@ -26,8 +26,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use opentelemetry::KeyValue;
+use opentelemetry::{KeyValue, global};
 use opentelemetry_otlp::{WithExportConfig, WithTonicConfig};
+use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
 use tonic::metadata::MetadataMap;
 
@@ -184,11 +185,15 @@ pub async fn routes(
 
 pub async fn run() -> std::io::Result<()> {
     let uptrace_dsn = std::env::var("UPTRACE_DSN").unwrap_or_default();
+    let provider = if !uptrace_dsn.is_empty() {
+        let provider = init_tracer(uptrace_dsn).expect("Failed to init tracer");
 
-    if !uptrace_dsn.is_empty() {
-        let _tracer_provider = init_tracer(uptrace_dsn).expect("Failed to init tracer");
-        println!("OpenTelemetry tracing initialized with Uptrace");
-    }
+        global::set_tracer_provider(provider.clone());
+        global::set_text_map_propagator(TraceContextPropagator::new());
+        Some(provider)
+    } else {
+        None
+    };
 
     let path = PathBuf::from("/var/run/axum");
     let _ = tokio::fs::remove_file(&path).await;
@@ -212,6 +217,10 @@ pub async fn run() -> std::io::Result<()> {
     // Shutdown sạch sẽ
     streamer.stop().await?;
     streamer.wait_for_shutdown().await?;
+
+    if let Some(p) = provider {
+        p.force_flush().unwrap();
+    }
 
     result
 }
