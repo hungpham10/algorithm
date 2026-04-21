@@ -6,7 +6,7 @@ import TableHead from '../components/TableHead.astro';
 import TableRow from '../components/TableRow.astro';
 
 const SHOW_ADS = import.meta.env.SHOW_ADS === 'true';
-const GRAPHQL_ENDPOINT = "http://lighttrading.pp.ua:8080/api/investing/v2/astra-render";
+const GRAPHQL_ENDPOINT = "https://lighttrading.pp.ua/api/investing/v2/astra-render";
 
 let data;
 try {
@@ -16,12 +16,8 @@ try {
     body: JSON.stringify({
       query: `
         query GetGoldData {
-          goldSummary {
-            vn { buy sell diffBuy diffSell gap }
-            world { price diff percent convertedVnd }
-          }
           goldMarketList(after: 0, limit: 10) {
-            id
+            product
             type
             buy
             sell
@@ -47,7 +43,8 @@ const summaryData = data?.goldSummary || {
   world: { price: "0", diff: "-", percent: "0%", convertedVnd: "0" }
 };
 const goldList = data?.goldMarketList || [];
-const allProductIds = goldList.map(item => item.id).filter(id => !!id);
+const allProductIds = goldList.map(item => item.product)
+  .filter(Boolean);
 
 const now = new Date();
 const currentDate = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;

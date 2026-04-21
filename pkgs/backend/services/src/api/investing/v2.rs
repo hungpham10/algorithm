@@ -887,8 +887,12 @@ struct RenderGraphQL {
 
 #[Object]
 impl RenderGraphQL {
-    async fn id(&self) -> Option<i32> {
+    async fn symbol(&self) -> Option<i32> {
         self.symbol.id
+    }
+
+    async fn product(&self) -> Option<i32> {
+        self.product
     }
 
     #[graphql(name = "type")]
