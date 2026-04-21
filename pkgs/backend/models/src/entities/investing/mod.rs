@@ -517,7 +517,7 @@ impl Investing {
                 JoinType::InnerJoin,
                 mapping_product_in_store_to_symbol::Entity::belongs_to(price_history::Entity)
                     .from(mapping_product_in_store_to_symbol::Column::Id)
-                    .to(price_history::Column::Id)
+                    .to(price_history::Column::SymbolId)
                     .into(),
             )
             .join_rev(
