@@ -16,7 +16,14 @@ try {
     body: JSON.stringify({
       query: `
         query GetGoldData {
-          goldMarketList(after: 0, limit: 10) {
+          goldSummary: goldMarketList(scope: 2, after: 0, limit: 1) {
+	    product
+	    buy
+	    sell
+            diffBuy
+            diffSell
+          }
+          largeMarketGold: goldMarketList(scope: 1, after: 0, limit: 10) {
             product
             type
             buy
@@ -38,13 +45,21 @@ try {
   console.error("Fetch error:", e);
 }
 
-const summaryData = data?.goldSummary || {
-  vn: { buy: "0", sell: "0", diffBuy: "-", diffSell: "-", gap: "0" },
+// Map dữ liệu cho Component Svelte
+const summaryData = {
+  vn: {
+    buy: data?.goldSummary?.buy?.toLocaleString() || "0",
+    sell: data?.goldSummary?.sell?.toLocaleString() || "0",
+    diffBuy: data?.goldSummary?.diffBuy?.toLocaleString() || "0",
+    diffSell: data?.goldSummary?.diffSell?.toLocaleString() || "0",
+    gap: "0",
+  },
   world: { price: "0", diff: "-", percent: "0%", convertedVnd: "0" }
 };
-const goldList = data?.goldMarketList || [];
-const allProductIds = goldList.map(item => item.product)
-  .filter(Boolean);
+
+// Dữ liệu cho bảng
+const goldList = data?.largeMarketGold || [];
+const allProductIds = goldList.map(item => item.product).filter(Boolean);
 
 const now = new Date();
 const currentDate = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
@@ -57,54 +72,43 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bảng giá vàng trực tuyến</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
 
   <body class="bg-[#f3f4f6] text-gray-900 antialiased">
     <script is:inline define:vars={{ allProductIds }}>
-      async function updateAllData() {
+      async function updateTableData() {
         if (!allProductIds.length) return;
-
         try {
-	  const response = await fetch(`https://lighttrading.pp.ua/api/investing/v2/prices/${allProductIds.join(',')}`);
-
+          const response = await fetch(`https://lighttrading.pp.ua/api/investing/v2/prices/${allProductIds.join(',')}`);
           if (response.ok) {
             const priceUpdates = await response.json();
-
             if (Array.isArray(priceUpdates) && priceUpdates.length > 0) {
-
-              const validUpdates = priceUpdates.filter(u => u.buy || u.sell);
-
-              if (validUpdates.length > 0) {
-                window.dispatchEvent(new CustomEvent('price-update', {
-                  detail: validUpdates
-                }));
-              }
+              window.dispatchEvent(new CustomEvent('price-update', {
+                detail: priceUpdates
+              }));
             }
           }
         } catch (e) {
-          console.warn("Update failed, keeping old data:", e);
+          console.warn("Update failed:", e);
         }
       }
 
       document.addEventListener('DOMContentLoaded', () => {
-        setTimeout(updateAllData, 2000);
-        setInterval(updateAllData, 20000);
+        setInterval(updateTableData, 20000); // Polling cho bảng dưới
       });
     </script>
-    <nav class="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm">
+
+    <nav class="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200">
       <div class="max-w-[1440px] mx-auto px-4 h-16 flex items-center justify-between">
-        <a href="/" class="flex items-center hover:opacity-90 transition-opacity">
-          <img src="/logo.svg" alt="Logo" class="h-12 w-auto md:h-14 object-contain" />
+        <a href="/" class="flex items-center">
+          <img src="/logo.svg" alt="Logo" class="h-12 w-auto" />
         </a>
-        <div class="flex items-center gap-3">
-          <div class="flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1 rounded-full border border-green-100 shadow-sm">
+        <div class="flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1 rounded-full border border-green-100">
             <span class="relative flex h-2 w-2">
               <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
               <span class="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
             </span>
-            <span class="text-[11px] font-bold uppercase tracking-wider">Live Data</span>
-          </div>
+            <span class="text-[11px] font-bold uppercase">Live Data</span>
         </div>
       </div>
     </nav>
@@ -115,24 +119,24 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
         <GoldSummary initialData={summaryData} client:load />
 
         <div class="bg-white shadow-md border border-gray-200 rounded-lg overflow-hidden">
-          <header class="p-4 md:p-5 border-b border-gray-100 flex justify-between items-center bg-white">
+          <header class="p-4 border-b border-gray-100 flex justify-between items-center bg-white">
             <div class="flex items-baseline gap-2">
-              <h1 class="text-xl md:text-2xl font-bold text-gray-800 tracking-tight">Giá vàng hôm nay</h1>
-              <span class="text-gray-400 italic text-xs md:text-sm">| triệu đồng/lượng</span>
+              <h1 class="text-xl md:text-2xl font-bold text-gray-800">Giá vàng hôm nay</h1>
+              <span class="text-gray-400 italic text-xs">| triệu đồng/lượng</span>
             </div>
-            <div class="text-xs md:text-sm text-gray-500 font-medium bg-gray-50 px-2 py-1 rounded border border-gray-100">
+            <div class="text-xs text-gray-500 font-medium bg-gray-50 px-2 py-1 rounded border">
               {currentDate}
             </div>
           </header>
 
-          <div class="overflow-x-auto relative scrollbar-hide">
+          <div class="overflow-x-auto">
             <table class="w-full border-collapse min-w-[600px]">
               <TableHead currentDate={currentDate} yesterdayDate={yesterdayDate} />
               <tbody class="divide-y divide-gray-100">
                 {goldList.length > 0 ? (
                   goldList.map((item) => <TableRow data={item} />)
                 ) : (
-                  <tr><td colspan="6" class="p-10 text-center text-gray-400 italic">Đang cập nhật dữ liệu...</td></tr>
+                  <tr><td colspan="6" class="p-10 text-center text-gray-400">Đang cập nhật...</td></tr>
                 )}
               </tbody>
             </table>
@@ -142,7 +146,7 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
 
       {SHOW_ADS && (
         <aside class="hidden lg:block lg:col-span-3">
-           </aside>
+          </aside>
       )}
     </div>
   </body>

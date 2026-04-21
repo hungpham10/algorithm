@@ -1,28 +1,81 @@
 
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
 
   export let initialData;
   let data = initialData;
-  let isUpdating = false;
+  let socket;
+  let sessionId = "qs_" + Math.random().toString(36).substring(2, 10);
 
-  async function refreshData() {
-    isUpdating = true;
-    try {
-      const res = await fetch('YOUR_BACKEND_API_URL');
-      if (res.ok) {
-        data = await res.json();
+  // Gói tin nhắn: ~m~len~m~json
+  const encodeTV = (obj) => {
+    const msg = JSON.stringify(obj);
+    return `~m~${msg.length}~m~${msg}`;
+  };
+
+  // Giải mã: Tách các gói tin dựa trên marker ~m~
+  const decodeTV = (raw) => {
+    return raw.split(/~m~\d+~m~/).filter(p => p.trim() && p.startsWith('{'));
+  };
+
+  function connect() {
+    socket = new WebSocket("wss://widgetdata.tradingview.com/socket.io/websocket?from=embed-widget%2Fsingle-quote%2F&type=global");
+
+    socket.onopen = () => {
+      socket.send(encodeTV({ "m": "set_auth_token", "p": ["unauthorized_user_token"] }));
+      socket.send(encodeTV({ "m": "quote_create_session", "p": [sessionId] }));
+      socket.send(encodeTV({
+        "m": "quote_add_symbols",
+        "p": [sessionId, "PEPPERSTONE:XAUUSD"]
+      }));
+    };
+
+    socket.onmessage = (event) => {
+      const raw = event.data;
+
+      // Heartbeat: Server gửi gì, trả lại nấy (ví dụ ~m~4~m~~h~2)
+      if (raw.includes('~h~')) {
+        socket.send(raw);
+        return;
       }
-    } catch (error) {
-      console.error("Lỗi cập nhật:", error);
-    } finally {
-      setTimeout(() => { isUpdating = false; }, 500);
-    }
+
+      const packets = decodeTV(raw);
+      packets.forEach(packet => {
+        try {
+          const json = JSON.parse(packet);
+
+          // m: "qsd" là gói tin dữ liệu giá
+          if (json.m === 'qsd' && json.p[1].v) {
+            const v = json.p[1].v;
+
+            if (v.lp !== undefined) {
+              data.world.price = v.lp.toLocaleString('en-US', { minimumFractionDigits: 2 });
+            }
+            if (v.ch !== undefined) {
+              data.world.diff = (v.ch > 0 ? '▲ ' : '▼ ') + Math.abs(v.ch).toFixed(2);
+            }
+            // Tự tính % nếu gói tin không có chp
+            if (v.ch !== undefined && v.lp !== undefined) {
+              const prevPrice = v.lp - v.ch;
+              data.world.percent = ((v.ch / prevPrice) * 100).toFixed(2) + '%';
+            }
+          }
+        } catch (e) {
+          // Bỏ qua các gói tin không phải JSON hợp lệ
+        }
+      });
+    };
+
+    socket.onclose = () => setTimeout(connect, 5000);
+    socket.onerror = () => socket.close();
   }
 
   onMount(() => {
-    const interval = setInterval(refreshData, 30000);
-    return () => clearInterval(interval);
+    connect();
+  });
+
+  onDestroy(() => {
+    if (socket) socket.close();
   });
 
   const getColor = (val) => {
@@ -33,10 +86,6 @@
 </script>
 
 <div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-gray-200 border border-gray-200 shadow-sm overflow-hidden font-sans relative">
-  {#if isUpdating}
-    <div class="absolute top-0 left-0 w-full h-1 bg-green-500 animate-pulse z-10"></div>
-  {/if}
-
   <div class="bg-white p-5 flex flex-col justify-between">
     <div class="flex justify-between items-start mb-4">
       <div>
@@ -81,7 +130,7 @@
       </div>
       <div class="text-right">
         <span class="text-[13px] text-gray-500">Quy đổi VND:</span>
-        <p class="font-bold text-gray-800">{data.world.convertedVnd}</p>
+        <p class="font-bold text-gray-800">{data.world.convertedVnd || "0"}</p>
       </div>
     </div>
 

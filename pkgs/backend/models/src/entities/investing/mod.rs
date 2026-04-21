@@ -489,11 +489,19 @@ impl Investing {
             .column(symbols::Column::Id)
             .join_rev(
                 JoinType::InnerJoin,
+                product_anchors::Entity::belongs_to(symbols::Entity)
+                    .from(product_anchors::Column::Symbol)
+                    .to(symbols::Column::Id)
+                    .into(),
+            )
+            .join_rev(
+                JoinType::InnerJoin,
                 brokers::Entity::belongs_to(symbols::Entity)
                     .from(brokers::Column::Id)
                     .to(symbols::Column::BrokerId)
                     .into(),
             )
+            .filter(product_anchors::Column::Scope.eq(filter.scope))
             .filter(brokers::Column::Name.eq(broker))
             .filter(symbols::Column::Id.gt(filter.after))
             .order_by_asc(symbols::Column::Id)
