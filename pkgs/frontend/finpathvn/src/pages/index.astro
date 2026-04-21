@@ -66,22 +66,24 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
         if (!allProductIds.length) return;
 
         try {
-          // Gọi API Batch lấy giá cho toàn bộ Table
-          const response = await fetch(`/api/investing/v2/prices/${allProductIds.join(',')}`);
+	  const response = await fetch(`https://lighttrading.pp.ua/api/investing/v2/prices/${allProductIds.join(',')}`);
 
           if (response.ok) {
             const priceUpdates = await response.json();
 
-            // Bắn event cho PriceCell.svelte (allUpdates)
-            window.dispatchEvent(new CustomEvent('live-price-update', {
-              detail: priceUpdates
-            }));
+            if (Array.isArray(priceUpdates) && priceUpdates.length > 0) {
 
-            // Nếu bạn muốn cập nhật luôn cả GoldSummary phía trên từ request này,
-            // backend cần trả về thêm field summary. Nếu không, GoldSummary sẽ tự chạy riêng.
+              const validUpdates = priceUpdates.filter(u => u.buy || u.sell);
+
+              if (validUpdates.length > 0) {
+                window.dispatchEvent(new CustomEvent('price-update', {
+                  detail: validUpdates
+                }));
+              }
+            }
           }
         } catch (e) {
-          console.error("Batch update failed:", e);
+          console.warn("Update failed, keeping old data:", e);
         }
       }
 
@@ -90,7 +92,6 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
         setInterval(updateAllData, 20000);
       });
     </script>
-
     <nav class="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm">
       <div class="max-w-[1440px] mx-auto px-4 h-16 flex items-center justify-between">
         <a href="/" class="flex items-center hover:opacity-90 transition-opacity">

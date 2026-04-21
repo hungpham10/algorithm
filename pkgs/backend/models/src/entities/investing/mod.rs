@@ -484,7 +484,7 @@ impl Investing {
         broker: &str,
         filter: Filter,
     ) -> Result<HashMap<i32, HashMap<i32, Vec<Price>>>, DbErr> {
-        let symbol_ids: Vec<i32> = symbols::Entity::find()
+        let symbol_ids = symbols::Entity::find()
             .select_only()
             .column(symbols::Column::Id)
             .join_rev(
@@ -512,7 +512,7 @@ impl Investing {
             .column(mapping_product_in_store_to_symbol::Column::Id)
             .column(price_history::Column::Buy)
             .column(price_history::Column::Sell)
-            .column(price_history::Column::CreatedAt)
+            .column(price_history::Column::UpdatedAt)
             .join_rev(
                 JoinType::InnerJoin,
                 mapping_product_in_store_to_symbol::Entity::belongs_to(price_history::Entity)
@@ -536,7 +536,7 @@ impl Investing {
             )
             .filter(symbols::Column::Id.is_in(symbol_ids))
             .filter(product_anchors::Column::Scope.eq(filter.scope))
-            .filter(price_history::Column::CreatedAt.between(
+            .filter(price_history::Column::UpdatedAt.between(
                 chrono::DateTime::from_timestamp(filter.from, 0).unwrap_or_default(),
                 chrono::DateTime::from_timestamp(filter.to, 0).unwrap_or_default(),
             ))
@@ -734,11 +734,9 @@ impl Investing {
             .await?
         {
             Some(row) => {
-                if row.buy == price.buy && row.sell == price.sell {
-                    return Ok(());
+                if row.buy != price.buy || row.sell != price.sell {
+                    price_active.update(self.dbt(symbol_id.into())).await?;
                 }
-
-                price_active.update(self.dbt(symbol_id.into())).await?;
             }
 
             None => {

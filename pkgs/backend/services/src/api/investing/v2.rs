@@ -445,7 +445,6 @@ async fn get_price_data_by_product_id(
     ),
     responses((status = 200, body = OhclResponse)),
 )]
-
 async fn get_price_data_by_name(
     State(app_state): State<AppState>,
     Path((store, product)): Path<(String, String)>,
