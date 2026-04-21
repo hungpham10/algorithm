@@ -685,25 +685,40 @@ impl Investing {
             .collect::<HashMap<_, _>>())
     }
 
-    pub async fn get_price(&self, tenant_id: i64, symbol_id: i32) -> Result<Price, DbErr> {
-        match PriceCurrent::find()
+    pub async fn get_price(
+        &self,
+        tenant_id: i64,
+        symbol_ids: &[i32],
+    ) -> Result<HashMap<i32, Price>, DbErr> {
+        let results = PriceCurrent::find()
             .select_only()
+            .column(price_current::Column::Id)
             .column(price_current::Column::Buy)
             .column(price_current::Column::Sell)
-            .filter(price_current::Column::Id.eq(symbol_id))
-            .into_tuple::<(f32, f32)>()
-            .one(self.dbt(tenant_id))
-            .await?
-        {
-            Some((buy, sell)) => Ok(Price {
-                buy,
-                sell,
-                ..Default::default()
-            }),
-            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
-                "Not found price data of product {symbol_id}",
-            )))),
+            .filter(price_current::Column::Id.is_in(symbol_ids.to_vec()))
+            .into_tuple::<(i32, f32, f32)>()
+            .all(self.dbt(tenant_id)) // Trả về Vec<(i32, f32, f32)>
+            .await?;
+
+        let price_map: HashMap<i32, Price> = results
+            .into_iter()
+            .map(|(id, buy, sell)| {
+                (
+                    id,
+                    Price {
+                        buy,
+                        sell,
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
+
+        if price_map.is_empty() && !symbol_ids.is_empty() {
+            return Err(DbErr::Custom("No products found".to_string()));
         }
+
+        Ok(price_map)
     }
 
     pub async fn update_price(&self, symbol_id: i32, price: Price) -> Result<(), DbErr> {

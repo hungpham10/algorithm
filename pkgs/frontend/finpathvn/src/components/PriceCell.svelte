@@ -1,46 +1,49 @@
 <script>
   import { onMount } from 'svelte';
 
+  export let productId; // Nhận ID từ TableRow.astro
+  export let type = "buy";
   export let initialPrice = "";
   export let initialDiff = "";
-  export let type = "buy";
-  export let goldType = "";
-  export let liveEndpoint = "";
 
   let price = initialPrice;
   let diff = initialDiff;
 
-  // Logic màu sắc
+  // Logic màu sắc giữ nguyên
   $: isUp = diff?.includes('▲');
   $: isDown = diff?.includes('▼');
   $: colorClass = isUp ? "text-green-700" : isDown ? "text-red-700" : "text-gray-500";
   $: priceColor = (type === "sell") ? colorClass : "text-gray-900";
 
-  async function updateData() {
-    if (!liveEndpoint) return;
-    try {
-      const res = await fetch(liveEndpoint);
+  // Hàm xử lý khi nhận được "bản tin" từ index.astro
+  function handleLiveUpdate(event) {
+    const allUpdates = event.detail; // Mảng các OhclResponse
 
-      if (res.ok) {
-        const newData = await res.json();
-        // Cập nhật dữ liệu mới nếu thành công
-        price = type === "buy" ? newData.buy : newData.sell;
-        diff = type === "buy" ? newData.diffBuy : newData.diffSell;
+    // Tìm đúng dữ liệu của productId này
+    const myUpdate = allUpdates.find(item => item.product_id === productId);
+
+    if (myUpdate) {
+      if (myUpdate.error) {
+        // Nếu backend báo lỗi cho ID này
+        price = "---";
+        diff = "Lỗi";
       } else {
-        // Nếu HTTP status không ok (ví dụ 404, 500)
-        throw new Error("Server error");
+        // Cập nhật giá trị mới
+        price = type === "buy" ? myUpdate.buy : myUpdate.sell;
+        // Đảm bảo Backend trả về field diffBuy/diffSell trong OhclResponse
+        diff = type === "buy" ? myUpdate.diffBuy : myUpdate.diffSell;
       }
-    } catch (e) {
-      console.error("Lỗi cập nhật:", e);
-      // Khi lỗi (mất mạng hoặc server sập), trả về "---"
-      price = "---";
-      diff = "---";
     }
   }
 
   onMount(() => {
-    const interval = setInterval(updateData, 15000);
-    return () => clearInterval(interval);
+    // Đăng ký lắng nghe sự kiện chung
+    window.addEventListener('price-update', handleLiveUpdate);
+
+    return () => {
+      // Hủy lắng nghe khi component bị hủy (tránh rò rỉ bộ nhớ)
+      window.removeEventListener('price-update', handleLiveUpdate);
+    };
   });
 </script>
 

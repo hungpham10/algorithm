@@ -350,26 +350,41 @@ async fn list_price_of_store(
 
 #[utoipa::path(
     get,
-    path = "/prices/{product_id}",
+    path = "/prices/{product_ids}",
     params(
-        ("product_id" = String, Path, description = "Product Id"),
+        ("product_ids" = String, Path, description = "List of Product Id separated by comma"),
     ),
-    responses((status = 200, body = OhclResponse)),
+    responses((status = 200, body = [OhclResponse])),
 )]
 async fn get_price_data_by_product_id(
     State(app_state): State<AppState>,
-    Path(product_id): Path<i32>,
+    Path(product_ids_str): Path<String>,
     InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
-) -> Result<impl IntoResponse, (StatusCode, JsonResponse<OhclResponse>)> {
-    // @TODO: get broker_id by tenant_id
+) -> Result<impl IntoResponse, (StatusCode, JsonResponse<Vec<OhclResponse>>)> {
     let tenant_id = tenant_id.into();
+    let product_ids = product_ids_str
+        .split(',')
+        .map(|s| s.trim())
+        .filter_map(|s| s.parse::<i32>().ok())
+        .collect::<Vec<_>>();
+
+    if product_ids.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            JsonResponse(vec![OhclResponse {
+                error: Some("Invalid product IDs".into()),
+                ..Default::default()
+            }]),
+        ));
+    }
+
     let broker = app_state.secret.get("BROKER", "/").await.map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            JsonResponse(OhclResponse {
+            JsonResponse(vec![OhclResponse {
                 error: Some("BROKER not set".into()),
                 ..Default::default()
-            }),
+            }]),
         )
     })?;
 
@@ -377,39 +392,48 @@ async fn get_price_data_by_product_id(
         .investing_entity
         .validate_broker_listing_limit(tenant_id, &broker, &user_id.0)
         .await
-        .map_err(|error| {
+        .map_err(|e| {
             (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                JsonResponse(OhclResponse {
-                    error: Some(format!(
-                        "Failed fetch price from product with id {product_id}: {error}",
-                    )),
+                StatusCode::FORBIDDEN,
+                JsonResponse(vec![OhclResponse {
+                    error: Some(e.to_string()),
                     ..Default::default()
-                }),
+                }]),
             )
         })?;
 
-    Ok(JsonResponse(OhclResponse {
-        price: Some(
-            app_state
-                .investing_entity
-                .get_price(tenant_id, product_id)
-                .await
-                .map_err(|error| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        JsonResponse(OhclResponse {
-                            error: Some(format!(
-                                "Failed fetch price from product with id {product_id} (user {}): {error}",
-                                user_id.0.clone().unwrap_or("guest".to_string())
-                            )),
-                            ..Default::default()
-                        }),
-                    )
-                })?,
-        ),
-        ..Default::default()
-    }))
+    let mut price_map = app_state
+        .investing_entity
+        .get_price(tenant_id, &product_ids)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(vec![OhclResponse {
+                    error: Some(format!("Database error: {}", e)),
+                    ..Default::default()
+                }]),
+            )
+        })?;
+
+    Ok(JsonResponse(
+        product_ids
+            .into_iter()
+            .map(|id| {
+                if let Some(price) = price_map.remove(&id) {
+                    OhclResponse {
+                        price: Some(price),
+                        ..Default::default()
+                    }
+                } else {
+                    OhclResponse {
+                        error: Some("Product price not found".to_string()),
+                        ..Default::default()
+                    }
+                }
+            })
+            .collect::<Vec<_>>(),
+    ))
 }
 
 #[utoipa::path(
@@ -421,12 +445,12 @@ async fn get_price_data_by_product_id(
     ),
     responses((status = 200, body = OhclResponse)),
 )]
+
 async fn get_price_data_by_name(
     State(app_state): State<AppState>,
     Path((store, product)): Path<(String, String)>,
     InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
 ) -> Result<impl IntoResponse, (StatusCode, JsonResponse<OhclResponse>)> {
-    // @TODO: get broker_id by tenant_id
     let tenant_id = tenant_id.into();
     let broker = app_state.secret.get("BROKER", "/").await.map_err(|_| {
         (
@@ -446,9 +470,7 @@ async fn get_price_data_by_name(
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 JsonResponse(OhclResponse {
-                    error: Some(format!(
-                        "Failed to ingest data to {product} of {store}: {error}",
-                    )),
+                    error: Some(format!("Failed to validate broker: {error}")),
                     ..Default::default()
                 }),
             )
@@ -462,8 +484,24 @@ async fn get_price_data_by_name(
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 JsonResponse(OhclResponse {
+                    error: Some(format!("Failed to get product id for {product}: {error}")),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    // Lấy HashMap các giá từ backend
+    let prices_map = app_state
+        .investing_entity
+        .get_price(tenant_id, &[product_id]) // Truyền slice chứa 1 ID
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(OhclResponse {
                     error: Some(format!(
-                        "Failed to ingest data to {product} of {store}: {error}",
+                        "Ingest pricing data failed (user {}): {error}",
+                        user_id.0.clone().unwrap_or("guest".to_string())
                     )),
                     ..Default::default()
                 }),
@@ -471,24 +509,7 @@ async fn get_price_data_by_name(
         })?;
 
     Ok(JsonResponse(OhclResponse {
-        price: Some(
-            app_state
-                .investing_entity
-                .get_price(tenant_id, product_id)
-                .await
-                .map_err(|error| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        JsonResponse(OhclResponse {
-                            error: Some(format!(
-                                "Ingest pricing data failed (user {}): {error}",
-                                user_id.0.clone().unwrap_or("guest".to_string())
-                            )),
-                            ..Default::default()
-                        }),
-                    )
-                })?,
-        ),
+        price: prices_map.get(&product_id).cloned(),
         ..Default::default()
     }))
 }

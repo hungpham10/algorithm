@@ -1243,12 +1243,13 @@ pub async fn get_latest_price(
     symbol_id: i32,
 ) -> Option<Price> {
     if symbol_id > 0
-        && let Ok(price) = app_state
+        && let Ok(prices_map) = app_state
             .investing_entity
-            .get_price(tenant_id, symbol_id)
+            .get_price(tenant_id, &[symbol_id])
             .await
+        && let Some(price) = prices_map.get(&symbol_id)
     {
-        return Some(price);
+        return Some(price.clone());
     }
 
     let func = format!("get_price_of_{symbol_name}_in_{broker}");
