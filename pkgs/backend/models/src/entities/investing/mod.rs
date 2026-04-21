@@ -593,11 +593,19 @@ impl Investing {
             .column(symbols::Column::Id)
             .join_rev(
                 JoinType::InnerJoin,
+                product_anchors::Entity::belongs_to(symbols::Entity)
+                    .from(product_anchors::Column::Symbol)
+                    .to(symbols::Column::Id)
+                    .into(),
+            )
+            .join_rev(
+                JoinType::InnerJoin,
                 Brokers::belongs_to(Symbols)
                     .from(brokers::Column::Id)
                     .to(symbols::Column::BrokerId)
                     .into(),
             )
+            .filter(product_anchors::Column::Scope.eq(filter.scope))
             .filter(brokers::Column::Name.eq(broker))
             .filter(symbols::Column::Id.gt(filter.after))
             .order_by_asc(symbols::Column::Id)
@@ -1333,16 +1341,36 @@ impl Investing {
         after: i32,
         limit: u64,
         detail: bool,
+        scope: Option<i32>,
     ) -> Result<Vec<Symbol>, DbErr> {
-        let symbol_ids = Symbols::find()
+        let mut query = Symbols::find()
             .select_only()
+            .join_rev(
+                JoinType::InnerJoin,
+                Brokers::belongs_to(Symbols)
+                    .from(brokers::Column::Id)
+                    .to(symbols::Column::BrokerId)
+                    .into(),
+            )
             .column(symbols::Column::Id)
             .filter(symbols::Column::Id.gt(after))
+            .filter(brokers::Column::Name.eq(broker))
             .order_by_asc(symbols::Column::Id)
-            .limit(limit)
-            .into_tuple::<i32>()
-            .all(self.dbt(tenant_id))
-            .await?;
+            .limit(limit);
+
+        if let Some(scope) = scope {
+            query = query
+                .join_rev(
+                    JoinType::InnerJoin,
+                    product_anchors::Entity::belongs_to(symbols::Entity)
+                        .from(product_anchors::Column::Symbol)
+                        .to(symbols::Column::Id)
+                        .into(),
+                )
+                .filter(product_anchors::Column::Scope.eq(scope));
+        }
+
+        let symbol_ids = query.into_tuple::<i32>().all(self.dbt(tenant_id)).await?;
 
         if symbol_ids.is_empty() {
             return Ok(Vec::new());

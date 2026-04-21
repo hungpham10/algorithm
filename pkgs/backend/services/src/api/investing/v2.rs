@@ -231,7 +231,7 @@ async fn list_paginated_symbols(
 
     match app_state
         .investing_entity
-        .list_paginated_symbols(tenant_id, &broker, after, limit, detail)
+        .list_paginated_symbols(tenant_id, &broker, after, limit, detail, None)
         .await
     {
         Ok(data) => {
@@ -996,7 +996,7 @@ impl QueryRoot {
 
         let all_symbols = app_state
             .investing_entity
-            .list_paginated_symbols(*tenant_id, &broker, after, limit, false)
+            .list_paginated_symbols(*tenant_id, &broker, after, limit, false, Some(scope))
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
