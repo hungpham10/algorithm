@@ -58,13 +58,17 @@ COPY scripts/nginx.sh /app/nginx.sh
 COPY scripts/release.sh /app/endpoint.sh
 
 # Install runtime dependencies
-RUN apt update && apt install -y supervisor curl git gettext-base default-mysql-client tor && 			\
-    if [ "$TARGETARCH" = "amd64" ]; then SOPS_ARCH="amd64"; 							\
-    elif [ "$TARGETARCH" = "arm64" ]; then SOPS_ARCH="arm64"; 							\
-    fi && 													\
-    curl -LO "https://github.com/getsops/sops/releases/download/v3.12.2/sops_3.12.2_${SOPS_ARCH}.deb" && 	\
-    dpkg -i "sops_3.12.2_${SOPS_ARCH}.deb" && 									\
-    rm "sops_3.12.2_${SOPS_ARCH}.deb" && 									\
+RUN apt update && apt install --no-install-recommends -y supervisor curl git gettext-base default-mysql-client tor gnupg2 && 			\
+    mkdir -p /etc/apt/keyrings/ && 														\
+    curl -fsSL https://apt.grafana.com/gpg.key | gpg --dearmor -o /etc/apt/keyrings/grafana.gpg && 						\
+    echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | tee /etc/apt/sources.list.d/grafana.list && 	\
+    apt-get update && apt-get install -y grafana-agent && 											\
+    if [ "$TARGETARCH" = "amd64" ]; then SOPS_ARCH="amd64"; 											\
+    elif [ "$TARGETARCH" = "arm64" ]; then SOPS_ARCH="arm64"; 											\
+    fi && 																	\
+    curl -LO "https://github.com/getsops/sops/releases/download/v3.12.2/sops_3.12.2_${SOPS_ARCH}.deb" && 					\
+    dpkg -i "sops_3.12.2_${SOPS_ARCH}.deb" && 													\
+    rm "sops_3.12.2_${SOPS_ARCH}.deb" && 													\
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Create supervisor configuration directory
@@ -75,6 +79,9 @@ COPY conf/torrc /etc/tor/torrc
 
 # Copy supervisor configuration files
 COPY conf/supervisor/*.conf /etc/supervisor/conf.d/
+
+# Copy grafana-agent.yaml
+COPY conf/grafana-agent.yaml /etc/grafana-agent.yaml
 
 # Copy Nginx configuration
 COPY conf/nginx/http.conf /usr/local/openresty/nginx/conf/nginx.conf

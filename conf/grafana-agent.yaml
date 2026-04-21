@@ -10,11 +10,27 @@ metrics:
       scrape_configs:
         - job_name: application
           static_configs:
-            - targets: ['localhost:8000'] # Port of Rust application
+            - targets: ['localhost:8080']
               labels:
                 instance: rust-server
       remote_write:
         - url: https://prometheus-prod-18-prod-ap-southeast-0.grafana.net/api/prom/push
           basic_auth:
-            username: ${GRAFANA_CLOUD_ID}
-            password: ${GRAFANA_CLOUD_TOKEN}
+            username: ${GRAFANA_CLOUD_METRIC_ID}
+            password: ${GRAFANA_CLOUD_METRIC_TOKEN}
+
+traces:
+  configs:
+    - name: default
+      remote_write:
+        - endpoint: tempo-prod-07-prod-ap-southeast-0.grafana.net:443
+          basic_auth:
+            username: ${GRAFANA_CLOUD_TEMPO_ID}
+            password: ${GRAFANA_CLOUD_TEMPO_TOKEN}
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: "0.0.0.0:4317"
+            http:
+              endpoint: "0.0.0.0:4318"
