@@ -1,58 +1,75 @@
+
 <script>
   import { onMount } from 'svelte';
 
-  export let productId; // Nhận ID từ TableRow.astro
+  export let index;
   export let type = "buy";
   export let initialPrice = "";
   export let initialDiff = "";
 
-  let price = initialPrice;
+  // Hàm định dạng số kiểu Việt Nam
+  function formatVN(val) {
+    if (val === null || val === undefined || val === "" || isNaN(val)) return "---";
+    return Number(val).toLocaleString('vi-VN');
+  }
+
+  // Hàm xử lý logic hiển thị Diff (giữ lại ký tự mũi tên nếu có)
+  function formatDiff(val) {
+    if (val === null || val === undefined || val === "") return "---";
+
+    // Nếu backend trả về số kèm mũi tên, ta xử lý để format phần số
+    const hasArrowUp = String(val).includes('▲');
+    const hasArrowDown = String(val).includes('▼');
+    const numericValue = String(val).replace(/[▲▼\s]/g, ''); // Loại bỏ ký tự lạ để lấy số
+
+    if (numericValue === "" || isNaN(numericValue)) return val; // Nếu không phải số thì trả về nguyên bản
+
+    const formattedNum = Number(numericValue).toLocaleString('vi-VN');
+
+    if (hasArrowUp) return `▲ ${formattedNum}`;
+    if (hasArrowDown) return `▼ ${formattedNum}`;
+    return formattedNum;
+  }
+
+  let price = formatVN(initialPrice);
   let diff = initialDiff;
 
-  // Logic màu sắc giữ nguyên
-  $: isUp = diff?.includes('▲');
-  $: isDown = diff?.includes('▼');
+  // Logic màu sắc
+  $: isUp = String(diff).includes('▲');
+  $: isDown = String(diff).includes('▼');
   $: colorClass = isUp ? "text-green-700" : isDown ? "text-red-700" : "text-gray-500";
   $: priceColor = (type === "sell") ? colorClass : "text-gray-900";
 
-  // Hàm xử lý khi nhận được "bản tin" từ index.astro
-  function handleLiveUpdate(event) {
-    const allUpdates = event.detail; // Mảng các OhclResponse
 
-    // Tìm đúng dữ liệu của productId này
-    const myUpdate = allUpdates.find(item => item.product_id === productId);
+  function handleLiveUpdate(event) {
+    const allUpdates = event.detail;
+
+    // Sử dụng index để lấy data trực tiếp
+    const myUpdate = allUpdates[index];
 
     if (myUpdate) {
       if (myUpdate.error) {
-        // Nếu backend báo lỗi cho ID này
         price = "---";
-        diff = "Lỗi";
       } else {
-        // Cập nhật giá trị mới
-        price = type === "buy" ? myUpdate.buy : myUpdate.sell;
-        // Đảm bảo Backend trả về field diffBuy/diffSell trong OhclResponse
-        diff = type === "buy" ? myUpdate.diffBuy : myUpdate.diffSell;
+        // Cập nhật giá trị dựa trên type (buy/sell)
+        price = formatVN(type === "buy" ? myUpdate.price.buy : myUpdate.price.sell);
       }
     }
   }
-
   onMount(() => {
-    // Đăng ký lắng nghe sự kiện chung
     window.addEventListener('price-update', handleLiveUpdate);
-
     return () => {
-      // Hủy lắng nghe khi component bị hủy (tránh rò rỉ bộ nhớ)
       window.removeEventListener('price-update', handleLiveUpdate);
     };
   });
 </script>
 
-<div class="flex flex-col items-end leading-tight">
-  <div class="font-medium text-[18px] md:text-[24px] tracking-tighter {priceColor}">
-    {price || "---"}
+<div class="flex flex-col items-center justify-center leading-tight mx-auto">
+  <div class="font-medium text-[18px] md:text-[18px] tracking-tight {priceColor}">
+    {price}
   </div>
 
-  <div class="text-[11px] md:text-[14px] font-normal {colorClass} -mt-0.5 md:mt-0">
-    {diff || "---"}
+  <div class="text-[10px] md:text-[13px] font-medium {colorClass} mt-0">
+    {diff}
   </div>
 </div>

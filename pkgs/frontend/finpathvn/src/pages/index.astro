@@ -17,9 +17,9 @@ try {
       query: `
         query GetGoldData {
           goldSummary: goldMarketList(scope: 2, after: 0, limit: 1) {
-	    product
-	    buy
-	    sell
+            product
+            buy
+            sell
             diffBuy
             diffSell
           }
@@ -45,19 +45,24 @@ try {
   console.error("Fetch error:", e);
 }
 
-// Map dữ liệu cho Component Svelte
+const formatVN = (val) => {
+  if (val === null || val === undefined || val === "") return "0";
+  return Number(val).toLocaleString('vi-VN');
+};
+
+const gold = data?.goldSummary;
+
 const summaryData = {
   vn: {
-    buy: data?.goldSummary?.buy?.toLocaleString() || "0",
-    sell: data?.goldSummary?.sell?.toLocaleString() || "0",
-    diffBuy: data?.goldSummary?.diffBuy?.toLocaleString() || "0",
-    diffSell: data?.goldSummary?.diffSell?.toLocaleString() || "0",
+    buy: formatVN(gold?.buy),
+    sell: formatVN(gold?.sell),
+    diffBuy: formatVN(gold?.diffBuy),
+    diffSell: formatVN(gold?.diffSell),
     gap: "0",
   },
   world: { price: "0", diff: "-", percent: "0%", convertedVnd: "0" }
 };
 
-// Dữ liệu cho bảng
 const goldList = data?.largeMarketGold || [];
 const allProductIds = goldList.map(item => item.product).filter(Boolean);
 
@@ -71,10 +76,10 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bảng giá vàng trực tuyến</title>
+    <title>Bảng giá vàng trực tuyến - Cập nhật liên tục</title>
   </head>
 
-  <body class="bg-[#f3f4f6] text-gray-900 antialiased">
+  <body class="bg-[#f3f4f6] text-gray-900 antialiased pt-20 md:pt-24">
     <script is:inline define:vars={{ allProductIds }}>
       async function updateTableData() {
         if (!allProductIds.length) return;
@@ -94,49 +99,56 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
       }
 
       document.addEventListener('DOMContentLoaded', () => {
-        setInterval(updateTableData, 20000); // Polling cho bảng dưới
+        setInterval(updateTableData, 20000);
       });
     </script>
 
-    <nav class="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200">
-      <div class="max-w-[1440px] mx-auto px-4 h-16 flex items-center justify-between">
-        <a href="/" class="flex items-center">
-          <img src="/logo.svg" alt="Logo" class="h-12 w-auto" />
+    <nav class="fixed top-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm h-16 md:h-20 flex items-center">
+      <div class="max-w-[1440px] w-full mx-auto px-4 flex items-center justify-between">
+        <a href="/" class="flex items-center hover:opacity-80 transition-opacity">
+          <img src="/logo.svg" alt="Logo" class="h-10 md:h-12 w-auto" />
         </a>
-        <div class="flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1 rounded-full border border-green-100">
+
+        <div class="flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1.5 rounded-full border border-green-100 shadow-sm">
             <span class="relative flex h-2 w-2">
               <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
               <span class="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
             </span>
-            <span class="text-[11px] font-bold uppercase">Live Data</span>
+            <span class="text-[10px] md:text-[11px] font-bold uppercase tracking-wider">Live Data</span>
         </div>
       </div>
     </nav>
 
-    <div class="max-w-[1440px] mx-auto px-3 py-4 md:py-6 grid grid-cols-1 lg:grid-cols-12 gap-5">
-      <main class={SHOW_ADS ? "lg:col-span-9 space-y-4" : "lg:col-span-12 space-y-4"}>
+    <div class="max-w-[1200px] mx-auto px-3 py-4 md:py-6 grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <main class={SHOW_ADS
+        ? "lg:col-span-9 space-y-4"
+        : "lg:col-span-12 max-w-5xl mx-auto w-full space-y-4"}>
 
         <GoldSummary initialData={summaryData} client:load />
 
         <div class="bg-white shadow-md border border-gray-200 rounded-lg overflow-hidden">
           <header class="p-4 border-b border-gray-100 flex justify-between items-center bg-white">
             <div class="flex items-baseline gap-2">
-              <h1 class="text-xl md:text-2xl font-bold text-gray-800">Giá vàng hôm nay</h1>
+              <h1 class="text-xl md:text-2xl font-bold text-gray-800 tracking-tight">Giá vàng hôm nay</h1>
               <span class="text-gray-400 italic text-xs">| triệu đồng/lượng</span>
             </div>
-            <div class="text-xs text-gray-500 font-medium bg-gray-50 px-2 py-1 rounded border">
+            <div class="text-[11px] text-gray-500 font-bold bg-gray-50 px-2.5 py-1 rounded-md border border-gray-200 shadow-sm">
               {currentDate}
             </div>
           </header>
 
           <div class="overflow-x-auto">
-            <table class="w-full border-collapse min-w-[600px]">
+            <table class="w-full border-collapse">
               <TableHead currentDate={currentDate} yesterdayDate={yesterdayDate} />
               <tbody class="divide-y divide-gray-100">
                 {goldList.length > 0 ? (
-                  goldList.map((item) => <TableRow data={item} />)
+                  goldList.map((item, index) => <TableRow data={item} index={index} />)
                 ) : (
-                  <tr><td colspan="6" class="p-10 text-center text-gray-400">Đang cập nhật...</td></tr>
+                  <tr>
+                    <td colspan="6" class="p-10 text-center text-gray-400">
+                      Đang tải dữ liệu thị trường...
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -146,7 +158,10 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
 
       {SHOW_ADS && (
         <aside class="hidden lg:block lg:col-span-3">
-          </aside>
+          <div class="sticky top-28 bg-gray-100 rounded-lg p-4 text-center text-gray-400 border-2 border-dashed border-gray-200 h-[600px] flex items-center justify-center">
+            Ads Space
+          </div>
+        </aside>
       )}
     </div>
   </body>
