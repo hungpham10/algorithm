@@ -29,6 +29,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 use utoipa::{IntoParams, ToSchema};
 
 use crate::resolver::Resolver;
@@ -40,6 +41,7 @@ use sea_orm::{
 };
 use sea_query::Alias;
 
+#[derive(Debug)]
 pub struct Investing {
     resolver: Arc<Resolver>,
 }
@@ -144,10 +146,12 @@ impl Investing {
         }
     }
 
+    #[instrument]
     fn dbt(&self, tenant_id: i64) -> &DatabaseConnection {
         self.resolver.database(tenant_id)
     }
 
+    #[instrument]
     pub async fn convert_to_real_broker(
         &self,
         tenant_id: i64,
@@ -180,6 +184,7 @@ impl Investing {
         }
     }
 
+    #[instrument]
     pub async fn convert_to_broker_resolution(
         &self,
         tenant_id: i64,
@@ -219,6 +224,7 @@ impl Investing {
         }
     }
 
+    #[instrument]
     pub async fn list_resolutions(&self, tenant_id: i64) -> Result<Vec<String>, DbErr> {
         // Query DB
         let res = Resolutions::find()
@@ -231,6 +237,7 @@ impl Investing {
         Ok(res)
     }
 
+    #[instrument]
     pub async fn list_brokers(
         &self,
         tenant_id: i64,
@@ -267,6 +274,7 @@ impl Investing {
         Ok((names, last_id))
     }
 
+    #[instrument]
     pub async fn list_products(
         &self,
         tenant_id: i64,
@@ -290,6 +298,7 @@ impl Investing {
         Ok(res)
     }
 
+    #[instrument]
     pub async fn get_product_id(&self, tenant_id: i64, product: &String) -> Result<i32, DbErr> {
         match Products::find()
             .select_only()
@@ -306,6 +315,7 @@ impl Investing {
         }
     }
 
+    #[instrument]
     pub async fn get_broker_id(&self, tenant_id: i64, broker: &String) -> Result<i32, DbErr> {
         match Brokers::find()
             .select_only()
@@ -322,6 +332,7 @@ impl Investing {
         }
     }
 
+    #[instrument]
     pub async fn is_broker_enabled(&self, tenant_id: i64, broker: &String) -> Result<bool, DbErr> {
         Ok(Brokers::find()
             .filter(brokers::Column::Name.eq(broker))
@@ -330,6 +341,7 @@ impl Investing {
             .is_some())
     }
 
+    #[instrument]
     pub async fn is_product_enabled(
         &self,
         tenant_id: i64,
@@ -357,6 +369,7 @@ impl Investing {
         Ok(enabled)
     }
 
+    #[instrument]
     pub async fn is_product_storing_data(
         &self,
         tenant_id: i64,
@@ -384,6 +397,7 @@ impl Investing {
         Ok(enabled)
     }
 
+    #[instrument]
     pub async fn validate_broker_candlesticks_limit(
         &self,
         tenant_id: i64,
@@ -416,6 +430,7 @@ impl Investing {
         }
     }
 
+    #[instrument]
     pub async fn validate_symbol_listing_limit(
         &self,
         tenant_id: i64,
@@ -447,6 +462,7 @@ impl Investing {
         }
     }
 
+    #[instrument]
     pub async fn validate_broker_listing_limit(
         &self,
         tenant_id: i64,
@@ -478,6 +494,7 @@ impl Investing {
         }
     }
 
+    #[instrument]
     pub async fn list_history_price_of_symbols(
         &self,
         tenant_id: i64,
@@ -582,6 +599,7 @@ impl Investing {
         Ok(result_map)
     }
 
+    #[instrument]
     pub async fn list_current_price_of_symbols(
         &self,
         tenant_id: i64,
@@ -666,6 +684,7 @@ impl Investing {
         Ok(result_map)
     }
 
+    #[instrument]
     pub async fn list_current_price_of_store(
         &self,
         tenant_id: i64,
@@ -701,6 +720,7 @@ impl Investing {
             .collect::<HashMap<_, _>>())
     }
 
+    #[instrument]
     pub async fn get_price(
         &self,
         tenant_id: i64,
@@ -737,6 +757,7 @@ impl Investing {
         Ok(price_map)
     }
 
+    #[instrument]
     pub async fn update_price(&self, symbol_id: i32, price: Price) -> Result<(), DbErr> {
         let price_active = price_current::ActiveModel {
             id: Set(symbol_id),
@@ -771,6 +792,7 @@ impl Investing {
         Ok(())
     }
 
+    #[instrument]
     pub async fn get_price_history(
         &self,
         symbol_id: i32,
@@ -791,6 +813,7 @@ impl Investing {
             .collect::<Vec<_>>())
     }
 
+    #[instrument]
     pub async fn upsert_symbol(
         &self,
         tenant_id: i64,
@@ -819,6 +842,7 @@ impl Investing {
         Ok(())
     }
 
+    #[instrument]
     pub async fn get_symbol_id(
         &self,
         tenant_id: i64,
@@ -844,6 +868,7 @@ impl Investing {
         }
     }
 
+    #[instrument]
     pub async fn list_symbols_by_broker(
         &self,
         tenant_id: i64,
@@ -858,6 +883,7 @@ impl Investing {
             .await
     }
 
+    #[instrument]
     pub async fn list_symbols_by_product(
         &self,
         tenant_id: i64,
@@ -876,6 +902,7 @@ impl Investing {
         Ok(res)
     }
 
+    #[instrument]
     pub async fn get_product_id_from_website(
         &self,
         tenant_id: i64,
@@ -907,6 +934,7 @@ impl Investing {
         }
     }
 
+    #[instrument]
     pub async fn store_product_name_to_symbol(
         &self,
         tenant_id: i64,
@@ -943,6 +971,7 @@ impl Investing {
         }
     }
 
+    #[instrument]
     pub async fn list_paginated_stores(
         &self,
         tenant_id: i64,
@@ -1108,6 +1137,7 @@ impl Investing {
         }
     }
 
+    #[instrument]
     pub async fn create_products(
         &self,
         tenant_id: i64,
@@ -1159,6 +1189,7 @@ impl Investing {
         })
     }
 
+    #[instrument]
     pub async fn get_store_detail(
         &self,
         tenant_id: i64,
@@ -1248,6 +1279,7 @@ impl Investing {
         })
     }
 
+    #[instrument]
     pub async fn create_stores(
         &self,
         tenant_id: i64,
@@ -1334,6 +1366,7 @@ impl Investing {
         })
     }
 
+    #[instrument]
     pub async fn list_paginated_symbols(
         &self,
         tenant_id: i64,

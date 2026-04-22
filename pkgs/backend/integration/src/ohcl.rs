@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use algorithm::{JsonQuery, LruCache};
 use itertools::izip;
-use reqwest::Client as HttpClient;
+use reqwest_middleware::ClientWithMiddleware;
 use schemas::{CandleStick, reload::Reload};
 use serde_json::Value;
 
@@ -43,7 +43,7 @@ type SymbolCacheMap = HashMap<String, CandleCache>;
 type ExchangeCacheMap = HashMap<String, SymbolCacheMap>;
 
 pub struct QueryCandleSticks {
-    client: Arc<HttpClient>,
+    client: Arc<ClientWithMiddleware>,
     // Much easier to read:
     caches: Arc<RwLock<ExchangeCacheMap>>,
     timers: Arc<RwLock<HashMap<String, u64>>>,
@@ -75,7 +75,7 @@ impl Reload for QueryCandleSticks {
 }
 
 impl QueryCandleSticks {
-    pub fn new(client: Arc<HttpClient>, capacity: usize) -> Result<Self, Error> {
+    pub fn new(client: Arc<ClientWithMiddleware>, capacity: usize) -> Result<Self, Error> {
         let mut profiles = HashMap::new();
         let raw_configs = vec![
             (
@@ -439,6 +439,9 @@ impl QueryCandleSticks {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reqwest::Client as HttpClient;
+    use reqwest_middleware::ClientBuilder;
+    use reqwest_tracing::TracingMiddleware;
     use serde_json::json;
     use std::time::Instant;
 
@@ -513,7 +516,11 @@ mod tests {
 
     #[test]
     fn test_profile_initialization() {
-        let client = Arc::new(HttpClient::new());
+        let client = Arc::new(
+            ClientBuilder::new(HttpClient::new())
+                .with(TracingMiddleware::default())
+                .build(),
+        );
         let service = QueryCandleSticks::new(client, 70).unwrap();
 
         assert!(service.profiles.contains_key("ssi"));
@@ -522,7 +529,11 @@ mod tests {
 
     #[test]
     fn test_logic_extraction_ssi() {
-        let client = Arc::new(HttpClient::new());
+        let client = Arc::new(
+            ClientBuilder::new(HttpClient::new())
+                .with(TracingMiddleware::default())
+                .build(),
+        );
         let service = QueryCandleSticks::new(client, 70).unwrap();
         let data = mock_ssi_data(10);
 
@@ -535,7 +546,11 @@ mod tests {
 
     #[test]
     fn test_logic_extraction_binance() {
-        let client = Arc::new(HttpClient::new());
+        let client = Arc::new(
+            ClientBuilder::new(HttpClient::new())
+                .with(TracingMiddleware::default())
+                .build(),
+        );
         let service = QueryCandleSticks::new(client, 70).unwrap();
 
         // Binance format: [[t, o, h, l, c, v], ...]
@@ -556,7 +571,11 @@ mod tests {
 
     #[test]
     fn test_full_transformation_benchmark() {
-        let client = Arc::new(HttpClient::new());
+        let client = Arc::new(
+            ClientBuilder::new(HttpClient::new())
+                .with(TracingMiddleware::default())
+                .build(),
+        );
         let service = QueryCandleSticks::new(client, 70).unwrap();
         let size = 5000;
         let data = mock_ssi_data(size);
@@ -597,7 +616,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_block_logic() {
-        let client = Arc::new(HttpClient::new());
+        let client = Arc::new(
+            ClientBuilder::new(HttpClient::new())
+                .with(TracingMiddleware::default())
+                .build(),
+        );
         let service = QueryCandleSticks::new(client, 10).unwrap();
 
         let stock = "FPT";
@@ -653,7 +676,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_invalidation_ttl() {
-        let client = Arc::new(HttpClient::new());
+        let client = Arc::new(
+            ClientBuilder::new(HttpClient::new())
+                .with(TracingMiddleware::default())
+                .build(),
+        );
         let service = QueryCandleSticks::new(client, 10).unwrap();
         let stock = "VIC";
         let res = "1";
@@ -679,7 +706,11 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_all_providers_real_data() {
-        let client = Arc::new(HttpClient::new());
+        let client = Arc::new(
+            ClientBuilder::new(HttpClient::new())
+                .with(TracingMiddleware::default())
+                .build(),
+        );
         let service = QueryCandleSticks::new(client, 100).unwrap();
 
         // Chạy lần lượt các sàn

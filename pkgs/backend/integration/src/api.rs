@@ -1,6 +1,8 @@
 use algorithm::{JsonQuery, LruCache};
-use reqwest::Client;
+
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use reqwest_tracing::TracingMiddleware;
 use serde_json::Value;
 
 use std::collections::HashMap;
@@ -9,7 +11,7 @@ use std::sync::Arc;
 use url::Url;
 
 pub struct Api {
-    clients: LruCache<String, Client, 32>,
+    clients: LruCache<String, ClientWithMiddleware, 32>,
 }
 
 impl Api {
@@ -19,7 +21,7 @@ impl Api {
         }
     }
 
-    fn get_client(&self, url_str: &str) -> Result<(Client, String), Error> {
+    fn get_client(&self, url_str: &str) -> Result<(ClientWithMiddleware, String), Error> {
         let host = Url::parse(url_str)
             .map_err(|e| Error::new(ErrorKind::InvalidInput, format!("Invalid URL: {}", e)))?
             .host_str()
@@ -27,7 +29,10 @@ impl Api {
             .to_string();
 
         let client = self.clients.get(&host).unwrap_or_else(|| {
-            let new_client = reqwest::Client::new();
+            let new_client = ClientBuilder::new(reqwest::Client::new())
+                .with(TracingMiddleware::default())
+                .build();
+
             self.clients.put(host.clone(), new_client.clone());
             new_client
         });

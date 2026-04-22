@@ -3411,6 +3411,8 @@ dependencies = [
  "k8s-openapi",
  "kube",
  "reqwest 0.13.2",
+ "reqwest-middleware",
+ "reqwest-tracing",
  "rustls 0.23.37",
  "schemas",
  "serde",
@@ -5600,6 +5602,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "reqwest-middleware"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "199dda04a536b532d0cc04d7979e39b1c763ea749bf91507017069c00b96056f"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "http 1.4.0",
+ "reqwest 0.13.2",
+ "serde",
+ "thiserror 2.0.18",
+ "tower-service",
+]
+
+[[package]]
+name = "reqwest-tracing"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5c1a1510677d43dce9e9c0c07fc5db8772c0e5a43e4f9cef75a11affa05a578"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "getrandom 0.2.17",
+ "http 1.4.0",
+ "matchit",
+ "reqwest 0.13.2",
+ "reqwest-middleware",
+ "tracing",
+]
+
+[[package]]
 name = "rfc6979"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6439,6 +6472,8 @@ dependencies = [
  "prost 0.12.6",
  "quick-xml 0.39.2",
  "reqwest 0.13.2",
+ "reqwest-middleware",
+ "reqwest-tracing",
  "rustls 0.23.37",
  "schemas",
  "sentry",

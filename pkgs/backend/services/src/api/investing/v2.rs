@@ -15,6 +15,7 @@ use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use chrono::Utc;
 use models::entities::investing::{Filter, Price, Product, Store, Symbol};
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 use utoipa::{
     IntoParams, Modify, OpenApi, ToSchema,
     openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
@@ -876,6 +877,7 @@ async fn create_products(
     }
 }
 
+#[derive(Debug)]
 struct RenderGraphQL {
     symbol: Symbol,
     product: Option<i32>,
@@ -886,32 +888,39 @@ struct RenderGraphQL {
 
 #[Object]
 impl RenderGraphQL {
+    #[instrument]
     async fn symbol(&self) -> Option<i32> {
         self.symbol.id
     }
 
+    #[instrument]
     async fn product(&self) -> Option<i32> {
         self.product
     }
 
     #[graphql(name = "type")]
+    #[instrument]
     async fn r_type(&self) -> Option<String> {
         self.symbol.name.clone()
     }
 
+    #[instrument]
     async fn live_price(&self) -> Option<String> {
         self.product
             .map(|product_id| format!("/api/investing/v2/prices/{product_id}"))
     }
 
+    #[instrument]
     async fn buy(&self) -> Option<String> {
         self.current.as_ref().map(|p| format!("{:.2}", p.buy))
     }
 
+    #[instrument]
     async fn sell(&self) -> Option<String> {
         self.current.as_ref().map(|p| format!("{:.2}", p.sell))
     }
 
+    #[instrument]
     async fn diff_buy(&self) -> Option<String> {
         let current = self.current.as_ref()?;
         let yesterday = self.yesterday.as_ref()?;
@@ -921,6 +930,7 @@ impl RenderGraphQL {
         Some(format!("{} {:.2}", icon, diff.abs()))
     }
 
+    #[instrument]
     async fn diff_sell(&self) -> Option<String> {
         let current = self.current.as_ref()?;
         let yesterday = self.yesterday.as_ref()?;
@@ -930,14 +940,17 @@ impl RenderGraphQL {
         Some(format!("{} {:.2}", icon, diff.abs()))
     }
 
+    #[instrument]
     async fn yesterday_buy(&self) -> Option<String> {
         self.yesterday.as_ref().map(|p| format!("{:.2}", p.buy))
     }
 
+    #[instrument]
     async fn yesterday_sell(&self) -> Option<String> {
         self.yesterday.as_ref().map(|p| format!("{:.2}", p.sell))
     }
 
+    #[instrument]
     async fn trend(&self) -> String {
         let first_price = self.history.first().map(|c| c.buy);
         let last_price = self.history.last().map(|c| c.buy);
@@ -952,6 +965,7 @@ impl RenderGraphQL {
         }
     }
 
+    #[instrument]
     async fn trend_data(&self) -> Vec<f32> {
         self.history.iter().map(|it| it.buy).collect::<Vec<_>>()
     }

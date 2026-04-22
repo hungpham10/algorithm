@@ -17,6 +17,8 @@ use http::{HeaderName, HeaderValue};
 use aws_sdk_s3::Client as S3Client;
 use pprof::protos::Message;
 use reqwest::Client as HttpClient;
+use reqwest_middleware::ClientBuilder;
+use reqwest_tracing::TracingMiddleware;
 use serde_json::Value;
 
 use integration::QueryCandleSticks;
@@ -90,7 +92,11 @@ impl AppState {
     pub async fn new(runtime: Arc<AxumRuntime>) -> Result<Self, Error> {
         let secret = Arc::new(Secret::new().await?);
         let connector = Arc::new(Resolver::new(secret.clone()).await?);
-        let http_client = Arc::new(HttpClient::new());
+        let http_client = Arc::new(
+            ClientBuilder::new(HttpClient::new())
+                .with(TracingMiddleware::default())
+                .build(),
+        );
 
         Ok(Self {
             // @NOTE: setup entity

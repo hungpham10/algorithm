@@ -34,10 +34,8 @@ otelcol.processor.filter "drop_health_metrics" {
 
   traces {
     span = [
-      "attributes[\"http.target\"] == \"/health\"",
-      "attributes[\"http.target\"] == \"/metrics\"",
-      "attributes[\"url\"] == \"/health\"",
-      "attributes[\"url\"] == \"/metrics\"",
+      "attributes[\"uri\"] == \"/health\"",
+      "attributes[\"uri\"] == \"/metrics\"",
     ]
   }
 

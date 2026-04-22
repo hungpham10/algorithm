@@ -1,3 +1,4 @@
+use std::fmt;
 use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,6 +22,16 @@ pub struct Resolver {
     caches: Vec<MultiplexedConnection>,
     dbs: Vec<DbClient>,
     s3_client: Arc<S3Client>,
+}
+
+impl fmt::Debug for Resolver {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Resolver")
+            .field("streams_count", &self.streams.len())
+            .field("caches_count", &self.caches.len())
+            .field("dbs_count", &self.dbs.len())
+            .finish()
+    }
 }
 
 impl Resolver {
