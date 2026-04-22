@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use integration::QueryCandleSticks;
 use reqwest::Client as HttpClient;
+use reqwest_middleware::ClientBuilder;
+use reqwest_tracing::TracingMiddleware;
 use tokio::runtime::Runtime;
 
 fn bench_get_ohlc_real_internet(c: &mut Criterion) {
