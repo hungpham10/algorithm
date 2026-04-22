@@ -9,7 +9,11 @@ use tokio::runtime::Runtime;
 
 fn bench_get_ohlc_real_internet(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    let client = Arc::new(HttpClient::new());
+    let client = Arc::new(
+        ClientBuilder::new(HttpClient::new())
+            .with(TracingMiddleware::default())
+            .build(),
+    );
 
     // Khởi tạo service
     let service = Arc::new(QueryCandleSticks::new(client, 1000).unwrap());
