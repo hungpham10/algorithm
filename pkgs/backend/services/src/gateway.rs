@@ -14,6 +14,7 @@ use tokio::net::UnixListener;
 use tokio::net::unix::UCred;
 use tokio::signal;
 use tower::ServiceBuilder;
+use tower_http::trace::TraceLayer;
 use vector_runtime::{Component, Event};
 
 use utoipa::OpenApi;
@@ -25,13 +26,11 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum_tracing_opentelemetry::middleware::{OtelAxumLayer, OtelInResponseLayer};
-use opentelemetry::{KeyValue, global, trace::TracerProvider};
+use opentelemetry::{KeyValue, trace::TracerProvider};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::propagation::TraceContextPropagator;
+use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
-use tracing_opentelemetry::layer;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
@@ -41,46 +40,59 @@ use crate::vector::{AxumBuilder, AxumRuntime};
 use crate::api::investing;
 use crate::api::{AppState, health_check, into_stream, pprof, reload};
 
-fn init_telemetry() -> Option<SdkTracerProvider> {
+fn init_telemetry() -> Option<(SdkTracerProvider, SdkMeterProvider)> {
     let agent_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
-        .unwrap_or_else(|_| "http://localhost:4317".to_string());
+        .unwrap_or_else(|_| "http://127.0.0.1:4317".to_string());
 
     let resource = Resource::builder()
         .with_attributes(vec![
             KeyValue::new("service.name", "universal-gateway"),
             KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
+            KeyValue::new(
+                "deployment.environment",
+                std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string()),
+            ),
         ])
         .build();
 
-    // Cấu hình Exporter gửi Spans tới Grafana Agent qua gRPC
     let span_exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
         .with_endpoint(&agent_endpoint)
         .build()
-        .expect("Failed to create OTLP span exporter");
+        .ok()?;
 
-    let trace_provider = SdkTracerProvider::builder()
+    let tracer_provider = SdkTracerProvider::builder()
         .with_batch_exporter(span_exporter)
-        .with_resource(resource)
+        .with_resource(resource.clone())
         .build();
 
-    global::set_tracer_provider(trace_provider.clone());
-    global::set_text_map_propagator(TraceContextPropagator::new());
+    opentelemetry::global::set_tracer_provider(tracer_provider.clone());
 
-    let telemetry_layer =
-        layer().with_tracer(TracerProvider::tracer(&trace_provider, "universal-gateway"));
+    let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
+        .with_tonic()
+        .with_endpoint(&agent_endpoint)
+        .build()
+        .ok()?;
+
+    let meter_provider = SdkMeterProvider::builder()
+        .with_resource(resource)
+        .with_periodic_exporter(metric_exporter)
+        .build();
+
+    opentelemetry::global::set_meter_provider(meter_provider.clone());
+    opentelemetry::global::set_text_map_propagator(
+        opentelemetry_sdk::propagation::TraceContextPropagator::new(),
+    );
+
+    let tracer = tracer_provider.tracer("universal-gateway");
+    let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
     tracing_subscriber::registry()
-        .with(
-            EnvFilter::new("info")
-                .add_directive("sqlx::query=info".parse().unwrap())
-                .add_directive("tower_http=info".parse().unwrap()),
-        )
-        .with(tracing_subscriber::fmt::layer())
+        .with(EnvFilter::new("info"))
         .with(telemetry_layer)
         .init();
 
-    Some(trace_provider)
+    Some((tracer_provider, meter_provider))
 }
 
 #[derive(Clone, Debug)]
@@ -184,8 +196,16 @@ pub async fn routes(
 
     let router = router
         .with_state(AppState::new(runtime.clone()).await?)
-        .layer(OtelInResponseLayer)
-        .layer(OtelAxumLayer::default())
+        .layer(
+            TraceLayer::new_for_http().make_span_with(|request: &Request<Body>| {
+                tracing::info_span!(
+                    "http_request",
+                    method = %request.method(),
+                    uri = %request.uri(),
+                    version = ?request.version(),
+                )
+            }),
+        )
         .layer(prometheus_layer);
 
     let final_router = if environment == "prod" {
@@ -202,7 +222,7 @@ pub async fn routes(
 }
 
 pub async fn run() -> std::io::Result<()> {
-    let trace_provider = init_telemetry();
+    let telemetry_guard = init_telemetry();
     let path = PathBuf::from("/var/run/axum");
     let _ = tokio::fs::remove_file(&path).await;
     tokio::fs::create_dir_all(path.parent().unwrap()).await?;
@@ -218,6 +238,7 @@ pub async fn run() -> std::io::Result<()> {
 
     println!("Server starting on Unix Socket: {:?}", path);
 
+    tracing::info!(hello = "world", "TEST TRACING");
     let result = axum::serve(usx, make_service)
         .with_graceful_shutdown(shutdown_signal())
         .await;
@@ -226,8 +247,9 @@ pub async fn run() -> std::io::Result<()> {
     streamer.stop().await?;
     streamer.wait_for_shutdown().await?;
 
-    if let Some(trace_provider) = trace_provider {
+    if let Some((trace_provider, meter_provider)) = telemetry_guard {
         let _ = trace_provider.force_flush();
+        let _ = meter_provider.force_flush();
     }
     result
 }

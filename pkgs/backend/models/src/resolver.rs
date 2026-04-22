@@ -50,7 +50,7 @@ impl Resolver {
                 .idle_timeout(Duration::from_secs(8))
                 .max_lifetime(Duration::from_secs(30))
                 .sqlx_logging(true)
-                .sqlx_logging_level(log::LevelFilter::Info);
+                .sqlx_logging_level(tracing::log::LevelFilter::Info);
 
             if let Ok(conn) = Database::connect(opt).await {
                 dbs.push(conn);

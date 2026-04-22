@@ -15,6 +15,7 @@ services:
           memory: 512M
     volumes:
       - ./secrets:/app/secrets
+      - ./conf/config.alloy:/etc/alloy/config.alloy
     sysctls:
       - net.core.somaxconn=65535
       - net.ipv4.ip_local_port_range=1024 65535
@@ -36,11 +37,6 @@ services:
       MYSQL_DATABASE: default
       MYSQL_USER: admin
       MYSQL_PASSWORD: rootroot
-    deploy:
-      resources:
-        limits:
-          cpus: '0.2'
-          memory: 512M
     ports:
       - "3306:3306"
     volumes:
@@ -55,6 +51,11 @@ services:
     restart: always
     ports:
       - "6379:6379"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 512M
     networks:
       - app-network
 networks:

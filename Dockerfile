@@ -62,7 +62,7 @@ RUN apt update && apt install --no-install-recommends -y supervisor curl git get
     mkdir -p /etc/apt/keyrings/ && 														\
     curl -fsSL https://apt.grafana.com/gpg.key | gpg --dearmor -o /etc/apt/keyrings/grafana.gpg && 						\
     echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | tee /etc/apt/sources.list.d/grafana.list && 	\
-    apt-get update && apt-get install -y grafana-agent && 											\
+    apt-get update && apt-get install -y alloy && 											\
     if [ "$TARGETARCH" = "amd64" ]; then SOPS_ARCH="amd64"; 											\
     elif [ "$TARGETARCH" = "arm64" ]; then SOPS_ARCH="arm64"; 											\
     fi && 																	\
@@ -80,8 +80,8 @@ COPY conf/torrc /etc/tor/torrc
 # Copy supervisor configuration files
 COPY conf/supervisor/*.conf /etc/supervisor/conf.d/
 
-# Copy grafana-agent.yaml
-COPY conf/grafana-agent.yaml /etc/grafana-agent.yaml
+# Copy config.alloy
+COPY conf/config.alloy /etc/alloy/config.alloy
 
 # Copy Nginx configuration
 COPY conf/nginx/http.conf /usr/local/openresty/nginx/conf/nginx.conf

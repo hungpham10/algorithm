@@ -21,6 +21,7 @@ log = "0.4.29"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 
+tracing = "0.1.44"
 utoipa = "5.4.0"
 infisical = "0.0.3"
 amqprs = "2.1.3"
