@@ -122,7 +122,7 @@
         <h3 class="text-[11px] md:text-sm font-bold text-gray-400 uppercase tracking-wider mb-1">Vàng miếng SJC</h3>
         <div class="flex items-center gap-2">
            <span class="bg-[#802237] text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase">VN</span>
-           <span class="text-[10px] md:text-xs text-gray-400 italic">triệu đồng/lượng</span>
+           <span class="text-[10px] md:text-xs text-gray-400 italic">đồng/lượng</span>
         </div>
       </div>
       <div class="text-right">

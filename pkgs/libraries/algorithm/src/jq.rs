@@ -8,8 +8,10 @@ pub enum Operator {
     Match(String),
     Access(usize),
     Iter,
+    Select(Vec<String>),
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct JsonQuery {
     operators: Vec<Operator>,
 }
@@ -74,9 +76,8 @@ impl JsonQuery {
         Ok(Self { operators })
     }
 
-    /// Thực thi query trả về Vec<&Value> (Zero-copy)
-    pub fn execute<'a>(&self, data: &'a Value) -> Vec<&'a Value> {
-        let mut collection = vec![data];
+    pub fn execute(&self, data: &Value) -> Vec<Value> {
+        let mut collection = vec![data.clone()];
 
         for op in &self.operators {
             let mut next_collection = Vec::new();
@@ -84,31 +85,36 @@ impl JsonQuery {
                 match op {
                     Operator::Match(field) => {
                         if let Some(v) = item.get(field) {
-                            next_collection.push(v);
+                            next_collection.push(v.clone());
                         }
                     }
                     Operator::Access(index) => {
                         if let Some(v) = item.get(*index) {
-                            next_collection.push(v);
+                            next_collection.push(v.clone());
                         } else if let Some(v) = item.get(index.to_string()) {
-                            next_collection.push(v);
+                            next_collection.push(v.clone());
                         }
                     }
                     Operator::Iter => {
                         if let Some(arr) = item.as_array() {
                             for v in arr {
-                                next_collection.push(v);
+                                next_collection.push(v.clone());
                             }
                         } else if let Some(obj) = item.as_object() {
                             for v in obj.values() {
-                                next_collection.push(v);
+                                next_collection.push(v.clone());
                             }
-                        } else {
-                            println!(
-                                "Warning: Cannot iterate over non-array/object value: {:?}",
-                                item
-                            );
                         }
+                    }
+                    // CHỖ NÀY HẾT LỖI: Vì chúng ta trả về Value sở hữu (Owned)
+                    Operator::Select(fields) => {
+                        let mut new_obj = serde_json::Map::new();
+                        for field in fields {
+                            if let Some(v) = item.get(field) {
+                                new_obj.insert(field.clone(), v.clone());
+                            }
+                        }
+                        next_collection.push(Value::Object(new_obj));
                     }
                 }
             }
@@ -162,7 +168,7 @@ mod tests {
         let data = json!({"stock": {"symbol": "VND", "price": 15000}});
         let query = JsonQuery::parse("stock.symbol").unwrap();
         let result = query.execute(&data);
-        assert_eq!(result, vec![&json!("VND")]);
+        assert_eq!(result, vec![json!("VND")]);
     }
 
     #[test]
@@ -170,7 +176,7 @@ mod tests {
         let data = json!({"prices": [100, 200, 300]});
         let query = JsonQuery::parse("prices[1]").unwrap();
         let result = query.execute(&data);
-        assert_eq!(result, vec![&json!(200)]);
+        assert_eq!(result, vec![json!(200)]);
     }
 
     #[test]
@@ -178,7 +184,7 @@ mod tests {
         let data = json!([[161000, "20.5"], [162000, "21.0"]]);
         let query = JsonQuery::parse("[].0").unwrap();
         let result = query.execute(&data);
-        assert_eq!(result, vec![&json!(161000), &json!(162000)]);
+        assert_eq!(result, vec![json!(161000), json!(162000)]);
     }
 
     #[test]
@@ -191,7 +197,7 @@ mod tests {
         });
         let query = JsonQuery::parse("items[].c").unwrap();
         let result = query.execute(&data);
-        assert_eq!(result, vec![&json!(10.5), &json!(11.0)]);
+        assert_eq!(result, vec![json!(10.5), json!(11.0)]);
     }
 
     #[test]
@@ -208,7 +214,7 @@ mod tests {
         });
         let query = JsonQuery::parse("markets[].stocks[].history[1]").unwrap();
         let result = query.execute(&data);
-        assert_eq!(result, vec![&json!(11), &json!(21)]);
+        assert_eq!(result, vec![json!(11), json!(21)]);
     }
 
     #[test]
@@ -220,7 +226,7 @@ mod tests {
         ]);
         let query = JsonQuery::parse("[].info.price").unwrap();
         let result = query.execute(&data);
-        assert_eq!(result, vec![&json!(100), &json!(200)]);
+        assert_eq!(result, vec![json!(100), json!(200)]);
     }
 
     #[test]
@@ -234,7 +240,7 @@ mod tests {
         let data = json!([["a", "b"], ["c", "d"]]);
         let query = JsonQuery::parse("[].1").unwrap();
         let result = query.execute(&data);
-        assert_eq!(result, vec![&json!("b"), &json!("d")]);
+        assert_eq!(result, vec![json!("b"), json!("d")]);
     }
 
     #[test]
@@ -242,7 +248,7 @@ mod tests {
         let data = json!({"complex-key": {"val": 42}});
         let query = JsonQuery::parse("[\"complex-key\"].val").unwrap();
         let result = query.execute(&data);
-        assert_eq!(result, vec![&json!(42)]);
+        assert_eq!(result, vec![json!(42)]);
     }
 
     #[test]
@@ -255,7 +261,7 @@ mod tests {
         let result_root = query_root.execute(&data);
 
         assert_eq!(result_root.len(), 1);
-        assert_eq!(result_root[0], &data);
+        assert_eq!(result_root[0], data);
         assert!(result_root[0].is_array());
     }
 
@@ -275,8 +281,49 @@ mod tests {
         println!("{}", json_output);
         println!("---------------------------------------");
         assert_eq!(result_iter.len(), 3);
-        assert_eq!(result_iter[0], &json!(1));
-        assert_eq!(result_iter[1], &json!(2));
-        assert_eq!(result_iter[2], &json!(3));
+        assert_eq!(result_iter[0], json!(1));
+        assert_eq!(result_iter[1], json!(2));
+        assert_eq!(result_iter[2], json!(3));
+    }
+
+    #[test]
+    fn test_select_operator_manually() {
+        let data = json!({
+            "Data": [
+                {
+                    "currencyName": "US DOLLAR",
+                    "currencyCode": "USD",
+                    "cash": "26108.00",
+                    "sell": "26368.00"
+                },
+                {
+                    "currencyName": "EURO",
+                    "currencyCode": "EUR",
+                    "cash": "30017.75",
+                    "sell": "31600.24"
+                }
+            ]
+        });
+
+        let query = JsonQuery::new(vec![
+            Operator::Match("Data".to_string()),
+            Operator::Iter,
+            Operator::Select(vec!["currencyCode".to_string(), "sell".to_string()]),
+        ]);
+
+        let results = query.execute(&data);
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0]["currencyCode"], "USD");
+        assert_eq!(results[0]["sell"], "26368.00");
+        assert_eq!(results[1]["currencyCode"], "EUR");
+        assert_eq!(results[1]["sell"], "31600.24");
+        assert!(results[0].get("currencyName").is_none());
+
+        println!(
+            "Result JSON of {}: {}",
+            serde_json::to_string(&query).unwrap(),
+            serde_json::to_string_pretty(&results).unwrap(),
+        );
     }
 }

@@ -1,43 +1,90 @@
-// @ts-check
 import { defineConfig } from 'astro/config';
 import svelte from '@astrojs/svelte';
 import tailwindcss from '@tailwindcss/vite';
 import viteCompression from 'vite-plugin-compression';
+import obfuscator from 'vite-plugin-javascript-obfuscator';
 
-// https://astro.build/config
 export default defineConfig({
   integrations: [svelte()],
 
+  // Tự động nhúng CSS vào HTML nếu file nhỏ (giảm số lượng request)
+  build: {
+    inlineStylesheets: 'always',
+  },
+
   vite: {
+    // 1. Cấu hình Lightning CSS để tối ưu dung lượng style
+    css: {
+      transformer: 'lightningcss',
+      lightningcss: {
+        targets: {
+          safari: (13 << 16), // Hỗ trợ tương đối rộng để tối ưu syntax
+        },
+      }
+    },
+
     plugins: [
       tailwindcss(),
       viteCompression({
-        algorithm: 'gzip', // hoặc 'brotliCompress' nếu server bạn hỗ trợ
-        ext: '.gz',
-      })
+        algorithm: 'brotliCompress', // Brotli nén CSS/JS tốt hơn Gzip rất nhiều
+        ext: '.br',
+      }),
+      {
+        ...obfuscator({
+          options: {
+            compact: true,
+            log: false, // Tắt cái quảng cáo "Obfuscator Pro" phiền phức
+            controlFlowFlattening: false, // Để false để file không bị phình to
+            deadCodeInjection: false,
+            identifierNamesGenerator: 'mangled', // Đổi tên biến a, b, c
+            stringArray: true,
+            stringArrayThreshold: 0.75,
+          },
+        }),
+        apply: 'build',
+      },
     ],
+
     build: {
-      // 1. Asset nhỏ hơn 5kb sẽ được inline thẳng vào HTML (giảm số lượng request file lẻ)
-      assetsInlineLimit: 5120,
+      // 2. Nén CSS bằng Lightning CSS
+      cssMinify: 'lightningcss',
+
+      // 3. Tối ưu JS sâu với Terser
+      minify: 'terser',
+      terserOptions: {
+        compress: {
+          drop_console: true,
+          drop_debugger: true,
+          pure_funcs: ['console.info', 'console.debug', 'console.warn'],
+          passes: 3,
+        },
+        mangle: {
+          toplevel: true,
+        },
+        format: {
+          comments: false,
+        },
+      },
+
+      assetsInlineLimit: 4096,
       rollupOptions: {
         output: {
-          // 2. Gom các thư viện node_modules vào 1 file vendor duy nhất
-          // Giúp trình duyệt tải 1 file lớn nhanh hơn là nhiều file 1-2kb
+          // Tối ưu tên file và chunk để giảm metadata
           manualChunks(id) {
             if (id.includes('node_modules')) {
-              return 'vendor';
-            }
-            // Gom tất cả các component Svelte vào một chunk để phá vỡ móc xích
-            if (id.includes('src/components/')) {
-              return 'main-ui';
+              return 'v'; // vendor -> v
             }
           },
-          // 3. Đặt tên file gọn gàng
-          chunkFileNames: 'assets/js/[name]-[hash].js',
-          entryFileNames: 'assets/js/[name]-[hash].js',
-          assetFileNames: 'assets/[ext]/[name]-[hash].[ext]'
-        }
-      }
-    }
-  }
+          chunkFileNames: 'a/[hash].js',
+          entryFileNames: 'a/[hash].js',
+          assetFileNames: (assetInfo) => {
+            if (assetInfo.name?.endsWith('.css')) {
+              return 'c/[hash].css'; // css -> c
+            }
+            return 'assets/[hash][extname]';
+          },
+        },
+      },
+    },
+  },
 });

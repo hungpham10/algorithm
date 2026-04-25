@@ -77,7 +77,7 @@ impl Api {
             )
         })?;
 
-        Ok(parser.execute(&json_data).into_iter().cloned().collect())
+        Ok(parser.execute(&json_data).into_iter().collect())
     }
 
     pub async fn create(
