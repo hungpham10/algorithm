@@ -1,6 +1,7 @@
 ---
 // src/pages/index.astro
 import '../styles/global.css';
+import OptimizedImage from '../components/OptimizedImage.astro';
 import GoldSummary from '../components/GoldSummary.svelte';
 import TableHead from '../components/TableHead.astro';
 import TableRow from '../components/TableRow.astro';
@@ -22,6 +23,8 @@ try {
             sell
             diffBuy
             diffSell
+            yesterdayBuy
+            yesterdaySell
           }
           largeMarketGold: goldMarketList(scope: 1, after: 0, limit: 10) {
             product
@@ -50,21 +53,42 @@ const formatVN = (val) => {
   return Number(val).toLocaleString('vi-VN');
 };
 
-const gold = data?.goldSummary;
+// Hàm tính % từ chuỗi "▼ 600000.00" của BE
+const calcPercentInitial = (diffStr, currentPrice) => {
+  if (!diffStr || !currentPrice) return "0%";
+  const diffNum = parseFloat(String(diffStr).replace(/[^\d.-]/g, ''));
+  const currNum = parseFloat(String(currentPrice));
+
+  if (isNaN(diffNum) || isNaN(currNum)) return "0%";
+
+  // Xác định dấu thực tế
+  const isDown = String(diffStr).includes('▼') || String(diffStr).includes('-');
+  const finalDiff = isDown ? -Math.abs(diffNum) : Math.abs(diffNum);
+  const yesterday = currNum - finalDiff;
+
+  if (yesterday <= 0) return "0%";
+  const percent = (finalDiff / yesterday) * 100;
+  return (percent > 0 ? "+" : "") + percent.toFixed(2) + "%";
+};
+
+const gold = data?.goldSummary[0];
+const summaryProductId = gold?.product;
 
 const summaryData = {
+  product_id: summaryProductId,
   vn: {
     buy: formatVN(gold?.buy),
     sell: formatVN(gold?.sell),
-    diffBuy: formatVN(gold?.diffBuy),
-    diffSell: formatVN(gold?.diffSell),
+    diffBuy: calcPercentInitial(gold?.diffBuy, gold?.buy),
+    diffSell: calcPercentInitial(gold?.diffSell, gold?.sell),
     gap: "0",
   },
   world: { price: "0", diff: "-", percent: "0%", convertedVnd: "0" }
 };
 
 const goldList = data?.largeMarketGold || [];
-const allProductIds = goldList.map(item => item.product).filter(Boolean);
+// Gom ID của summary và list để script fetch 1 lần cho tất cả
+const allProductIds = [summaryProductId, ...goldList.map(item => item.product)].filter(Boolean);
 
 const now = new Date();
 const currentDate = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
@@ -76,7 +100,13 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bảng giá vàng trực tuyến - Cập nhật liên tục</title>
+    <title>Bảng giá vàng trực tuyến - Cập nhật liên tục 24h</title>
+    <meta name="description" content="Theo dõi giá vàng SJC, vàng nhẫn 9999 mới nhất hôm nay. Dữ liệu live, biểu đồ xu hướng và so sánh giá chính xác." />
+    <meta property="og:title" content="Bảng giá vàng trực tuyến - Cập nhật liên tục" />
+    <meta property="og:description" content="Giá vàng SJC, nhẫn 24k cập nhật từng giây. Biến động thị trường vàng trong nước và quốc tế." />
+    <meta property="og:image" content="https://lighttrading.pp.ua/logo.svg" />
+    <meta property="og:type" content="website" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
 
   <body class="bg-[#f3f4f6] text-gray-900 antialiased pt-20 md:pt-24">
@@ -99,14 +129,19 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
       }
 
       document.addEventListener('DOMContentLoaded', () => {
-        setInterval(updateTableData, 20000);
+        setInterval(updateTableData, 5000);
       });
     </script>
 
     <nav class="fixed top-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm h-16 md:h-20 flex items-center">
       <div class="max-w-[1440px] w-full mx-auto px-4 flex items-center justify-between">
         <a href="/" class="flex items-center hover:opacity-80 transition-opacity">
-          <img src="/logo.svg" alt="Logo" class="h-10 md:h-12 w-auto" />
+          <OptimizedImage
+            src="https://lighttrading.pp.ua/logo.svg"
+            alt="Logo"
+            class="h-10 md:h-12 w-auto"
+            format="svg"
+          />
         </a>
 
         <div class="flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1.5 rounded-full border border-green-100 shadow-sm">
@@ -119,39 +154,46 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
       </div>
     </nav>
 
-    <div class="max-w-[1200px] mx-auto px-3 py-4 md:py-6 grid grid-cols-1 lg:grid-cols-12 gap-5">
+    <div class="max-w-[1200px] mx-auto ">
       <main class={SHOW_ADS
-        ? "lg:col-span-9 space-y-4"
+        ? "lg:col-span-9 space-y-2"
         : "lg:col-span-12 max-w-5xl mx-auto w-full space-y-4"}>
 
         <GoldSummary initialData={summaryData} client:load />
 
-        <div class="bg-white shadow-md border border-gray-200 rounded-lg overflow-hidden">
-          <header class="p-4 border-b border-gray-100 flex justify-between items-center bg-white">
-            <div class="flex items-baseline gap-2">
-              <h1 class="text-xl md:text-2xl font-bold text-gray-800 tracking-tight">Giá vàng hôm nay</h1>
-              <span class="text-gray-400 italic text-xs">| triệu đồng/lượng</span>
-            </div>
-            <div class="text-[11px] text-gray-500 font-bold bg-gray-50 px-2.5 py-1 rounded-md border border-gray-200 shadow-sm">
-              {currentDate}
-            </div>
-          </header>
+        <div class="mt-2">
+          <div class="bg-white shadow-md border border-gray-200 rounded-lg overflow-hidden">
+            <header class="p-4 border-b border-gray-100 flex justify-between items-center bg-white">
+              <div class="flex items-baseline gap-2">
+                <h1 class="text-xl md:text-2xl font-bold text-gray-800 tracking-tight">Giá vàng hôm nay</h1>
+                <span class="text-gray-400 italic text-xs">| triệu đồng/lượng</span>
+              </div>
+              <div class="text-[11px] text-gray-500 font-bold bg-gray-50 px-2.5 py-1 rounded-md border border-gray-200 shadow-sm">
+                {currentDate}
+              </div>
+            </header>
 
-          <div class="overflow-x-auto">
-            <table class="w-full border-collapse">
-              <TableHead currentDate={currentDate} yesterdayDate={yesterdayDate} />
-              <tbody class="divide-y divide-gray-100">
-                {goldList.length > 0 ? (
-                  goldList.map((item, index) => <TableRow data={item} index={index} />)
-                ) : (
-                  <tr>
-                    <td colspan="6" class="p-10 text-center text-gray-400">
-                      Đang tải dữ liệu thị trường...
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+            <div class="overflow-x-auto">
+              <table class="w-full border-collapse">
+                <TableHead currentDate={currentDate} yesterdayDate={yesterdayDate} />
+                <tbody class="divide-y divide-gray-100">
+                  {goldList.length > 1 ? (
+                    goldList.slice(1).map((item, index) => (
+                      <TableRow
+                        data={item}
+                        index={index + 1}
+                      />
+                    ))
+                  ) : (
+                    <tr>
+                      <td colspan="6" class="p-10 text-center text-gray-400">
+                        {goldList.length === 1 ? "Không có dữ liệu bảng bổ sung" : "Đang tải dữ liệu thị trường..."}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </main>
