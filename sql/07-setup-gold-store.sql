@@ -24,7 +24,16 @@ INSERT IGNORE INTO `ohcl_stores` (`id`, `name`, `website`, `phone`) VALUES
 (20, 'CÔNG TY TNHH VBĐQ NGỌC BÌNH', 'www.ngocbinh.com.vn', '0789 780 780 - 0788 780 780'),
 (21, 'DNTN HIỆU VÀNG NGỌC THỊNH', 'ngocthinh-jewelry.vn', '0935262648'),
 (22, 'TẬP ĐOÀN VÀNG BẠC ĐÁ QUÝ PHÚ QUÝ', 'phuquy.com.vn', '1800 599 995'),
-(23, 'CÔNG TY VÀNG BẠC ĐÁ QUÝ SÀI GÒN - SJC', 'sjc.com.vn', '028 3929 6016');
+(23, 'CÔNG TY VÀNG BẠC ĐÁ QUÝ SÀI GÒN - SJC', 'sjc.com.vn', '028 3929 6016'),
+(24, 'CÔNG TY TNHH VÀNG BẠC ĐÁ QUÝ HOÀNG CHIÊU', 'tiemvanghoangchieu.com', '0903 104 727 - 0899 031 882'),
+(25, 'TIỆM VÀNG HỒNG NGA', 'tiemvanghongnga.com', '0277 859 9999 – 0277 858 8888'),
+(26, 'TIỆM VÀNG KIM HÙNG PHÁT', 'tiemvangkimhungphat.com', '02513.947963 - 0949.708708'),
+(26, 'CÔNG TY TNHH DỊCH VỤ CẦM ĐỒ KIM TRỌNG NGHĨA', 'www.kimtrongnghia.com', '0833.9999.56 - 0913.1023.23 - 0938.3838.56'),
+(27, 'TIỆM VÀNG MỸ NGỌC', 'tiemvangmyngoc.com', '02513 844 111 - 0766.689.689'),
+(28, 'CÔNG TY TIỆM VÀNG NGỌC THỦY', 'tiemvangngocthuy.com', '093 334 56 96'),
+(29, 'TIỆM VÀNG NGỌC TRÂM QUẬN 4', 'tiemvangngoctramq4.com', '090 107 89 89'),
+(30, 'CÔNG TY TNHH TM VẠN THÔNG', 'www.tiemvangvanthong.com', '028 39502746'),
+(40, 'CÔNG TY TNHH KINH DOANH VÀNG BẠC ĐÁ QUÍ XUÂN TÙNG', 'tiemvangxuantung.com', '032.862.1630');
 
 -- =====================================================
 -- 2. INSERT DỮ LIỆU CHO BẢNG ohcl_store_locations
@@ -224,45 +233,77 @@ INSERT IGNORE INTO `ohcl_store_locations` (`id`, `store`, `address_line`, `distr
 
 -- PHÚ QUÝ
 INSERT IGNORE INTO `ohcl_store_locations` (`id`, `store`, `address_line`, `district`, `province`) VALUES
-(222, 3, 'Số 51 Quang Trung, Phường Nguyễn Trãi', 'Quận Hà Đông', 'Hà Nội'),
-(223, 3, 'Số 329 Đường Cầu Giấy, Phường Quan Hoa', 'Quận Cầu Giấy', 'Hà Nội'),
-(224, 3, 'Số 30 Trần Nhân Tông, Phường Nguyễn Du', 'Quận Hai Bà Trưng', 'Hà Nội'),
-(225, 3, 'Số 167 Trần Não, Phường An Khánh', 'Quận 2', 'Hồ Chí Minh'),
-(226, 3, 'Số 193B Nam Kỳ Khởi Nghĩa, Phường Võ Thị Sáu', 'Quận 3', 'Hồ Chí Minh');
+(222, 22, 'Số 51 Quang Trung, Phường Nguyễn Trãi', 'Quận Hà Đông', 'Hà Nội'),
+(223, 22, 'Số 329 Đường Cầu Giấy, Phường Quan Hoa', 'Quận Cầu Giấy', 'Hà Nội'),
+(224, 22, 'Số 30 Trần Nhân Tông, Phường Nguyễn Du', 'Quận Hai Bà Trưng', 'Hà Nội'),
+(225, 22, 'Số 167 Trần Não, Phường An Khánh', 'Quận 2', 'Hồ Chí Minh'),
+(226, 22, 'Số 193B Nam Kỳ Khởi Nghĩa, Phường Võ Thị Sáu', 'Quận 3', 'Hồ Chí Minh');
 
 -- SJC
 INSERT IGNORE INTO `ohcl_store_locations` (`id`, `store`, `address_line`, `district`, `province`) VALUES
-(227, 4, '418 - 420 Nguyễn Thị Minh Khai, Phường Bàn Cờ', 'Quận 3', 'Hồ Chí Minh'),
-(228, 4, '196 Trần Hưng Đạo, Phường Cầu Ông Lãnh', 'Quận 1', 'Hồ Chí Minh'),
-(229, 4, '172 Nguyễn Văn Nghi, Phường An Nhơn', 'Gò Vấp', 'Hồ Chí Minh'),
-(230, 4, '146 Bến Vân Đồn, Phường Khánh Hội', 'Quận 4', 'Hồ Chí Minh'),
-(231, 4, '230 - 230A Quang Trung', 'Gò Vấp', 'Hồ Chí Minh'),
-(232, 4, 'Gian L1-K6, Vincom Thảo Điền, 161 Võ Nguyên Giáp', 'Quận 2', 'Hồ Chí Minh'),
-(233, 4, 'Gian L1-K6A, Vincom Lê Văn Việt, 50 Lê Văn Việt', 'Quận 9', 'Hồ Chí Minh'),
-(234, 4, 'Gian T-03, Sense City, 240-242 Kha Vạn Cân', 'Thủ Đức', 'Hồ Chí Minh'),
-(235, 4, 'Gian JW-2, Aeon Tân Phú, 30 Tân Thắng', 'Tân Phú', 'Hồ Chí Minh'),
-(236, 4, 'Gian M10, B1, Vạn Hạnh Mall, 11 Sư Vạn Hạnh', 'Quận 10', 'Hồ Chí Minh'),
-(237, 4, 'Gian 33A-33B, Lầu 2, Saigon Centre, 67 Lê Lợi', 'Quận 1', 'Hồ Chí Minh'),
-(238, 4, 'Gian L1-K8, Vincom Mega Mall Grand Park', 'Quận 9', 'Hồ Chí Minh'),
-(239, 4, 'Gian SBA01, Aeon Bình Tân, Số 1 Đường 17A', 'Bình Tân', 'Hồ Chí Minh'),
-(240, 4, 'L2-W05, Parc Mall, 547 – 549 Tạ Quang Bửu', 'Quận 8', 'Hồ Chí Minh'),
-(241, 4, 'Gian F2-K02, Hùng Vương Plaza, 126 Hồng Bàng', 'Quận 5', 'Hồ Chí Minh'),
-(242, 4, 'SH8, Tòa 01,02 CCCT Trần Hưng Đạo', 'Hạ Long', 'Quảng Ninh'),
-(243, 4, '89-91 Cầu Đất, Phường Gia Viên', 'Ngô Quyền', 'Hải Phòng'),
-(244, 4, '27B Phan Đình Phùng, Phường Ba Đình', 'Ba Đình', 'Hà Nội'),
-(245, 4, '18 Trần Nhân Tông, Phường Hai Bà Trưng', 'Hai Bà Trưng', 'Hà Nội'),
-(246, 4, '50 Giang Văn Minh, Phường Ba Đình', 'Ba Đình', 'Hà Nội'),
-(247, 4, '101 - 102 A49 Thái Thịnh', 'Đống Đa', 'Hà Nội'),
-(248, 4, 'Vincom Plaza Hạ Long, Khu cột Đồng Hồ', 'Hạ Long', 'Quảng Ninh'),
-(249, 4, 'Số 07 Hùng Vương', 'Huế', 'Thừa Thiên Huế'),
-(250, 4, '185 Nguyễn Văn Linh', 'Hải Châu', 'Đà Nẵng'),
-(251, 4, '193 Hùng Vương', 'Hải Châu', 'Đà Nẵng'),
-(252, 4, '222 Lê Trung Đình', 'Quảng Ngãi', 'Quảng Ngãi'),
-(253, 4, '13 Ngô Gia Tự', 'Nha Trang', 'Khánh Hòa'),
-(254, 4, '216 Đường 30/4', 'Biên Hòa', 'Đồng Nai'),
-(255, 4, 'Gian T25, Sense City, 01 Đại Lộ Hòa Bình', 'Ninh Kiều', 'Cần Thơ'),
-(256, 4, '135 Đường Trần Hưng Đạo', 'Ninh Kiều', 'Cần Thơ'),
-(257, 4, 'Số 205, Đường Trần Phú', 'Bạc Liêu', 'Bạc Liêu'),
-(258, 4, '4A-5A Hùng Vương, Phường Tân Thành', 'Cà Mau', 'Cà Mau'),
-(259, 4, 'Gian T18, Sense City, 09 Trần Hưng Đạo', 'Cà Mau', 'Cà Mau'),
-(260, 4, '423 Đường Hai Tháng Tư', 'Nha Trang', 'Khánh Hòa');
+(227, 23, '418 - 420 Nguyễn Thị Minh Khai, Phường Bàn Cờ', 'Quận 3', 'Hồ Chí Minh'),
+(228, 23, '196 Trần Hưng Đạo, Phường Cầu Ông Lãnh', 'Quận 1', 'Hồ Chí Minh'),
+(229, 23, '172 Nguyễn Văn Nghi, Phường An Nhơn', 'Gò Vấp', 'Hồ Chí Minh'),
+(230, 23, '146 Bến Vân Đồn, Phường Khánh Hội', 'Quận 4', 'Hồ Chí Minh'),
+(231, 23, '230 - 230A Quang Trung', 'Gò Vấp', 'Hồ Chí Minh'),
+(232, 23, 'Gian L1-K6, Vincom Thảo Điền, 161 Võ Nguyên Giáp', 'Quận 2', 'Hồ Chí Minh'),
+(233, 23, 'Gian L1-K6A, Vincom Lê Văn Việt, 50 Lê Văn Việt', 'Quận 9', 'Hồ Chí Minh'),
+(234, 23, 'Gian T-03, Sense City, 240-242 Kha Vạn Cân', 'Thủ Đức', 'Hồ Chí Minh'),
+(235, 23, 'Gian JW-2, Aeon Tân Phú, 30 Tân Thắng', 'Tân Phú', 'Hồ Chí Minh'),
+(236, 23, 'Gian M10, B1, Vạn Hạnh Mall, 11 Sư Vạn Hạnh', 'Quận 10', 'Hồ Chí Minh'),
+(237, 23, 'Gian 33A-33B, Lầu 2, Saigon Centre, 67 Lê Lợi', 'Quận 1', 'Hồ Chí Minh'),
+(238, 23, 'Gian L1-K8, Vincom Mega Mall Grand Park', 'Quận 9', 'Hồ Chí Minh'),
+(239, 23, 'Gian SBA01, Aeon Bình Tân, Số 1 Đường 17A', 'Bình Tân', 'Hồ Chí Minh'),
+(240, 23, 'L2-W05, Parc Mall, 547 – 549 Tạ Quang Bửu', 'Quận 8', 'Hồ Chí Minh'),
+(241, 23, 'Gian F2-K02, Hùng Vương Plaza, 126 Hồng Bàng', 'Quận 5', 'Hồ Chí Minh'),
+(242, 23, 'SH8, Tòa 01,02 CCCT Trần Hưng Đạo', 'Hạ Long', 'Quảng Ninh'),
+(243, 23, '89-91 Cầu Đất, Phường Gia Viên', 'Ngô Quyền', 'Hải Phòng'),
+(244, 23, '27B Phan Đình Phùng, Phường Ba Đình', 'Ba Đình', 'Hà Nội'),
+(245, 23, '18 Trần Nhân Tông, Phường Hai Bà Trưng', 'Hai Bà Trưng', 'Hà Nội'),
+(246, 23, '50 Giang Văn Minh, Phường Ba Đình', 'Ba Đình', 'Hà Nội'),
+(247, 23, '101 - 102 A49 Thái Thịnh', 'Đống Đa', 'Hà Nội'),
+(248, 23, 'Vincom Plaza Hạ Long, Khu cột Đồng Hồ', 'Hạ Long', 'Quảng Ninh'),
+(249, 23, 'Số 07 Hùng Vương', 'Huế', 'Thừa Thiên Huế'),
+(250, 23, '185 Nguyễn Văn Linh', 'Hải Châu', 'Đà Nẵng'),
+(251, 23, '193 Hùng Vương', 'Hải Châu', 'Đà Nẵng'),
+(252, 23, '222 Lê Trung Đình', 'Quảng Ngãi', 'Quảng Ngãi'),
+(253, 23, '13 Ngô Gia Tự', 'Nha Trang', 'Khánh Hòa'),
+(254, 23, '216 Đường 30/4', 'Biên Hòa', 'Đồng Nai'),
+(255, 23, 'Gian T25, Sense City, 01 Đại Lộ Hòa Bình', 'Ninh Kiều', 'Cần Thơ'),
+(256, 23, '135 Đường Trần Hưng Đạo', 'Ninh Kiều', 'Cần Thơ'),
+(257, 23, 'Số 205, Đường Trần Phú', 'Bạc Liêu', 'Bạc Liêu'),
+(258, 23, '4A-5A Hùng Vương, Phường Tân Thành', 'Cà Mau', 'Cà Mau'),
+(259, 23, 'Gian T18, Sense City, 09 Trần Hưng Đạo', 'Cà Mau', 'Cà Mau'),
+(260, 23, '423 Đường Hai Tháng Tư', 'Nha Trang', 'Khánh Hòa');
+
+-- HOÀNG CHIÊU
+INSERT IGNORE INTO `ohcl_store_locations` (`id`, `store`, `address_line`, `district`, `province`) VALUES
+(261, 24, '348-348A Tô Ngọc Vân, Phường Tam Phú', 'Thành phố Thủ Đức', 'Hồ Chí Minh');
+
+-- HỒNG NGA
+INSERT IGNORE INTO `ohcl_store_locations` (`id`, `store`, `address_line`, `district`, `province`) VALUES
+(262, 25, 'Số 48, Đốc Binh Kiều, Phường 2', 'Thành phố Cao Lãnh', 'Đồng Tháp');
+
+-- KIM HƯNG PHÁT
+INSERT IGNORE INTO `ohcl_store_locations` (`id`, `store`, `address_line`, `district`, `province`) VALUES
+(263, 24, '1529 đường Nguyễn Ái Quốc, phường Tân Tiến', 'Thành phố Biên Hòa', 'Đồng Nai');
+
+-- MỸ NGỌC
+INSERT IGNORE INTO `ohcl_store_locations` (`id`, `store`, `address_line`, `district`, `province`) VALUES
+(265, 26, '506 Đường Lê Duẩn', 'Huyện Long Thành', 'Đồng Nai');
+
+-- NGỌC THỦY
+INSERT IGNORE INTO `ohcl_store_locations` (`id`, `store`, `address_line`, `district`, `province`) VALUES
+(276, 37, '182 Đ. Kênh Tân Hóa, Phường Phú Trung', 'Quận Tân Phú', 'Hồ Chí Minh');
+
+-- NGỌC TRÂM Q4
+INSERT IGNORE INTO `ohcl_store_locations` (`id`, `store`, `address_line`, `district`, `province`) VALUES
+(277, 38, '99-99A Tôn Thất Thuyết, Phường 15', 'Quận 4', 'Hồ Chí Minh');
+
+-- VẠN THÔNG
+INSERT IGNORE INTO `ohcl_store_locations` (`id`, `store`, `address_line`, `district`, `province`) VALUES
+(278, 39, '808 Hưng Phú, Phường 10', 'Quận 8', 'Hồ Chí Minh');
+
+-- XUÂN TÙNG
+INSERT IGNORE INTO `ohcl_store_locations` (`id`, `store`, `address_line`, `district`, `province`) VALUES
+(279, 40, '62 Nguyễn Đình Chiểu, Phường 2', 'Thành phố Cao Lãnh', 'Đồng Tháp');

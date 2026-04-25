@@ -83,7 +83,7 @@ def get_token():
     return resp.json()["access_token"]
 
 
-@task(retries=0, retry_delay_seconds=5)
+@task(retries=0, retry_delay_seconds=5, tags=["price-api-limit"])
 def upload_store_prices(token, store_name, prices):
     """Task tải dữ liệu lên server và thu thập lỗi chi tiết."""
     logger = get_run_logger()
@@ -159,25 +159,24 @@ def gold_sync_flow():
         (scrape_huythanhjewelry, "CÔNG TY TNHH VÀNG BẠC ĐÁ QUÝ HUY THANH"),
         (scrape_kimchau_info, "DOANH NGHIỆP TƯ NHÂN KIM CHÂU"),
         (scrape_kimkhanhviethung, "VÀNG KIM KHÁNH VIỆT HÙNG"),
-        (scrape_kimlong_dt, "KIM LONG ĐỒNG THÁP"),
-        (scrape_kimnganphuc, "KIM NGÂN PHÚC"),
-        (scrape_kimphat, "KIM PHÁT"),
-        (scrape_kimtaingoc, "KIM TÀI NGỌC"),
-        (scrape_kimthanhh, "KIM THÀNH H"),
-        (scrape_kimtin_cantho, "KIM TÍN CẦN THƠ"),
-        (scrape_mihong, "MI HỒNG"),
-        (scrape_minhvu, "MINH VŨ JEWELRY"),
-        (scrape_ngocbinh, "VÀNG BẠC NGỌC BÌNH"),
-        (scrape_ngocthinh, "NGỌC THỊNH JEWELRY"),
-        (scrape_phuquy, "TẬP ĐOÀN PHÚ QUÝ"),
+        (scrape_kimlong_dt, "CÔNG TY VÀNG BẠC ĐÁ QUÝ KIM LONG ĐỒNG THÁP"),
+        (scrape_kimnganphuc, "VÀNG KIM NGÂN PHÚC"),
+        (scrape_kimphat, "DNTN KINH DOANH VÀNG - CẦM ĐỒ KIM PHÁT GIA HUY"),
+        (scrape_kimtaingoc, "CÔNG TY TNHH VÀNG BẠC - ĐÁ QUÝ KIM TÀI NGỌC"),
+        (scrape_kimthanhh, "DOANH NGHIỆP TƯ NHÂN KINH DOANH VÀNG KIM THÀNH.H"),
+        (scrape_kimtin_cantho, "TIỆM VÀNG KIM TÍN CẦN THƠ"),
+        (scrape_mihong, "VÀNG MI HỒNG"),
+        (scrape_minhvu, "CÔNG TY TNHH KINH DOANH VÀNG - ĐÁ QUÝ MINH VŨ"),
+        (scrape_ngocbinh, "CÔNG TY TNHH VBĐQ NGỌC BÌNH"),
+        (scrape_ngocthinh, "DNTN HIỆU VÀNG NGỌC THỊNH"),
+        (scrape_phuquy, "TẬP ĐOÀN VÀNG BẠC ĐÁ QUÝ PHÚ QUÝ"),
         (scrape_sjc, "CÔNG TY VÀNG BẠC ĐÁ QUÝ SÀI GÒN - SJC"),
-        (scrape_hoang_chieu, ""),
-        (scrape_hoang_chieu, ""),
-        (scrape_hong_nga, ""),
-        (scrape_ngoc_thuy, ""),
-        (scrape_kim_trong_nghia, ""),
-        (scrape_van_thong, ""),
-        (scrape_xuan_tung, ""),
+        (scrape_hoang_chieu, "CÔNG TY TNHH VÀNG BẠC ĐÁ QUÝ HOÀNG CHIÊU"),
+        (scrape_hong_nga, "TIỆM VÀNG HỒNG NGA"),
+        (scrape_ngoc_thuy, "TIỆM VÀNG KIM HÙNG PHÁT"),
+        (scrape_kim_trong_nghia, "CÔNG TY TNHH DỊCH VỤ CẦM ĐỒ KIM TRỌNG NGHĨA"),
+        (scrape_van_thong, "CÔNG TY TNHH TM VẠN THÔNG"),
+        (scrape_xuan_tung, "CÔNG TY TNHH KINH DOANH VÀNG BẠC ĐÁ QUÍ XUÂN TÙNG"),
     ]
 
     # 3. Kích hoạt Scrape song song
@@ -187,15 +186,20 @@ def gold_sync_flow():
         scrape_futures.append((scrape_func.submit(), store_name))
 
     # 4. Xử lý kết quả trả về từ các Task Scrape
+    upload_futures = []
     for future, store_name in scrape_futures:
         try:
             data = future.result()
             if data:
                 # Gửi Task Upload vào hàng chờ (submit) để Flow tiếp tục xử lý các Store khác
-                upload_store_prices.submit(token, store_name, data)
+                u_future = upload_store_prices.submit(token, store_name, data)
+                upload_futures.append(u_future)
             else:
                 logger.warning(f"Empty data for {store_name}")
         except Exception as e:
             logger.error(f"Scrape Task Failed for {store_name}: {str(e)}")
+
+    for u_f in upload_futures:
+        u_f.wait()
 
     logger.info("Sync Flow initiated for all stores.")
