@@ -1116,7 +1116,7 @@ impl QueryRoot {
             results.push(RenderGraphQL {
                 symbol,
                 current,
-                degree: degree.into(),
+                degree: degree as f32,
                 product: product_id_map.remove(&id),
                 yesterday: yesterday_map.remove(&id),
                 history: history_map.remove(&id).unwrap_or_default(),
