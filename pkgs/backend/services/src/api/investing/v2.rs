@@ -880,6 +880,7 @@ async fn create_products(
 #[derive(Debug)]
 struct RenderGraphQL {
     symbol: Symbol,
+    degree: f32,
     product: Option<i32>,
     history: Vec<Price>,
     current: Option<Price>,
@@ -912,12 +913,16 @@ impl RenderGraphQL {
 
     #[instrument]
     async fn buy(&self) -> Option<String> {
-        self.current.as_ref().map(|p| format!("{:.2}", p.buy))
+        self.current
+            .as_ref()
+            .map(|p| format!("{:.2}", p.buy / self.degree))
     }
 
     #[instrument]
     async fn sell(&self) -> Option<String> {
-        self.current.as_ref().map(|p| format!("{:.2}", p.sell))
+        self.current
+            .as_ref()
+            .map(|p| format!("{:.2}", p.sell / self.degree))
     }
 
     #[instrument]
@@ -927,7 +932,7 @@ impl RenderGraphQL {
 
         let diff = current.buy - yesterday.buy;
         let icon = if diff >= 0.0 { "▲" } else { "▼" };
-        Some(format!("{} {:.2}", icon, diff.abs()))
+        Some(format!("{} {:.2}", icon, diff.abs() / self.degree))
     }
 
     #[instrument]
@@ -937,23 +942,27 @@ impl RenderGraphQL {
 
         let diff = current.sell - yesterday.sell;
         let icon = if diff >= 0.0 { "▲" } else { "▼" };
-        Some(format!("{} {:.2}", icon, diff.abs()))
+        Some(format!("{} {:.2}", icon, diff.abs() / self.degree))
     }
 
     #[instrument]
     async fn yesterday_buy(&self) -> Option<String> {
-        self.yesterday.as_ref().map(|p| format!("{:.2}", p.buy))
+        self.yesterday
+            .as_ref()
+            .map(|p| format!("{:.2}", p.buy / self.degree))
     }
 
     #[instrument]
     async fn yesterday_sell(&self) -> Option<String> {
-        self.yesterday.as_ref().map(|p| format!("{:.2}", p.sell))
+        self.yesterday
+            .as_ref()
+            .map(|p| format!("{:.2}", p.sell / self.degree))
     }
 
     #[instrument]
     async fn trend(&self) -> String {
-        let first_price = self.history.first().map(|c| c.buy);
-        let last_price = self.history.last().map(|c| c.buy);
+        let first_price = self.history.first().map(|c| c.buy / self.degree);
+        let last_price = self.history.last().map(|c| c.buy / self.degree);
 
         match (first_price, last_price) {
             (Some(start), Some(end)) if start != 0.0 => {
@@ -967,7 +976,10 @@ impl RenderGraphQL {
 
     #[instrument]
     async fn trend_data(&self) -> Vec<f32> {
-        self.history.iter().map(|it| it.buy).collect::<Vec<_>>()
+        self.history
+            .iter()
+            .map(|it| it.buy / self.degree)
+            .collect::<Vec<_>>()
     }
 }
 
@@ -982,6 +994,7 @@ impl QueryRoot {
         #[graphql(default = 0)] after: i32,
         #[graphql(default = 10)] limit: u64,
         #[graphql(default = 7)] lookback: i64,
+        #[graphql(default = 1.0)] degree: f64,
     ) -> async_graphql::Result<Vec<RenderGraphQL>> {
         let app_state = ctx.data::<AppState>()?;
         let tenant_id = ctx.data::<i64>()?;
@@ -1103,6 +1116,7 @@ impl QueryRoot {
             results.push(RenderGraphQL {
                 symbol,
                 current,
+                degree: degree.into(),
                 product: product_id_map.remove(&id),
                 yesterday: yesterday_map.remove(&id),
                 history: history_map.remove(&id).unwrap_or_default(),
