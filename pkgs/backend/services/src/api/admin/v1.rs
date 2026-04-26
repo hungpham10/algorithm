@@ -14,7 +14,7 @@ use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, Json as JsonRequest, Multipart, Path, Query, State};
 use axum::http::{self, header};
 use axum::response::{IntoResponse, Json as JsonResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::get;
 
 use aws_sdk_s3::primitives::ByteStream;
 use chrono::Utc;
@@ -145,10 +145,10 @@ pub fn routes() -> Router<AppState> {
             get(list_paginated_api_schemas).post(create_api_schemas),
         )
         .route("/seo/schemas/{id}/metadata", get(get_api_schema))
-        .route("/seo/schemas/{id}/query", post(query_data_from_api_no_path))
+        .route("/seo/schemas/{id}/query", get(query_data_from_api_no_path))
         .route(
             "/seo/schemas/{id}/query/{*path}",
-            post(query_data_from_api_with_path),
+            get(query_data_from_api_with_path),
         )
         .route(
             "/seo/tables",

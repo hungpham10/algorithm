@@ -725,7 +725,6 @@ mod tests {
 
         // Binance - Dùng BTCUSDT
         run_provider_test(&service, "binance", "BTCUSDT", "1h").await;
-
         run_provider_test(&service, "binance", "BTCUSDT", "1d").await;
     }
 }

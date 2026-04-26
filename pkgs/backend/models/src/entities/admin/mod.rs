@@ -706,13 +706,24 @@ impl Admin {
             )))),
             None => {
                 match ApiMap::find()
+                    .select_only()
+                    .column(api_map::Column::Id)
+                    .column(api_map::Column::Mode)
+                    .column(api_map::Column::Name)
+                    .column(api_map::Column::Url)
+                    .column(api_map::Column::Parser)
                     .filter(api_map::Column::TenantId.eq(tenant_id))
                     .filter(api_map::Column::Id.eq(id))
-                    .into_tuple::<(i32, String, String, api_map::Parser)>()
+                    .into_tuple::<(i64, i32, String, String, api_map::Parser)>()
                     .one(self.dbt(tenant_id))
-                    .await?
-                    .map(|(mode, name, url, parser)| Api {
-                        id: None,
+                    .await
+                    .map_err(|error| {
+                        DbErr::Query(RuntimeErr::Internal(format!(
+                            "Failed to perform SQL of tenant_id {tenant_id} and id {id}: {error}",
+                        )))
+                    })?
+                    .map(|(id, mode, name, url, parser)| Api {
+                        id: Some(id),
                         mode: Some(ApiType::from(mode)),
                         name: Some(name),
                         url: Some(url),
