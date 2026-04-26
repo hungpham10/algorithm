@@ -420,7 +420,7 @@ impl QueryCandleSticks {
         for (t, o, h, l, c, v) in izip!(t_ref, o_ref, h_ref, l_ref, c_ref, v_ref).take(count) {
             candles.push(CandleStick {
                 t: if provider == "binance" {
-                    t.as_i32_lossy() / 1000
+                    (t / 1000).as_i32_lossy()
                 } else {
                     t.as_i32_lossy()
                 },
