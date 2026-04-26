@@ -399,16 +399,16 @@ impl QueryCandleSticks {
             )
         })?;
 
-        let t_ref = profile.queries[0].execute(&raw_json);
+        let t_ref = profile.queries[0].pick(&raw_json);
         if t_ref.is_empty() {
             return Ok(vec![]);
         }
 
-        let o_ref = profile.queries[1].execute(&raw_json);
-        let h_ref = profile.queries[2].execute(&raw_json);
-        let l_ref = profile.queries[3].execute(&raw_json);
-        let c_ref = profile.queries[4].execute(&raw_json);
-        let v_ref = profile.queries[5].execute(&raw_json);
+        let o_ref = profile.queries[1].pick(&raw_json);
+        let h_ref = profile.queries[2].pick(&raw_json);
+        let l_ref = profile.queries[3].pick(&raw_json);
+        let c_ref = profile.queries[4].pick(&raw_json);
+        let v_ref = profile.queries[5].pick(&raw_json);
 
         let count = if limit > 0 {
             limit.min(t_ref.len())
@@ -538,7 +538,7 @@ mod tests {
         let data = mock_ssi_data(10);
 
         let profile = service.profiles.get("ssi").unwrap();
-        let t_ref = profile.queries[0].execute(&data);
+        let t_ref = profile.queries[0].pick(&data);
 
         assert_eq!(t_ref.len(), 10);
         assert_eq!(t_ref[0].as_i32_lossy(), 1700000000);
@@ -560,8 +560,8 @@ mod tests {
         ]);
 
         let profile = service.profiles.get("binance").unwrap();
-        let t_ref = profile.queries[0].execute(&data);
-        let o_ref = profile.queries[1].execute(&data);
+        let t_ref = profile.queries[0].pick(&data);
+        let o_ref = profile.queries[1].pick(&data);
 
         assert_eq!(t_ref.len(), 2);
         assert_eq!(o_ref[0].as_f64_lossy(), 100.5);
@@ -583,12 +583,12 @@ mod tests {
 
         let start = Instant::now();
 
-        let t_ref = profile.queries[0].execute(&data);
-        let o_ref = profile.queries[1].execute(&data);
-        let h_ref = profile.queries[2].execute(&data);
-        let l_ref = profile.queries[3].execute(&data);
-        let c_ref = profile.queries[4].execute(&data);
-        let v_ref = profile.queries[5].execute(&data);
+        let t_ref = profile.queries[0].pick(&data);
+        let o_ref = profile.queries[1].pick(&data);
+        let h_ref = profile.queries[2].pick(&data);
+        let l_ref = profile.queries[3].pick(&data);
+        let c_ref = profile.queries[4].pick(&data);
+        let v_ref = profile.queries[5].pick(&data);
 
         let mut candles = Vec::with_capacity(size);
         for (t, o, h, l, c, v) in izip!(t_ref, o_ref, h_ref, l_ref, c_ref, v_ref).take(size) {

@@ -76,6 +76,52 @@ impl JsonQuery {
         Ok(Self { operators })
     }
 
+    pub fn pick<'a>(&self, data: &'a Value) -> Vec<&'a Value> {
+        let mut collection = vec![data];
+
+        for op in &self.operators {
+            let mut next_collection = Vec::new();
+            for item in collection {
+                match op {
+                    Operator::Match(field) => {
+                        if let Some(v) = item.get(field) {
+                            next_collection.push(v);
+                        }
+                    }
+                    Operator::Access(index) => {
+                        if let Some(v) = item.get(*index) {
+                            next_collection.push(v);
+                        } else if let Some(v) = item.get(index.to_string()) {
+                            next_collection.push(v);
+                        }
+                    }
+                    Operator::Iter => {
+                        if let Some(arr) = item.as_array() {
+                            for v in arr {
+                                next_collection.push(v);
+                            }
+                        } else if let Some(obj) = item.as_object() {
+                            for v in obj.values() {
+                                next_collection.push(v);
+                            }
+                        } else {
+                            println!(
+                                "Warning: Cannot iterate over non-array/object value: {:?}",
+                                item
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            collection = next_collection;
+            if collection.is_empty() {
+                break;
+            }
+        }
+        collection
+    }
+
     pub fn execute(&self, data: &Value) -> Vec<Value> {
         let mut collection = vec![data.clone()];
 
