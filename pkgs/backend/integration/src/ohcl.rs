@@ -113,7 +113,7 @@ impl QueryCandleSticks {
             ),
             (
                 "binance",
-                "https://api.binance.com/api/v3/klines?startTime={from}&endTime={to}&symbol={stock}&interval={res}&limit={limit}",
+                "https://api.binance.us/api/v3/klines?startTime={from}&endTime={to}&symbol={stock}&interval={res}&limit={limit}",
                 ["[].0", "[].1", "[].2", "[].3", "[].4", "[].5"],
                 false,
             ),
