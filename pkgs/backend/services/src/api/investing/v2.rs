@@ -405,7 +405,7 @@ async fn get_price_data_by_product_id(
 
     let mut price_map = app_state
         .investing_entity
-        .get_price(tenant_id, &product_ids)
+        .get_price(tenant_id, &product_ids, Some(24 * 60 * 60))
         .await
         .map_err(|e| {
             (
@@ -493,7 +493,7 @@ async fn get_price_data_by_name(
     // Lấy HashMap các giá từ backend
     let prices_map = app_state
         .investing_entity
-        .get_price(tenant_id, &[product_id]) // Truyền slice chứa 1 ID
+        .get_price(tenant_id, &[product_id], Some(24 * 60 * 60)) // Truyền slice chứa 1 ID
         .await
         .map_err(|error| {
             (

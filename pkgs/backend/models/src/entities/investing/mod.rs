@@ -728,34 +728,61 @@ impl Investing {
         &self,
         tenant_id: i64,
         symbol_ids: &[i32],
+        interval: Option<i32>,
     ) -> Result<HashMap<i32, Price>, DbErr> {
-        let results = PriceCurrent::find()
+        let db = self.dbt(tenant_id);
+
+        // 1. Lấy giá hiện tại
+        let current_results = PriceCurrent::find()
             .select_only()
             .column(price_current::Column::Id)
             .column(price_current::Column::Buy)
             .column(price_current::Column::Sell)
             .filter(price_current::Column::Id.is_in(symbol_ids.to_vec()))
             .into_tuple::<(i32, f32, f32)>()
-            .all(self.dbt(tenant_id)) // Trả về Vec<(i32, f32, f32)>
+            .all(db)
             .await?;
 
-        let price_map: HashMap<i32, Price> = results
+        if current_results.is_empty() && !symbol_ids.is_empty() {
+            return Err(DbErr::Custom("No products found".to_string()));
+        }
+
+        let mut history_map = HashMap::new();
+
+        if let Some(sec) = interval {
+            let target_time = chrono::Utc::now() - chrono::Duration::seconds(sec as i64);
+
+            let history_data = price_history::Entity::find()
+                .filter(price_history::Column::SymbolId.is_in(symbol_ids.to_vec()))
+                .filter(price_history::Column::UpdatedAt.lte(target_time))
+                .order_by_desc(price_history::Column::UpdatedAt)
+                .all(db)
+                .await?;
+
+            for h in history_data {
+                history_map.entry(h.symbol_id).or_insert((h.buy, h.sell));
+            }
+        }
+
+        let price_map = current_results
             .into_iter()
             .map(|(id, buy, sell)| {
+                let (old_buy, old_sell) = history_map.get(&id).cloned().unwrap_or((buy, sell));
                 (
                     id,
                     Price {
+                        diff: if interval.is_some() {
+                            Some((buy - old_buy, sell - old_sell))
+                        } else {
+                            None
+                        },
                         buy,
                         sell,
                         ..Default::default()
                     },
                 )
             })
-            .collect();
-
-        if price_map.is_empty() && !symbol_ids.is_empty() {
-            return Err(DbErr::Custom("No products found".to_string()));
-        }
+            .collect::<HashMap<_, _>>();
 
         Ok(price_map)
     }

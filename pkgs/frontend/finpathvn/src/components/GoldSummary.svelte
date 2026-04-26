@@ -68,13 +68,24 @@
       if (raw.includes('~h~')) { socket.send(raw); return; }
 
       const packets = decodeTV(raw);
-      packets.forEach(packet => {
+      packets.forEach(async (packet) => {
         try {
           const json = JSON.parse(packet);
           if (json.m === 'qsd' && json.p[1].v) {
             const v = json.p[1].v;
             if (v.lp !== undefined) {
               dataWorld.price = v.lp.toLocaleString('en-US', { minimumFractionDigits: 2 });
+
+              try {
+                const res = await fetch('/api/investing/v2/exchange-rate');
+                const rateJson = await res.json();
+                const usdSell = parseFloat(rateJson.query.find(i => i.currencyCode === "USD")?.sell || "25000");
+
+                const converted = (v.lp * 1.205 * usdSell) / 1000000;
+                dataWorld.convertedVnd = converted.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " tr";
+              } catch (apiErr) {
+                console.error("API tỷ giá hắt hơi rồi:", apiErr);
+              }
             }
             if (v.ch !== undefined) {
               dataWorld.diff = (v.ch > 0 ? '▲ ' : '▼ ') + Math.abs(v.ch).toFixed(2);
@@ -122,12 +133,8 @@
         <h3 class="text-[11px] md:text-sm font-bold text-gray-400 uppercase tracking-wider mb-1">Vàng miếng SJC</h3>
         <div class="flex items-center gap-2">
            <span class="bg-[#802237] text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase">VN</span>
-           <span class="text-[10px] md:text-xs text-gray-400 italic">đồng/lượng</span>
+           <span class="text-[10px] md:text-xs text-gray-400 italic">triệu đồng/lượng</span>
         </div>
-      </div>
-      <div class="text-right">
-        <span class="text-[11px] md:text-[13px] text-gray-500">Chênh lệch TG:</span>
-        <p class="font-bold text-gray-800 text-sm md:text-base">+{dataVn.gap}</p>
       </div>
     </div>
 
