@@ -1,19 +1,20 @@
 
 INSERT IGNORE INTO `ohcl_mapping_broker_resolution` (`id`, `broker_id`, `resolution_id`, `resolution`) VALUES
+
+INSERT INTO `ohcl_mapping_broker_resolution` (`id`, `broker_id`, `resolution_id`, `created_at`, `updated_at`, `resolution`) VALUES
 (1, 1, 1, '1D'),
 (2, 1, 2, '1H'),
 (3, 1, 3, '4H'),
 (4, 1, 4, '1M'),
 (5, 1, 5, '5m'),
 (6, 1, 6, '1m'),
-(6, 1, 7, '1W'),
-(7, 2, 1, '1D'),
-(8, 2, 2, '1H'),
-(9, 2, 3, '4H'),
+(7, 2, 1, '1d'),
+(8, 2, 2, '1h'),
+(9, 2, 3, '4h'),
 (10, 2, 4, '1M'),
 (11, 2, 5, '5m'),
 (12, 2, 6, '1m'),
-(13, 2, 7, '1W'),
+(13, 2, 7, '1w'),
 (14, 3, 1, '1D'),
 (15, 3, 2, '1H'),
 (16, 3, 3, '4H'),

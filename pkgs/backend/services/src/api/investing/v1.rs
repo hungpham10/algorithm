@@ -40,6 +40,7 @@ use super::{AppState, InvestingHeaders};
         HeatmapResponse,
         GetOhclRequest,
         HeatmapRequest,
+        QueryPagingInput,
         ListBrokersRequest,
         CandleStick,
     ))
@@ -69,6 +70,15 @@ pub fn routes() -> Router<AppState> {
             "/ohcl/products/{broker}",
             get(get_list_of_product_by_broker),
         )
+}
+
+#[derive(Serialize, Deserialize, Default, Clone, Debug, IntoParams, ToSchema)]
+pub struct QueryPagingInput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u64>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, ToSchema)]
@@ -715,15 +725,21 @@ async fn get_list_of_brokers(
 #[utoipa::path(
     get,
     path = "/ohcl/brokers/{broker}/all",
-    params(("broker" = String, Path, description = "Broker name")),
+    params(
+        ("broker" = String, Path, description = "Broker name"),
+        QueryPagingInput,
+    ),
     responses((status = 200, body = OhclResponse))
 )]
 async fn get_list_of_symbols(
     State(app_state): State<AppState>,
     Path(broker): Path<String>,
+    Query(QueryPagingInput { after, limit }): Query<QueryPagingInput>,
     InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
 ) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let tenant_id: i64 = tenant_id.into();
+    let after = after.unwrap_or(0);
+    let limit = limit.unwrap_or(100);
     let cache = Cache::new(app_state.connector.clone(), tenant_id);
 
     app_state
@@ -740,7 +756,7 @@ async fn get_list_of_symbols(
             )
         })?;
 
-    let key = format!("res:{tenant_id}:{broker}");
+    let key = format!("res:list_of_symbols:{tenant_id}:{broker}:{after}:{limit}");
     if let Ok(cached) = cache.get(&key).await {
         return Ok(fast_cache_response(cached).into_response());
     }
@@ -809,7 +825,14 @@ async fn get_list_of_symbols(
             let api_name = format!("{api_mapping}:{broker}");
             match app_state
                 .admin_entity
-                .perform_api_by_api_name(tenant_id, &api_name, ApiType::Read, vec![], headers, None)
+                .perform_api_by_api_name(
+                    tenant_id,
+                    &api_name,
+                    ApiType::Read,
+                    vec![after.to_string(), limit.to_string()],
+                    headers,
+                    None,
+                )
                 .await
             {
                 Ok(data) => {
