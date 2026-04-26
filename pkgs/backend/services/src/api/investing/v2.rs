@@ -349,17 +349,24 @@ async fn list_price_of_store(
     }))
 }
 
+#[derive(serde::Deserialize, utoipa::IntoParams)]
+pub struct PriceQuery {
+    degree: Option<f32>,
+}
+
 #[utoipa::path(
     get,
     path = "/prices/{product_ids}",
     params(
         ("product_ids" = String, Path, description = "List of Product Id separated by comma"),
+        PriceQuery,
     ),
     responses((status = 200, body = [OhclResponse])),
 )]
 async fn get_price_data_by_product_id(
     State(app_state): State<AppState>,
     Path(product_ids_str): Path<String>,
+    Query(PriceQuery { degree }): Query<PriceQuery>,
     InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
 ) -> Result<impl IntoResponse, (StatusCode, JsonResponse<Vec<OhclResponse>>)> {
     let tenant_id = tenant_id.into();
@@ -423,7 +430,20 @@ async fn get_price_data_by_product_id(
             .map(|id| {
                 if let Some(price) = price_map.remove(&id) {
                     OhclResponse {
-                        price: Some(price),
+                        price: if let Some(degree) = degree {
+                            Some(Price {
+                                buy: price.buy / degree,
+                                sell: price.sell / degree,
+                                diff: if let Some((diff_buy, diff_sell)) = price.diff {
+                                    Some((diff_buy / degree, diff_sell / degree))
+                                } else {
+                                    None
+                                },
+                                ..Default::default()
+                            })
+                        } else {
+                            Some(price)
+                        },
                         ..Default::default()
                     }
                 } else {
