@@ -89,7 +89,8 @@ pub struct AdminResponse {
         list_paginated_api_schemas,
         create_api_schemas,
         get_api_schema,
-        query_data_from_api,
+        query_data_from_api_no_path,
+        query_data_from_api_with_path,
         list_paginated_table_schemas,
         create_table_schemas,
         get_token,
@@ -144,7 +145,11 @@ pub fn routes() -> Router<AppState> {
             get(list_paginated_api_schemas).post(create_api_schemas),
         )
         .route("/seo/schemas/{id}/metadata", get(get_api_schema))
-        .route("/seo/schemas/{id}/query/{*path}", post(query_data_from_api))
+        .route("/seo/schemas/{id}/query", post(query_data_from_api_no_path))
+        .route(
+            "/seo/schemas/{id}/query/{*path}",
+            post(query_data_from_api_with_path),
+        )
         .route(
             "/seo/tables",
             get(list_paginated_table_schemas).post(create_table_schemas),
@@ -1071,7 +1076,87 @@ fn admin_error(status: StatusCode, message: String) -> BoxedAdminError {
     ),
     tag = "Schemas"
 )]
-pub async fn query_data_from_api(
+pub async fn query_data_from_api_no_path(
+    State(app_state): State<AppState>,
+    Path(id): Path<i64>,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
+    let tenant_id: i64 = tenant_id.into();
+    let cache = Cache::new(app_state.connector.clone(), tenant_id);
+
+    let mut sorted_keys = params.keys().cloned().collect::<Vec<_>>();
+    sorted_keys.sort();
+
+    let sorted_values = sorted_keys
+        .iter()
+        .filter_map(|k| params.get(k).cloned())
+        .collect::<Vec<_>>();
+
+    let query_string_part = sorted_keys
+        .iter()
+        .zip(sorted_values.iter())
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect::<Vec<_>>()
+        .join("&");
+
+    let cache_key = format!("res:{}:{}:{}", tenant_id, id, query_string_part);
+
+    if let Ok(cached) = cache.get(&cache_key).await {
+        return Ok(fast_cache_response(cached).into_response());
+    }
+
+    let api_result = app_state
+        .admin_entity
+        .perform_api_by_api_id(
+            tenant_id,
+            id,
+            vec![],
+            sorted_values.clone(),
+            HashMap::new(),
+            None,
+        )
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(AdminResponse {
+                    error: Some(format!("API Error: {}", error)),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    let response_data = AdminResponse {
+        query: Some(api_result),
+        ..Default::default()
+    };
+
+    if let Ok(serialized) = serde_json::to_string(&response_data) {
+        let _ = cache.set(&cache_key, &serialized, 300).await;
+    }
+
+    Ok((StatusCode::OK, JsonResponse(response_data)).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/seo/schemas/{id}/query/{path:.*}",
+    params(
+        ("id" = i64, Path, description = "The internal database ID of the API schema"),
+        ("path" = String, Path, description = "The derivative path of the API (can be empty or multiple segments like v1/data)"),
+        ("params" = Option<HashMap<String, String>>, Query, description = "Dynamic query arguments for the API")
+    ),
+    responses(
+        (status = 200, description = "Successful query", body = AdminResponse),
+        (status = 500, description = "Execution error", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "Schemas"
+)]
+pub async fn query_data_from_api_with_path(
     State(app_state): State<AppState>,
     Path((id, path)): Path<(i64, String)>,
     AdminHeaders { tenant_id, .. }: AdminHeaders,
