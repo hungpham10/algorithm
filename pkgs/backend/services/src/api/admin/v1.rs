@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io::{Cursor, ErrorKind, Write};
 use std::path::PathBuf;
@@ -13,18 +14,19 @@ use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, Json as JsonRequest, Multipart, Path, Query, State};
 use axum::http::{self, header};
 use axum::response::{IntoResponse, Json as JsonResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 
 use aws_sdk_s3::primitives::ByteStream;
 use chrono::Utc;
 use http::StatusCode;
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use tokio_util::io::ReaderStream;
 
 use integration::components::appended_log::AppendedLog;
 use models::cache::Cache;
-use models::entities::admin::{Api, Article, Site};
+use models::entities::admin::{Api, Article, Site, Table};
 
 use crate::api::AppState;
 use crate::api::admin::AdminHeaders;
@@ -52,12 +54,24 @@ pub struct ListApiSchema {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema)]
+pub struct ListTableSchema {
+    data: Vec<Table>,
+    next_after: Option<i64>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema)]
 pub struct AdminResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     apis: Option<ListApiSchema>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     api: Option<Api>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tables: Option<ListTableSchema>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    query: Option<Vec<JsonValue>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
@@ -75,6 +89,9 @@ pub struct AdminResponse {
         list_paginated_api_schemas,
         create_api_schemas,
         get_api_schema,
+        query_data_from_api,
+        list_paginated_table_schemas,
+        create_table_schemas,
         get_token,
         put_token,
         get_appended_log,
@@ -126,7 +143,12 @@ pub fn routes() -> Router<AppState> {
             "/seo/schemas",
             get(list_paginated_api_schemas).post(create_api_schemas),
         )
-        .route("/seo/schemas/{id}", get(get_api_schema))
+        .route("/seo/schemas/{id}/metadata", get(get_api_schema))
+        .route("/seo/schemas/{id}/query/{*path}", post(query_data_from_api))
+        .route(
+            "/seo/tables",
+            get(list_paginated_table_schemas).post(create_table_schemas),
+        )
         .route("/seo/tokens/{name}", get(get_token).post(put_token))
         .route(
             "/seo/logs/{name}",
@@ -983,7 +1005,7 @@ pub async fn create_api_schemas(
 
 #[utoipa::path(
     get,
-    path = "/seo/schemas/{id}",
+    path = "/seo/schemas/{id}/metadata",
     params(
         ("id" = i64, Path, description = "The internal database ID of the API schema")
     ),
@@ -1030,6 +1052,103 @@ fn admin_error(status: StatusCode, message: String) -> BoxedAdminError {
             ..Default::default()
         }),
     ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/seo/schemas/{id}/query/{path:.*}",
+    params(
+        ("id" = i64, Path, description = "The internal database ID of the API schema"),
+        ("path" = String, Path, description = "The derivative path of the API (can be empty or multiple segments like v1/data)"),
+        ("params" = Option<HashMap<String, String>>, Query, description = "Dynamic query arguments for the API")
+    ),
+    responses(
+        (status = 200, description = "Successful query", body = AdminResponse),
+        (status = 500, description = "Execution error", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "Schemas"
+)]
+pub async fn query_data_from_api(
+    State(app_state): State<AppState>,
+    Path((id, path)): Path<(i64, String)>,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
+    let tenant_id: i64 = tenant_id.into();
+    let cache = Cache::new(app_state.connector.clone(), tenant_id);
+
+    let paths = if path.is_empty() {
+        vec![]
+    } else {
+        path.split('/')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect()
+    };
+
+    let mut sorted_keys = params.keys().cloned().collect::<Vec<_>>();
+    sorted_keys.sort();
+
+    let sorted_values = sorted_keys
+        .iter()
+        .filter_map(|k| params.get(k).cloned())
+        .collect::<Vec<_>>();
+
+    let query_string_part = sorted_keys
+        .iter()
+        .zip(sorted_values.iter())
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect::<Vec<_>>()
+        .join("&");
+
+    let cache_key = format!("res:{}:{}:{}:{}", tenant_id, id, path, query_string_part);
+
+    if let Ok(cached) = cache.get(&cache_key).await {
+        return Ok(fast_cache_response(cached).into_response());
+    }
+
+    let api_result = app_state
+        .admin_entity
+        .perform_api_by_api_id(
+            tenant_id,
+            id,
+            paths,
+            sorted_values.clone(),
+            HashMap::new(),
+            None,
+        )
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(AdminResponse {
+                    error: Some(format!("API Error: {}", error)),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    let response_data = AdminResponse {
+        query: Some(api_result),
+        ..Default::default()
+    };
+
+    if let Ok(serialized) = serde_json::to_string(&response_data) {
+        let _ = cache.set(&cache_key, &serialized, 300).await;
+    }
+
+    Ok((StatusCode::OK, JsonResponse(response_data)).into_response())
+}
+
+fn fast_cache_response(cached_json: String) -> Response {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(cached_json))
+        .unwrap()
 }
 
 #[utoipa::path(
@@ -1169,5 +1288,108 @@ pub async fn rotate_new_partition(
     match result {
         Ok(_) => Ok(JsonResponse(AdminResponse::default())),
         Err(boxed_err) => Err(*boxed_err),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/seo/tables",
+    params(
+        QueryPagingInput // Utoipa automatically extracts fields from the struct
+    ),
+    responses(
+        (status = 200, description = "Paginated list of Table schemas", body = AdminResponse),
+        (status = 500, description = "Database error", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "Schemas"
+)]
+pub async fn list_paginated_table_schemas(
+    State(app_state): State<AppState>,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
+    Query(QueryPagingInput { after, limit }): Query<QueryPagingInput>,
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
+    let after = after.unwrap_or(0);
+    let limit = limit.unwrap_or(10);
+
+    if limit > 100 {
+        Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(AdminResponse {
+                error: Some(format!(
+                    "Maximum item per page does not exceed 100, currently is {}",
+                    limit
+                )),
+                ..Default::default()
+            }),
+        ))
+    } else {
+        match app_state
+            .admin_entity
+            .list_paginated_table_schema(tenant_id.into(), after, limit)
+            .await
+        {
+            Ok(data) => {
+                let next_after = if data.len() == limit as usize {
+                    data.last().unwrap().id
+                } else {
+                    None
+                };
+
+                Ok(JsonResponse(AdminResponse {
+                    tables: Some(ListTableSchema { data, next_after }),
+                    ..Default::default()
+                }))
+            }
+            Err(error) => Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(AdminResponse {
+                    error: Some(format!("Database error: {}", error)),
+                    ..Default::default()
+                }),
+            )),
+        }
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/seo/tables",
+    request_body = [Api],
+    responses(
+        (status = 200, description = "Successfully created schemas", body = AdminResponse),
+        (status = 500, description = "Database error", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "Schemas"
+)]
+pub async fn create_table_schemas(
+    State(app_state): State<AppState>,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
+    JsonRequest(schemas): JsonRequest<Vec<Table>>,
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
+    match app_state
+        .admin_entity
+        .create_table_schemas(tenant_id.into(), schemas)
+        .await
+    {
+        Ok(data) => Ok(JsonResponse(AdminResponse {
+            tables: Some(ListTableSchema {
+                data,
+                next_after: None,
+            }),
+            ..Default::default()
+        })),
+        Err(error) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(AdminResponse {
+                error: Some(format!("Database error: {}", error)),
+                ..Default::default()
+            }),
+        )),
     }
 }

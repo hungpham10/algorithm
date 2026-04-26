@@ -121,6 +121,9 @@ pub struct Price {
     pub sell: f32,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub diff: Option<(f32, f32)>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<u64>,
 }
 
