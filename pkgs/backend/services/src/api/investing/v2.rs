@@ -1027,7 +1027,7 @@ impl QueryRoot {
     async fn gold_market_list(
         &self,
         ctx: &Context<'_>,
-        scopes: Vec<i32>,
+        #[graphql(default)] scopes: Vec<i32>,
         #[graphql(default = 0)] after: i32,
         #[graphql(default = 10)] limit: u64,
         #[graphql(default = 7)] lookback: i64,
@@ -1065,7 +1065,7 @@ impl QueryRoot {
                 &broker,
                 after,
                 limit,
-                false,
+                true,
                 Some(scopes.clone()),
             )
             .await
