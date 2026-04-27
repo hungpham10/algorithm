@@ -172,9 +172,14 @@ pub fn routes() -> Router<AppState> {
             get(list_paginated_products).post(create_products),
         )
         .route("/symbols", get(list_paginated_symbols))
-        .route("/prices/{product_id}", get(get_price_data_by_product_id))
+        .route(
+            "/prices/by-product/{product_ids}",
+            get(get_price_data_by_product_id),
+        )
         .route("/astra-render", post(render_data_using_graphql))
         .layer(Extension(schema))
+
+    //.route("/prices/by-provice/{provice}"
 }
 
 #[utoipa::path(
@@ -356,7 +361,7 @@ pub struct PriceQuery {
 
 #[utoipa::path(
     get,
-    path = "/prices/{product_ids}",
+    path = "/prices/by-products/{product_ids}",
     params(
         ("product_ids" = String, Path, description = "List of Product Id separated by comma"),
         PriceQuery,
@@ -428,7 +433,7 @@ async fn get_price_data_by_product_id(
         product_ids
             .into_iter()
             .map(|id| {
-                if let Some(price) = price_map.remove(&id) {
+                if let Some(price) = price_map.get(&id) {
                     OhclResponse {
                         price: if let Some(degree) = degree {
                             Some(Price {

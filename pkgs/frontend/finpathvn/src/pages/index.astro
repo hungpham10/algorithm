@@ -90,7 +90,7 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
       async function updateTableData() {
         if (!allProductIds.length) return;
         try {
-          const response = await fetch(`/api/investing/v2/prices/${allProductIds.join(',')}?degree=1000000`);
+          const response = await fetch(`/api/investing/v2/prices/by-products/${allProductIds.join(',')}?degree=1000000`);
           if (response.ok) {
             const priceUpdates = await response.json();
             if (Array.isArray(priceUpdates) && priceUpdates.length > 0) {
