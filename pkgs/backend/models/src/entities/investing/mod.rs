@@ -1424,7 +1424,7 @@ impl Investing {
             .order_by_asc(symbols::Column::Id)
             .limit(limit);
 
-        if let Some(scopes) = scopes {
+        if let Some(ref scopes) = scopes {
             query = query
                 .join_rev(
                     JoinType::InnerJoin,
@@ -1443,7 +1443,7 @@ impl Investing {
         }
 
         if detail {
-            let rows = Symbols::find()
+            let mut query = Symbols::find()
                 .select_only()
                 .column(symbols::Column::Id)
                 .column(symbols::Column::Name)
@@ -1481,7 +1481,13 @@ impl Investing {
                         .to(mapping_product_in_store_to_symbol::Column::Id)
                         .into(),
                 )
-                .filter(symbols::Column::Id.is_in(symbol_ids))
+                .filter(symbols::Column::Id.is_in(symbol_ids));
+
+            if let Some(ref scopes) = scopes {
+                query = query.filter(product_anchors::Column::Scope.is_in(scopes.clone()));
+            }
+
+            let rows = query
                 .order_by_asc(symbols::Column::Id)
                 .into_tuple::<(
                     i32,
