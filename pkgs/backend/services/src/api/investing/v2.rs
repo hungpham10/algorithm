@@ -415,7 +415,7 @@ async fn get_price_data_by_product_id(
             )
         })?;
 
-    let mut price_map = app_state
+    let price_map = app_state
         .investing_entity
         .get_price(tenant_id, &product_ids, Some(24 * 60 * 60))
         .await
@@ -447,13 +447,13 @@ async fn get_price_data_by_product_id(
                                 ..Default::default()
                             })
                         } else {
-                            Some(price)
+                            Some(price.clone())
                         },
                         ..Default::default()
                     }
                 } else {
                     OhclResponse {
-                        error: Some("Product price not found".to_string()),
+                        error: Some(format!("Product {id} price not found")),
                         ..Default::default()
                     }
                 }
