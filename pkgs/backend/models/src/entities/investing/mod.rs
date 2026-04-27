@@ -53,7 +53,7 @@ pub struct Filter {
     pub interval: u64,
     pub after: i32,
     pub limit: u64,
-    pub scope: i32,
+    pub scopes: Vec<i32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
@@ -134,6 +134,9 @@ pub struct Symbol {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
@@ -521,7 +524,7 @@ impl Investing {
                     .to(symbols::Column::BrokerId)
                     .into(),
             )
-            .filter(product_anchors::Column::Scope.eq(filter.scope))
+            .filter(product_anchors::Column::Scope.is_in(filter.scopes.clone()))
             .filter(brokers::Column::Name.eq(broker))
             .filter(symbols::Column::Id.gt(filter.after))
             .order_by_asc(symbols::Column::Id)
@@ -563,7 +566,7 @@ impl Investing {
                     .into(),
             )
             .filter(symbols::Column::Id.is_in(symbol_ids))
-            .filter(product_anchors::Column::Scope.eq(filter.scope))
+            .filter(product_anchors::Column::Scope.is_in(filter.scopes))
             .filter(price_history::Column::UpdatedAt.between(
                 chrono::DateTime::from_timestamp(filter.from, 0).unwrap_or_default(),
                 chrono::DateTime::from_timestamp(filter.to, 0).unwrap_or_default(),
@@ -626,7 +629,7 @@ impl Investing {
                     .to(symbols::Column::BrokerId)
                     .into(),
             )
-            .filter(product_anchors::Column::Scope.eq(filter.scope))
+            .filter(product_anchors::Column::Scope.is_in(filter.scopes.clone()))
             .filter(brokers::Column::Name.eq(broker))
             .filter(symbols::Column::Id.gt(filter.after))
             .order_by_asc(symbols::Column::Id)
@@ -667,7 +670,7 @@ impl Investing {
                     .into(),
             )
             .filter(symbols::Column::Id.is_in(symbol_ids))
-            .filter(product_anchors::Column::Scope.eq(filter.scope))
+            .filter(product_anchors::Column::Scope.is_in(filter.scopes.clone()))
             .into_tuple::<(i32, i32, Option<f32>, Option<f32>)>()
             .all(self.dbt(tenant_id))
             .await?;
@@ -1404,7 +1407,7 @@ impl Investing {
         after: i32,
         limit: u64,
         detail: bool,
-        scope: Option<i32>,
+        scopes: Option<Vec<i32>>,
     ) -> Result<Vec<Symbol>, DbErr> {
         let mut query = Symbols::find()
             .select_only()
@@ -1421,7 +1424,7 @@ impl Investing {
             .order_by_asc(symbols::Column::Id)
             .limit(limit);
 
-        if let Some(scope) = scope {
+        if let Some(scopes) = scopes {
             query = query
                 .join_rev(
                     JoinType::InnerJoin,
@@ -1430,7 +1433,7 @@ impl Investing {
                         .to(symbols::Column::Id)
                         .into(),
                 )
-                .filter(product_anchors::Column::Scope.eq(scope));
+                .filter(product_anchors::Column::Scope.is_in(scopes.clone()));
         }
 
         let symbol_ids = query.into_tuple::<i32>().all(self.dbt(tenant_id)).await?;
@@ -1445,6 +1448,7 @@ impl Investing {
                 .column(symbols::Column::Id)
                 .column(symbols::Column::Name)
                 .column(symbols::Column::Symbol)
+                .column(product_anchors::Column::Description)
                 .column(stores::Column::Id)
                 .column(stores::Column::Name)
                 .column(price_current::Column::Buy)
@@ -1479,17 +1483,27 @@ impl Investing {
                 )
                 .filter(symbols::Column::Id.is_in(symbol_ids))
                 .order_by_asc(symbols::Column::Id)
-                .into_tuple::<(i32, String, String, i32, String, Option<f32>, Option<f32>)>()
+                .into_tuple::<(
+                    i32,
+                    String,
+                    String,
+                    Option<String>,
+                    i32,
+                    String,
+                    Option<f32>,
+                    Option<f32>,
+                )>()
                 .all(self.dbt(tenant_id))
                 .await?;
 
             let mut symbol_map = BTreeMap::new();
-            for (sym_id, sym_name, sym_code, store_id, store_name, buy, sell) in rows {
+            for (sym_id, sym_name, sym_code, description, store_id, store_name, buy, sell) in rows {
                 let symbol_entry = symbol_map.entry(sym_id).or_insert(Symbol {
                     id: Some(sym_id),
                     name: Some(sym_name),
                     symbol: Some(sym_code),
                     stores: Some(Vec::new()),
+                    description,
                 });
 
                 if let Some(ref mut stores_list) = symbol_entry.stores {

@@ -926,6 +926,11 @@ impl RenderGraphQL {
     }
 
     #[instrument]
+    async fn description(&self) -> Option<String> {
+        self.symbol.description.clone()
+    }
+
+    #[instrument]
     async fn live_price(&self) -> Option<String> {
         self.product
             .map(|product_id| format!("/api/investing/v2/prices/{product_id}"))
@@ -951,7 +956,13 @@ impl RenderGraphQL {
         let yesterday = self.yesterday.as_ref()?;
 
         let diff = current.buy - yesterday.buy;
-        let icon = if diff >= 0.0 { "▲" } else { "▼" };
+        let icon = if diff > 0.0 {
+            "▲"
+        } else if diff < 0.0 {
+            "▼"
+        } else {
+            "●"
+        };
         Some(format!("{} {:.2}", icon, diff.abs() / self.degree))
     }
 
@@ -961,7 +972,13 @@ impl RenderGraphQL {
         let yesterday = self.yesterday.as_ref()?;
 
         let diff = current.sell - yesterday.sell;
-        let icon = if diff >= 0.0 { "▲" } else { "▼" };
+        let icon = if diff > 0.0 {
+            "▲"
+        } else if diff < 0.0 {
+            "▼"
+        } else {
+            "●"
+        };
         Some(format!("{} {:.2}", icon, diff.abs() / self.degree))
     }
 
@@ -1010,7 +1027,7 @@ impl QueryRoot {
     async fn gold_market_list(
         &self,
         ctx: &Context<'_>,
-        #[graphql(default = 0)] scope: i32,
+        scopes: Vec<i32>,
         #[graphql(default = 0)] after: i32,
         #[graphql(default = 10)] limit: u64,
         #[graphql(default = 7)] lookback: i64,
@@ -1043,7 +1060,14 @@ impl QueryRoot {
 
         let all_symbols = app_state
             .investing_entity
-            .list_paginated_symbols(*tenant_id, &broker, after, limit, false, Some(scope))
+            .list_paginated_symbols(
+                *tenant_id,
+                &broker,
+                after,
+                limit,
+                false,
+                Some(scopes.clone()),
+            )
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
@@ -1066,7 +1090,7 @@ impl QueryRoot {
                         to,
                         after,
                         limit,
-                        scope,
+                        scopes: scopes.clone(),
                         interval: 24 * 60 * 60,
                     },
                 )
@@ -1096,7 +1120,7 @@ impl QueryRoot {
                     Filter {
                         after,
                         limit,
-                        scope,
+                        scopes: scopes.clone(),
                         ..Default::default()
                     },
                 )

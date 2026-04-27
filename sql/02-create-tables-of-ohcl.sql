@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS `ohcl_product_anchors` (
   `store` integer NOT NULL, -- Link directly to ohcl_stores.id
   `symbol` integer NOT NULL, -- Link directly to ohcl_symbols.id
   `scope` integer NOT NULL DEFAULT '0',
+  `description` varchar(200),
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
