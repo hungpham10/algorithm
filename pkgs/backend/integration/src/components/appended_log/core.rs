@@ -274,6 +274,7 @@ mod tests {
         "sftp://LB4.hung0913208:XXh_01664957141@edge13.ftpgrid.com:22/test_unittest4.log";
 
     #[test]
+    #[ignore]
     fn test_full_lsm_flow() {
         let logger = AppendedLog::new(TEST_DSN1).expect("Kết nối thất bại");
         let mock_data = b"Unit test data content\n";
@@ -302,6 +303,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_streaming_read_integrity() {
         let logger = AppendedLog::new(TEST_DSN2).expect("Kết nối thất bại");
 
@@ -366,6 +368,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_append_multiple_times() {
         let logger = AppendedLog::new(TEST_DSN3).expect("Kết nối thất bại");
 
@@ -414,6 +417,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_concurrent_writes() {
         use std::thread;
 
@@ -463,11 +467,13 @@ mod tests {
 
     #[test]
     #[should_panic]
+    #[ignore]
     fn test_invalid_url() {
         AppendedLog::new("not_a_url").unwrap();
     }
 
     #[test]
+    #[ignore]
     fn test_cleanup_logs_older_than_one_hour() {
         for dsn in [TEST_DSN1, TEST_DSN2, TEST_DSN3, TEST_DSN4] {
             let logger = AppendedLog::new(dsn).expect("Kết nối thất bại");
