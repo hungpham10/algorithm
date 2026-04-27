@@ -1,12 +1,15 @@
+
 ---
 // src/pages/index.astro
 import OptimizedImage from '../components/OptimizedImage.astro';
 import GoldSummary from '../components/GoldSummary.svelte';
 import TableHead from '../components/TableHead.astro';
 import TableRow from '../components/TableRow.astro';
+import RegionalPriceTable from '../components/RegionalPriceTable.svelte';
 import '../styles/global.css';
 
 const SHOW_ADS = import.meta.env.SHOW_ADS === 'true';
+const SHOW_REGION_TABLE = import.meta.env.SHOW_REGION_TABLE === 'true';
 const GRAPHQL_ENDPOINT = "https://lighttrading.pp.ua/api/investing/v2/astra-render";
 
 let data;
@@ -17,26 +20,11 @@ try {
     body: JSON.stringify({
       query: `
         query GetGoldData {
-        goldSummary: goldMarketList(scope: 2, after: 0, limit: 1, degree: 1000000) {
-            product
-            buy
-            sell
-            diffBuy
-            diffSell
-            yesterdayBuy
-            yesterdaySell
+          goldSummary: goldMarketList(scopes: [1], after: 0, limit: 1, degree: 1000000) {
+            product, buy, sell, diffBuy, diffSell, yesterdayBuy, yesterdaySell
           }
-          largeMarketGold: goldMarketList(scope: 1, after: 0, limit: 10, degree: 1000000) {
-            product
-            type
-            buy
-            sell
-            diffBuy
-            diffSell
-            yesterdayBuy
-            yesterdaySell
-            trend
-            trendData
+          largeMarketGold: goldMarketList(scopes: [1, 2], after: 0, limit: 10, degree: 1000000) {
+            product, description, buy, sell, diffBuy, diffSell, yesterdayBuy, yesterdaySell, trend, trendData
           }
         }
       `
@@ -53,19 +41,14 @@ const formatVN = (val) => {
   return Number(val).toLocaleString('vi-VN');
 };
 
-// Hàm tính % từ chuỗi "▼ 600000.00" của BE
 const calcPercentInitial = (diffStr, currentPrice) => {
   if (!diffStr || !currentPrice) return "0%";
   const diffNum = parseFloat(String(diffStr).replace(/[^\d.-]/g, ''));
   const currNum = parseFloat(String(currentPrice));
-
   if (isNaN(diffNum) || isNaN(currNum)) return "0%";
-
-  // Xác định dấu thực tế
   const isDown = String(diffStr).includes('▼') || String(diffStr).includes('-');
   const finalDiff = isDown ? -Math.abs(diffNum) : Math.abs(diffNum);
   const yesterday = currNum - finalDiff;
-
   if (yesterday <= 0) return "0%";
   const percent = (finalDiff / yesterday) * 100;
   return (percent > 0 ? "+" : "") + percent.toFixed(2) + "%";
@@ -99,110 +82,127 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bảng giá vàng trực tuyến - Cập nhật liên tục 24h</title>
-    <meta name="description" content="Theo dõi giá vàng SJC, vàng nhẫn 9999 mới nhất hôm nay. Dữ liệu live, biểu đồ xu hướng và so sánh giá chính xác." />
-    <meta property="og:title" content="Bảng giá vàng trực tuyến - Cập nhật liên tục" />
-    <meta property="og:description" content="Giá vàng SJC, nhẫn 24k cập nhật từng giây. Biến động thị trường vàng trong nước và quốc tế." />
-    <meta property="og:image" content="https://lighttrading.pp.ua/logo.svg" />
-    <meta property="og:type" content="website" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
 
-  <body class="bg-[#f3f4f6] text-gray-900 antialiased pt-20 md:pt-24">
+  <body class="bg-[#f3f4f6] text-gray-900 antialiased pt-20 md:pt-24 flex flex-col min-h-screen">
     <script is:inline define:vars={{ allProductIds }}>
       async function updateTableData() {
         if (!allProductIds.length) return;
         try {
-          const response = await fetch(`/api/investing/v2/prices/${allProductIds.join(',')}`);
+          const response = await fetch(`/api/investing/v2/prices/${allProductIds.join(',')}?degree=1000000`);
           if (response.ok) {
             const priceUpdates = await response.json();
             if (Array.isArray(priceUpdates) && priceUpdates.length > 0) {
-              window.dispatchEvent(new CustomEvent('price-update', {
-                detail: priceUpdates
-              }));
+              window.dispatchEvent(new CustomEvent('price-update', { detail: priceUpdates }));
             }
           }
         } catch (e) {
           console.warn("Update failed:", e);
         }
       }
-
       document.addEventListener('DOMContentLoaded', () => {
         setInterval(updateTableData, 5000);
       });
     </script>
 
     <nav class="fixed top-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm h-16 md:h-20 flex items-center">
-      <div class="max-w-[1440px] w-full mx-auto px-4 flex items-center justify-between">
+      <div class="max-w-[1800px] w-full mx-auto px-4 flex items-center justify-between">
         <a href="/" class="flex items-center hover:opacity-80 transition-opacity">
-          <OptimizedImage
-            src="https://lighttrading.pp.ua/logo.svg"
-            alt="Logo"
-            class="h-10 md:h-12 w-auto"
-            format="svg"
-          />
+          <OptimizedImage src="https://lighttrading.pp.ua/logo.svg" alt="Logo" class="h-10 md:h-12 w-auto" format="svg" />
         </a>
-
         <div class="flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1.5 rounded-full border border-green-100 shadow-sm">
-            <span class="relative flex h-2 w-2">
-              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-              <span class="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
-            </span>
+            <span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span></span>
             <span class="text-[10px] md:text-[11px] font-bold uppercase tracking-wider">Live Data</span>
         </div>
       </div>
     </nav>
 
-    <div class="max-w-[1200px] mx-auto ">
-      <main class={SHOW_ADS
-        ? "lg:col-span-9 space-y-2"
-        : "lg:col-span-12 max-w-5xl mx-auto w-full space-y-4"}>
+    <div class={SHOW_ADS ? "max-w-[1850px] w-full mx-auto px-2 md:px-6 flex-grow" : "max-w-[1024px] w-full mx-auto px-4 md:px-10 flex-grow"}>
+      <div class="flex flex-row gap-4 items-start justify-between">
 
-        <GoldSummary initialData={summaryData} client:load />
+        {SHOW_ADS && (
+          <aside class="hidden lg:block w-[160px] sticky top-24 flex-shrink-0">
+            <div class="bg-white border border-gray-200 rounded-lg p-2 text-center text-gray-400 min-h-[700px] flex flex-col items-center justify-center border-dashed">
+                <span class="text-[9px] font-bold text-gray-300 uppercase tracking-widest mb-2">Quảng cáo</span>
+                <div class="w-full flex-1 bg-gray-50 border border-dashed border-gray-100 rounded flex items-center justify-center text-[11px] italic p-2 text-center">Banner Dọc Trái</div>
+            </div>
+          </aside>
+        )}
 
-        <div class="mt-2">
-          <div class="bg-white shadow-md border border-gray-200 rounded-lg overflow-hidden">
+        <main class="flex-1 min-w-0 space-y-4">
+          <GoldSummary initialData={summaryData} client:load />
+
+          <div class="bg-white border border-gray-200 rounded-md overflow-hidden shadow-sm">
             <header class="p-4 border-b border-gray-100 flex justify-between items-center bg-white">
               <div class="flex items-baseline gap-2">
-                <h1 class="text-xl md:text-2xl font-bold text-gray-800 tracking-tight">Giá vàng hôm nay</h1>
-                <span class="text-gray-400 italic text-xs">| triệu đồng/chỉ</span>
+                <h1 class="text-xl font-bold text-gray-800 tracking-tight">Giá vàng hôm nay</h1>
+                <span class="text-gray-400 text-[10px] uppercase tracking-widest font-medium hidden sm:inline">| TRIỆU ĐỒNG/CHỈ</span>
               </div>
-              <div class="text-[11px] text-gray-500 font-bold bg-gray-50 px-2.5 py-1 rounded-md border border-gray-200 shadow-sm">
-                {currentDate}
-              </div>
+              <div class="text-[11px] text-gray-400 font-bold bg-gray-50 px-2 py-1 rounded">{currentDate}</div>
             </header>
 
             <div class="overflow-x-auto">
               <table class="w-full border-collapse">
                 <TableHead currentDate={currentDate} yesterdayDate={yesterdayDate} />
                 <tbody class="divide-y divide-gray-100">
-                  {goldList.length > 1 ? (
-                    goldList.slice(1).map((item, index) => (
-                      <TableRow
-                        data={item}
-                        index={index + 1}
-                      />
+                  {goldList.length > 0 ? (
+                    goldList.map((item, index) => (
+                      <TableRow data={item} index={index} />
                     ))
                   ) : (
-                    <tr>
-                      <td colspan="6" class="p-10 text-center text-gray-400">
-                        {goldList.length === 1 ? "Không có dữ liệu bảng bổ sung" : "Đang tải dữ liệu thị trường..."}
-                      </td>
-                    </tr>
+                    <tr><td colspan="6" class="p-10 text-center text-gray-400 italic">Đang tải dữ liệu thị trường...</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
-          </div>
-        </div>
-      </main>
 
-      {SHOW_ADS && (
-        <aside class="hidden lg:block lg:col-span-3">
-          <div class="sticky top-28 bg-gray-100 rounded-lg p-4 text-center text-gray-400 border-2 border-dashed border-gray-200 h-[600px] flex items-center justify-center">
-            Ads Space
+            {SHOW_REGION_TABLE && (
+              <div class="border-t border-gray-100">
+                <RegionalPriceTable formatVN={formatVN} client:visible />
+              </div>
+            )}
           </div>
-        </aside>
-      )}
+
+          {SHOW_ADS && (
+            <div class="lg:hidden bg-white border border-gray-200 rounded-lg p-4 text-center text-gray-400">
+               <div class="h-32 bg-gray-50 border-2 border-dashed border-gray-100 rounded flex items-center justify-center italic text-xs">Ads Space Mobile</div>
+            </div>
+          )}
+        </main>
+
+        {SHOW_ADS && (
+          <aside class="hidden lg:block w-[160px] sticky top-24 flex-shrink-0">
+            <div class="bg-white border border-gray-200 rounded-lg p-2 text-center text-gray-400 min-h-[700px] flex flex-col items-center justify-center border-dashed">
+                <span class="text-[9px] font-bold text-gray-300 uppercase tracking-widest mb-2">Quảng cáo</span>
+                <div class="w-full flex-1 bg-gray-50 border border-dashed border-gray-100 rounded flex items-center justify-center text-[11px] italic p-2 text-center">Banner Dọc Phải</div>
+            </div>
+          </aside>
+        )}
+
+      </div>
     </div>
+
+    <footer class="mt-12 bg-white border-t border-gray-200 pt-10 pb-8">
+        <div class="max-w-[1850px] mx-auto px-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8 text-sm">
+                <div class="space-y-4">
+                    <OptimizedImage src="https://lighttrading.pp.ua/logo.svg" alt="Logo" class="h-8 w-auto grayscale opacity-60" format="svg" />
+                    <p class="text-gray-500 text-xs">Hệ thống cập nhật giá vàng trực tuyến 24/7. Dữ liệu chuẩn xác từ sàn giao dịch quốc tế.</p>
+                </div>
+                <div>
+                    <h4 class="font-bold text-gray-800 mb-4 uppercase text-[10px] tracking-widest">Thị trường</h4>
+                    <ul class="text-gray-500 space-y-2 text-xs">
+                        <li><a href="#" class="hover:text-blue-600 transition-colors">Giá vàng SJC</a></li>
+                        <li><a href="#" class="hover:text-blue-600 transition-colors">Vàng nhẫn 9999</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="font-bold text-gray-800 mb-4 uppercase text-[10px] tracking-widest">Thông tin</h4>
+                    <p class="text-gray-500 text-xs italic">© 2026 FinDaily. Thông tin chỉ mang tính chất tham khảo.</p>
+                </div>
+            </div>
+        </div>
+    </footer>
   </body>
 </html>

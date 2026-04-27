@@ -11,24 +11,38 @@
   let sessionId = "qs_" + Math.random().toString(36).substring(2, 10);
 
   // --- Helper Functions ---
-  const formatVN = (val) => {
+  function formatVN(val) {
     if (val === null || val === undefined || val === "" || isNaN(val)) return "---";
     return Number(val).toLocaleString('vi-VN');
-  };
+  }
 
-  const formatDiff = (val) => {
-    if (!val || val === "") return "---";
+  function formatDiff(val) {
+    if (val === null || val === undefined || val === "") return "---";
+
+    // Nếu backend trả về số kèm mũi tên, ta xử lý để format phần số
+    const hasNotArrow = String(val).includes('●');
     const hasArrowUp = String(val).includes('▲');
     const hasArrowDown = String(val).includes('▼');
-    const numericValue = String(val).replace(/[▲▼\s]/g, '');
+    const numericValue = String(val).replace(/[▲▼●\s]/g, ''); // Loại bỏ ký tự lạ để lấy số
 
-    if (numericValue === "" || isNaN(numericValue)) return val;
+    if (numericValue === "" || isNaN(numericValue)) return val; // Nếu không phải số thì trả về nguyên bản
     const formattedNum = Number(numericValue).toLocaleString('vi-VN');
 
+    if (!hasArrowUp && !hasArrowDown) {
+      if (numericValue > 0) {
+    	return `▲ ${formattedNum}`;
+      } else if (numericValue < 0) {
+    	return `▼ ${formattedNum}`;
+      } else {
+    	return `● ${formattedNum}`;
+      }
+    }
+
+    if (hasNotArrow) return `● ${formattedNum}`;
     if (hasArrowUp) return `▲ ${formattedNum}`;
     if (hasArrowDown) return `▼ ${formattedNum}`;
     return formattedNum;
-  };
+  }
 
   // --- Live Update VN (Từ CustomEvent) ---
   function handleVNUpdate(event) {
@@ -37,11 +51,12 @@
     const myUpdate = allUpdates[0];
 
     if (myUpdate && !myUpdate.error) {
-      dataVn.buy = formatVN(myUpdate.price?.buy || myUpdate.buy);
-      dataVn.sell = formatVN(myUpdate.price?.sell || myUpdate.sell);
-      dataVn.diffBuy = formatDiff(myUpdate.price?.diffBuy || myUpdate.diffBuy);
-      dataVn.diffSell = formatDiff(myUpdate.price?.diffSell || myUpdate.diffSell);
+      dataVn.buy = formatVN(myUpdate.price?.buy);
+      dataVn.sell = formatVN(myUpdate.price?.sell);
+      dataVn.diffBuy = formatDiff(myUpdate.price?.diff[0]);
+      dataVn.diffSell = formatDiff(myUpdate.price?.diff[1]);
 
+      console.log(dataVn)
       dataVn = dataVn; // Trigger re-render
     }
   }
@@ -126,38 +141,39 @@
   };
 </script>
 
-<div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-gray-200 border border-gray-200 shadow-md rounded-xl overflow-hidden font-sans">
-  <div class="bg-white p-4 md:p-5 flex flex-col justify-between">
-    <div class="flex justify-between items-start mb-4">
+<div class="grid grid-cols-1 md:grid-cols-2 bg-white border border-gray-200 rounded-lg overflow-hidden font-sans mt-2">
+
+  <div class="p-4 md:p-6 flex flex-col justify-between border-b md:border-b-0 md:border-r border-gray-200">
+    <div class="flex justify-between items-start mb-6">
       <div>
-        <h3 class="text-[11px] md:text-sm font-bold text-gray-400 uppercase tracking-wider mb-1">Vàng miếng SJC</h3>
-        <div class="flex items-center gap-2">
-           <span class="bg-[#802237] text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase">VN</span>
-           <span class="text-[10px] md:text-xs text-gray-400 italic">triệu đồng/lượng</span>
+        <div class="flex items-center gap-2 mb-1">
+           <span class="bg-gray-100 text-gray-600 text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">Việt Nam</span>
+           <h3 class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Vàng miếng SJC</h3>
         </div>
+        <span class="text-[10px] text-gray-300 italic uppercase">triệu đồng/lượng</span>
       </div>
     </div>
 
-    <div class="flex flex-wrap justify-between items-end gap-y-4">
+    <div class="grid grid-cols-2 gap-4">
       <div class="min-w-fit">
-        <p class="text-[10px] md:text-[12px] text-gray-400 font-bold uppercase mb-1">Bán ra</p>
+        <p class="text-[10px] text-gray-400 font-bold uppercase mb-1.5">Bán ra</p>
         <div class="flex items-baseline gap-2">
-          <span class="text-2xl md:text-3xl font-medium text-green-800 tracking-tighter leading-none">
+          <span class="text-2xl md:text-3xl font-semibold text-gray-900 tracking-tighter leading-none">
             {dataVn.sell}
           </span>
-          <span class="{getColor(dataVn.diffSell)} text-sm md:text-[12px] font-bold">
+          <span class="{getColor(dataVn.diffSell)} text-[11px] font-bold">
             {dataVn.diffSell}
           </span>
         </div>
       </div>
 
-      <div class="min-w-fit text-right md:text-left md:border-l md:border-gray-100 md:pl-6">
-        <p class="text-[10px] md:text-[12px] text-gray-400 font-bold uppercase mb-1">Mua vào</p>
-        <div class="flex items-baseline justify-end md:justify-start gap-2">
-          <span class="text-2xl md:text-3xl font-medium text-gray-800 tracking-tighter leading-none">
+      <div class="min-w-fit border-l border-gray-100 pl-4">
+        <p class="text-[10px] text-gray-400 font-bold uppercase mb-1.5">Mua vào</p>
+        <div class="flex items-baseline gap-2">
+          <span class="text-2xl md:text-3xl font-semibold text-gray-800 tracking-tighter leading-none">
             {dataVn.buy}
           </span>
-          <span class="{getColor(dataVn.diffBuy)} text-sm md:text-[12px] font-bold">
+          <span class="{getColor(dataVn.diffBuy)} text-[11px] font-bold">
             {dataVn.diffBuy}
           </span>
         </div>
@@ -165,33 +181,33 @@
     </div>
   </div>
 
-  <div class="bg-white p-4 md:p-5 flex flex-col justify-between border-t border-gray-100 md:border-t-0">
-    <div class="flex justify-between items-start mb-4">
+  <div class="p-4 md:p-6 flex flex-col justify-between bg-[#f9fafb]">
+    <div class="flex justify-between items-start mb-6">
       <div>
-        <h3 class="text-[11px] md:text-sm font-bold text-gray-400 uppercase tracking-wider mb-1">Vàng Thế Giới</h3>
-        <div class="flex items-center gap-2">
-           <span class="bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase">INTL</span>
-           <span class="text-[10px] md:text-xs text-gray-400 italic">USD/Ounce</span>
+        <div class="flex items-center gap-2 mb-1">
+           <span class="bg-gray-800 text-white text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">World</span>
+           <h3 class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Vàng Thế Giới</h3>
         </div>
+        <span class="text-[10px] text-gray-300 italic uppercase">USD/Ounce</span>
       </div>
       <div class="text-right">
-        <span class="text-[11px] md:text-[13px] text-gray-500">Quy đổi VND:</span>
-        <p class="font-medium text-gray-800 text-sm md:text-base">{dataWorld.convertedVnd || "0"}</p>
+        <span class="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Quy đổi VND</span>
+        <p class="font-bold text-gray-700 text-sm md:text-base leading-tight">{dataWorld.convertedVnd || "0"}</p>
       </div>
     </div>
 
     <div>
-      <p class="text-[10px] md:text-[12px] text-gray-400 font-bold uppercase mb-1">Giá hiện tại</p>
-      <div class="flex items-baseline flex-wrap justify-between md:justify-start gap-2 md:gap-3">
-        <span class="text-2xl md:text-3xl font-medium text-gray-800 tracking-tighter leading-none">
+      <p class="text-[10px] text-gray-400 font-bold uppercase mb-1.5">Giá hiện tại</p>
+      <div class="flex items-baseline gap-3">
+        <span class="text-2xl md:text-3xl font-semibold text-gray-900 tracking-tighter leading-none">
           {dataWorld.price}
         </span>
 
-        <div class="flex items-baseline gap-1 md:gap-2">
-           <span class="{getColor(dataWorld.diff)} text-sm md:text-[12px] font-bold">
+        <div class="flex items-baseline gap-1.5">
+           <span class="{getColor(dataWorld.diff)} text-[11px] font-bold">
              {dataWorld.diff}
            </span>
-           <span class="{getColor(dataWorld.percent)} text-sm md:text-[12px] font-bold">
+           <span class="{getColor(dataWorld.percent)} text-[11px] font-bold">
              ({dataWorld.percent})
            </span>
         </div>

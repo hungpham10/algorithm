@@ -1,4 +1,3 @@
-
 <script>
   import { onMount } from 'svelte';
 
@@ -18,14 +17,25 @@
     if (val === null || val === undefined || val === "") return "---";
 
     // Nếu backend trả về số kèm mũi tên, ta xử lý để format phần số
+    const hasNotArrow = String(val).includes('●');
     const hasArrowUp = String(val).includes('▲');
     const hasArrowDown = String(val).includes('▼');
-    const numericValue = String(val).replace(/[▲▼\s]/g, ''); // Loại bỏ ký tự lạ để lấy số
+    const numericValue = String(val).replace(/[▲▼●\s]/g, ''); // Loại bỏ ký tự lạ để lấy số
 
     if (numericValue === "" || isNaN(numericValue)) return val; // Nếu không phải số thì trả về nguyên bản
-
     const formattedNum = Number(numericValue).toLocaleString('vi-VN');
 
+    if (!hasArrowUp && !hasArrowDown) {
+      if (numericValue > 0) {
+    	return `▲ ${formattedNum}`;
+      } else if (numericValue < 0) {
+    	return `▼ ${formattedNum}`;
+      } else {
+    	return `● ${formattedNum}`;
+      }
+    }
+
+    if (hasNotArrow) return `● ${formattedNum}`;
     if (hasArrowUp) return `▲ ${formattedNum}`;
     if (hasArrowDown) return `▼ ${formattedNum}`;
     return formattedNum;
@@ -37,9 +47,9 @@
   // Logic màu sắc
   $: isUp = String(diff).includes('▲');
   $: isDown = String(diff).includes('▼');
-  $: colorClass = isUp ? "text-green-700" : isDown ? "text-red-700" : "text-gray-500";
+  $: isNoChange = String(diff).includes('●');
+  $: colorClass = isUp ? "text-green-700" : isDown ? "text-red-700" : "text-gray-900";
   $: priceColor = (type === "sell") ? colorClass : "text-gray-900";
-
 
   function handleLiveUpdate(event) {
     const allUpdates = event.detail;
@@ -51,8 +61,8 @@
       if (myUpdate.error) {
         price = "---";
       } else {
-        // Cập nhật giá trị dựa trên type (buy/sell)
         price = formatVN(type === "buy" ? myUpdate.price.buy : myUpdate.price.sell);
+	diff = formatDiff(type === "buy"? myUpdate.price.diff[0]: myUpdate.price.diff[1]);
       }
     }
   }
@@ -67,9 +77,5 @@
 <div class="flex flex-col items-center justify-center leading-tight mx-auto">
   <div class="font-medium text-[18px] md:text-[18px] tracking-tight {priceColor}">
     {price}
-  </div>
-
-  <div class="text-[10px] md:text-[13px] font-medium {colorClass} mt-0">
-    {diff}
   </div>
 </div>
