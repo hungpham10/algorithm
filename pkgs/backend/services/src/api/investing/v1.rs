@@ -183,7 +183,7 @@ async fn get_ohcl_from_broker(
     let tenant_id = tenant_id.into();
     let broker = match app_state
         .investing_entity
-        .convert_to_real_broker(tenant_id, broker.to_lowercase())
+        .convert_to_real_broker(tenant_id, &broker.to_lowercase())
         .await
     {
         Ok(broker) => broker,
@@ -310,7 +310,7 @@ async fn get_heatmap_from_broker(
     };
     let broker = match app_state
         .investing_entity
-        .convert_to_real_broker(tenant_id, broker.to_lowercase())
+        .convert_to_real_broker(tenant_id, &broker.to_lowercase())
         .await
     {
         Ok(broker) => broker,
@@ -494,7 +494,7 @@ async fn get_rrg_from_broker(
 
     let broker = match app_state
         .investing_entity
-        .convert_to_real_broker(tenant_id, broker_name.to_lowercase())
+        .convert_to_real_broker(tenant_id, &broker_name.to_lowercase())
         .await
     {
         Ok(b) => b,

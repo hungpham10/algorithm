@@ -29,6 +29,7 @@ tokio-util = { version = "0.7.18", features = ["compat"] }
 ssh2 = "0.9.5"
 url = "2.5.8"
 itertools = "0.14.0"
+tracing = "0.1.44"
 
 # Future
 futures = "0.3"

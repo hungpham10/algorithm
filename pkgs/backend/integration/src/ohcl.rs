@@ -8,6 +8,7 @@ use itertools::izip;
 use reqwest_middleware::ClientWithMiddleware;
 use schemas::{CandleStick, reload::Reload};
 use serde_json::Value;
+use tracing::{Level, debug, info, span, warn};
 
 const INDEXES: [&str; 3] = ["VNINDEX", "HNXINDEX", "VN30"];
 const SECONDS_IN_WEEK: i64 = 7 * 24 * 60 * 60;
@@ -35,8 +36,16 @@ impl JsonValueExt for Value {
 }
 
 // Define the layers from the inside out
-type CandleStack = Vec<CandleStick>;
-type CandleCache = LruCache<i64, CandleStack, 32>;
+#[derive(Clone)]
+struct CacheBlock {
+    pub candles: Vec<CandleStick>,
+    // Khoảng thời gian thực tế mà dữ liệu trong block này đã bao phủ
+    // Ví dụ: [start_of_week .. last_sync_time]
+    pub covered_range: (i64, i64),
+    pub last_updated: u64,
+}
+
+type CandleCache = LruCache<i64, CacheBlock, 32>;
 
 // Group by whatever your keys represent (e.g., Symbol and Interval)
 type SymbolCacheMap = HashMap<String, CandleCache>;
@@ -53,7 +62,6 @@ pub struct QueryCandleSticks {
 }
 
 struct CompiledProfile {
-    shift: bool,
     queries: [JsonQuery; 6],
     url_template: String,
 }
@@ -84,7 +92,6 @@ impl QueryCandleSticks {
                 [
                     "data.t[]", "data.o[]", "data.h[]", "data.l[]", "data.c[]", "data.v[]",
                 ],
-                true,
             ),
             (
                 "vix",
@@ -97,25 +104,21 @@ impl QueryCandleSticks {
                     "d[].close",
                     "d[].volume",
                 ],
-                true,
             ),
             (
                 "dnse",
                 "https://api.dnse.com.vn/chart-api/v2/ohlcs/{kind}?from={from}&to={to}&symbol={stock}&resolution={res}",
                 ["t[]", "o[]", "h[]", "l[]", "c[]", "v[]"],
-                true,
             ),
             (
                 "dragon",
                 "https://godragon.vdsc.com.vn/IdragonMarketDataServer/trading-view/rest/history?symbol={stock}&resolution={res}&from={from}&to={to}&countback={limit}",
                 ["t[]", "o[]", "h[]", "l[]", "c[]", "v[]"],
-                true,
             ),
             (
                 "binance",
                 "https://api.binance.us/api/v3/klines?startTime={from}&endTime={to}&symbol={stock}&interval={res}&limit={limit}",
                 ["[].0", "[].1", "[].2", "[].3", "[].4", "[].5"],
-                false,
             ),
             (
                 "msn",
@@ -129,7 +132,6 @@ impl QueryCandleSticks {
                     "series.dataPoints[].4",
                     "series.dataPoints[].5",
                 ],
-                false,
             ),
             (
                 "yahoo",
@@ -143,14 +145,13 @@ impl QueryCandleSticks {
                     "chart.result.indicators.quote.close[]",
                     "chart.result.indicators.quote.volume[]",
                 ],
-                true,
             ),
         ];
 
         let mapping_str = std::env::var("CANDLESTICK_MAPPING").unwrap_or_else(|_| "{}".to_string());
         let mapping = RwLock::new(serde_json::from_str(&mapping_str).unwrap_or_default());
 
-        for (name, url, paths, shift) in raw_configs {
+        for (name, url, paths) in raw_configs {
             let queries = [
                 JsonQuery::parse(paths[0])?,
                 JsonQuery::parse(paths[1])?,
@@ -164,7 +165,6 @@ impl QueryCandleSticks {
                 CompiledProfile {
                     url_template: url.into(),
                     queries,
-                    shift,
                 },
             );
         }
@@ -193,25 +193,17 @@ impl QueryCandleSticks {
         }
 
         let real_provider_in_str = if let Ok(mapping) = self.mapping.read() {
-            if let Some(corrected_provider) = mapping.get(provider) {
-                corrected_provider.clone()
-            } else {
-                provider.to_string()
-            }
+            mapping
+                .get(provider)
+                .cloned()
+                .unwrap_or_else(|| provider.to_string())
         } else {
             provider.to_string()
         };
         let real_provider = real_provider_in_str.as_str();
 
-        let is_shifted = if let Some(profile) = self.profiles.get(real_provider) {
-            profile.shift
-        } else {
-            false
-        };
-
         if !self.is_invalidated(stock, resolution)
-            && let Some(cached_data) =
-                self.fetch_from_cache(stock, resolution, from, to, is_shifted)
+            && let Some(cached_data) = self.fetch_from_cache(stock, resolution, from, to)
         {
             return Ok(cached_data);
         }
@@ -220,10 +212,7 @@ impl QueryCandleSticks {
             .fetch_from_api(real_provider, stock, resolution, from, to, limit)
             .await?;
 
-        if !fetched_candles.is_empty() {
-            self.update_cache(stock, resolution, &fetched_candles)?;
-        }
-
+        self.update_cache(stock, resolution, &fetched_candles, from, to)?;
         Ok(fetched_candles)
     }
 
@@ -233,41 +222,56 @@ impl QueryCandleSticks {
         resolution: &str,
         from: i64,
         to: i64,
-        is_shifted: bool,
     ) -> Option<Vec<CandleStick>> {
         let caches = self.caches.read().unwrap();
         let stock_cache = caches.get(stock)?.get(resolution)?;
 
-        let mut result = Vec::new();
-
         let start_block = from / SECONDS_IN_WEEK;
         let end_block = to / SECONDS_IN_WEEK;
+        let mut result = Vec::new();
 
         for block_id in start_block..=end_block {
-            if let Some(block_candles) = stock_cache.get(&block_id) {
-                for c in block_candles {
-                    let ts = c.t as i64;
+            if let Some(block) = stock_cache.get(&block_id) {
+                let block_start = block_id * SECONDS_IN_WEEK;
+                let block_end = (block_id + 1) * SECONDS_IN_WEEK;
 
-                    if ts <= to && ts >= (from - (is_shifted as i64 * 86400)) {
-                        result.push(c.clone());
+                let needed_start = from.max(block_start);
+                let needed_end = to.min(block_end);
+
+                if needed_start >= block.covered_range.0 && needed_end <= block.covered_range.1 {
+                    debug!(
+                        block_id,
+                        range = ?block.covered_range,
+                        "Block coverage hit"
+                    );
+
+                    for c in &block.candles {
+                        let ts = c.t as i64;
+                        if ts >= needed_start && ts <= needed_end {
+                            result.push(c.clone());
+                        }
                     }
-                }
-            } else {
-                let b_start = block_id * SECONDS_IN_WEEK;
-                let b_end = (block_id + 1) * SECONDS_IN_WEEK;
-                if b_end >= from && b_start <= to {
+                } else {
+                    info!(
+                        block_id,
+                        needed = ?(needed_start, needed_end),
+                        covered = ?block.covered_range,
+                        "Cache miss: Range not covered"
+                    );
                     return None;
                 }
+            } else {
+                info!(block_id, "Cache miss: Block not found in LRU");
+                return None;
             }
         }
 
-        if result.is_empty() {
-            return None;
+        if result.is_empty() && from < to {
+            return Some(vec![]);
         }
 
         result.sort_by_key(|c| c.t);
         result.dedup_by_key(|c| c.t);
-
         Some(result)
     }
 
@@ -276,10 +280,13 @@ impl QueryCandleSticks {
         stock: &str,
         resolution: &str,
         candles: &[CandleStick],
+        query_from: i64,
+        query_to: i64,
     ) -> Result<(), Error> {
-        if candles.is_empty() {
-            return Ok(());
-        }
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| Error::other(e.to_string()))?
+            .as_secs();
 
         let mut caches = self.caches.write().unwrap();
         let stock_entry = caches.entry(stock.to_string()).or_default();
@@ -287,27 +294,50 @@ impl QueryCandleSticks {
             .entry(resolution.to_string())
             .or_insert_with(|| LruCache::new(self.capacity_per_stack));
 
+        // 1. Nhóm nến theo tuần (block)
         let mut groups: HashMap<i64, Vec<CandleStick>> = HashMap::new();
         for c in candles {
             let bid = (c.t as i64) / SECONDS_IN_WEEK;
             groups.entry(bid).or_default().push(c.clone());
         }
 
-        for (bid, mut new_candles) in groups {
-            let mut block_data = lru.get(&bid).unwrap_or_default();
-            block_data.append(&mut new_candles);
-            block_data.sort_by_key(|cand| cand.t);
-            block_data.dedup_by_key(|cand| cand.t);
-            lru.put(bid, block_data);
+        // 2. Cập nhật từng block bị ảnh hưởng bởi query_from -> query_to
+        let start_bid = query_from / SECONDS_IN_WEEK;
+        let end_bid = query_to / SECONDS_IN_WEEK;
+
+        for bid in start_bid..=end_bid {
+            let mut block = lru.get(&bid).unwrap_or(CacheBlock {
+                candles: vec![],
+                covered_range: (i64::MAX, i64::MIN),
+                last_updated: now,
+            });
+
+            // Nếu có nến mới cho block này thì merge vào
+            if let Some(new_cands) = groups.get_mut(&bid) {
+                block.candles.append(new_cands);
+                block.candles.sort_by_key(|c| c.t);
+                block.candles.dedup_by_key(|c| c.t);
+            }
+
+            // Cập nhật độ phủ (Coverage) cho block này
+            // Độ phủ của block chỉ giới hạn trong biên giới của block đó
+            let block_start = bid * SECONDS_IN_WEEK;
+            let block_end = (bid + 1) * SECONDS_IN_WEEK;
+
+            let effective_from = query_from.max(block_start);
+            let effective_to = query_to.min(block_end);
+
+            block.covered_range.0 = block.covered_range.0.min(effective_from);
+            block.covered_range.1 = block.covered_range.1.max(effective_to);
+            block.last_updated = now;
+
+            lru.put(bid, block);
         }
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|error| Error::other(format!("Failed to get current time: {}", error)))?
-            .as_secs();
+        // 3. Cập nhật timer chung cho cặp Stock:Resolution
         self.timers
             .write()
-            .map_err(|error| Error::other(format!("Failed to get write lock: {}", error)))?
+            .unwrap()
             .insert(format!("{}:{}", stock, resolution), now);
         Ok(())
     }
@@ -625,8 +655,10 @@ mod tests {
 
         let stock = "FPT";
         let res = "1D";
-        let t1 = 1700000000; // Block A
-        let t2 = 1700000000 + SECONDS_IN_WEEK + 100; // Block B
+
+        // t1 thuộc Block A, t2 thuộc Block B (cách nhau 1 tuần)
+        let t1 = 1700000000;
+        let t2 = 1700000000 + SECONDS_IN_WEEK + 100;
 
         let candles = vec![
             CandleStick {
@@ -647,31 +679,37 @@ mod tests {
             },
         ];
 
-        // 1. Update cache
-        service.update_cache(stock, res, &candles).unwrap();
+        // 1. Update cache: Giả sử query API từ (t1 - 1000) đến (t2 + 1000)
+        let query_from = t1 - 1000;
+        let query_to = t2 + 1000;
+        service
+            .update_cache(stock, res, &candles, query_from, query_to)
+            .unwrap();
 
-        // 2. Test hit block A
-        let hit = service.fetch_from_cache(stock, res, t1, t1 + 100, false);
-        assert!(hit.is_some(), "Phải hit được block A");
+        // 2. Test hit hoàn toàn trong vùng đã phủ của Block A
+        // Query nằm trong khoảng [query_from, query_to] nên phải HIT
+        let hit = service.fetch_from_cache(stock, res, t1, t1 + 100);
+        assert!(hit.is_some(), "Phải hit được vì nằm trong covered_range");
         assert_eq!(hit.unwrap().len(), 1);
 
-        // 3. Test hit 2 blocks
-        let hit_all = service.fetch_from_cache(stock, res, t1, t2, false);
-        assert!(hit_all.is_some());
+        // 3. Test hit xuyên 2 blocks
+        let hit_all = service.fetch_from_cache(stock, res, t1, t2);
+        assert!(hit_all.is_some(), "Phải hit được cả 2 block");
         assert_eq!(hit_all.unwrap().len(), 2);
 
-        // 4. Test miss
-        let miss = service.fetch_from_cache(
-            stock,
-            res,
-            t1 - SECONDS_IN_WEEK * 2,
-            t1 - SECONDS_IN_WEEK,
-            false,
-        );
+        // 4. Test miss do nằm ngoài covered_range (Dù vùng này có thể cùng Block ID)
+        // Vùng này chưa được update_cache quét qua nên phải trả về None để gọi API
+        let miss_outside = service.fetch_from_cache(stock, res, query_from - 5000, query_from - 1);
         assert!(
-            miss.is_none(),
-            "Vùng này không có nến, phải trả về None để fetch API"
+            miss_outside.is_none(),
+            "Phải miss vì vùng này chưa được phủ (mặc dù có thể cùng block)"
         );
+
+        // 5. Test hit vùng KHÔNG có nến nhưng ĐÃ phủ (ví dụ giữa t1 và t2)
+        // Đây là điểm mạnh của logic mới: Trả về Some(empty) thay vì None
+        let hit_empty = service.fetch_from_cache(stock, res, t1 + 10, t1 + 20);
+        assert!(hit_empty.is_some(), "Phải hit (Some) vì đã được quét qua");
+        assert_eq!(hit_empty.unwrap().len(), 0, "Vùng này không có nến thực tế");
     }
 
     #[tokio::test]
@@ -685,22 +723,30 @@ mod tests {
         let stock = "VIC";
         let res = "1";
 
-        // Truyền 1 nến thật để hàm update_cache thực hiện ghi timer
+        let t_base = 1700000000;
         let mock_candle = CandleStick {
-            t: 1700000000,
+            t: t_base as i32,
             o: 10.0,
             h: 10.0,
             l: 10.0,
             c: 10.0,
             v: 0.0,
         };
-        service.update_cache(stock, res, &[mock_candle]).unwrap();
 
-        // Kiểm tra ngay lập tức - Phải FALSE (vì vừa mới update)
+        // Cập nhật cache với vùng phủ từ t_base - 60 đến t_base + 60
+        service
+            .update_cache(stock, res, &[mock_candle], t_base - 60, t_base + 60)
+            .unwrap();
+
+        // Kiểm tra ngay lập tức - Phải FALSE (valid) vì vừa mới update timer
         assert!(
             !service.is_invalidated(stock, res),
-            "Vừa update xong phải valid!"
+            "Vừa update xong timer phải còn valid (chưa quá TTL)!"
         );
+
+        // Tiện thể test luôn fetch_from_cache tại đây để đảm bảo logic coverage hoạt động
+        let hit = service.fetch_from_cache(stock, res, t_base, t_base);
+        assert!(hit.is_some(), "Dữ liệu phải tồn tại trong vùng đã phủ");
     }
 
     #[tokio::test]

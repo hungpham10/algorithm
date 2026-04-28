@@ -3421,6 +3421,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+ "tracing",
  "typetag",
  "url",
  "vector_config_macro",

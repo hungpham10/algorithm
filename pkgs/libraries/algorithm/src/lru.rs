@@ -1,6 +1,7 @@
 use dashmap::DashMap;
 use parking_lot::Mutex;
 use std::collections::hash_map::DefaultHasher;
+use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -37,6 +38,21 @@ pub struct LruCache<K, V, const S: usize> {
     pub on_updating: Option<Arc<dyn Fn(K, V) + Send + Sync>>,
 }
 
+impl<K, V, const S: usize> fmt::Debug for LruCache<K, V, S>
+where
+    K: fmt::Debug + std::hash::Hash + Eq,
+    V: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LruCache")
+            .field("mapping", &self.mapping)
+            .field("caching_len", &self.caching.len())
+            .field("shard_mask", &self.shard_mask)
+            .field("on_removing", &self.on_removing.as_ref().map(|_| "Closure"))
+            .field("on_updating", &self.on_updating.as_ref().map(|_| "Closure"))
+            .finish()
+    }
+}
 // --- IMPLEMENTATION ---
 
 impl<K, V, const S: usize> LruCache<K, V, S>

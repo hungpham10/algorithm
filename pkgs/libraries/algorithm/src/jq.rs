@@ -11,7 +11,7 @@ pub enum Operator {
     Select(Vec<String>),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct JsonQuery {
     operators: Vec<Operator>,
 }

@@ -88,7 +88,7 @@ fn init_telemetry() -> Option<(SdkTracerProvider, SdkMeterProvider)> {
     let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
     tracing_subscriber::registry()
-        .with(EnvFilter::new("info"))
+        .with(EnvFilter::new("debug"))
         .with(telemetry_layer)
         .init();
 

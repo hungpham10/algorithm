@@ -90,7 +90,7 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
       async function updateTableData() {
         if (!allProductIds.length) return;
         try {
-          const response = await fetch(`/api/investing/v2/prices/by-products/${allProductIds.join(',')}?degree=1000000`);
+          const response = await fetch(`/api/investing/v2/prices/by-product/${allProductIds.join(',')}?degree=1000000`);
           if (response.ok) {
             const priceUpdates = await response.json();
             if (Array.isArray(priceUpdates) && priceUpdates.length > 0) {
@@ -154,7 +154,7 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
                   <tbody class="divide-y divide-gray-100">
                     {goldList.length > 0 ? (
                       goldList.map((item, index) => (
-                        <TableRow data={item} index={index} />
+                        <TableRow data={item} index={index+1} />
                       ))
                     ) : (
                       <tr><td colspan="6" class="p-10 text-center text-gray-400 italic">Đang tải dữ liệu thị trường...</td></tr>

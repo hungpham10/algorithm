@@ -1046,7 +1046,7 @@ impl QueryRoot {
             .investing_entity
             .convert_to_real_broker(
                 *tenant_id,
-                app_state
+                &app_state
                     .secret
                     .get("BROKER", "/")
                     .await

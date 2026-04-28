@@ -4,8 +4,16 @@ import tailwindcss from '@tailwindcss/vite';
 import viteCompression from 'vite-plugin-compression';
 import obfuscator from 'vite-plugin-javascript-obfuscator';
 
+import sentry from '@sentry/astro';
+
 export default defineConfig({
-  integrations: [svelte()],
+  integrations: [
+    svelte(),
+    sentry({
+      dsn: "https://91b76614979afa5046ac89fd9f7a0e10@o306117.ingest.us.sentry.io/4509647814262784",
+      tracesSampleRate: 0.1,
+    }),
+  ],
 
   // Tự động nhúng CSS vào HTML nếu file nhỏ (giảm số lượng request)
   build: {

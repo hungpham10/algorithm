@@ -41,9 +41,14 @@ use sea_orm::{
 };
 use sea_query::Alias;
 
+use algorithm::LruCache;
+
 #[derive(Debug)]
 pub struct Investing {
     resolver: Arc<Resolver>,
+
+    cache_broker_resolution: Arc<LruCache<(String, String), String, 32>>,
+    cache_real_broker: Arc<LruCache<String, String, 32>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
@@ -149,6 +154,8 @@ impl Investing {
     pub fn new(resolver: &Arc<Resolver>) -> Self {
         Self {
             resolver: resolver.clone(),
+            cache_real_broker: Arc::new(LruCache::new(10 * 32)),
+            cache_broker_resolution: Arc::new(LruCache::new(10 * 32)),
         }
     }
 
@@ -161,32 +168,44 @@ impl Investing {
     pub async fn convert_to_real_broker(
         &self,
         tenant_id: i64,
-        broker: String,
+        broker: &String,
     ) -> Result<String, DbErr> {
-        let alias_table = Alias::new("real_broker");
+        match self.cache_real_broker.get(broker) {
+            Some(real) => Ok(real),
+            None => {
+                let alias_table = Alias::new("real_broker");
 
-        match Brokers::find()
-            .join_as(
-                JoinType::LeftJoin,
-                brokers::Entity::belongs_to(Brokers)
-                    .from(brokers::Column::Alias)
-                    .to(brokers::Column::Id)
-                    .into(),
-                alias_table.clone(),
-            )
-            .select_only()
-            .column_as(brokers::Column::Name, "original")
-            .column_as(Expr::col((alias_table, brokers::Column::Name)), "real")
-            .filter(brokers::Column::Name.eq(broker.clone()))
-            .into_tuple::<(String, Option<String>)>()
-            .one(self.dbt(tenant_id))
-            .await?
-        {
-            Some((_, Some(real))) => Ok(real),
-            Some((original, None)) => Ok(original),
-            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
-                "Not found broker {broker}",
-            )))),
+                match Brokers::find()
+                    .join_as(
+                        JoinType::LeftJoin,
+                        brokers::Entity::belongs_to(Brokers)
+                            .from(brokers::Column::Alias)
+                            .to(brokers::Column::Id)
+                            .into(),
+                        alias_table.clone(),
+                    )
+                    .select_only()
+                    .column_as(brokers::Column::Name, "original")
+                    .column_as(Expr::col((alias_table, brokers::Column::Name)), "real")
+                    .filter(brokers::Column::Name.eq(broker.clone()))
+                    .into_tuple::<(String, Option<String>)>()
+                    .one(self.dbt(tenant_id))
+                    .await?
+                {
+                    Some((_, Some(real))) => {
+                        self.cache_real_broker.put(broker.to_string(), real.clone());
+                        Ok(real)
+                    }
+                    Some((original, None)) => {
+                        self.cache_real_broker
+                            .put(broker.to_string(), original.clone());
+                        Ok(original)
+                    }
+                    None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                        "Not found broker {broker}",
+                    )))),
+                }
+            }
         }
     }
 
@@ -197,36 +216,47 @@ impl Investing {
         broker: &String,
         resolution: &String,
     ) -> Result<String, DbErr> {
-        // Query DB nếu chưa có cache
-        let res: Option<String> = MappingBrokerResolution::find()
-            .join_rev(
-                JoinType::InnerJoin,
-                brokers::Entity::belongs_to(MappingBrokerResolution)
-                    .from(brokers::Column::Id)
-                    .to(mapping_broker_resolution::Column::BrokerId)
-                    .into(),
-            )
-            .join_rev(
-                JoinType::InnerJoin,
-                resolutions::Entity::belongs_to(MappingBrokerResolution)
-                    .from(resolutions::Column::Id)
-                    .to(mapping_broker_resolution::Column::ResolutionId)
-                    .into(),
-            )
-            .filter(brokers::Column::Name.eq(broker))
-            .filter(resolutions::Column::Resolution.eq(resolution))
-            .select_only()
-            .column(mapping_broker_resolution::Column::Resolution)
-            .into_tuple::<String>()
-            .one(self.dbt(tenant_id))
-            .await?;
+        match self
+            .cache_broker_resolution
+            .get(&(broker.to_string(), resolution.to_string()))
+        {
+            Some(resolution) => Ok(resolution),
+            None => {
+                let res: Option<String> = MappingBrokerResolution::find()
+                    .join_rev(
+                        JoinType::InnerJoin,
+                        brokers::Entity::belongs_to(MappingBrokerResolution)
+                            .from(brokers::Column::Id)
+                            .to(mapping_broker_resolution::Column::BrokerId)
+                            .into(),
+                    )
+                    .join_rev(
+                        JoinType::InnerJoin,
+                        resolutions::Entity::belongs_to(MappingBrokerResolution)
+                            .from(resolutions::Column::Id)
+                            .to(mapping_broker_resolution::Column::ResolutionId)
+                            .into(),
+                    )
+                    .filter(brokers::Column::Name.eq(broker))
+                    .filter(resolutions::Column::Resolution.eq(resolution))
+                    .select_only()
+                    .column(mapping_broker_resolution::Column::Resolution)
+                    .into_tuple::<String>()
+                    .one(self.dbt(tenant_id))
+                    .await?;
 
-        match res {
-            Some(res) => Ok(res),
-            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
-                "Resolution {} is not supported for {}",
-                resolution, broker
-            )))),
+                match res {
+                    Some(res) => {
+                        self.cache_broker_resolution
+                            .put((broker.to_string(), resolution.to_string()), res.clone());
+                        Ok(res)
+                    }
+                    None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                        "Resolution {} is not supported for {}",
+                        resolution, broker
+                    )))),
+                }
+            }
         }
     }
 
@@ -382,6 +412,8 @@ impl Investing {
         product: &String,
         broker: &String,
     ) -> Result<bool, DbErr> {
+        // @TODO: cache
+
         let res = Products::find()
             .join_rev(
                 JoinType::InnerJoin,
@@ -411,6 +443,7 @@ impl Investing {
         user_id: &Option<String>,
         from: i64,
     ) -> Result<(), DbErr> {
+        // @TODO: caching this one
         if user_id.is_none()
             && let Some(limit) = BrokerLimitation::find()
                 .select_only()
@@ -443,6 +476,7 @@ impl Investing {
         symbol: &String,
         user_id: &Option<String>,
     ) -> Result<(), DbErr> {
+        // @TODO: cache
         if user_id.is_none()
             && let Some(limit) = BrokerLimitation::find()
                 .select_only()
