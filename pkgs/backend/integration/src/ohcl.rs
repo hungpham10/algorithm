@@ -8,7 +8,7 @@ use itertools::izip;
 use reqwest_middleware::ClientWithMiddleware;
 use schemas::{CandleStick, reload::Reload};
 use serde_json::Value;
-use tracing::{Level, debug, info, span, warn};
+use tracing::{debug, info};
 
 const INDEXES: [&str; 3] = ["VNINDEX", "HNXINDEX", "VN30"];
 const SECONDS_IN_WEEK: i64 = 7 * 24 * 60 * 60;
