@@ -80,8 +80,8 @@ def scrape_doji():
                 text = "".join(filter(str.isdigit, tag.get_text()))
                 return int(text) if text else None
 
-            buy_val = parse_price(buy_tag)
-            sell_val = parse_price(sell_tag)
+            buy_val = parse_price(buy_tag) * 1000
+            sell_val = parse_price(sell_tag) * 1000
 
             if buy_val or sell_val:
                 prices.append({"name": product_name, "buy": buy_val, "sell": sell_val})

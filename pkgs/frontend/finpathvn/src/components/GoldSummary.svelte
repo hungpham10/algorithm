@@ -34,11 +34,11 @@
       } else if (numericValue < 0) {
     	return `▼ ${formattedNum}`;
       } else {
-    	return `● ${formattedNum}`;
+    	return `${formattedNum}`;
       }
     }
 
-    if (hasNotArrow) return `● ${formattedNum}`;
+    if (hasNotArrow) return `${formattedNum}`;
     if (hasArrowUp) return `▲ ${formattedNum}`;
     if (hasArrowDown) return `▼ ${formattedNum}`;
     return formattedNum;
