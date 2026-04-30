@@ -534,7 +534,7 @@ impl Investing {
         }
     }
 
-    #[instrument]
+    #[instrument(skip(self, filter), fields(tenant_id = %tenant_id, broker = %broker, limit = %filter.limit))]
     pub async fn list_history_price_of_symbols(
         &self,
         tenant_id: i64,
@@ -568,8 +568,16 @@ impl Investing {
             .await?;
 
         if symbol_ids.is_empty() {
+            tracing::warn!(
+                broker = %broker,
+                scopes = ?filter.scopes,
+                "Not found symbol_id"
+            );
             return Ok(HashMap::new());
         }
+
+        let from_dt = chrono::DateTime::from_timestamp(filter.from, 0).unwrap_or_default();
+        let to_dt = chrono::DateTime::from_timestamp(filter.to, 0).unwrap_or_default();
 
         let raw_history = price_history::Entity::find()
             .select_only()
@@ -599,18 +607,25 @@ impl Investing {
                     .to(product_anchors::Column::Symbol)
                     .into(),
             )
-            .filter(symbols::Column::Id.is_in(symbol_ids))
+            .filter(symbols::Column::Id.is_in(symbol_ids.clone()))
             .filter(product_anchors::Column::Scope.is_in(filter.scopes))
-            .filter(price_history::Column::UpdatedAt.between(
-                chrono::DateTime::from_timestamp(filter.from, 0).unwrap_or_default(),
-                chrono::DateTime::from_timestamp(filter.to, 0).unwrap_or_default(),
-            ))
+            .filter(price_history::Column::UpdatedAt.between(from_dt, to_dt))
             .order_by_asc(symbols::Column::Id)
-            .order_by_asc(mapping_product_in_store_to_symbol::Column::Id) // Quan trọng để grouping
+            .order_by_asc(mapping_product_in_store_to_symbol::Column::Id)
             .order_by_asc(price_history::Column::CreatedAt)
             .into_tuple::<(i32, i32, f32, f32, chrono::DateTime<chrono::Utc>)>()
             .all(self.dbt(tenant_id))
             .await?;
+
+        if raw_history.is_empty() {
+            tracing::warn!(
+                raw_history_count = raw_history.len(),
+                symbol_ids = ?symbol_ids,
+                from = %from_dt,
+                to = %to_dt,
+                "Result is empty"
+            );
+        }
 
         let mut result_map = HashMap::<i32, HashMap<i32, Vec<Price>>>::new();
         let mut last_buckets = HashMap::<(i32, i32), i64>::new();
