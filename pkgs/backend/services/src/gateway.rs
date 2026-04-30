@@ -157,6 +157,7 @@ async fn admin_openapi() -> Json<utoipa::openapi::OpenApi> {
 
 pub async fn routes(
     components: Vec<Arc<dyn Component>>,
+    enable_sentry: bool,
 ) -> Result<(Router, Arc<AxumRuntime>), Error> {
     let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
     let environment = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "dev".to_string());
@@ -208,7 +209,7 @@ pub async fn routes(
         )
         .layer(prometheus_layer);
 
-    let final_router = if environment == "prod" {
+    let final_router = if enable_sentry && environment == "prod" {
         router.layer(
             ServiceBuilder::new()
                 .layer(SentryHttpLayer::new().enable_transaction())
@@ -229,7 +230,7 @@ pub async fn run() -> std::io::Result<()> {
 
     // Khởi tạo toàn bộ router và streamer trong một lần gọi
     // Bạn có thể truyền components ban đầu vào đây
-    let (router, streamer) = routes(Vec::new()).await?;
+    let (router, streamer) = routes(Vec::new(), telemetry_guard.is_none()).await?;
 
     let make_service = router.into_make_service_with_connect_info::<UdsConnectInfo>();
     let usx = UnixListener::bind(path.clone())?;
