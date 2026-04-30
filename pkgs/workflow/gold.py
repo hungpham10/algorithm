@@ -36,6 +36,10 @@ from scrape import (
     scrape_van_thong,
     scrape_xuan_tung,
     scrape_kim_hung_phat,
+    scrape_phuc_thanh,
+    scrape_chien_minh,
+    scrape_ngoc_nhu_y,
+    scrape_phu_tai,
 )
 
 # --- CONFIG LOADER ---

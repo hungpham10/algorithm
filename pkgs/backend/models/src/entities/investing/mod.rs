@@ -40,8 +40,9 @@ use sea_orm::{
     QueryFilter, QueryOrder, QuerySelect, RuntimeErr, Set, TransactionTrait,
 };
 use sea_query::Alias;
-
 use algorithm::LruCache;
+
+pub const TZ_OFFSET_SEC: i64 = 7 * 3600;
 
 #[derive(Debug)]
 pub struct Investing {
@@ -637,42 +638,35 @@ impl Investing {
             .filter(price_history::Column::UpdatedAt.between(from_dt, to_dt))
             .order_by_asc(symbols::Column::Id)
             .order_by_asc(mapping_product_in_store_to_symbol::Column::Id)
-            .order_by_asc(price_history::Column::CreatedAt)
+            .order_by_asc(price_history::Column::UpdatedAt)
             .into_tuple::<(i32, i32, f32, f32, chrono::DateTime<chrono::Utc>)>()
             .all(self.dbt(tenant_id))
             .await?;
 
-        if raw_history.is_empty() {
-            tracing::warn!(
-                raw_history_count = raw_history.len(),
-                symbol_ids = ?symbol_ids,
-                from = %from_dt,
-                to = %to_dt,
-                "Result is empty"
-            );
-        }
-
         let mut result_map = HashMap::<i32, HashMap<i32, Vec<Price>>>::new();
-        let mut last_buckets = HashMap::<(i32, i32), i64>::new();
+        let mut bucket_tracker = HashMap::<(i32, i32, i64), usize>::new();
+        let interval_sec = filter.interval as i64;
 
-        for (symbol_id, product_id, buy, sell, created_at) in raw_history {
-            let ts = created_at.timestamp();
-            let bucket = ts / (filter.interval as i64);
-            let pair_key = (symbol_id, product_id);
+        for (symbol_id, product_id, buy, sell, updated_at) in raw_history {
+            let timestamp = updated_at.timestamp() + TZ_OFFSET_SEC;
+            let bucket = timestamp / interval_sec;
+            let tracker_key = (symbol_id, product_id, bucket);
+            let symbol_entry = result_map.entry(symbol_id).or_default();
+            let prices = symbol_entry.entry(product_id).or_default();
 
-            if last_buckets.get(&pair_key) != Some(&bucket) {
-                result_map
-                    .entry(symbol_id)
-                    .or_default()
-                    .entry(product_id)
-                    .or_default()
-                    .push(Price {
-                        buy,
-                        sell,
-                        ..Default::default()
-                    });
-
-                last_buckets.insert(pair_key, bucket);
+            if let Some(&index) = bucket_tracker.get(&tracker_key) {
+                prices[index] = Price {
+                    buy,
+                    sell,
+                    ..Default::default()
+                };
+            } else {
+                prices.push(Price {
+                    buy,
+                    sell,
+                    ..Default::default()
+                });
+                bucket_tracker.insert(tracker_key, prices.len() - 1);
             }
         }
 

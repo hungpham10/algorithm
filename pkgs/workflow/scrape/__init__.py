@@ -29,3 +29,7 @@ from .tiemvangmyngoc_com import scrape_my_ngoc
 from .tiemvangtrongnghia_com import scrape_kim_trong_nghia
 from .tiemvangvanthong_com import scrape_van_thong
 from .tiemvangxuantung_com import scrape_xuan_tung
+from .vangbacphucthanh_vn import scrape_phuc_thanh
+from .vangchienminh_vn import scrape_chien_minh
+from .vangngocnhuy_com import scrape_ngoc_nhu_y
+from .vangphutai_vn import scrape_phu_tai
