@@ -30,7 +30,6 @@ def scrape_ajc():
             table = soup.find("table", {"class": lambda x: x and "table" in x.lower()})
 
         if not table:
-            print(f"[{datetime.now()}] Không tìm thấy bảng giá AJC!")
             # Lưu debug
             with open("ajc_debug.html", "w", encoding="utf-8") as f:
                 f.write(response.text)

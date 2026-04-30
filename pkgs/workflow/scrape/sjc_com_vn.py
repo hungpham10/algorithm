@@ -3,6 +3,7 @@ from prefect import task
 from datetime import datetime
 
 # Đảm bảo bạn đã định nghĩa URL này hoặc truyền từ CONFIG
+# Dữ liêụ bị chặn từ chính SJC thông qua WAF, cần cải tiến cái này
 SJC_API_URL = (
     "https://sjc.com.vn/gia-vang-trong-nuoc"  # Thay bằng URL API thực tế của bạn
 )

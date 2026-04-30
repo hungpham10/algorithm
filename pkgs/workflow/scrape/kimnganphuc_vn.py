@@ -67,7 +67,7 @@ def scrape_kimnganphuc():
 
             # Bỏ qua các dòng header (thường chứa chữ SẢN PHẨM)
             if len(cols) >= 3:
-                name = cols[0].get_text(strip=True)
+                name = cols[0].get_text(strip=True).replace("/", " ")
                 if "SẢN PHẨM" in name.upper() or not name:
                     continue
 

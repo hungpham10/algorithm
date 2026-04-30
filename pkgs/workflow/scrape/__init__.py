@@ -22,7 +22,10 @@ from .phuquy_com_vn import scrape_phuquy
 from .sjc_com_vn import scrape_sjc
 from .tiemvanghoangchieu_com import scrape_hoang_chieu
 from .tiemvanghongnga_com import scrape_hong_nga
+from .tiemvangkimhungphat_com import scrape_kim_hung_phat
 from .tiemvangngocthuy_com import scrape_ngoc_thuy
+from .tiemvangngoctramq4_com import scrape_ngoc_tram_q4
+from .tiemvangmyngoc_com import scrape_my_ngoc
 from .tiemvangtrongnghia_com import scrape_kim_trong_nghia
 from .tiemvangvanthong_com import scrape_van_thong
 from .tiemvangxuantung_com import scrape_xuan_tung

@@ -30,9 +30,12 @@ from scrape import (
     scrape_hoang_chieu,
     scrape_hong_nga,
     scrape_ngoc_thuy,
+    scrape_ngoc_tram_q4,
+    scrape_my_ngoc,
     scrape_kim_trong_nghia,
     scrape_van_thong,
     scrape_xuan_tung,
+    scrape_kim_hung_phat,
 )
 
 # --- CONFIG LOADER ---
@@ -170,10 +173,13 @@ def gold_sync_flow():
         (scrape_ngocbinh, "CÔNG TY TNHH VBĐQ NGỌC BÌNH"),
         (scrape_ngocthinh, "DNTN HIỆU VÀNG NGỌC THỊNH"),
         (scrape_phuquy, "TẬP ĐOÀN VÀNG BẠC ĐÁ QUÝ PHÚ QUÝ"),
-        (scrape_sjc, "CÔNG TY VÀNG BẠC ĐÁ QUÝ SÀI GÒN - SJC"),
+        # (scrape_sjc, "CÔNG TY VÀNG BẠC ĐÁ QUÝ SÀI GÒN - SJC"),
         (scrape_hoang_chieu, "CÔNG TY TNHH VÀNG BẠC ĐÁ QUÝ HOÀNG CHIÊU"),
         (scrape_hong_nga, "TIỆM VÀNG HỒNG NGA"),
-        (scrape_ngoc_thuy, "TIỆM VÀNG KIM HÙNG PHÁT"),
+        (scrape_kim_hung_phat, "TIỆM VÀNG KIM HƯNG PHÁT"),
+        (scrape_ngoc_thuy, "CÔNG TY TIỆM VÀNG NGỌC THỦY"),
+        (scrape_ngoc_tram_q4, "TIỆM VÀNG NGỌC TRÂM QUẬN 4"),
+        (scrape_my_ngoc, "TIỆM VÀNG MỸ NGỌC"),
         (scrape_kim_trong_nghia, "CÔNG TY TNHH DỊCH VỤ CẦM ĐỒ KIM TRỌNG NGHĨA"),
         (scrape_van_thong, "CÔNG TY TNHH TM VẠN THÔNG"),
         (scrape_xuan_tung, "CÔNG TY TNHH KINH DOANH VÀNG BẠC ĐÁ QUÍ XUÂN TÙNG"),

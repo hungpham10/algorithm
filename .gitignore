@@ -24,3 +24,5 @@ Session.vim
 # Added by nodejs
 node_modules
 public
+
+__pycache__

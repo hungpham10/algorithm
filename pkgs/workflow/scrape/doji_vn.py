@@ -9,6 +9,7 @@ from datetime import datetime
 def clean_product_name(name):
     # Fix lỗi hiển thị: loại bỏ khoảng trắng đặc biệt và các ký tự lạ
     name = name.replace("\xa0", " ")
+    name = name.replace("/", " ")
     # Xử lý các trường hợp tên bị dính ký tự thừa và khoảng trắng dư
     name = re.sub(r"\s+", " ", name).strip()
     return name
