@@ -47,6 +47,7 @@ use algorithm::LruCache;
 pub struct Investing {
     resolver: Arc<Resolver>,
 
+    cache_broker_candlesticks_limit: Arc<LruCache<String, i32, 32>>,
     cache_broker_resolution: Arc<LruCache<(String, String), String, 32>>,
     cache_real_broker: Arc<LruCache<String, String, 32>>,
 }
@@ -156,6 +157,7 @@ impl Investing {
             resolver: resolver.clone(),
             cache_real_broker: Arc::new(LruCache::new(10 * 32)),
             cache_broker_resolution: Arc::new(LruCache::new(10 * 32)),
+            cache_broker_candlesticks_limit: Arc::new(LruCache::new(10 * 32)),
         }
     }
 
@@ -443,27 +445,48 @@ impl Investing {
         user_id: &Option<String>,
         from: i64,
     ) -> Result<(), DbErr> {
-        // @TODO: caching this one
-        if user_id.is_none()
-            && let Some(limit) = BrokerLimitation::find()
-                .select_only()
-                .column(broker_limitation::Column::GuestMaxHistoryDays)
-                .join_rev(
-                    JoinType::InnerJoin,
-                    brokers::Entity::belongs_to(BrokerLimitation)
-                        .from(brokers::Column::Id)
-                        .to(broker_limitation::Column::BrokerId)
-                        .into(),
-                )
-                .filter(brokers::Column::Name.eq(broker))
-                .into_tuple::<i32>()
-                .one(self.dbt(tenant_id))
-                .await?
-            && from < Utc::now().timestamp() - limit as i64 * 24 * 60 * 60
-        {
-            Err(DbErr::Query(RuntimeErr::Internal(format!(
-                "Broker {broker} is limited to access data",
-            ))))
+        if user_id.is_none() {
+            match self.cache_broker_candlesticks_limit.get(broker) {
+                Some(limit) => {
+                    if from < Utc::now().timestamp() - limit as i64 * 24 * 60 * 60 {
+                        Err(DbErr::Query(RuntimeErr::Internal(format!(
+                            "Broker {broker} is limited to access data",
+                        ))))
+                    } else {
+                        Ok(())
+                    }
+                }
+                None => {
+                    if let Some(limit) = BrokerLimitation::find()
+                        .select_only()
+                        .column(broker_limitation::Column::GuestMaxHistoryDays)
+                        .join_rev(
+                            JoinType::InnerJoin,
+                            brokers::Entity::belongs_to(BrokerLimitation)
+                                .from(brokers::Column::Id)
+                                .to(broker_limitation::Column::BrokerId)
+                                .into(),
+                        )
+                        .filter(brokers::Column::Name.eq(broker))
+                        .into_tuple::<i32>()
+                        .one(self.dbt(tenant_id))
+                        .await?
+                    {
+                        self.cache_broker_candlesticks_limit
+                            .put(broker.to_string(), limit);
+
+                        if from < Utc::now().timestamp() - limit as i64 * 24 * 60 * 60 {
+                            Err(DbErr::Query(RuntimeErr::Internal(format!(
+                                "Broker {broker} is limited to access data",
+                            ))))
+                        } else {
+                            Ok(())
+                        }
+                    } else {
+                        Ok(())
+                    }
+                }
+            }
         } else {
             Ok(())
         }
