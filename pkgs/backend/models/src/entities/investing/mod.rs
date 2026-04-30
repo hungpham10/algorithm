@@ -47,7 +47,7 @@ use algorithm::LruCache;
 pub struct Investing {
     resolver: Arc<Resolver>,
 
-    cache_broker_candlesticks_limit: Arc<LruCache<String, i32, 32>>,
+    cache_broker_candlesticks_limit: Arc<LruCache<String, Option<i32>, 32>>,
     cache_broker_resolution: Arc<LruCache<(String, String), String, 32>>,
     cache_real_broker: Arc<LruCache<String, String, 32>>,
 }
@@ -447,7 +447,7 @@ impl Investing {
     ) -> Result<(), DbErr> {
         if user_id.is_none() {
             match self.cache_broker_candlesticks_limit.get(broker) {
-                Some(limit) => {
+                Some(Some(limit)) => {
                     if from < Utc::now().timestamp() - limit as i64 * 24 * 60 * 60 {
                         Err(DbErr::Query(RuntimeErr::Internal(format!(
                             "Broker {broker} is limited to access data",
@@ -456,8 +456,9 @@ impl Investing {
                         Ok(())
                     }
                 }
+                Some(None) => Ok(()),
                 None => {
-                    if let Some(limit) = BrokerLimitation::find()
+                    let limit = BrokerLimitation::find()
                         .select_only()
                         .column(broker_limitation::Column::GuestMaxHistoryDays)
                         .join_rev(
@@ -470,11 +471,11 @@ impl Investing {
                         .filter(brokers::Column::Name.eq(broker))
                         .into_tuple::<i32>()
                         .one(self.dbt(tenant_id))
-                        .await?
-                    {
-                        self.cache_broker_candlesticks_limit
-                            .put(broker.to_string(), limit);
+                        .await?;
 
+                    self.cache_broker_candlesticks_limit.put(broker.to_string(), limit);
+
+                    if let Some(limit) = limit {
                         if from < Utc::now().timestamp() - limit as i64 * 24 * 60 * 60 {
                             Err(DbErr::Query(RuntimeErr::Internal(format!(
                                 "Broker {broker} is limited to access data",
