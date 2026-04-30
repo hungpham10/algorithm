@@ -473,7 +473,8 @@ impl Investing {
                         .one(self.dbt(tenant_id))
                         .await?;
 
-                    self.cache_broker_candlesticks_limit.put(broker.to_string(), limit);
+                    self.cache_broker_candlesticks_limit
+                        .put(broker.to_string(), limit);
 
                     if let Some(limit) = limit {
                         if from < Utc::now().timestamp() - limit as i64 * 24 * 60 * 60 {
