@@ -187,6 +187,9 @@ def gold_sync_flow():
         (scrape_kim_trong_nghia, "CÔNG TY TNHH DỊCH VỤ CẦM ĐỒ KIM TRỌNG NGHĨA"),
         (scrape_van_thong, "CÔNG TY TNHH TM VẠN THÔNG"),
         (scrape_xuan_tung, "CÔNG TY TNHH KINH DOANH VÀNG BẠC ĐÁ QUÍ XUÂN TÙNG"),
+        (scrape_chien_minh, "CÔNG TY TNHH VÀNG CHIẾN MINH"),
+        (scrape_ngoc_nhu_y, "VÀNG NGỌC NHƯ Ý"),
+        (scrape_phu_tai, "VÀNG PHÚ TÀI"),
     ]
 
     # 3. Kích hoạt Scrape song song

@@ -2,14 +2,11 @@ import requests
 from bs4 import BeautifulSoup
 from prefect import task
 from datetime import datetime
+import re  # Thêm thư viện re để xử lý chuỗi
 
 
 @task(retries=3, retry_delay_seconds=60)
 def scrape_hieuvangthanhtau():
-    """
-    Cào dữ liệu giá vàng từ Hiệu Vàng Thanh Tàu.
-    Bắn lỗi (raise) nếu thất bại để Prefect ghi nhận trạng thái Failed.
-    """
     url = "https://hieuvangthanhtau.com.vn/"
 
     headers = {
@@ -23,7 +20,6 @@ def scrape_hieuvangthanhtau():
         response = requests.get(url, headers=headers, timeout=20)
         response.encoding = "utf-8"
 
-        # 1. Kiểm tra HTTP Status
         if response.status_code != 200:
             raise RuntimeError(
                 f"Lỗi kết nối Hiệu Vàng Thanh Tàu: HTTP {response.status_code}"
@@ -31,7 +27,6 @@ def scrape_hieuvangthanhtau():
 
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # 2. Tìm bảng giá
         table = soup.find("table", class_="gold-market-table")
         if not table:
             table = soup.find(
@@ -48,27 +43,32 @@ def scrape_hieuvangthanhtau():
         rows = table.find_all("tr")
 
         for row in rows:
-            if row.find("th"):  # Bỏ qua dòng tiêu đề
+            if row.find("th"):
                 continue
 
             cols = row.find_all("td")
             if len(cols) < 3:
                 continue
 
-            name = cols[0].get_text(strip=True)
-            if not name or name.lower() == "loại vàng":
+            raw_name = cols[0].get_text(strip=True)
+            if not raw_name or raw_name.lower() == "loại vàng":
                 continue
 
-            # Xử lý chỉ số cột linh hoạt (thường cột 3 là icon hoặc trống, cột 4 là giá bán)
+            # --- PHẦN XỬ LÝ TÊN SẢN PHẨM MỚI ---
+            # Sử dụng regex để tìm "(lần ...)" và thay thế bằng chuỗi rỗng
+            # \s* : xóa luôn khoảng trắng trước dấu ngoặc nếu có
+            # \(lần\s*\d+\) : tìm dấu ngoặc, chữ "lần", có thể có cách, rồi đến số, rồi đóng ngoặc
+            clean_name = re.sub(r"\s*\(lần\s*\d+\)", "", raw_name, flags=re.IGNORECASE)
+            name = clean_name.strip()
+            # ------------------------------------
+
             buy_text = cols[1].get_text(strip=True)
             sell_idx = 3 if len(cols) >= 4 else 2
             sell_text = cols[sell_idx].get_text(strip=True)
 
-            # 3. Làm sạch và chuyển giá về số nguyên
             def clean_price(text):
                 if not text:
                     return None
-                # Chỉ lấy các ký tự là số
                 digit_str = "".join(filter(str.isdigit, text))
                 return int(digit_str) if digit_str and digit_str != "0" else None
 
@@ -79,9 +79,8 @@ def scrape_hieuvangthanhtau():
                 continue
 
             if buy_val is not None or sell_val is not None:
-                prices.append({"name": name.strip(), "buy": buy_val, "sell": sell_val})
+                prices.append({"name": name, "buy": buy_val, "sell": sell_val})
 
-        # 4. Kiểm tra kết quả cuối cùng
         if not prices:
             raise ValueError(
                 "Website truy cập được nhưng không trích xuất được dòng giá vàng nào."
@@ -90,6 +89,5 @@ def scrape_hieuvangthanhtau():
         return prices
 
     except Exception as e:
-        # Log lỗi chi tiết và ném lỗi lên Prefect
         print(f"[{datetime.now()}] ❌ Lỗi tại Task Thanh Tàu: {str(e)}")
         raise e

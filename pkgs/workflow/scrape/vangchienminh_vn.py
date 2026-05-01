@@ -50,15 +50,15 @@ def scrape_chien_minh():
                     digits = "".join(filter(str.isdigit, val))
                     return int(digits) if digits else 0
 
-                buy_val = parse_price(buy_raw)
-                sell_val = parse_price(sell_raw)
+                buy_val = parse_price(buy_raw) * 1000
+                sell_val = parse_price(sell_raw) * 1000
 
                 # Chỉ thêm vào danh sách nếu có giá mua hoặc bán hợp lệ
                 if buy_val > 0 or sell_val > 0:
                     prices.append(
                         {
                             "source": "Chiến Minh",
-                            "name": f"{name} ({content})",
+                            "name": name,
                             "buy": buy_val,
                             "sell": sell_val,
                             "unit": "VNĐ/lượng",  # Chiến Minh thường tính theo lượng hoặc chỉ tùy bảng, bạn kiểm tra lại đơn vị nhé
