@@ -33,6 +33,7 @@ use tracing::instrument;
 use utoipa::{IntoParams, ToSchema};
 
 use crate::resolver::Resolver;
+use algorithm::LruCache;
 use sea_orm::entity::prelude::Expr;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
@@ -40,7 +41,6 @@ use sea_orm::{
     QueryFilter, QueryOrder, QuerySelect, RuntimeErr, Set, TransactionTrait,
 };
 use sea_query::Alias;
-use algorithm::LruCache;
 
 pub const TZ_OFFSET_SEC: i64 = 7 * 3600;
 
@@ -560,7 +560,7 @@ impl Investing {
         }
     }
 
-    #[instrument(skip(self, filter), fields(tenant_id = %tenant_id, broker = %broker, limit = %filter.limit))]
+    #[instrument(skip(self, filter), fields(tenant_id = %tenant_id, broker = %broker, limit = %filter.limit, from = %filter.from, to = %filter.to))]
     pub async fn list_history_price_of_symbols(
         &self,
         tenant_id: i64,
