@@ -611,7 +611,7 @@ impl Investing {
             .column(mapping_product_in_store_to_symbol::Column::Id)
             .column(price_history::Column::Buy)
             .column(price_history::Column::Sell)
-            .column(price_history::Column::UpdatedAt)
+            .column(price_history::Column::CreatedAt)
             .join_rev(
                 JoinType::InnerJoin,
                 mapping_product_in_store_to_symbol::Entity::belongs_to(price_history::Entity)
@@ -647,8 +647,8 @@ impl Investing {
         let mut bucket_tracker = HashMap::<(i32, i32, i64), usize>::new();
         let interval_sec = filter.interval as i64;
 
-        for (symbol_id, product_id, buy, sell, updated_at) in raw_history {
-            let timestamp = updated_at.timestamp() + TZ_OFFSET_SEC;
+        for (symbol_id, product_id, buy, sell, created_at) in raw_history {
+            let timestamp = created_at.timestamp() + TZ_OFFSET_SEC;
             let bucket = timestamp / interval_sec;
             let tracker_key = (symbol_id, product_id, bucket);
             let symbol_entry = result_map.entry(symbol_id).or_default();

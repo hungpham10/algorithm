@@ -1,4 +1,3 @@
-
 ---
 // src/pages/index.astro
 import OptimizedImage from '../components/OptimizedImage.astro';
@@ -102,6 +101,7 @@ const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullY
         }
       }
       document.addEventListener('DOMContentLoaded', () => {
+        updateTableData();
         setInterval(updateTableData, 5000);
       });
     </script>
