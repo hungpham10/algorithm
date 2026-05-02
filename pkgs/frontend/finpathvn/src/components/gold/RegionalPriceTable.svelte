@@ -1,4 +1,3 @@
-
 <script>
   import { onMount } from 'svelte';
   export let formatVN;
@@ -126,7 +125,17 @@
         {:else if items.length > 0}
           {#each items as item}
             <tr class="hover:bg-gray-50/50 transition-colors text-[13px]">
-              <td class="px-4 py-3.5 text-gray-600 font-medium truncate">{item.product}</td>
+              <td class="px-4 py-3.5 text-gray-600 font-medium truncate">
+                <a
+                  href={`/gia-vang/${item.store || encodeURIComponent(item.store)}`}
+                  class="flex items-center gap-2 group-hover:text-blue-600 transition-colors"
+                >
+                  <span>{item.product}</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                </a>
+	      </td>
               <td class="px-4 py-3.5 text-center text-red-600 font-bold">{formatVN(item.buy)}</td>
               <td class="px-4 py-3.5 text-center text-blue-600 font-bold">{formatVN(item.sell)}</td>
             </tr>

@@ -1,0 +1,23 @@
+---
+import TradingChart from '../components/analysis/TradingChart.svelte';
+import Layout from  '../components/Layout.astro';
+import '../styles/global.css';
+
+const symbols = ['PLX', 'FPT', 'VCB', 'MSN'];
+const resolutions = [
+    { label: '1 Giờ', value: '1H' },
+    { label: '1 Ngày', value: '1D' },
+];
+const SHOW_ADS = import.meta.env.SHOW_ADS === 'true';
+---
+<Layout title="Phân tích dữ liệu" showAds={SHOW_ADS}>
+  <main class="p-8">
+    <h1 class="text-2xl font-bold mb-4">Biểu đồ kỹ thuật</h1>
+
+    <TradingChart
+        client:load
+        symbol={symbols[0]}
+        resolution="1D"
+    />
+  </main>
+</Layout>

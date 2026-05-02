@@ -1,5 +1,7 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
+  import { PRICE_EVENT_NAME } from '$lib/schema.js';
+  import { formatVN, formatDiff } from '$lib/utils.js';
 
   export let initialData;
 
@@ -9,40 +11,6 @@
 
   let socket;
   let sessionId = "qs_" + Math.random().toString(36).substring(2, 10);
-
-  // --- Helper Functions ---
-  function formatVN(val) {
-    if (val === null || val === undefined || val === "" || isNaN(val)) return "---";
-    return Number(val).toLocaleString('vi-VN');
-  }
-
-  function formatDiff(val) {
-    if (val === null || val === undefined || val === "") return "---";
-
-    // Nếu backend trả về số kèm mũi tên, ta xử lý để format phần số
-    const hasNotArrow = String(val).includes('●');
-    const hasArrowUp = String(val).includes('▲');
-    const hasArrowDown = String(val).includes('▼');
-    const numericValue = String(val).replace(/[▲▼●\s]/g, ''); // Loại bỏ ký tự lạ để lấy số
-
-    if (numericValue === "" || isNaN(numericValue)) return val; // Nếu không phải số thì trả về nguyên bản
-    const formattedNum = Number(numericValue).toLocaleString('vi-VN');
-
-    if (!hasArrowUp && !hasArrowDown) {
-      if (numericValue > 0) {
-    	return `▲ ${formattedNum}`;
-      } else if (numericValue < 0) {
-    	return `▼ ${formattedNum}`;
-      } else {
-    	return `${formattedNum}`;
-      }
-    }
-
-    if (hasNotArrow) return `${formattedNum}`;
-    if (hasArrowUp) return `▲ ${formattedNum}`;
-    if (hasArrowDown) return `▼ ${formattedNum}`;
-    return formattedNum;
-  }
 
   // --- Live Update VN (Từ CustomEvent) ---
   function handleVNUpdate(event) {
@@ -55,8 +23,6 @@
       dataVn.sell = formatVN(myUpdate.price?.sell);
       dataVn.diffBuy = formatDiff(myUpdate.price?.diff[0]);
       dataVn.diffSell = formatDiff(myUpdate.price?.diff[1]);
-
-      console.log(dataVn)
       dataVn = dataVn; // Trigger re-render
     }
   }
@@ -120,7 +86,7 @@
 
   onMount(() => {
     connectWorld();
-    window.addEventListener('price-update', handleVNUpdate);
+    window.addEventListener(PRICE_EVENT_NAME, handleVNUpdate);
   });
 
   onDestroy(() => {
@@ -129,7 +95,7 @@
       socket.close();
     }
     if (typeof window !== 'undefined') {
-      window.removeEventListener('price-update', handleVNUpdate);
+      window.removeEventListener(PRICE_EVENT_NAME, handleVNUpdate);
     }
   });
 
