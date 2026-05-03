@@ -189,11 +189,9 @@ pub fn routes() -> Router<AppState> {
 )]
 async fn publish_file(
     State(app_state): State<AppState>,
-    AdminHeaders { tenant_id, .. }: AdminHeaders,
+    AdminHeaders { host, .. }: AdminHeaders,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, (StatusCode, JsonResponse<AdminResponse>)> {
-    let tenant_id_i64: i64 = tenant_id.into();
-
     let bucket = app_state.secret.get("S3_BUCKET", "/").await.map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -220,7 +218,7 @@ async fn publish_file(
             )
         })?;
 
-        let s3_key = format!("{}/sitemaps/{}", tenant_id_i64, file_name);
+        let s3_key = format!("{}/{}", host, file_name);
 
         app_state
             .s3
@@ -263,10 +261,10 @@ async fn publish_file(
 )]
 async fn publish_site(
     State(app_state): State<AppState>,
-    AdminHeaders { tenant_id, .. }: AdminHeaders,
+    AdminHeaders { tenant_id, host, }: AdminHeaders,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, (StatusCode, JsonResponse<AdminResponse>)> {
-    let tenant_id_i64: i64 = tenant_id.into();
+    let tenant_id = tenant_id.into();
     let mut sites_to_save = Vec::new();
 
     let bucket = app_state.secret.get("S3_BUCKET", "/").await.map_err(|_| {
@@ -295,7 +293,7 @@ async fn publish_site(
             )
         })?;
 
-        let s3_key = format!("{}/sitemaps/{}", tenant_id_i64, file_name);
+        let s3_key = format!("{}/{}", host, file_name);
 
         app_state
             .s3
@@ -327,7 +325,7 @@ async fn publish_site(
     if !sites_to_save.is_empty() {
         app_state
             .admin_entity
-            .insert_or_update_sites(tenant_id_i64, sites_to_save)
+            .insert_or_update_sites(tenant_id, sites_to_save)
             .await
             .map_err(|e| {
                 (
@@ -362,10 +360,10 @@ async fn publish_site(
 )]
 async fn publish_news(
     State(app_state): State<AppState>,
-    AdminHeaders { tenant_id, .. }: AdminHeaders,
+    AdminHeaders { tenant_id, host }: AdminHeaders,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, (StatusCode, JsonResponse<AdminResponse>)> {
-    let tenant_id_i64: i64 = tenant_id.into();
+    let tenant_id = tenant_id.into();
     let mut articles_to_save = Vec::new();
 
     let bucket = app_state.secret.get("S3_BUCKET", "/").await.map_err(|_| {
@@ -390,7 +388,7 @@ async fn publish_news(
             )
         })?;
 
-        let s3_key = format!("{}/news/{}", tenant_id_i64, file_name);
+        let s3_key = format!("{}/{}", host, file_name);
 
         app_state
             .s3
@@ -422,7 +420,7 @@ async fn publish_news(
     if !articles_to_save.is_empty() {
         app_state
             .admin_entity
-            .insert_or_update_acticles(tenant_id_i64, articles_to_save)
+            .insert_or_update_acticles(tenant_id, articles_to_save)
             .await
             .map_err(|e| {
                 (
