@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Cursor, ErrorKind, Write};
+use std::path::Path as FsPath;
 use std::path::PathBuf;
 
 use quick_xml::Writer;
@@ -14,7 +15,7 @@ use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, Json as JsonRequest, Multipart, Path, Query, State};
 use axum::http::{self, header};
 use axum::response::{IntoResponse, Json as JsonResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, head};
 
 use aws_sdk_s3::primitives::ByteStream;
 use chrono::Utc;
@@ -86,6 +87,7 @@ pub struct AdminResponse {
         publish_site,
         fetch_file,
         purge_file,
+        purge_all_files,
         list_paginated_api_schemas,
         create_api_schemas,
         get_api_schema,
@@ -139,6 +141,7 @@ pub fn routes() -> Router<AppState> {
         .route("/seo/tenant/{host}/id", get(get_tenant_id))
         .route("/seo/news", get(build_news_xml).post(publish_news))
         .route("/seo/sitemap", get(build_sitemap_xml).post(publish_site))
+        .route("/seo/files", head(purge_all_files))
         .route("/seo/files/{*path}", get(fetch_file).head(purge_file))
         .route(
             "/seo/schemas",
@@ -761,6 +764,46 @@ async fn build_news_xml(
                 format!("Fail to write news: {}", error),
             )
         })
+}
+
+#[utoipa::path(
+    // We use 'head' because your router.route().head(purge_file) uses the HEAD method
+    head,
+    path = "/seo/files",
+    responses(
+        (status = 200, description = "File successfully purged from Nginx cache or was not found"),
+        (status = 500, description = "Internal server error while accessing the filesystem")
+    ),
+    tag = "SEO Engine"
+)]
+pub async fn purge_all_files() -> impl IntoResponse {
+    let cache_root = "/var/cache/nginx";
+    let path = FsPath::new(cache_root);
+
+    if !path.exists() {
+        return StatusCode::NOT_FOUND;
+    }
+
+    match clear_cache_directory(cache_root).await {
+        Ok(_) => StatusCode::OK,
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+async fn clear_cache_directory(path: &str) -> std::io::Result<()> {
+    let entries = fs::read_dir(path)?;
+
+    for entry in entries {
+        let entry = entry?;
+        let entry_path = entry.path();
+
+        if entry_path.is_dir() {
+            fs::remove_dir_all(entry_path)?;
+        } else {
+            fs::remove_file(entry_path)?;
+        }
+    }
+    Ok(())
 }
 
 #[utoipa::path(
