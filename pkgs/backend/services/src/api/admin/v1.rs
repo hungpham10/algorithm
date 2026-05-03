@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Cursor, ErrorKind, Write};
-use std::path::PathBuf;
 use std::path::Path as FsPath;
+use std::path::PathBuf;
 
 use quick_xml::Writer;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
@@ -15,7 +15,7 @@ use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, Json as JsonRequest, Multipart, Path, Query, State};
 use axum::http::{self, header};
 use axum::response::{IntoResponse, Json as JsonResponse, Response};
-use axum::routing::{head, get};
+use axum::routing::{get, head};
 
 use aws_sdk_s3::primitives::ByteStream;
 use chrono::Utc;
@@ -860,12 +860,8 @@ pub async fn purge_all_files() -> impl IntoResponse {
     }
 
     match clear_cache_directory(cache_root).await {
-        Ok(_) => {
-            StatusCode::OK
-        },
-        Err(_) => {
-            StatusCode::INTERNAL_SERVER_ERROR
-        }
+        Ok(_) => StatusCode::OK,
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
 
