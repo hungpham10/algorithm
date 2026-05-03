@@ -261,7 +261,7 @@ async fn publish_file(
 )]
 async fn publish_site(
     State(app_state): State<AppState>,
-    AdminHeaders { tenant_id, host, }: AdminHeaders,
+    AdminHeaders { tenant_id, host }: AdminHeaders,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, (StatusCode, JsonResponse<AdminResponse>)> {
     let tenant_id = tenant_id.into();
