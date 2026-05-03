@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Cursor, ErrorKind, Write};
-use std::path::Path as FsPath;
 use std::path::PathBuf;
+use std::path::Path as FsPath;
 
 use quick_xml::Writer;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
@@ -15,7 +15,7 @@ use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, Json as JsonRequest, Multipart, Path, Query, State};
 use axum::http::{self, header};
 use axum::response::{IntoResponse, Json as JsonResponse, Response};
-use axum::routing::{get, head};
+use axum::routing::{head, get};
 
 use aws_sdk_s3::primitives::ByteStream;
 use chrono::Utc;
@@ -85,6 +85,7 @@ pub struct AdminResponse {
         get_tenant_id,
         publish_news,
         publish_site,
+        publish_file,
         fetch_file,
         purge_file,
         purge_all_files,
@@ -141,7 +142,7 @@ pub fn routes() -> Router<AppState> {
         .route("/seo/tenant/{host}/id", get(get_tenant_id))
         .route("/seo/news", get(build_news_xml).post(publish_news))
         .route("/seo/sitemap", get(build_sitemap_xml).post(publish_site))
-        .route("/seo/files", head(purge_all_files))
+        .route("/seo/files", head(purge_all_files).post(publish_file))
         .route("/seo/files/{*path}", get(fetch_file).head(purge_file))
         .route(
             "/seo/schemas",
@@ -169,6 +170,80 @@ pub fn routes() -> Router<AppState> {
     //)
 }
 
+#[utoipa::path(
+    post,
+    path = "/seo/files",
+    request_body(
+        content = AdminFileUpload,
+        content_type = "multipart/form-data"
+    ),
+    responses(
+        (status = 200, description = "File uploaded successfully"),
+        (status = 400, description = "Invalid multipart data", body = AdminResponse),
+        (status = 500, description = "S3 or DB error", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "SEO Engine"
+)]
+async fn publish_file(
+    State(app_state): State<AppState>,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse, (StatusCode, JsonResponse<AdminResponse>)> {
+    let tenant_id_i64: i64 = tenant_id.into();
+
+    let bucket = app_state.secret.get("S3_BUCKET", "/").await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(AdminResponse {
+                error: Some("S3_BUCKET not set".into()),
+                ..Default::default()
+            }),
+        )
+    })?;
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let file_name = field.file_name().unwrap_or("untitled.xml").to_string();
+        let content_type = field
+            .content_type()
+            .unwrap_or("application/xml")
+            .to_string();
+        let data = field.bytes().await.map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                JsonResponse(AdminResponse {
+                    error: Some(format!("Field read error: {}", e)),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+        let s3_key = format!("{}/sitemaps/{}", tenant_id_i64, file_name);
+
+        app_state
+            .s3
+            .put_object()
+            .bucket(&bucket)
+            .key(&s3_key)
+            .body(ByteStream::from(data))
+            .content_type(content_type)
+            .send()
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    JsonResponse(AdminResponse {
+                        error: Some(format!("S3 error: {}", e)),
+                        ..Default::default()
+                    }),
+                )
+            })?;
+    }
+
+    Ok(StatusCode::OK)
+}
 #[utoipa::path(
     post,
     path = "/seo/sitemap",
@@ -785,8 +860,12 @@ pub async fn purge_all_files() -> impl IntoResponse {
     }
 
     match clear_cache_directory(cache_root).await {
-        Ok(_) => StatusCode::OK,
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        Ok(_) => {
+            StatusCode::OK
+        },
+        Err(_) => {
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
     }
 }
 
