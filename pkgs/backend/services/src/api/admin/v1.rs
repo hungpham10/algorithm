@@ -937,7 +937,7 @@ pub async fn purge_file(
                     JsonResponse(AdminResponse {
                         error: Some(format!("Fail to purge {path}: {error}")),
                         ..Default::default()
-                    })
+                    }),
                 ))
             }
         }
