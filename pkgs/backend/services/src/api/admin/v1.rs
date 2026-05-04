@@ -17,7 +17,6 @@ use axum::http::{self, header};
 use axum::response::{IntoResponse, Json as JsonResponse, Response};
 use axum::routing::{get, head};
 
-use tracing::error;
 use aws_sdk_s3::primitives::ByteStream;
 use chrono::Utc;
 use http::StatusCode;
@@ -25,6 +24,7 @@ use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tokio_util::io::ReaderStream;
+use tracing::error;
 
 use integration::components::appended_log::AppendedLog;
 use models::cache::Cache;
@@ -929,7 +929,7 @@ pub async fn purge_file(
                 error!(
                     host = %host,
                     path = ?file_path,
-                    err = %error,
+                    error = %error,
                     "Failed to purge file due to system error"
                 );
                 StatusCode::INTERNAL_SERVER_ERROR
