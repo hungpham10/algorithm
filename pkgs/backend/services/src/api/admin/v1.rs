@@ -17,6 +17,7 @@ use axum::http::{self, header};
 use axum::response::{IntoResponse, Json as JsonResponse, Response};
 use axum::routing::{get, head};
 
+use tracing::error;
 use aws_sdk_s3::primitives::ByteStream;
 use chrono::Utc;
 use http::StatusCode;
@@ -925,6 +926,12 @@ pub async fn purge_file(
             if error.kind() == ErrorKind::NotFound {
                 StatusCode::OK
             } else {
+                error!(
+                    host = %host,
+                    path = ?file_path,
+                    err = %error,
+                    "Failed to purge file due to system error"
+                );
                 StatusCode::INTERNAL_SERVER_ERROR
             }
         }
