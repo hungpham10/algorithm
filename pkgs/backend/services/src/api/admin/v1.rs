@@ -897,7 +897,7 @@ async fn clear_cache_directory(path: &str) -> std::io::Result<()> {
 pub async fn purge_file(
     Path(path): Path<String>,
     AdminHeaders { host, .. }: AdminHeaders,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let mut hasher = Md5::new();
 
     hasher.update(
@@ -905,7 +905,7 @@ pub async fn purge_file(
             "{}{}",
             host,
             if path.starts_with('/') {
-                path
+                path.clone()
             } else {
                 format!("/{}", path)
             },
@@ -921,10 +921,10 @@ pub async fn purge_file(
     file_path.push(&hash);
 
     match fs::remove_file(&file_path) {
-        Ok(_) => StatusCode::OK,
+        Ok(_) => Ok((StatusCode::OK,)),
         Err(error) => {
             if error.kind() == ErrorKind::NotFound {
-                StatusCode::OK
+                Ok((StatusCode::OK,))
             } else {
                 error!(
                     host = %host,
@@ -932,7 +932,13 @@ pub async fn purge_file(
                     error = %error,
                     "Failed to purge file due to system error"
                 );
-                StatusCode::INTERNAL_SERVER_ERROR
+                Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    JsonResponse(AdminResponse {
+                        error: Some(format!("Fail to purge {path}: {error}")),
+                        ..Default::default()
+                    })
+                ))
             }
         }
     }
