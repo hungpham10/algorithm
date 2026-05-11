@@ -15,11 +15,10 @@ use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::channel;
 use utoipa::{OpenApi, ToSchema};
 
-use schemas::CandleStick;
+use schemas::{CandleStick, Tick};
 use vector_runtime::Message as VectorMessage;
 
 use crate::api::{AppState, investing::InvestingHeaders};
-use crate::vector::price_gather_output::Tick;
 
 #[derive(OpenApi)]
 #[openapi(

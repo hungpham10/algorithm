@@ -6,7 +6,6 @@ use std::sync::atomic::{AtomicI32, Ordering};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
@@ -285,34 +284,24 @@ impl WebSocketPolling for VdscSource {
                             VdscBoard::Stock => self.process_stock_from_vdsc(&response).unwrap(),
                             _ => return Ok(()),
                         };
+                        let payload = serde_json::to_value(transitions).map_err(|error| {
+                            Error::new(
+                                ErrorKind::InvalidData,
+                                format!("Failed to serialize VdscTickBatch: {}", error),
+                            )
+                        })?;
 
-                        for (symbol, transition) in transitions {
-                            if transition.is_empty() {
-                                continue;
-                            }
-
-                            for tx in txs {
-                                tx.send(VectorMessage {
-                                    payload: json!({
-                                        "symbol": symbol,
-                                        "transition": serde_json::to_value(&transition).map_err(
-                                            |error| {
-                                                Error::new(
-                                                    ErrorKind::InvalidData,
-                                                    format!("Failed to build payload: {}", error),
-                                                )
-                                            },
-                                        )?,
-                                    }),
-                                })
-                                .await
-                                .map_err(|error| {
-                                    Error::new(
-                                        ErrorKind::BrokenPipe,
-                                        format!("Failed to send data {:?}: {}", transition, error),
-                                    )
-                                })?;
-                            }
+                        for tx in txs {
+                            tx.send(VectorMessage {
+                                payload: payload.clone(),
+                            })
+                            .await
+                            .map_err(|error| {
+                                Error::new(
+                                    ErrorKind::BrokenPipe,
+                                    format!("Failed to send data: {error}"),
+                                )
+                            })?;
                         }
 
                         self.current_version
