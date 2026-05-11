@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
 
 use vector_config_macro::source;
-use vector_runtime::{Component, Event, Identify, Message as VectorMessage};
+use vector_runtime::{Component, Identify, Message as VectorMessage, Outbound};
 
 use crate::components::websocket::{WebSocketClient, WebSocketPolling};
 
@@ -250,7 +250,7 @@ impl VdscSource {
 }
 
 #[async_trait]
-impl<'life2> WebSocketPolling<'life2> for VdscSource {
+impl WebSocketPolling for VdscSource {
     async fn on_send(&self) -> Result<Option<String>, Error> {
         let current_version = self.current_version.load(Ordering::SeqCst);
 
@@ -272,7 +272,7 @@ impl<'life2> WebSocketPolling<'life2> for VdscSource {
     async fn on_receive(
         &self,
         message: WsMessage,
-        txs: &'life2 [mpsc::Sender<VectorMessage>],
+        txs: &[mpsc::Sender<VectorMessage>],
     ) -> Result<(), Error> {
         match message {
             WsMessage::Text(text) => match serde_json::from_str::<VdscWebSocketResponse>(&text) {
@@ -335,11 +335,10 @@ impl_vdsc_source!(
         &self,
         id: usize,
         _: &mut mpsc::Receiver<VectorMessage>,
-        txs: &'life2 [mpsc::Sender<VectorMessage>],
-        err: &mpsc::Sender<Event>,
+        tx: Outbound,
     ) -> Result<(), std::io::Error> {
         WebSocketClient::new(format!("wss://livedragon.vdsc.com.vn/{}wss", self.board), 5)
-            .run(self.clone(), id, txs, err)
+            .run(self.clone(), id, &tx)
             .await
     }
 );

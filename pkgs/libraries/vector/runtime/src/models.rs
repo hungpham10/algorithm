@@ -4,7 +4,7 @@ use std::io::Error;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::{broadcast, mpsc};
 
 pub enum Event {
     Minor((usize, Error)),
@@ -16,6 +16,8 @@ pub enum Event {
 #[repr(i32)]
 pub enum ComponentType {
     Unknown,
+    Input,
+    Output,
     Source,
     Sink,
     Transform,
@@ -27,6 +29,8 @@ impl From<i32> for ComponentType {
             1 => ComponentType::Source,
             2 => ComponentType::Sink,
             3 => ComponentType::Transform,
+            4 => ComponentType::Input,
+            5 => ComponentType::Output,
             _ => ComponentType::Unknown,
         }
     }
@@ -38,6 +42,8 @@ impl From<String> for ComponentType {
             "Source" => ComponentType::Source,
             "Sink" => ComponentType::Sink,
             "Transform" => ComponentType::Transform,
+            "Input" => ComponentType::Input,
+            "Output" => ComponentType::Output,
             _ => ComponentType::Unknown,
         }
     }
@@ -49,6 +55,8 @@ impl Display for ComponentType {
             ComponentType::Unknown => write!(f, "Unknown"),
             ComponentType::Source => write!(f, "Source"),
             ComponentType::Sink => write!(f, "Sink"),
+            ComponentType::Input => write!(f, "Input"),
+            ComponentType::Output => write!(f, "Output"),
             ComponentType::Transform => write!(f, "Transform"),
         }
     }
@@ -78,6 +86,12 @@ pub struct Message {
     pub payload: Value,
 }
 
+pub struct Outbound {
+    pub streams: Vec<mpsc::Sender<Message>>,
+    pub broadcast: Option<broadcast::Sender<Message>>,
+    pub event: mpsc::Sender<Event>,
+}
+
 pub trait Identify {
     fn id(&self) -> String;
     fn get_inputs(&self) -> Option<&Vec<String>>;
@@ -92,8 +106,7 @@ pub trait Component: Identify + Send + Sync {
     async fn run(
         &self,
         id: usize,
-        rx: &mut Receiver<Message>,
-        txs: &'life2 [Sender<Message>],
-        err: &Sender<Event>,
+        rx: &mut mpsc::Receiver<Message>,
+        tx: Outbound,
     ) -> Result<(), Error>;
 }

@@ -5,4 +5,3 @@ pub mod kubernetes;
 pub mod websocket;
 
 pub mod appended_log;
-pub mod cronjob;

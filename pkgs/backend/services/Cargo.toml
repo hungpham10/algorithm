@@ -14,6 +14,9 @@ assets = [
 #warnings = "deny"
 
 [dependencies]
+# Macros
+vector_config_macro = { path = "../../macros/vector_config_macro" }
+
 # Shared libraries
 vector_runtime = { path = "../../libraries/vector/runtime" }
 vector_components = { path = "../../libraries/vector/components" }
@@ -52,7 +55,9 @@ futures = "0.3.32"
 bytes = "1.11.1"
 async-graphql = "7.2.1"
 async-graphql-axum = "7.2.1"
-
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+async-trait = "0.1.89"
+typetag = "0.2.21"
 
 # Tracing
 tracing = "0.1.44"

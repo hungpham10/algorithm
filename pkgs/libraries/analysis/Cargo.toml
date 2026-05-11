@@ -6,5 +6,6 @@ edition = "2024"
 [dependencies]
 itertools = "0.14.0"
 rayon = "1.11.0"
+ordered-float = "5.3.0"
 
 schemas = { path = "../../backend/schemas" }

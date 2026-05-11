@@ -21,7 +21,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use std::fs;
-use std::io::Error;
+use std::io::{Error, ErrorKind};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -39,6 +39,36 @@ use crate::vector::{AxumBuilder, AxumRuntime};
 //use crate::api::chat;
 use crate::api::investing;
 use crate::api::{AppState, health_check, into_stream, pprof, reload};
+
+#[derive(serde::Deserialize)]
+struct Pipeline {
+    components: Vec<Box<dyn Component>>,
+}
+
+fn load_components_from_env() -> Result<Vec<Arc<dyn Component>>, Error> {
+    let config_json_str = match std::env::var("PIPELINE_CONFIG_JSON") {
+        Ok(val) => val,
+        Err(_) => {
+            return Ok(Vec::new());
+        }
+    };
+
+    if config_json_str.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    Ok(serde_json::from_str::<Pipeline>(&config_json_str)
+        .map_err(|error| {
+            Error::new(
+                ErrorKind::InvalidData,
+                format!("Failed to parse config JSON from env: {error}"),
+            )
+        })?
+        .components
+        .into_iter()
+        .map(Arc::from)
+        .collect::<Vec<_>>())
+}
 
 fn init_telemetry() -> Option<(SdkTracerProvider, SdkMeterProvider)> {
     let agent_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
@@ -174,6 +204,7 @@ pub async fn routes(
         .nest("/api/investing", investing::routes())
         .merge(SwaggerUi::new("/swagger-ui").url("/docs/openapi.json", InvestingApiDoc::openapi()));
 
+    // @TODO: validate of existing input `facebook_source` and `slack_source`
     let runtime = Arc::new(
         AxumBuilder::new()
             .route("/api/chat/v1/facebook/webhook", "facebook_source")
@@ -230,7 +261,7 @@ pub async fn run() -> std::io::Result<()> {
 
     // Khởi tạo toàn bộ router và streamer trong một lần gọi
     // Bạn có thể truyền components ban đầu vào đây
-    let (router, streamer) = routes(Vec::new(), telemetry_guard.is_none()).await?;
+    let (router, streamer) = routes(load_components_from_env()?, telemetry_guard.is_none()).await?;
 
     let make_service = router.into_make_service_with_connect_info::<UdsConnectInfo>();
     let usx = UnixListener::bind(path.clone())?;
@@ -239,7 +270,6 @@ pub async fn run() -> std::io::Result<()> {
 
     println!("Server starting on Unix Socket: {:?}", path);
 
-    tracing::info!(hello = "world", "TEST TRACING");
     let result = axum::serve(usx, make_service)
         .with_graceful_shutdown(shutdown_signal())
         .await;

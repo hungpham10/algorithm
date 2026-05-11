@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 use vector_config_macro::sink;
-use vector_runtime::{Component, Event, Identify, Message};
+use vector_runtime::{Component, Identify, Message, Outbound};
 
 #[sink(derive(PartialEq))]
 pub struct Null {
@@ -13,8 +13,7 @@ impl_null!(
         &self,
         _: usize,
         rx: &mut mpsc::Receiver<Message>,
-        _: &'life2 [mpsc::Sender<Message>],
-        _: &mpsc::Sender<Event>,
+        _: Outbound,
     ) -> Result<(), std::io::Error> {
         while rx.recv().await.is_some() {}
         Ok(())

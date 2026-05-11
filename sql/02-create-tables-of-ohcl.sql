@@ -130,6 +130,17 @@ CREATE TABLE IF NOT EXISTS `ohcl_store_locations` (
   UNIQUE KEY `unique_address` (`address_line`, `district`, `province`)
 );
 
+CREATE TABLE IF NOT EXISTS `ohcl_bank_interest_rate` (
+  `id` integer PRIMARY KEY,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `1_month` float,
+  `3_month` float,
+  `6_month` float,
+  `9_month` float,
+  `12_month` float,
+ );
+
 ALTER TABLE ohcl_stores CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ALTER TABLE ohcl_store_locations CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ALTER TABLE ohcl_mapping_product_in_store_to_symbol CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

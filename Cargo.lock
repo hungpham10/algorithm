@@ -306,6 +306,7 @@ name = "analysis"
 version = "0.1.0"
 dependencies = [
  "itertools 0.14.0",
+ "ordered-float 5.3.0",
  "rayon",
  "schemas",
 ]
@@ -4672,6 +4673,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ordered-float"
+version = "5.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7d950ca161dc355eaf28f82b11345ed76c6e1f6eb1f4f4479e0323b9e2fbd0e"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "os_info"
 version = "3.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6442,6 +6452,7 @@ dependencies = [
  "analysis",
  "async-graphql",
  "async-graphql-axum",
+ "async-trait",
  "aws-sdk-s3",
  "axum",
  "axum-extra",
@@ -6453,6 +6464,7 @@ dependencies = [
  "clap",
  "dotenvy",
  "futures",
+ "futures-util",
  "headers",
  "hex",
  "histogram",
@@ -6492,9 +6504,11 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "typetag",
  "utoipa",
  "utoipa-swagger-ui",
  "vector_components",
+ "vector_config_macro",
  "vector_runtime",
 ]
 

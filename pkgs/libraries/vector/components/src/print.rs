@@ -1,7 +1,7 @@
 use tokio::sync::mpsc;
 use vector_config_macro::sink;
 
-use vector_runtime::{Component, Event, Identify, Message};
+use vector_runtime::{Component, Identify, Message, Outbound};
 
 #[sink(derive(PartialEq))]
 pub struct Print {
@@ -21,8 +21,7 @@ impl_print!(
         &self,
         _: usize,
         rx: &mut mpsc::Receiver<Message>,
-        _: &'life2 [mpsc::Sender<Message>],
-        _: &mpsc::Sender<Event>,
+        _: Outbound,
     ) -> Result<(), std::io::Error> {
         while let Some(message) = rx.recv().await {
             println!("{}: Received data: {}", self.prefix, message.payload);
