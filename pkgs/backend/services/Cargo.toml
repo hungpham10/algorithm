@@ -24,7 +24,7 @@ schemas = { path = "../schemas" }
 models = { path = "../models" }
 analysis = { path = "../../libraries/analysis" }
 algorithm = { path = "../../libraries/algorithm" }
-integration = { path = "../integration", features = ["vdsc"] }
+integration = { path = "../integration" }
 
 # API
 axum = { version = "0.8.8", features = ["macros", "multipart"] }

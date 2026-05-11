@@ -10,7 +10,6 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message as WsMessa
 
 use vector_runtime::{Event, Message as VectorMessage, Outbound};
 
-#[cfg(feature = "vdsc")]
 pub mod vdsc;
 
 #[async_trait]
