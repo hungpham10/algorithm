@@ -58,6 +58,8 @@ async-graphql-axum = "7.2.1"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 async-trait = "0.1.89"
 typetag = "0.2.21"
+rand = "0.8.5"
+aes-gcm = "0.10.3"
 
 # Tracing
 tracing = "0.1.44"

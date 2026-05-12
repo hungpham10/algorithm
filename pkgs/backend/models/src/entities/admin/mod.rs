@@ -285,6 +285,35 @@ pub struct Table {
     pub columns: Option<Vec<ColumnDescription>>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema)]
+pub struct AuthConfig {
+    id: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jwt_mode: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jwt_secret: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_secret: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    oidc_issuer: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    oidc_client_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    oidc_client_secret: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    oidc_jwks_url: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    oidc_expected_alg: Option<String>,
+}
+
 impl Admin {
     pub fn new(resolver: &Arc<Resolver>) -> Self {
         // @TODO: có cách nào lấy dữ liêụ từ resolver về capacity của cache_unencrypted_tokens và api
@@ -322,6 +351,80 @@ impl Admin {
             .await?
         {
             Some(id) => Ok(id),
+            None => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Not found host {}",
+                host,
+            )))),
+        }
+    }
+
+    pub async fn get_tenant_auth_config(&self, host: &String) -> Result<AuthConfig, DbErr> {
+        // 1. Lấy thông tin Tenant và các ID liên kết sang bảng token_map
+        let tenant_info = Tenant::find()
+            .filter(tenant::Column::Host.eq(host))
+            .select_only()
+            .column(tenant::Column::Id)
+            .column(tenant::Column::JwtMode)
+            .column(tenant::Column::JwtSecret) // Trả về Option<i64> (ID của token)
+            .column(tenant::Column::SessionSecret) // Trả về Option<i64> (ID của token)
+            .column(tenant::Column::OidcJwksUrl)
+            .column(tenant::Column::OidcClientId)
+            .column(tenant::Column::OidcClientSecret) // Trả về Option<i64> (ID của token)
+            .column(tenant::Column::OidcExpectedAlg)
+            // Lưu ý: Cột oidc_issuer không có trong câu query cũ của bạn, nếu schema có hãy bổ sung vào đây nhé.
+            .into_tuple::<(
+                i64,
+                Option<String>,
+                Option<i64>,
+                Option<i64>,
+                Option<String>,
+                Option<String>,
+                Option<String>,
+                Option<i64>,
+                Option<String>,
+            )>()
+            .one(self.dbt(0))
+            .await?;
+
+        match tenant_info {
+            Some((
+                id,
+                jwt_mode,
+                jwt_secret_id,
+                session_secret_id,
+                oidc_issuer,
+                oidc_jwks_url,
+                oidc_client_id,
+                oidc_client_secret_id,
+                oidc_expected_alg,
+            )) => {
+                let jwt_secret = match jwt_secret_id {
+                    Some(token_id) => Some(self.get_unencrypted_token_by_id(id, token_id).await?),
+                    None => None,
+                };
+
+                let session_secret = match session_secret_id {
+                    Some(token_id) => Some(self.get_unencrypted_token_by_id(id, token_id).await?),
+                    None => None,
+                };
+
+                let oidc_client_secret = match oidc_client_secret_id {
+                    Some(token_id) => Some(self.get_unencrypted_token_by_id(id, token_id).await?),
+                    None => None,
+                };
+
+                Ok(AuthConfig {
+                    id,
+                    jwt_mode,
+                    jwt_secret,
+                    session_secret,
+                    oidc_issuer,
+                    oidc_client_id,
+                    oidc_client_secret,
+                    oidc_jwks_url,
+                    oidc_expected_alg,
+                })
+            }
             None => Err(DbErr::Query(RuntimeErr::Internal(format!(
                 "Not found host {}",
                 host,
@@ -489,12 +592,12 @@ impl Admin {
 
                 self.cache_unencrypted_tokens.put(cache_key, None);
 
-                let encrypted_bytes = TokenMap::find()
+                let token_id = TokenMap::find()
                     .filter(token_map::Column::TenantId.eq(tenant_id))
                     .filter(token_map::Column::Service.eq(service_name))
                     .select_only()
-                    .column(token_map::Column::Token)
-                    .into_tuple::<Vec<u8>>()
+                    .column(token_map::Column::Id) // Lấy Id trỏ sang bảng token_map
+                    .into_tuple::<i64>()
                     .one(self.dbt(tenant_id))
                     .await?
                     .ok_or_else(|| {
@@ -504,39 +607,69 @@ impl Admin {
                         )))
                     })?;
 
-                let master_key_str = self.get_master_key().await?;
-                let key = Key::<Aes256Gcm>::from_slice(master_key_str.as_slice());
-                let cipher = Aes256Gcm::new(key);
-
-                if encrypted_bytes.len() < 12 {
-                    return Err(DbErr::Query(RuntimeErr::Internal(format!(
-                        "Data too short when decoding service {}, tenant {}",
-                        service_name, tenant_id,
-                    ))));
-                }
-
-                let (nonce_part, ciphertext_part) = encrypted_bytes.split_at(12);
-                let nonce = Nonce::from_slice(nonce_part);
-
-                let decrypted_bytes = cipher.decrypt(nonce, ciphertext_part).map_err(|error| {
-                    DbErr::Query(RuntimeErr::Internal(format!(
-                        "Decode service {}, tenant {} failed: {}",
-                        service_name, tenant_id, error,
-                    )))
-                })?;
-                let token = String::from_utf8(decrypted_bytes).map_err(|error| {
-                    DbErr::Query(RuntimeErr::Internal(format!(
-                        "Validate token of service {}, tenant {} failed: {}",
-                        service_name, tenant_id, error,
-                    )))
-                })?;
+                let token = self
+                    .get_unencrypted_token_by_id(tenant_id, token_id)
+                    .await?;
 
                 self.cache_unencrypted_tokens
                     .put(cache_key_after_done, Some(token.clone()));
+
                 Ok(token)
             }
         }
     }
+
+    async fn get_unencrypted_token_by_id(
+        &self,
+        tenant_id: i64,
+        token_id: i64,
+    ) -> Result<String, DbErr> {
+        let encrypted_bytes = TokenMap::find()
+            .filter(token_map::Column::TenantId.eq(tenant_id))
+            .filter(token_map::Column::Id.eq(token_id))
+            .select_only()
+            .column(token_map::Column::Token)
+            .into_tuple::<Vec<u8>>()
+            .one(self.dbt(tenant_id))
+            .await?
+            .ok_or_else(|| {
+                DbErr::Query(RuntimeErr::Internal(format!(
+                    "Not found token_id {} for tenant {}",
+                    token_id, tenant_id,
+                )))
+            })?;
+
+        let master_key_str = self.get_master_key().await?;
+        let key = Key::<Aes256Gcm>::from_slice(master_key_str.as_slice());
+        let cipher = Aes256Gcm::new(key);
+
+        if encrypted_bytes.len() < 12 {
+            return Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Data too short when decoding token_id {} for tenant {}",
+                token_id, tenant_id,
+            ))));
+        }
+
+        let (nonce_part, ciphertext_part) = encrypted_bytes.split_at(12);
+        let nonce = Nonce::from_slice(nonce_part);
+
+        let decrypted_bytes = cipher.decrypt(nonce, ciphertext_part).map_err(|error| {
+            DbErr::Query(RuntimeErr::Internal(format!(
+                "Decode token_id {} for tenant {} failed: {}",
+                token_id, tenant_id, error,
+            )))
+        })?;
+
+        let token = String::from_utf8(decrypted_bytes).map_err(|error| {
+            DbErr::Query(RuntimeErr::Internal(format!(
+                "Validate token_id {} for tenant {} failed: {}",
+                token_id, tenant_id, error,
+            )))
+        })?;
+
+        Ok(token)
+    }
+
     pub async fn put_unencrypted_token(
         &self,
         tenant_id: i64,
@@ -1277,5 +1410,107 @@ impl Admin {
         }
 
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    // Hàm helper giả lập việc khởi tạo các Key tương tự logic trong Admin của bạn
+    fn setup_crypto_env() -> (Vec<u8>, Key<Aes256Gcm>) {
+        // Aes256Gcm cần key 32 bytes, chuỗi dưới đây đúng 32 ký tự ascii = 32 bytes
+        let dummy_master_key = "this_is_a_secret_32_bytes_key___";
+
+        // Bọc trong khối unsafe vì set_var là hàm không an toàn trong môi trường đa luồng
+        unsafe {
+            env::set_var("MASTER_KEY", dummy_master_key);
+        }
+
+        let master_key_bytes = dummy_master_key.as_bytes().to_vec();
+        let key = Key::<Aes256Gcm>::from_slice(master_key_bytes.as_slice());
+        (master_key_bytes.clone(), *key)
+    }
+
+    #[test]
+    fn test_aes_gcm_encrypt_decrypt_flow() {
+        let (_master_key, key) = setup_crypto_env();
+        let cipher = Aes256Gcm::new(&key);
+
+        // Chuỗi token trơn cần test
+        let token_plain = "my_super_secret_api_token_123456".to_string();
+
+        // --- BƯỚC 1: MÃ HÓA ---
+        let mut nonce_bytes = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let ciphertext = cipher
+            .encrypt(nonce, token_plain.as_bytes())
+            .expect("Encrypting failed");
+
+        // Gộp Nonce (12 bytes) + Ciphertext thành Blob lưu trữ
+        let mut final_blob = nonce_bytes.to_vec();
+        final_blob.extend_from_slice(&ciphertext);
+
+        // Kiểm tra xem dữ liệu mã hóa có bị rỗng hoặc quá ngắn không
+        assert!(final_blob.len() > 12);
+
+        // --- BƯỚC 2: GIẢI MÃ ---
+        let encrypted_bytes = final_blob;
+
+        // Kiểm tra độ dài an toàn tối thiểu (12 bytes nonce)
+        assert!(encrypted_bytes.len() >= 12, "Data too short");
+
+        // Tách nonce và ciphertext
+        let (nonce_part, ciphertext_part) = encrypted_bytes.split_at(12);
+        let nonce_to_decrypt = Nonce::from_slice(nonce_part);
+
+        let decrypted_bytes = cipher
+            .decrypt(nonce_to_decrypt, ciphertext_part)
+            .expect("Decoding failed: Key hoặc Nonce sai hoặc dữ liệu bị biến đổi");
+
+        let token_decrypted = String::from_utf8(decrypted_bytes)
+            .expect("Validate token failed: Dữ liệu giải mã không phải chuỗi UTF-8");
+
+        // --- BƯỚC 3: KIỂM TRA ĐẦU RA ---
+        assert_eq!(
+            token_plain, token_decrypted,
+            "Dữ liệu sau khi giải mã KHÔNG trùng khớp với dữ liệu gốc!"
+        );
+        println!(
+            "Test Crypto: Mã hóa và giải mã thành công! Token: {}",
+            token_decrypted
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Decoding failed")]
+    fn test_decrypt_with_wrong_key_should_fail() {
+        let (_, key) = setup_crypto_env();
+        let cipher_encrypt = Aes256Gcm::new(&key);
+
+        let token_plain = "important_token".to_string();
+        let mut nonce_bytes = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+
+        let ciphertext = cipher_encrypt
+            .encrypt(Nonce::from_slice(&nonce_bytes), token_plain.as_bytes())
+            .unwrap();
+
+        let mut final_blob = nonce_bytes.to_vec();
+        final_blob.extend_from_slice(&ciphertext);
+
+        // Tạo ra 1 Cipher khác với Key hoàn toàn sai lệch để thử giải mã
+        let wrong_key_bytes = [0u8; 32];
+        let wrong_key = Key::<Aes256Gcm>::from_slice(&wrong_key_bytes);
+        let cipher_decrypt_wrong = Aes256Gcm::new(wrong_key);
+
+        let (nonce_part, ciphertext_part) = final_blob.split_at(12);
+
+        cipher_decrypt_wrong
+            .decrypt(Nonce::from_slice(nonce_part), ciphertext_part)
+            .expect("Decoding failed");
     }
 }

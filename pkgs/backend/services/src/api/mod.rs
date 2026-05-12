@@ -133,7 +133,7 @@ impl Reload for AppState {
     }
 
     fn keys(&self) -> Vec<&str> {
-        vec!["S3_BUCKET", "BROKER"]
+        vec!["S3_BUCKET", "BROKER", "MASTER_KEY"]
     }
 }
 

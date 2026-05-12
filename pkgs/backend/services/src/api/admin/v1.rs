@@ -28,7 +28,7 @@ use tracing::error;
 
 use integration::components::appended_log::AppendedLog;
 use models::cache::Cache;
-use models::entities::admin::{Api, Article, Site, Table};
+use models::entities::admin::{Api, Article, AuthConfig, Site, Table};
 
 use crate::api::AppState;
 use crate::api::admin::AdminHeaders;
@@ -76,6 +76,9 @@ pub struct AdminResponse {
     query: Option<Vec<JsonValue>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    auth: Option<AuthConfig>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
 
@@ -102,11 +105,13 @@ pub struct AdminResponse {
         get_appended_log,
         rotate_new_partition,
         build_sitemap_xml,
-        build_news_xml
+        build_news_xml,
+        get_tenant_auth_config,
     ),
     // 2. Register all the data structures used in requests/responses
     components(
         schemas(
+            AuthConfig,
             QueryPagingInput,
             AdminResponse,
             ListApiSchema,
@@ -141,6 +146,10 @@ impl utoipa::Modify for SecurityAddon {
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/seo/tenant/{host}/id", get(get_tenant_id))
+        .route(
+            "/seo/tenant/{host}/auth-config",
+            get(get_tenant_auth_config),
+        )
         .route("/seo/news", get(build_news_xml).post(publish_news))
         .route("/seo/sitemap", get(build_sitemap_xml).post(publish_site))
         .route("/seo/files", head(purge_all_files).post(publish_file))
@@ -532,6 +541,40 @@ async fn get_tenant_id(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Fail to get tenant of {}: {:?}", host, error),
         ),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/seo/tenant/{host}/auth-config",
+    params(
+        ("host" = String, Path, description = "The hostname to look up")
+    ),
+    responses(
+        (status = 200, description = "Returns the Tenant ID", body = String),
+        (status = 500, description = "Internal Server Error")
+    ),
+    tag = "Tenant"
+)]
+async fn get_tenant_auth_config(
+    State(app_state): State<AppState>,
+    Path(host): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
+    match app_state.admin_entity.get_tenant_auth_config(&host).await {
+        Ok(auth_config) => Ok((
+            StatusCode::OK,
+            JsonResponse(AdminResponse {
+                auth: Some(auth_config),
+                ..Default::default()
+            }),
+        )),
+        Err(error) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(AdminResponse {
+                error: Some(format!("Fail to get tenant of {}: {:?}", host, error)),
+                ..Default::default()
+            }),
+        )),
     }
 }
 

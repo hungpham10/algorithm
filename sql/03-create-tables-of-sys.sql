@@ -31,8 +31,16 @@ CREATE TABLE IF NOT EXISTS `sys_filemap` (
 );
 
 CREATE TABLE IF NOT EXISTS `sys_tenant` (
-  `host` varchar(200) PRIMARY KEY,
-  `id` BIGINT,
+  `host` VARCHAR(200) PRIMARY KEY,
+  `id` BIGINT NOT NULL UNIQUE,
+  `jwt_mode` VARCHAR(20) NOT NULL DEFAULT 'secret',
+  `jwt_secret` BIGINT DEFAULT NULL COMMENT 'Trỏ tới sys_token_map.id',
+  `oidc_jwks_url` VARCHAR(500) DEFAULT NULL,
+  `oidc_issuer` VARCHAR(255) NOT NULL,
+  `oidc_client_id` VARCHAR(255) NOT NULL COMMENT 'Client ID công khai (chuỗi)',
+  `oidc_client_secret` BIGINT DEFAULT NULL COMMENT 'Trỏ tới sys_token_map.id',
+  `oidc_expected_alg` VARCHAR(10) NOT NULL DEFAULT 'RS256',
+  `session_secret` BIGINT NOT NULL COMMENT 'Trỏ tới sys_token_map.id',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

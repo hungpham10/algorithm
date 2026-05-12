@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS `ohcl_bank_interest_rate` (
   `3_month` float,
   `6_month` float,
   `9_month` float,
-  `12_month` float,
+  `12_month` float
  );
 
 ALTER TABLE ohcl_stores CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
