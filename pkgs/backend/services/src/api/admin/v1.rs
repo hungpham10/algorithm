@@ -529,6 +529,9 @@ async fn put_token(
         (status = 200, description = "Returns the Tenant ID", body = String),
         (status = 500, description = "Internal Server Error")
     ),
+    security(
+        ("admin_auth" = [])
+    ),
     tag = "Tenant"
 )]
 async fn get_tenant_id(
@@ -553,6 +556,9 @@ async fn get_tenant_id(
     responses(
         (status = 200, description = "Returns the Tenant ID", body = String),
         (status = 500, description = "Internal Server Error")
+    ),
+    security(
+        ("admin_auth" = [])
     ),
     tag = "Tenant"
 )]
@@ -891,6 +897,9 @@ async fn build_news_xml(
         (status = 200, description = "File successfully purged from Nginx cache or was not found"),
         (status = 500, description = "Internal server error while accessing the filesystem")
     ),
+    security(
+        ("admin_auth" = [])
+    ),
     tag = "SEO Engine"
 )]
 pub async fn purge_all_files() -> impl IntoResponse {
@@ -934,6 +943,9 @@ async fn clear_cache_directory(path: &str) -> std::io::Result<()> {
     responses(
         (status = 200, description = "File successfully purged from Nginx cache or was not found"),
         (status = 500, description = "Internal server error while accessing the filesystem")
+    ),
+    security(
+        ("admin_auth" = [])
     ),
     tag = "SEO Engine"
 )]
@@ -998,6 +1010,9 @@ pub async fn purge_file(
     responses(
         (status = 200, description = "Returns the file stream from S3", content_type = "application/octet-stream"),
         (status = 500, description = "S3 or Configuration error", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
     ),
     tag = "SEO Engine"
 )]
@@ -1090,6 +1105,9 @@ pub async fn fetch_file(
     security(
         ("admin_auth" = [])
     ),
+    security(
+        ("admin_auth" = [])
+    ),
     tag = "Schemas"
 )]
 pub async fn list_paginated_api_schemas(
@@ -1147,6 +1165,9 @@ pub async fn list_paginated_api_schemas(
     responses(
         (status = 200, description = "Successfully created schemas", body = AdminResponse),
         (status = 500, description = "Database error", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
     ),
     security(
         ("admin_auth" = [])
