@@ -4,7 +4,7 @@ mod token;
 mod vector;
 
 use clap::{Parser, Subcommand};
-use std::io::{Error, ErrorKind};
+use std::io::Error;
 
 #[derive(Parser, Debug)]
 #[command(name = "algorithm", about = "An all in one solution")]
