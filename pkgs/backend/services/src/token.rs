@@ -6,10 +6,13 @@ use rand::{RngCore, thread_rng};
 
 pub async fn run(master_key: &String, action: &str, payload: &String) -> std::io::Result<()> {
     if master_key.len() != 32 {
-        return Err(Error::new(ErrorKind::InvalidInput, format!(
-            "Master key must have length equal to 32, now it is {}",
-            master_key.len(),
-        )));
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            format!(
+                "Master key must have length equal to 32, now it is {}",
+                master_key.len(),
+            ),
+        ));
     }
 
     let key = Key::<Aes256Gcm>::from_slice(master_key.as_bytes());
