@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 use tokio::time::sleep;
 
 use vector_config_macro::source;
-use vector_runtime::{Component, Event, Identify, Message};
+use vector_runtime::{Component, Event, Identify, Message, Outbound};
 
 use super::core::AppendedLog;
 
@@ -23,8 +23,7 @@ impl_appended_log_source!(
         &self,
         id: usize,
         _: &mut mpsc::Receiver<Message>,
-        txs: &'life2 [mpsc::Sender<Message>],
-        err: &mpsc::Sender<Event>,
+        tx: Outbound,
     ) -> Result<(), std::io::Error> {
         let logger = AppendedLog::new(&self.dsn)
             .map_err(|e| Error::other(format!("Source {} failed to connect: {}", self.id, e)))?;
@@ -46,9 +45,10 @@ impl_appended_log_source!(
                             payload: Value::from(payload_str),
                         };
 
-                        for tx in txs {
-                            if let Err(error) = tx.send(message.clone()).await {
-                                let _ = err
+                        for stream in &tx.streams {
+                            if let Err(error) = stream.send(message.clone()).await {
+                                let _ = tx
+                                    .event
                                     .send(Event::Minor((
                                         id,
                                         Error::other(format!("Failed to send event: {}", error)),
@@ -65,7 +65,8 @@ impl_appended_log_source!(
                     }
                 }
                 Err(e) => {
-                    let _ = err
+                    let _ = tx
+                        .event
                         .send(Event::Minor((
                             id,
                             Error::other(format!("Read error at offset {}: {}", current_offset, e)),

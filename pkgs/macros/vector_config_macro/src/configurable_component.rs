@@ -9,6 +9,8 @@ pub enum ComponentType {
     Source,
     Sink,
     Transform,
+    Input,
+    Output,
 }
 
 fn to_snake_case(s: &str) -> String {
@@ -44,7 +46,6 @@ pub fn configurable_component_impl(
             if meta.path().is_ident("derive")
                 && let Meta::List(list) = meta
             {
-                // Parse nội dung bên trong dấu ngoặc của derives(...)
                 let nested = list
                     .parse_args_with(Punctuated::<syn::Path, Token![,]>::parse_terminated)
                     .expect("Failed to parse derives content");
@@ -118,6 +119,18 @@ pub fn configurable_component_impl(
                 fn get_inputs(&self) -> Option<&Vec<String>> { Some(&self.inputs) }
             },
             quote! { vector_runtime::ComponentType::Transform },
+        ),
+        ComponentType::Input => (
+            quote! {
+                fn get_inputs(&self) -> Option<&Vec<String>> { None }
+            },
+            quote! { vector_runtime::ComponentType::Input },
+        ),
+        ComponentType::Output => (
+            quote! {
+                fn get_inputs(&self) -> Option<&Vec<String>> { None }
+            },
+            quote! { vector_runtime::ComponentType::Output },
         ),
     };
 

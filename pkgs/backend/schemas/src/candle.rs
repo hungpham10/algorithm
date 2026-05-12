@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-#[derive(Deserialize, Serialize, Debug, Clone, ToSchema)]
+#[derive(Deserialize, Serialize, Debug, Clone, ToSchema, Default)]
 pub struct CandleStick {
     pub t: i32,
     pub o: f64,

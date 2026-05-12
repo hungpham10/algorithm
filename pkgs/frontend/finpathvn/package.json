@@ -10,6 +10,7 @@
     "start": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
+    "publish": "node scripts/publish.js",
     "astro": "astro"
   },
   "dependencies": {
@@ -29,6 +30,7 @@
     "tailwindcss": "^4.2.2",
     "terser": "^5.46.2",
     "vite-plugin-compression": "^0.5.1",
-    "vite-plugin-javascript-obfuscator": "^3.1.0"
+    "vite-plugin-javascript-obfuscator": "^3.1.0",
+    "mime": "^4.0.6"
   }
 }

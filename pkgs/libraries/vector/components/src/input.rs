@@ -1,9 +1,9 @@
 use std::io::{Error, ErrorKind};
 use tokio::sync::mpsc;
-use vector_config_macro::source;
-use vector_runtime::{Component, Event, Identify, Message};
+use vector_config_macro::input;
+use vector_runtime::{Component, Event, Identify, Message, Outbound};
 
-#[source(derive(PartialEq))]
+#[input(derive(PartialEq))]
 pub struct Input {
     pub id: String,
 }
@@ -13,19 +13,37 @@ impl_input!(
         &self,
         id: usize,
         rx: &mut mpsc::Receiver<Message>,
-        txs: &'life2 [mpsc::Sender<Message>],
-        err: &mpsc::Sender<Event>,
+        tx: Outbound,
     ) -> Result<(), std::io::Error> {
         while let Some(msg) = rx.recv().await {
             let mut failed = true;
 
-            for tx in txs {
-                if let Err(error) = tx.send(msg.clone()).await {
-                    err.send(Event::Minor((
+            for stream in &tx.streams {
+                if let Err(error) = stream.send(msg.clone()).await {
+                    tx.event
+                        .send(Event::Minor((
+                            id,
+                            Error::other(format!(
+                                "Failed to send data to one specific output: {error}"
+                            )),
+                        )))
+                        .await
+                        .map_err(|error| {
+                            Error::new(
+                                ErrorKind::BrokenPipe,
+                                format!("Failed to report error: {error}"),
+                            )
+                        })?;
+                } else {
+                    failed = false;
+                }
+            }
+
+            if failed {
+                tx.event
+                    .send(Event::Major((
                         id,
-                        Error::other(format!(
-                            "Failed to send data to one specific output: {error}"
-                        )),
+                        Error::other("Failed to send data to every node"),
                     )))
                     .await
                     .map_err(|error| {
@@ -34,23 +52,6 @@ impl_input!(
                             format!("Failed to report error: {error}"),
                         )
                     })?;
-                } else {
-                    failed = false;
-                }
-            }
-
-            if failed {
-                err.send(Event::Major((
-                    id,
-                    Error::other("Failed to send data to every node"),
-                )))
-                .await
-                .map_err(|error| {
-                    Error::new(
-                        ErrorKind::BrokenPipe,
-                        format!("Failed to report error: {error}"),
-                    )
-                })?;
             }
         }
 

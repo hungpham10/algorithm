@@ -5,7 +5,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 
 use vector_config_macro::sink;
-use vector_runtime::{Component, Event, Identify, Message};
+use vector_runtime::{Component, Identify, Message, Outbound};
 
 #[sink(derive(PartialEq))]
 pub struct FileSink {
@@ -19,8 +19,7 @@ impl_file_sink!(
         &self,
         _id: usize,
         rx: &mut mpsc::Receiver<Message>,
-        _: &'life2 [mpsc::Sender<Message>],
-        _: &mpsc::Sender<Event>,
+        _: Outbound,
     ) -> Result<(), std::io::Error> {
         let mut file = OpenOptions::new()
             .create(true)

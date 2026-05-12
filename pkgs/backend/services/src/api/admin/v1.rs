@@ -28,7 +28,7 @@ use tracing::error;
 
 use integration::components::appended_log::AppendedLog;
 use models::cache::Cache;
-use models::entities::admin::{Api, Article, Site, Table};
+use models::entities::admin::{Api, Article, AuthConfig, Site, Table};
 
 use crate::api::AppState;
 use crate::api::admin::AdminHeaders;
@@ -76,6 +76,9 @@ pub struct AdminResponse {
     query: Option<Vec<JsonValue>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    auth: Option<AuthConfig>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
 
@@ -102,11 +105,13 @@ pub struct AdminResponse {
         get_appended_log,
         rotate_new_partition,
         build_sitemap_xml,
-        build_news_xml
+        build_news_xml,
+        get_tenant_auth_config,
     ),
     // 2. Register all the data structures used in requests/responses
     components(
         schemas(
+            AuthConfig,
             QueryPagingInput,
             AdminResponse,
             ListApiSchema,
@@ -141,6 +146,10 @@ impl utoipa::Modify for SecurityAddon {
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/seo/tenant/{host}/id", get(get_tenant_id))
+        .route(
+            "/seo/tenant/{host}/auth-config",
+            get(get_tenant_auth_config),
+        )
         .route("/seo/news", get(build_news_xml).post(publish_news))
         .route("/seo/sitemap", get(build_sitemap_xml).post(publish_site))
         .route("/seo/files", head(purge_all_files).post(publish_file))
@@ -520,6 +529,9 @@ async fn put_token(
         (status = 200, description = "Returns the Tenant ID", body = String),
         (status = 500, description = "Internal Server Error")
     ),
+    security(
+        ("admin_auth" = [])
+    ),
     tag = "Tenant"
 )]
 async fn get_tenant_id(
@@ -532,6 +544,43 @@ async fn get_tenant_id(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Fail to get tenant of {}: {:?}", host, error),
         ),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/seo/tenant/{host}/auth-config",
+    params(
+        ("host" = String, Path, description = "The hostname to look up")
+    ),
+    responses(
+        (status = 200, description = "Returns the Tenant ID", body = String),
+        (status = 500, description = "Internal Server Error")
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "Tenant"
+)]
+async fn get_tenant_auth_config(
+    State(app_state): State<AppState>,
+    Path(host): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
+    match app_state.admin_entity.get_tenant_auth_config(&host).await {
+        Ok(auth_config) => Ok((
+            StatusCode::OK,
+            JsonResponse(AdminResponse {
+                auth: Some(auth_config),
+                ..Default::default()
+            }),
+        )),
+        Err(error) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(AdminResponse {
+                error: Some(format!("Fail to get tenant of {}: {:?}", host, error)),
+                ..Default::default()
+            }),
+        )),
     }
 }
 
@@ -848,6 +897,9 @@ async fn build_news_xml(
         (status = 200, description = "File successfully purged from Nginx cache or was not found"),
         (status = 500, description = "Internal server error while accessing the filesystem")
     ),
+    security(
+        ("admin_auth" = [])
+    ),
     tag = "SEO Engine"
 )]
 pub async fn purge_all_files() -> impl IntoResponse {
@@ -891,6 +943,9 @@ async fn clear_cache_directory(path: &str) -> std::io::Result<()> {
     responses(
         (status = 200, description = "File successfully purged from Nginx cache or was not found"),
         (status = 500, description = "Internal server error while accessing the filesystem")
+    ),
+    security(
+        ("admin_auth" = [])
     ),
     tag = "SEO Engine"
 )]
@@ -955,6 +1010,9 @@ pub async fn purge_file(
     responses(
         (status = 200, description = "Returns the file stream from S3", content_type = "application/octet-stream"),
         (status = 500, description = "S3 or Configuration error", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
     ),
     tag = "SEO Engine"
 )]
@@ -1047,6 +1105,9 @@ pub async fn fetch_file(
     security(
         ("admin_auth" = [])
     ),
+    security(
+        ("admin_auth" = [])
+    ),
     tag = "Schemas"
 )]
 pub async fn list_paginated_api_schemas(
@@ -1104,6 +1165,9 @@ pub async fn list_paginated_api_schemas(
     responses(
         (status = 200, description = "Successfully created schemas", body = AdminResponse),
         (status = 500, description = "Database error", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
     ),
     security(
         ("admin_auth" = [])

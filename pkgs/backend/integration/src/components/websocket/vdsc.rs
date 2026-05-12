@@ -6,13 +6,12 @@ use std::sync::atomic::{AtomicI32, Ordering};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
 
 use vector_config_macro::source;
-use vector_runtime::{Component, Event, Identify, Message as VectorMessage};
+use vector_runtime::{Component, Identify, Message as VectorMessage, Outbound};
 
 use crate::components::websocket::{WebSocketClient, WebSocketPolling};
 
@@ -250,7 +249,7 @@ impl VdscSource {
 }
 
 #[async_trait]
-impl<'life2> WebSocketPolling<'life2> for VdscSource {
+impl WebSocketPolling for VdscSource {
     async fn on_send(&self) -> Result<Option<String>, Error> {
         let current_version = self.current_version.load(Ordering::SeqCst);
 
@@ -272,7 +271,7 @@ impl<'life2> WebSocketPolling<'life2> for VdscSource {
     async fn on_receive(
         &self,
         message: WsMessage,
-        txs: &'life2 [mpsc::Sender<VectorMessage>],
+        txs: &[mpsc::Sender<VectorMessage>],
     ) -> Result<(), Error> {
         match message {
             WsMessage::Text(text) => match serde_json::from_str::<VdscWebSocketResponse>(&text) {
@@ -285,34 +284,24 @@ impl<'life2> WebSocketPolling<'life2> for VdscSource {
                             VdscBoard::Stock => self.process_stock_from_vdsc(&response).unwrap(),
                             _ => return Ok(()),
                         };
+                        let payload = serde_json::to_value(transitions).map_err(|error| {
+                            Error::new(
+                                ErrorKind::InvalidData,
+                                format!("Failed to serialize VdscTickBatch: {}", error),
+                            )
+                        })?;
 
-                        for (symbol, transition) in transitions {
-                            if transition.is_empty() {
-                                continue;
-                            }
-
-                            for tx in txs {
-                                tx.send(VectorMessage {
-                                    payload: json!({
-                                        "symbol": symbol,
-                                        "transition": serde_json::to_value(&transition).map_err(
-                                            |error| {
-                                                Error::new(
-                                                    ErrorKind::InvalidData,
-                                                    format!("Failed to build payload: {}", error),
-                                                )
-                                            },
-                                        )?,
-                                    }),
-                                })
-                                .await
-                                .map_err(|error| {
-                                    Error::new(
-                                        ErrorKind::BrokenPipe,
-                                        format!("Failed to send data {:?}: {}", transition, error),
-                                    )
-                                })?;
-                            }
+                        for tx in txs {
+                            tx.send(VectorMessage {
+                                payload: payload.clone(),
+                            })
+                            .await
+                            .map_err(|error| {
+                                Error::new(
+                                    ErrorKind::BrokenPipe,
+                                    format!("Failed to send data: {error}"),
+                                )
+                            })?;
                         }
 
                         self.current_version
@@ -335,11 +324,10 @@ impl_vdsc_source!(
         &self,
         id: usize,
         _: &mut mpsc::Receiver<VectorMessage>,
-        txs: &'life2 [mpsc::Sender<VectorMessage>],
-        err: &mpsc::Sender<Event>,
+        tx: Outbound,
     ) -> Result<(), std::io::Error> {
         WebSocketClient::new(format!("wss://livedragon.vdsc.com.vn/{}wss", self.board), 5)
-            .run(self.clone(), id, txs, err)
+            .run(self.clone(), id, &tx)
             .await
     }
 );

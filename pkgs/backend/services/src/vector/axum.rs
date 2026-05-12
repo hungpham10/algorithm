@@ -6,6 +6,7 @@ use std::sync::Arc;
 use axum::{Router, http::StatusCode, routing::MethodRouter};
 use serde_json::Value;
 use tokio::sync::RwLock;
+use tokio::sync::broadcast::Receiver;
 use tokio::task::JoinHandle;
 
 use algorithm::AhoCorasick;
@@ -51,6 +52,10 @@ pub struct AxumRuntime {
 impl AxumRuntime {
     pub fn new(runtime: Arc<RwLock<Runtime>>, storage: Arc<AxumRouter>) -> Self {
         Self { runtime, storage }
+    }
+
+    pub async fn broadcast(&self, id: String) -> Result<Receiver<Message>, Error> {
+        self.runtime.read().await.broadcast(id)
     }
 
     pub async fn reload(&self, components: Vec<Arc<dyn Component>>) -> Result<(), Error> {

@@ -6,7 +6,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use tokio::sync::Semaphore;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::{JoinHandle, spawn};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 use futures::FutureExt;
 use log::info;
 
-use crate::{Component, ComponentType, Event, Message};
+use crate::{Component, ComponentType, Event, Message, Outbound};
 
 struct Bootstrap {
     component: RwLock<Arc<dyn Component>>,
@@ -25,6 +25,7 @@ struct Bootstrap {
     report: mpsc::Sender<Event>,
     receiver: RwLock<Option<mpsc::Receiver<Message>>>,
     fanout: Arc<RwLock<HashMap<usize, mpsc::Sender<Message>>>>,
+    broadcast: Arc<RwLock<HashMap<usize, broadcast::Sender<Message>>>>,
     mapping: Arc<RwLock<HashMap<usize, Vec<usize>>>>,
 }
 
@@ -34,6 +35,7 @@ impl Bootstrap {
         component: &Arc<dyn Component>,
         rx: mpsc::Receiver<Message>,
         fanout: Arc<RwLock<HashMap<usize, mpsc::Sender<Message>>>>,
+        broadcast: Arc<RwLock<HashMap<usize, broadcast::Sender<Message>>>>,
         mapping: Arc<RwLock<HashMap<usize, Vec<usize>>>>,
         report: mpsc::Sender<Event>,
     ) -> Self {
@@ -45,6 +47,7 @@ impl Bootstrap {
             receiver: RwLock::new(Some(rx)),
             report,
             fanout,
+            broadcast,
             mapping,
             signal_rx,
             signal_tx,
@@ -103,6 +106,26 @@ impl Bootstrap {
                 )
             })?
             .compare(component.as_ref()))
+    }
+
+    fn get_broadcast(&self, id: usize) -> Result<broadcast::Sender<Message>, Error> {
+        Ok(self
+            .broadcast
+            .read()
+            .map_err(|error| {
+                Error::new(
+                    ErrorKind::BrokenPipe,
+                    format!("component read error: {:?}", error),
+                )
+            })?
+            .get(&id)
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::BrokenPipe,
+                    format!("not found broadcaster for {id}"),
+                )
+            })?
+            .clone())
     }
 
     fn get_senders(&self, id: usize) -> Result<Vec<mpsc::Sender<Message>>, Error> {
@@ -185,9 +208,21 @@ impl Bootstrap {
                 .clone();
             let report = self.report.clone();
             let txs = self.get_senders(id)?;
-            let run_in_future =
-                AssertUnwindSafe(component.run(id, &mut rx, txs.as_slice(), &report))
-                    .catch_unwind();
+            let brc = if component.component_type() == ComponentType::Output {
+                Some(self.get_broadcast(id)?)
+            } else {
+                None
+            };
+            let run_in_future = AssertUnwindSafe(component.run(
+                id,
+                &mut rx,
+                Outbound {
+                    streams: txs.clone(),
+                    broadcast: brc.clone(),
+                    event: report.clone(),
+                },
+            ))
+            .catch_unwind();
 
             tokio::select! {
                 panic_res = run_in_future => {
@@ -256,6 +291,7 @@ pub struct Runtime {
     // more.
 
     // @NOTE: runtime management
+    broadcasts: Arc<RwLock<HashMap<usize, broadcast::Sender<Message>>>>,
     senders: Arc<RwLock<HashMap<usize, mpsc::Sender<Message>>>>,
     boot: Arc<Semaphore>,
     tasks: RwLock<HashMap<usize, JoinHandle<Result<(), Error>>>>,
@@ -265,8 +301,10 @@ pub struct Runtime {
     is_started: bool,
 
     // @NOTE: topology management
-    outputs: Arc<RwLock<HashMap<usize, Vec<usize>>>>,
-    inputs: RwLock<HashMap<usize, Vec<usize>>>,
+    sources: RwLock<HashMap<usize, Vec<usize>>>,
+    sinks: Arc<RwLock<HashMap<usize, Vec<usize>>>>,
+    inputs: RwLock<HashSet<usize>>,
+    outputs: RwLock<HashSet<usize>>,
     nodes: RwLock<HashMap<String, usize>>,
     inc: AtomicUsize,
 }
@@ -283,9 +321,11 @@ impl Runtime {
         let report_rx = Some(report_rx);
         Self {
             // @NOTE: declare topology
-            outputs: Arc::new(RwLock::new(HashMap::new())),
-            inputs: RwLock::new(HashMap::new()),
+            sources: RwLock::new(HashMap::new()),
+            sinks: Arc::new(RwLock::new(HashMap::new())),
             nodes: RwLock::new(HashMap::new()),
+            inputs: RwLock::new(HashSet::new()),
+            outputs: RwLock::new(HashSet::new()),
             inc: AtomicUsize::new(0),
             is_started: false,
             report_tx,
@@ -295,6 +335,7 @@ impl Runtime {
             boot: Arc::new(Semaphore::new(0)),
             tasks: RwLock::new(HashMap::new()),
             senders: Arc::new(RwLock::new(HashMap::new())),
+            broadcasts: Arc::new(RwLock::new(HashMap::new())),
             bootstraps: RwLock::new(HashMap::new()),
         }
     }
@@ -332,22 +373,19 @@ impl Runtime {
                 )
             })?;
 
-            if inputs.contains_key(idx) {
+            if inputs.contains(idx) {
                 return Err(Error::new(
                     ErrorKind::InvalidData,
                     format!("Node {id} must be a source node"),
                 ));
             }
 
-            senders
-                .get(idx)
-                .cloned() // Clone cái Sender (Tokio mpsc sender clone rất rẻ)
-                .ok_or_else(|| {
-                    Error::new(
-                        ErrorKind::BrokenPipe,
-                        format!("Node {id} doesn't have any senders"),
-                    )
-                })
+            senders.get(idx).cloned().ok_or_else(|| {
+                Error::new(
+                    ErrorKind::BrokenPipe,
+                    format!("Node {id} doesn't have any senders"),
+                )
+            })
         }?;
 
         sender.send(msg).await.map_err(|error| {
@@ -358,6 +396,52 @@ impl Runtime {
         })?;
 
         Ok(())
+    }
+
+    pub fn broadcast(&self, id: String) -> Result<broadcast::Receiver<Message>, Error> {
+        let idx = self.index(id.clone())?;
+
+        {
+            let outputs = self.outputs.read().map_err(|error| {
+                Error::new(
+                    ErrorKind::BrokenPipe,
+                    format!("Failed to read `outputs` lock: {}", error),
+                )
+            })?;
+
+            if !outputs.contains(&idx) {
+                return Err(Error::new(
+                    ErrorKind::InvalidInput,
+                    format!(
+                        "Node '{}' (idx: {}) is not registered as an Output/Sink node.",
+                        id, idx
+                    ),
+                ));
+            }
+        }
+
+        let mut broadcasts_guard = self.broadcasts.write().map_err(|error| {
+            Error::new(
+                ErrorKind::BrokenPipe,
+                format!("Failed to write `broadcasts` lock: {}", error),
+            )
+        })?;
+
+        if !self.is_started || broadcasts_guard.contains_key(&idx) {
+            let sender = broadcasts_guard.entry(idx).or_insert_with(|| {
+                let (tx, _) = broadcast::channel(1024);
+                tx
+            });
+
+            Ok(sender.subscribe())
+        } else {
+            Err(Error::new(
+                ErrorKind::BrokenPipe,
+                format!(
+                    "Failed to create new broadcast channel for {id} because of runtime has been started"
+                ),
+            ))
+        }
     }
 
     pub fn reload(&self, components: Vec<Arc<dyn Component>>) -> Result<(), Error> {
@@ -493,6 +577,44 @@ impl Runtime {
                 .entry(component.id())
                 .or_insert(idx);
 
+            if component.component_type() == ComponentType::Input {
+                self.inputs
+                    .write()
+                    .map_err(|error| {
+                        Error::new(
+                            ErrorKind::BrokenPipe,
+                            format!("Failed to write to nodes: {}", error),
+                        )
+                    })?
+                    .insert(idx);
+            }
+
+            if component.component_type() == ComponentType::Output {
+                self.outputs
+                    .write()
+                    .map_err(|error| {
+                        Error::new(
+                            ErrorKind::BrokenPipe,
+                            format!("Failed to write to nodes: {}", error),
+                        )
+                    })?
+                    .insert(idx);
+
+                self.broadcasts
+                    .write()
+                    .map_err(|error| {
+                        Error::new(
+                            ErrorKind::BrokenPipe,
+                            format!("Failed to write to nodes: {}", error),
+                        )
+                    })?
+                    .entry(idx)
+                    .or_insert_with(|| {
+                        let (tx, _) = broadcast::channel::<Message>(1024);
+                        tx
+                    });
+            }
+
             self.senders
                 .write()
                 .map_err(|error| {
@@ -509,7 +631,8 @@ impl Runtime {
                 component,
                 rx_data,
                 self.senders.clone(),
-                self.outputs.clone(),
+                self.broadcasts.clone(),
+                self.sinks.clone(),
                 self.report_tx.clone(),
             ));
 
@@ -577,7 +700,10 @@ impl Runtime {
         let mut dead_nodes = will_add.clone();
 
         for component in adds {
-            if component.component_type() != ComponentType::Source {
+            if !matches!(
+                component.component_type(),
+                ComponentType::Source | ComponentType::Input
+            ) {
                 if let Some(inputs) = component.get_inputs() {
                     if inputs.is_empty() {
                         return Err(Error::new(
@@ -616,21 +742,27 @@ impl Runtime {
                     }
 
                     if let Some(&idx) = will_add.get(input) {
-                        if adds[idx].component_type() == ComponentType::Sink {
+                        if matches!(
+                            adds[idx].component_type(),
+                            ComponentType::Sink | ComponentType::Output
+                        ) {
                             return Err(Error::new(
                                 ErrorKind::InvalidData,
-                                format!("Node {} must not be Sink", adds[idx].id()),
+                                format!("Node {} must not be Sink or Output", adds[idx].id()),
                             ));
                         }
 
                         dead_nodes.remove(input);
                     }
                 }
-            } else if component.component_type() != ComponentType::Source {
+            } else if !matches!(
+                component.component_type(),
+                ComponentType::Source | ComponentType::Input
+            ) {
                 return Err(Error::new(
                     ErrorKind::InvalidData,
                     format!(
-                        "Node {} must be Source, not {}",
+                        "Node {} must be Source or Input, not {}",
                         component.id(),
                         component.component_type(),
                     ),
@@ -639,15 +771,17 @@ impl Runtime {
         }
 
         for (_, idx) in dead_nodes {
-            if adds[idx].component_type() != ComponentType::Sink
-                && !will_be_linked.contains(&adds[idx].id())
+            if !matches!(
+                adds[idx].component_type(),
+                ComponentType::Sink | ComponentType::Output
+            ) && !will_be_linked.contains(&adds[idx].id())
             {
                 return Err(Error::new(
                     ErrorKind::InvalidData,
                     format!(
                         "{} {} must have connect with another nodes",
                         adds[idx].component_type(),
-                        adds[idx].id()
+                        adds[idx].id(),
                     ),
                 ));
             }
@@ -660,8 +794,8 @@ impl Runtime {
         &self,
         adds: &Vec<&Arc<dyn Component>>,
     ) -> Result<(), Error> {
-        let mut inputs_map = self.inputs.write().unwrap();
-        let mut outputs_map = self.outputs.write().unwrap();
+        let mut sources_map = self.sources.write().unwrap();
+        let mut sinks_map = self.sinks.write().unwrap();
         let nodes = self.nodes.read().unwrap();
 
         for component in adds {
@@ -672,7 +806,7 @@ impl Runtime {
 
                 for input_name in inputs {
                     if let Some(&source_idx) = nodes.get(input_name) {
-                        let outs = outputs_map.entry(source_idx).or_default();
+                        let outs = sinks_map.entry(source_idx).or_default();
                         if !outs.contains(&current_idx) {
                             outs.push(current_idx);
                         }
@@ -682,7 +816,7 @@ impl Runtime {
                         }
                     }
                 }
-                inputs_map.insert(current_idx, input_indices);
+                sources_map.insert(current_idx, input_indices);
             }
         }
         Ok(())
@@ -766,8 +900,8 @@ impl Runtime {
         &self,
         diffs: &Vec<&Arc<dyn Component>>,
     ) -> Result<(), Error> {
-        let mut inputs_map = self.inputs.write().unwrap();
-        let mut outputs_map = self.outputs.write().unwrap();
+        let mut sources_map = self.sources.write().unwrap();
+        let mut sinks_map = self.sinks.write().unwrap();
         let nodes = self.nodes.read().unwrap();
 
         for component in diffs {
@@ -779,11 +913,11 @@ impl Runtime {
                 .map(|v| v.iter().filter_map(|id| nodes.get(id).cloned()).collect())
                 .unwrap_or_default();
 
-            let old_input_indices = inputs_map.get(&current_idx).cloned().unwrap_or_default();
+            let old_input_indices = sources_map.get(&current_idx).cloned().unwrap_or_default();
 
             for old_source_idx in &old_input_indices {
                 if !new_input_indices.contains(old_source_idx)
-                    && let Some(outs) = outputs_map.get_mut(old_source_idx)
+                    && let Some(outs) = sinks_map.get_mut(old_source_idx)
                 {
                     outs.retain(|&idx| idx != current_idx);
                 }
@@ -791,14 +925,14 @@ impl Runtime {
 
             for &new_source_idx in &new_input_indices {
                 if !old_input_indices.contains(&new_source_idx) {
-                    let outs = outputs_map.entry(new_source_idx).or_default();
+                    let outs = sinks_map.entry(new_source_idx).or_default();
                     if !outs.contains(&current_idx) {
                         outs.push(current_idx);
                     }
                 }
             }
 
-            inputs_map.insert(current_idx, new_input_indices);
+            sources_map.insert(current_idx, new_input_indices);
         }
         Ok(())
     }
@@ -815,13 +949,13 @@ impl Runtime {
                 format!("Failed to write to nodes: {}", error),
             )
         })?;
-        let inputs = self.inputs.read().map_err(|error| {
+        let inputs = self.sources.read().map_err(|error| {
             Error::new(
                 ErrorKind::BrokenPipe,
                 format!("Fail reading inputs {:?}", error),
             )
         })?;
-        let outputs = self.outputs.read().map_err(|error| {
+        let outputs = self.sinks.read().map_err(|error| {
             Error::new(
                 ErrorKind::BrokenPipe,
                 format!("Fail reading outputs {:?}", error),
@@ -899,8 +1033,6 @@ impl Runtime {
                         }
                     } else {
                         // @TODO: mapping id to node name
-
-                        println!("{}", receiving_node_id);
                         return Err(Error::new(
                             ErrorKind::InvalidData,
                             format!(
@@ -951,6 +1083,18 @@ impl Runtime {
                     format!("Fail writing nodes {:?}", error),
                 )
             })?;
+            let mut inputs = self.inputs.write().map_err(|error| {
+                Error::new(
+                    ErrorKind::BrokenPipe,
+                    format!("Fail writing inputs {:?}", error),
+                )
+            })?;
+            let mut outputs = self.outputs.write().map_err(|error| {
+                Error::new(
+                    ErrorKind::BrokenPipe,
+                    format!("Fail writing outputs {:?}", error),
+                )
+            })?;
 
             let name = bootstraps
                 .get(id)
@@ -979,6 +1123,8 @@ impl Runtime {
                 .stop()?;
             bootstraps.remove(id);
             tasks.remove(id);
+            inputs.remove(id);
+            outputs.remove(id);
             nodes.remove(&name);
         }
 
@@ -986,26 +1132,36 @@ impl Runtime {
     }
 
     fn configure_links_after_remove_oudated_nodes(&self, dels: &Vec<usize>) -> Result<(), Error> {
-        let mut inputs_map = self
-            .inputs
+        let mut sources_map = self
+            .sources
             .write()
             .map_err(|e| Error::new(ErrorKind::BrokenPipe, e.to_string()))?;
-        let mut outputs_map = self
-            .outputs
+        let mut sinks_map = self
+            .sinks
+            .write()
+            .map_err(|e| Error::new(ErrorKind::BrokenPipe, e.to_string()))?;
+        let mut senders_map = self
+            .senders
+            .write()
+            .map_err(|e| Error::new(ErrorKind::BrokenPipe, e.to_string()))?;
+        let mut broadcasts_map = self
+            .broadcasts
             .write()
             .map_err(|e| Error::new(ErrorKind::BrokenPipe, e.to_string()))?;
 
         for &id_of_dead_node in dels {
-            if let Some(upstream_indices) = inputs_map.get(&id_of_dead_node) {
+            if let Some(upstream_indices) = sources_map.get(&id_of_dead_node) {
                 for &source_idx in upstream_indices {
-                    if let Some(outs) = outputs_map.get_mut(&source_idx) {
+                    if let Some(outs) = sinks_map.get_mut(&source_idx) {
                         outs.retain(|&idx| idx != id_of_dead_node);
                     }
                 }
             }
 
-            inputs_map.remove(&id_of_dead_node);
-            outputs_map.remove(&id_of_dead_node);
+            sources_map.remove(&id_of_dead_node);
+            sinks_map.remove(&id_of_dead_node);
+            senders_map.remove(&id_of_dead_node);
+            broadcasts_map.remove(&id_of_dead_node);
         }
 
         Ok(())

@@ -1,5 +1,6 @@
 mod v1;
 mod v2;
+mod v3;
 
 use axum::Router;
 use axum_extra::TypedHeader;
@@ -65,7 +66,8 @@ pub struct InvestingHeaders {
 #[openapi(
     nest(
         (path = "/v1", api = v1::InvestingV1Api),
-        (path = "/v2", api = v2::InvestingV2Api)
+        (path = "/v2", api = v2::InvestingV2Api),
+        (path = "/v3", api = v3::InvestingV3Socket),
     )
 )]
 pub struct InvestingApi;
@@ -74,4 +76,5 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .nest("/v1", v1::routes())
         .nest("/v2", v2::routes())
+        .nest("/v3", v3::routes())
 }

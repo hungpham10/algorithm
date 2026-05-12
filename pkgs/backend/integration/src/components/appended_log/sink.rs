@@ -2,7 +2,7 @@ use std::io::{Error, ErrorKind};
 use tokio::sync::mpsc;
 
 use vector_config_macro::sink;
-use vector_runtime::{Component, Event, Identify, Message};
+use vector_runtime::{Component, Identify, Message, Outbound};
 
 use super::core::AppendedLog;
 
@@ -18,8 +18,7 @@ impl_appended_log_sink!(
         &self,
         _: usize,
         rx: &mut mpsc::Receiver<Message>,
-        _: &'life2 [mpsc::Sender<Message>],
-        _: &mpsc::Sender<Event>,
+        _: Outbound,
     ) -> Result<(), std::io::Error> {
         let logger = AppendedLog::new(&self.dsn).map_err(|e| {
             Error::other(format!(
