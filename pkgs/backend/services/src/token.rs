@@ -1,11 +1,14 @@
+use algorithm::{decrypt, encrypt};
 use std::io::{Error, ErrorKind};
-use algorithm::{encrypt, decrypt};
 
 pub async fn run(master_key: &str, action: &str, payload: &str) -> std::io::Result<()> {
     if master_key.len() != 32 {
         return Err(Error::new(
             ErrorKind::InvalidInput,
-            format!("Master key must be 32 bytes, current length: {}", master_key.len()),
+            format!(
+                "Master key must be 32 bytes, current length: {}",
+                master_key.len()
+            ),
         ));
     }
 
