@@ -365,13 +365,12 @@ impl Admin {
             .select_only()
             .column(tenant::Column::Id)
             .column(tenant::Column::JwtMode)
-            .column(tenant::Column::JwtSecret) // Trả về Option<i64> (ID của token)
-            .column(tenant::Column::SessionSecret) // Trả về Option<i64> (ID của token)
+            .column(tenant::Column::JwtSecret)
+            .column(tenant::Column::SessionSecret)
             .column(tenant::Column::OidcJwksUrl)
             .column(tenant::Column::OidcClientId)
-            .column(tenant::Column::OidcClientSecret) // Trả về Option<i64> (ID của token)
+            .column(tenant::Column::OidcClientSecret)
             .column(tenant::Column::OidcExpectedAlg)
-            // Lưu ý: Cột oidc_issuer không có trong câu query cũ của bạn, nếu schema có hãy bổ sung vào đây nhé.
             .into_tuple::<(
                 i64,
                 Option<String>,

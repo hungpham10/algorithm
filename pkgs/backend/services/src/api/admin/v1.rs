@@ -574,13 +574,21 @@ async fn get_tenant_auth_config(
                 ..Default::default()
             }),
         )),
-        Err(error) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            JsonResponse(AdminResponse {
-                error: Some(format!("Fail to get tenant of {}: {:?}", host, error)),
-                ..Default::default()
-            }),
-        )),
+        Err(error) => {
+            error!(
+                error = ?error,
+                host = ?host,
+                "Failed to get tenant configuration from database/service"
+            );
+
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(AdminResponse {
+                    error: Some(format!("Fail to get tenant of {}: {:?}", host, error)),
+                    ..Default::default()
+                }),
+            ))
+        }
     }
 }
 
