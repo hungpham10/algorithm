@@ -51,7 +51,8 @@ pub struct Admin {
     api: Arc<ApiEngine>,
 
     // @NOTE: caching
-    cache_unencrypted_tokens: Arc<LruCache<(i64, String), Option<String>, 32>>,
+    cache_unencrypted_tokens_by_services: Arc<LruCache<(i64, String), Option<String>, 32>>,
+    cache_unencrypted_tokens_by_ids: Arc<LruCache<i64, Option<String>, 32>>,
     cache_api_info_by_name: Arc<LruCache<String, Option<Api>, 32>>,
     cache_api_info_by_id: Arc<LruCache<i64, Option<Api>, 32>>,
     cache_connections: Arc<LruCache<i64, DatabaseConnection, 32>>,
@@ -316,11 +317,13 @@ pub struct AuthConfig {
 
 impl Admin {
     pub fn new(resolver: &Arc<Resolver>) -> Self {
-        // @TODO: có cách nào lấy dữ liêụ từ resolver về capacity của cache_unencrypted_tokens và api
+        // @TODO: có cách nào lấy dữ liêụ từ resolver về capacity của cache_unencrypted_tokens_by_services và api
+
         Self {
             resolver: resolver.clone(),
             api: Arc::new(ApiEngine::new(10 * 32)),
-            cache_unencrypted_tokens: Arc::new(LruCache::new(10 * 32)),
+            cache_unencrypted_tokens_by_services: Arc::new(LruCache::new(10 * 32)),
+            cache_unencrypted_tokens_by_ids: Arc::new(LruCache::new(10 * 32)),
             cache_api_info_by_name: Arc::new(LruCache::new(10 * 32)),
             cache_api_info_by_id: Arc::new(LruCache::new(10 * 32)),
             cache_connections: Arc::new(LruCache::new(10 * 32)),
@@ -359,7 +362,6 @@ impl Admin {
     }
 
     pub async fn get_tenant_auth_config(&self, host: &String) -> Result<AuthConfig, DbErr> {
-        // 1. Lấy thông tin Tenant và các ID liên kết sang bảng token_map
         let tenant_info = Tenant::find()
             .filter(tenant::Column::Host.eq(host))
             .select_only()
@@ -367,6 +369,7 @@ impl Admin {
             .column(tenant::Column::JwtMode)
             .column(tenant::Column::JwtSecret)
             .column(tenant::Column::SessionSecret)
+            .column(tenant::Column::OidcIssuer)
             .column(tenant::Column::OidcJwksUrl)
             .column(tenant::Column::OidcClientId)
             .column(tenant::Column::OidcClientSecret)
@@ -383,7 +386,12 @@ impl Admin {
                 Option<String>,
             )>()
             .one(self.dbt(0))
-            .await?;
+            .await
+            .map_err(|error|  {
+                DbErr::Query(RuntimeErr::Internal(format!(
+                    "Failed when fetch auth_config: {error}",
+                )))
+            })?;
 
         match tenant_info {
             Some((
@@ -578,9 +586,21 @@ impl Admin {
         tenant_id: i64,
         service_name: &String,
     ) -> Result<String, DbErr> {
+        self.get_unencrypted_token_by_services(
+            tenant_id,
+            service_name
+        )
+        .await
+    }
+
+    async fn get_unencrypted_token_by_services(
+        &self,
+        tenant_id: i64,
+        service_name: &String,
+    ) -> Result<String, DbErr> {
         let cache_key = (tenant_id, service_name.clone());
 
-        match self.cache_unencrypted_tokens.get(&cache_key) {
+        match self.cache_unencrypted_tokens_by_services.get(&cache_key) {
             Some(Some(token)) => Ok(token),
             Some(None) => Err(DbErr::Query(RuntimeErr::Internal(format!(
                 "Not found service {}, tenant {}",
@@ -589,17 +609,18 @@ impl Admin {
             None => {
                 let cache_key_after_done = cache_key.clone();
 
-                self.cache_unencrypted_tokens.put(cache_key, None);
+                self.cache_unencrypted_tokens_by_services.put(cache_key, None);
 
-                let token_id = TokenMap::find()
+                let (token_id, encrypted_bytes) = TokenMap::find()
+                    .select_only()
                     .filter(token_map::Column::TenantId.eq(tenant_id))
                     .filter(token_map::Column::Service.eq(service_name))
-                    .select_only()
-                    .column(token_map::Column::Id) // Lấy Id trỏ sang bảng token_map
-                    .into_tuple::<i64>()
+                    .column(token_map::Column::Id)
+                    .column(token_map::Column::Token)
+                    .into_tuple::<(i64, Vec<u8>)>()
                     .one(self.dbt(tenant_id))
                     .await
-                    .map_err(|error| {
+                    .map_err(|error|  {
                         DbErr::Query(RuntimeErr::Internal(format!(
                             "Failed when querying to fetch token id: {error}",
                         )))
@@ -611,11 +632,10 @@ impl Admin {
                         )))
                     })?;
 
-                let token = self
-                    .get_unencrypted_token_by_id(tenant_id, token_id)
+                let token = self.unencrypt(token_id, tenant_id, encrypted_bytes.as_slice())
                     .await?;
 
-                self.cache_unencrypted_tokens
+                self.cache_unencrypted_tokens_by_services
                     .put(cache_key_after_done, Some(token.clone()));
 
                 Ok(token)
@@ -628,26 +648,49 @@ impl Admin {
         tenant_id: i64,
         token_id: i64,
     ) -> Result<String, DbErr> {
-        let encrypted_bytes = TokenMap::find()
-            .filter(token_map::Column::TenantId.eq(tenant_id))
-            .filter(token_map::Column::Id.eq(token_id))
-            .select_only()
-            .column(token_map::Column::Token)
-            .into_tuple::<Vec<u8>>()
-            .one(self.dbt(tenant_id))
-            .await
-            .map_err(|error| {
-                DbErr::Query(RuntimeErr::Internal(format!(
-                    "Failed when querying to fetch token data: {error}",
-                )))
-            })?
-            .ok_or_else(|| {
-                DbErr::Query(RuntimeErr::Internal(format!(
-                    "Not found token_id {} for tenant {}",
-                    token_id, tenant_id,
-                )))
-            })?;
+        let cache_key = token_id;
 
+        match self.cache_unencrypted_tokens_by_ids.get(&cache_key) {
+            Some(Some(token)) => Ok(token),
+            Some(None) => Err(DbErr::Query(RuntimeErr::Internal(format!(
+                "Not found token {token_id}, tenant {tenant_id}",
+            )))),
+            None => {
+                let encrypted_bytes = TokenMap::find()
+                    .select_only()
+                    .filter(token_map::Column::TenantId.eq(tenant_id))
+                    .filter(token_map::Column::Id.eq(token_id))
+                    .column(token_map::Column::Token)
+                    .into_tuple::<Vec<u8>>()
+                    .one(self.dbt(tenant_id))
+                    .await
+                    .map_err(|error|  {
+                        DbErr::Query(RuntimeErr::Internal(format!(
+                            "Failed when querying to fetch token data: {error}",
+                        )))
+                    })?
+                    .ok_or_else(|| {
+                        DbErr::Query(RuntimeErr::Internal(format!(
+                            "Not found token_id {} for tenant {}",
+                            token_id, tenant_id,
+                        )))
+                    })?;
+
+                let token = self.unencrypt(token_id, tenant_id, encrypted_bytes.as_slice())
+                    .await?;
+
+                self.cache_unencrypted_tokens_by_ids.put(cache_key, Some(token.clone()));
+                Ok(token)
+            }
+        }
+    }
+
+    async fn unencrypt(
+        &self,
+        token_id: i64,
+        tenant_id: i64,
+        encrypted_bytes: &[u8],
+    ) -> Result<String, DbErr> {
         let master_key_str = self.get_master_key().await?;
         let key = Key::<Aes256Gcm>::from_slice(master_key_str.as_slice());
         let cipher = Aes256Gcm::new(key);
@@ -690,7 +733,7 @@ impl Admin {
             .await?;
         txn.commit().await?;
 
-        self.cache_unencrypted_tokens
+        self.cache_unencrypted_tokens_by_services
             .put((tenant_id, service_name.clone()), Some(token_plain.clone()));
         Ok(())
     }
@@ -1125,7 +1168,7 @@ impl Admin {
         .await?;
 
         txn.commit().await?;
-        self.cache_unencrypted_tokens
+        self.cache_unencrypted_tokens_by_services
             .put((tenant_id, token.clone()), Some(dsn.clone()));
         Ok(())
     }
