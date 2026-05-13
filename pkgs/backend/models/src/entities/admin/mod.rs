@@ -598,7 +598,12 @@ impl Admin {
                     .column(token_map::Column::Id) // Lấy Id trỏ sang bảng token_map
                     .into_tuple::<i64>()
                     .one(self.dbt(tenant_id))
-                    .await?
+                    .await
+                    .map_err(|error|  {
+                        DbErr::Query(RuntimeErr::Internal(format!(
+                            "Failed when querying to fetch token id: {error}",
+                        )))
+                    })?
                     .ok_or_else(|| {
                         DbErr::Query(RuntimeErr::Internal(format!(
                             "Not found service {}, tenant {}",
@@ -630,7 +635,12 @@ impl Admin {
             .column(token_map::Column::Token)
             .into_tuple::<Vec<u8>>()
             .one(self.dbt(tenant_id))
-            .await?
+            .await
+            .map_err(|error|  {
+                DbErr::Query(RuntimeErr::Internal(format!(
+                    "Failed when querying to fetch token data: {error}",
+                )))
+            })?
             .ok_or_else(|| {
                 DbErr::Query(RuntimeErr::Internal(format!(
                     "Not found token_id {} for tenant {}",
