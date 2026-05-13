@@ -599,7 +599,7 @@ impl Admin {
                     .into_tuple::<i64>()
                     .one(self.dbt(tenant_id))
                     .await
-                    .map_err(|error|  {
+                    .map_err(|error| {
                         DbErr::Query(RuntimeErr::Internal(format!(
                             "Failed when querying to fetch token id: {error}",
                         )))
@@ -636,7 +636,7 @@ impl Admin {
             .into_tuple::<Vec<u8>>()
             .one(self.dbt(tenant_id))
             .await
-            .map_err(|error|  {
+            .map_err(|error| {
                 DbErr::Query(RuntimeErr::Internal(format!(
                     "Failed when querying to fetch token data: {error}",
                 )))
