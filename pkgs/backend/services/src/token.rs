@@ -33,10 +33,7 @@ pub async fn run(master_key: &str, action: &str, payload: &str) -> std::io::Resu
             })?;
 
             // 2. Giải mã mảng bytes về lại chuỗi gốc ban đầu
-            let decrypted_str = decrypt(master_key.as_bytes(), &encrypted_bytes)?;
-
-            // In ra chuỗi text thô ban đầu
-            println!("{}", decrypted_str);
+            println!("{}", decrypt(master_key.as_bytes(), &encrypted_bytes)?);
             Ok(())
         }
         _ => Err(Error::new(
