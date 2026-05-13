@@ -29,17 +29,13 @@ use sea_orm::{
     TransactionTrait, Value as OrmValue,
 };
 
-use algorithm::{LruCache, Operator};
+use algorithm::{LruCache, Operator, decrypt, encrypt};
 use chrono::{DateTime, Utc};
 use integration::Api as ApiEngine;
-use rand::{RngCore, thread_rng};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use utoipa::{IntoParams, ToSchema};
-
-use aes_gcm::aead::{Aead, KeyInit};
-use aes_gcm::{Aes256Gcm, Key, Nonce};
 
 use crate::resolver::Resolver;
 
@@ -609,13 +605,12 @@ impl Admin {
                 self.cache_unencrypted_tokens_by_services
                     .put(cache_key, None);
 
-                let (token_id, encrypted_bytes) = TokenMap::find()
+                let encrypted_bytes = TokenMap::find()
                     .select_only()
                     .filter(token_map::Column::TenantId.eq(tenant_id))
                     .filter(token_map::Column::Service.eq(service_name))
-                    .column(token_map::Column::Id)
                     .column(token_map::Column::Token)
-                    .into_tuple::<(i64, Vec<u8>)>()
+                    .into_tuple::<Vec<u8>>()
                     .one(self.dbt(tenant_id))
                     .await
                     .map_err(|error| {
@@ -630,9 +625,18 @@ impl Admin {
                         )))
                     })?;
 
-                let token = self
-                    .unencrypt(token_id, tenant_id, encrypted_bytes.as_slice())
-                    .await?;
+                let token = decrypt(
+                    self.get_master_key()
+                        .await
+                        .map_err(|error| {
+                            DbErr::Query(RuntimeErr::Internal(format!("Decrypt failed: {error}")))
+                        })?
+                        .as_slice(),
+                    encrypted_bytes.as_slice(),
+                )
+                .map_err(|error| {
+                    DbErr::Query(RuntimeErr::Internal(format!("Decrypt failed: {error}")))
+                })?;
 
                 self.cache_unencrypted_tokens_by_services
                     .put(cache_key_after_done, Some(token.clone()));
@@ -675,52 +679,24 @@ impl Admin {
                         )))
                     })?;
 
-                let token = self
-                    .unencrypt(token_id, tenant_id, encrypted_bytes.as_slice())
-                    .await?;
+                let token = decrypt(
+                    self.get_master_key()
+                        .await
+                        .map_err(|error| {
+                            DbErr::Query(RuntimeErr::Internal(format!("Decrypt failed: {error}")))
+                        })?
+                        .as_slice(),
+                    encrypted_bytes.as_slice(),
+                )
+                .map_err(|error| {
+                    DbErr::Query(RuntimeErr::Internal(format!("Decrypt failed: {error}")))
+                })?;
 
                 self.cache_unencrypted_tokens_by_ids
                     .put(cache_key, Some(token.clone()));
                 Ok(token)
             }
         }
-    }
-
-    async fn unencrypt(
-        &self,
-        token_id: i64,
-        tenant_id: i64,
-        encrypted_bytes: &[u8],
-    ) -> Result<String, DbErr> {
-        let master_key_str = self.get_master_key().await?;
-        let key = Key::<Aes256Gcm>::from_slice(master_key_str.as_slice());
-        let cipher = Aes256Gcm::new(key);
-
-        if encrypted_bytes.len() < 12 {
-            return Err(DbErr::Query(RuntimeErr::Internal(format!(
-                "Data too short when decoding token_id {} for tenant {}",
-                token_id, tenant_id,
-            ))));
-        }
-
-        let (nonce_part, ciphertext_part) = encrypted_bytes.split_at(12);
-        let nonce = Nonce::from_slice(nonce_part);
-
-        let decrypted_bytes = cipher.decrypt(nonce, ciphertext_part).map_err(|error| {
-            DbErr::Query(RuntimeErr::Internal(format!(
-                "Decode token_id {} for tenant {} failed: {}",
-                token_id, tenant_id, error,
-            )))
-        })?;
-
-        let token = String::from_utf8(decrypted_bytes).map_err(|error| {
-            DbErr::Query(RuntimeErr::Internal(format!(
-                "Validate token_id {} for tenant {} failed: {}",
-                token_id, tenant_id, error,
-            )))
-        })?;
-
-        Ok(token)
     }
 
     pub async fn put_unencrypted_token(
@@ -746,31 +722,21 @@ impl Admin {
         service_name: &String,
         token_plain: &String,
     ) -> Result<(), DbErr> {
-        let master_key_str = self.get_master_key().await?;
-
-        let key = Key::<Aes256Gcm>::from_slice(master_key_str.as_slice());
-        let cipher = Aes256Gcm::new(key);
-
-        let mut nonce_bytes = [0u8; 12];
-        thread_rng().fill_bytes(&mut nonce_bytes);
-        let nonce = Nonce::from_slice(&nonce_bytes);
-
-        let ciphertext = cipher
-            .encrypt(nonce, token_plain.as_bytes())
-            .map_err(|error| {
-                DbErr::Query(RuntimeErr::Internal(format!(
-                    "Encrypt service {}, tenant {} failed: {}",
-                    service_name, tenant_id, error,
-                )))
-            })?;
-
-        let mut final_blob = nonce_bytes.to_vec();
-        final_blob.extend_from_slice(&ciphertext);
-
         token_map::Entity::insert(token_map::ActiveModel {
             tenant_id: Set(tenant_id),
             service: Set(service_name.to_owned()),
-            token: Set(final_blob),
+            token: Set(encrypt(
+                self.get_master_key()
+                    .await
+                    .map_err(|error| {
+                        DbErr::Query(RuntimeErr::Internal(format!("Encrypt failed: {error}")))
+                    })?
+                    .as_slice(),
+                token_plain,
+            )
+            .map_err(|error| {
+                DbErr::Query(RuntimeErr::Internal(format!("Encrypt failed: {error}")))
+            })?),
             ..Default::default()
         })
         .on_conflict(

@@ -5,8 +5,10 @@ mod ahocorasick;
 mod jq;
 mod lru;
 mod snowflake_id;
+mod sops;
 
 pub use ahocorasick::*;
 pub use jq::*;
 pub use lru::*;
 pub use snowflake_id::*;
+pub use sops::*;

@@ -1,61 +1,42 @@
 use std::io::{Error, ErrorKind};
+use algorithm::{encrypt, decrypt};
 
-use aes_gcm::aead::{Aead, KeyInit};
-use aes_gcm::{Aes256Gcm, Key, Nonce};
-use rand::{RngCore, thread_rng};
-
-pub async fn run(master_key: &String, action: &str, payload: &String) -> std::io::Result<()> {
+pub async fn run(master_key: &str, action: &str, payload: &str) -> std::io::Result<()> {
     if master_key.len() != 32 {
         return Err(Error::new(
             ErrorKind::InvalidInput,
-            format!(
-                "Master key must have length equal to 32, now it is {}",
-                master_key.len(),
-            ),
+            format!("Master key must be 32 bytes, current length: {}", master_key.len()),
         ));
     }
 
-    let key = Key::<Aes256Gcm>::from_slice(master_key.as_bytes());
-    let cipher = Aes256Gcm::new(key);
-
     match action {
         "encrypt" => {
-            let mut nonce_bytes = [0u8; 12];
-            thread_rng().fill_bytes(&mut nonce_bytes);
-            let nonce = Nonce::from_slice(&nonce_bytes);
+            // payload truyền vào là một chuỗi thô cần mã hóa (ví dụ: "my_token_secret")
+            let token_plain = payload.to_string();
 
-            let ciphertext = cipher.encrypt(nonce, payload.as_bytes()).map_err(|error| {
-                Error::new(ErrorKind::BrokenPipe, format!("Encrypt failed: {error}"))
-            })?;
+            // 1. Mã hóa ra mảng bytes bằng hàm trong module algorithm
+            let encrypted_bytes = encrypt(master_key.as_bytes(), &token_plain)?;
 
-            let mut final_blob = nonce_bytes.to_vec();
-            final_blob.extend_from_slice(&ciphertext);
-
-            println!("{}", hex::encode(final_blob));
+            // 2. Encode mảng bytes đó thành chuỗi Hex và in ra
+            // Bạn lấy chuỗi này để nhét vào hàm UNHEX('...') của SQL
+            println!("{}", hex::encode(encrypted_bytes));
             Ok(())
         }
         "decrypt" => {
+            // payload truyền vào lúc này phải là chuỗi Hex lấy từ DB lên (hoặc kết quả của hàm HEX(token))
+            // 1. Decode chuỗi Hex đó ngược lại thành mảng bytes thô
             let encrypted_bytes = hex::decode(payload).map_err(|error| {
                 Error::new(
-                    ErrorKind::BrokenPipe,
-                    format!("Convert to bytes failed: {error}"),
+                    ErrorKind::InvalidInput,
+                    format!("Decode chuỗi Hex thất bại: {error}"),
                 )
             })?;
-            if encrypted_bytes.len() < 12 {
-                return Err(Error::new(ErrorKind::BrokenPipe, "Data too short"));
-            }
 
-            let (nonce_part, ciphertext_part) = encrypted_bytes.split_at(12);
-            let nonce = Nonce::from_slice(nonce_part);
+            // 2. Giải mã mảng bytes về lại chuỗi gốc ban đầu
+            let decrypted_str = decrypt(master_key.as_bytes(), &encrypted_bytes)?;
 
-            let decrypted_bytes = cipher.decrypt(nonce, ciphertext_part).map_err(|error| {
-                Error::new(ErrorKind::BrokenPipe, format!("Decrypt failed: {error}"))
-            })?;
-
-            let plain_str = String::from_utf8(decrypted_bytes).map_err(|error| {
-                Error::new(ErrorKind::BrokenPipe, format!("Data is not UTF8: {error}"))
-            })?;
-            println!("{}", plain_str);
+            // In ra chuỗi text thô ban đầu
+            println!("{}", decrypted_str);
             Ok(())
         }
         _ => Err(Error::new(
