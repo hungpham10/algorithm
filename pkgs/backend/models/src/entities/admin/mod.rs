@@ -387,7 +387,7 @@ impl Admin {
             )>()
             .one(self.dbt(0))
             .await
-            .map_err(|error|  {
+            .map_err(|error| {
                 DbErr::Query(RuntimeErr::Internal(format!(
                     "Failed when fetch auth_config: {error}",
                 )))
@@ -586,11 +586,8 @@ impl Admin {
         tenant_id: i64,
         service_name: &String,
     ) -> Result<String, DbErr> {
-        self.get_unencrypted_token_by_services(
-            tenant_id,
-            service_name
-        )
-        .await
+        self.get_unencrypted_token_by_services(tenant_id, service_name)
+            .await
     }
 
     async fn get_unencrypted_token_by_services(
@@ -609,7 +606,8 @@ impl Admin {
             None => {
                 let cache_key_after_done = cache_key.clone();
 
-                self.cache_unencrypted_tokens_by_services.put(cache_key, None);
+                self.cache_unencrypted_tokens_by_services
+                    .put(cache_key, None);
 
                 let (token_id, encrypted_bytes) = TokenMap::find()
                     .select_only()
@@ -620,7 +618,7 @@ impl Admin {
                     .into_tuple::<(i64, Vec<u8>)>()
                     .one(self.dbt(tenant_id))
                     .await
-                    .map_err(|error|  {
+                    .map_err(|error| {
                         DbErr::Query(RuntimeErr::Internal(format!(
                             "Failed when querying to fetch token id: {error}",
                         )))
@@ -632,7 +630,8 @@ impl Admin {
                         )))
                     })?;
 
-                let token = self.unencrypt(token_id, tenant_id, encrypted_bytes.as_slice())
+                let token = self
+                    .unencrypt(token_id, tenant_id, encrypted_bytes.as_slice())
                     .await?;
 
                 self.cache_unencrypted_tokens_by_services
@@ -664,7 +663,7 @@ impl Admin {
                     .into_tuple::<Vec<u8>>()
                     .one(self.dbt(tenant_id))
                     .await
-                    .map_err(|error|  {
+                    .map_err(|error| {
                         DbErr::Query(RuntimeErr::Internal(format!(
                             "Failed when querying to fetch token data: {error}",
                         )))
@@ -676,10 +675,12 @@ impl Admin {
                         )))
                     })?;
 
-                let token = self.unencrypt(token_id, tenant_id, encrypted_bytes.as_slice())
+                let token = self
+                    .unencrypt(token_id, tenant_id, encrypted_bytes.as_slice())
                     .await?;
 
-                self.cache_unencrypted_tokens_by_ids.put(cache_key, Some(token.clone()));
+                self.cache_unencrypted_tokens_by_ids
+                    .put(cache_key, Some(token.clone()));
                 Ok(token)
             }
         }
