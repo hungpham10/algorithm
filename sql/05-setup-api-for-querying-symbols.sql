@@ -5,5 +5,5 @@ INSERT IGNORE INTO `sys_api_map` (`id`, `tenant_id`, `mode`, `name`, `url`, `par
 (4, 1, 4, 'get-all-symbols-in-midcap', 'https://bgapidatafeed.vps.com.vn/getlistckindex/VNMID', '[\"Iter\"]'),
 (5, 1, 4, 'get-all-symbols-in-etf', 'https://bgapidatafeed.vps.com.vn/getlistckindex/hsx_e', '[\"Iter\"]'),
 (6, 1, 4, 'get-exchange-rate-from-vcb', 'https://www.vietcombank.com.vn/api/exchangerates?date={}', '[{\"Match\": \"Data\"}, \"Iter\", {\"Select\": [\"currencyCode\", \"sell\"]}]'),
-(7, 1, 4, 'get-all-symbols-in-hsx', 'https://api.hsx.vn/l/api/v1/1/securities/stock?pageIndex={}&pageSize={}&alphabet=&sectorId=', '[{\"Match\": \"Code\"}, \"Iter\"]');
+(7, 1, 4, 'get-all-symbols-in-hsx', 'https://api.hsx.vn/l/api/v1/1/securities/stock?pageIndex={}&pageSize={}&alphabet=&sectorId=', '[{\"Match\": \"Code\"}, \"Iter\"]'),
 (8, 3, 4, 'get-region-of-specific-ip', 'http://ip-api.com/json/:0', '[{\"Match\": \"regionName\"}]');

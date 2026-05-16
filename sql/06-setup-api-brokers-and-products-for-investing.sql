@@ -1,7 +1,5 @@
 
 INSERT IGNORE INTO `ohcl_mapping_broker_resolution` (`id`, `broker_id`, `resolution_id`, `resolution`) VALUES
-
-INSERT INTO `ohcl_mapping_broker_resolution` (`id`, `broker_id`, `resolution_id`, `created_at`, `updated_at`, `resolution`) VALUES
 (1, 1, 1, '1D'),
 (2, 1, 2, '1H'),
 (3, 1, 3, '4H'),

@@ -1,19 +1,11 @@
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::{Error, ErrorKind};
 use tokio::sync::mpsc;
 
+use schemas::Tick;
 use integration::components::websocket::vdsc::Transition;
 use vector_config_macro::transform;
 use vector_runtime::{Component, Identify, Message, Outbound};
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Tick {
-    pub broker: String,
-    pub symbol: String,
-    pub price: f64,
-    pub quantity: f64,
-}
 
 #[transform(derive(PartialEq))]
 pub struct TransformVdscTransitionToTick {
@@ -52,21 +44,11 @@ impl_transform_vdsc_transition_to_tick!(
                 let mut quantity = None;
 
                 // @TODO: cần xem lại đoạn này
-                let is_future = symbol.len() >= 9;
-
                 for trans in transition_list {
-                    if is_future {
-                        match trans.index {
-                            12 => price = Some(trans.change),
-                            20 => quantity = Some(trans.change),
-                            _ => {}
-                        }
-                    } else {
-                        match trans.index {
-                            19 => price = Some(trans.change),
-                            20 => quantity = Some(trans.change),
-                            _ => {}
-                        }
+                    match trans.index {
+                        11 => price = Some(trans.change),
+                        12 => quantity = Some(trans.change),
+                        _ => {}
                     }
 
                     if price.is_some() || quantity.is_some() {
@@ -75,6 +57,7 @@ impl_transform_vdsc_transition_to_tick!(
                             symbol: symbol.clone(),
                             price: price.unwrap_or(0.0),
                             quantity: quantity.unwrap_or(0.0),
+                            ..Default::default()
                         };
 
                         if let Ok(payload) = serde_json::to_value(&tick) {

@@ -427,9 +427,10 @@ impl Runtime {
             )
         })?;
 
+        // @NOTE: broadcast must be in realtime
         if !self.is_started || broadcasts_guard.contains_key(&idx) {
             let sender = broadcasts_guard.entry(idx).or_insert_with(|| {
-                let (tx, _) = broadcast::channel(1024);
+                let (tx, _) = broadcast::channel(1);
                 tx
             });
 
@@ -1165,5 +1166,65 @@ impl Runtime {
         }
 
         Ok(())
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use tokio::sync::broadcast;
+
+    #[tokio::test]
+    async fn test_broadcast_auto_resuscitation() {
+        // Khởi tạo channel và drop ngay lập tức receiver mặc định đi kèm
+        // Hiện tại: 0 Subscriber
+        let (tx, rx_default) = broadcast::channel::<String>(10);
+        drop(rx_default);
+
+        // ====================================================
+        // GIAI ĐOẠN 1: Gửi khi KHÔNG CÓ AI nghe
+        // ====================================================
+        let msg1 = "Tin nhắn khi vắng khách".to_string();
+        let result1 = tx.send(msg1);
+
+        // Kiểm tra: Phải trả về lỗi và lỗi đó phải là SendError dòng Closed
+        assert!(result1.is_err(), "Kênh không có ai nghe thì phải báo lỗi");
+        if let Err(broadcast::error::SendError(error)) = result1 {
+            // Đúng chuẩn lỗi SendError của Tokio khi channel bị rỗng khách
+            println!("✓ Giai đoạn 1 đúng: Hệ thống báo lỗi Closed vì subscriber = 0: {error}");
+        }
+
+
+        // ====================================================
+        // GIAI ĐOẠN 2: Có 1 Client WebSocket vào subscribe
+        // ====================================================
+        let mut client_rx = tx.subscribe();
+
+        // Gửi tin nhắn tiếp theo
+        let msg2 = "Tin nhắn thời gian thực".to_string();
+        let result2 = tx.send(msg2.clone());
+
+        // Kiểm tra: Kênh PHẢI tự hồi sinh, trả về Ok(1) - số 1 là số lượng người nhận
+        assert!(result2.is_ok(), "Kênh phải tự hồi sinh khi có người subscribe!");
+        assert_eq!(result2.unwrap(), 1, "Số lượng nhận được tin nhắn phải là 1");
+
+        // Kiểm tra xem client đó có thực sự nhận được dữ liệu không
+        let received_msg = client_rx.recv().await.unwrap();
+        assert_eq!(received_msg, msg2, "Client phải nhận đúng dữ liệu mới phát");
+        println!("✓ Giai đoạn 2 đúng: Kênh tự hồi sinh mượt mà, client nhận data OK!");
+
+
+        // ====================================================
+        // GIAI ĐOẠN 3: Client WebSocket ngắt kết nối (Drop)
+        // ====================================================
+        drop(client_rx); // Mô phỏng client tắt trình duyệt / mất mạng
+
+        // Gửi tin nhắn tiếp theo lần nữa
+        let msg3 = "Tin nhắn sau khi khách rời đi".to_string();
+        let result3 = tx.send(msg3);
+
+        // Kiểm tra: Kênh PHẢI tự động quay về trạng thái báo lỗi lỗi
+        assert!(result3.is_err(), "Khách đi rồi thì kênh phải báo lỗi tiếp");
+        println!("✓ Giai đoạn 3 đúng: Khách đi thì lại báo lỗi Closed, không tốn bộ nhớ cache.");
     }
 }
