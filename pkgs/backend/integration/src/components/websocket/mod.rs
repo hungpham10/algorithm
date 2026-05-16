@@ -10,10 +10,12 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message as WsMessa
 
 use vector_runtime::{Event, Message as VectorMessage, Outbound};
 
+pub mod binance;
 pub mod vdsc;
 
 #[async_trait]
 pub trait WebSocketPolling {
+    async fn on_start(&self) -> Result<Option<String>, Error>;
     async fn on_send(&self) -> Result<Option<String>, Error>;
     async fn on_receive(
         &self,
@@ -46,7 +48,13 @@ impl WebSocketClient {
                 Ok((ws_stream, _)) => {
                     let (mut write, mut read) = ws_stream.split();
 
-                    if let Ok(Some(msg)) = handler.on_send().await {
+                    let msg_to_send = if let Ok(Some(msg)) = handler.on_start().await {
+                        Ok(Some(msg))
+                    } else {
+                        handler.on_send().await
+                    };
+
+                    if let Ok(Some(msg)) = msg_to_send {
                         use futures_util::SinkExt;
 
                         if let Err(error) = write.send(WsMessage::Text(msg.into())).await {

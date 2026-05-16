@@ -250,6 +250,10 @@ impl VdscSource {
 
 #[async_trait]
 impl WebSocketPolling for VdscSource {
+    async fn on_start(&self) -> Result<Option<String>, Error> {
+        Ok(None)
+    }
+
     async fn on_send(&self) -> Result<Option<String>, Error> {
         let current_version = self.current_version.load(Ordering::SeqCst);
 

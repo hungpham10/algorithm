@@ -67,14 +67,25 @@ pub struct InvestingHeaders {
     nest(
         (path = "/v1", api = v1::InvestingV1Api),
         (path = "/v2", api = v2::InvestingV2Api),
-        (path = "/v3", api = v3::InvestingV3Socket),
     )
 )]
 pub struct InvestingApi;
+
+#[derive(OpenApi)]
+#[openapi(
+    nest(
+        (path = "/v3", api = v3::InvestingV3Socket),
+    )
+)]
+pub struct InvestingSocket;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .nest("/v1", v1::routes())
         .nest("/v2", v2::routes())
         .nest("/v3", v3::routes())
+}
+
+pub fn sockets() -> Router<AppState> {
+    Router::new().nest("/v3", v3::routes())
 }

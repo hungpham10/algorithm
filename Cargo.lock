@@ -2812,15 +2812,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
-name = "histogram"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "496e8d7bf5d092f03dd57ca671cc0d4f401a95c156522f8ea5c79e4ada79dd9c"
-dependencies = [
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "hkdf"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6081,7 +6072,6 @@ dependencies = [
  "futures-util",
  "headers",
  "hex",
- "histogram",
  "hmac",
  "http 1.4.0",
  "http-body-util",
@@ -6108,8 +6098,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "stats",
- "ta",
  "tikv-jemallocator",
  "tokio",
  "tokio-util",
@@ -6562,12 +6550,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7beae5182595e9a8b683fa98c4317f956c9a2dec3b9716990d20023cc60c766"
 
 [[package]]
-name = "stats"
-version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41eeb5d03a57e61b273abce8ffc01c56d145176c793c1447ea0eed1fb8d43d5a"
-
-[[package]]
 name = "str_stack"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6702,12 +6684,6 @@ dependencies = [
  "core-foundation-sys",
  "libc",
 ]
-
-[[package]]
-name = "ta"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "609409d472a0a7d8d4dd9e19891bbdef546b9dce670c3057d0e02192dc541226"
 
 [[package]]
 name = "tap"

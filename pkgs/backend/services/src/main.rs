@@ -49,6 +49,8 @@ fn main() -> Result<(), Error> {
         None
     };
 
+    vector_components::used();
+
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?

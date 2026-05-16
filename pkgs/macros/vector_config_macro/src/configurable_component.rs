@@ -128,7 +128,7 @@ pub fn configurable_component_impl(
         ),
         ComponentType::Output => (
             quote! {
-                fn get_inputs(&self) -> Option<&Vec<String>> { None }
+                fn get_inputs(&self) -> Option<&Vec<String>> { Some(&self.inputs) }
             },
             quote! { vector_runtime::ComponentType::Output },
         ),

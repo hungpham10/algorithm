@@ -2,7 +2,7 @@ use tokio::sync::mpsc;
 use vector_config_macro::sink;
 use vector_runtime::{Component, Identify, Message, Outbound};
 
-#[sink(derive(PartialEq))]
+#[sink(derive(PartialEq, Default))]
 pub struct Null {
     pub id: String,
     pub inputs: Vec<String>,
