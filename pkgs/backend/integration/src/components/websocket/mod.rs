@@ -43,12 +43,11 @@ impl WebSocketClient {
         id: usize,
         tx: &Outbound,
     ) -> Result<(), Error> {
-        let mut is_on_started = true;
-
         loop {
             match connect_async(&self.url).await {
                 Ok((ws_stream, _)) => {
                     let (mut write, mut read) = ws_stream.split();
+                    let mut is_on_started = true;
 
                     let msg_to_send = if is_on_started {
                         let res = if let Ok(Some(msg)) = handler.on_start().await {
