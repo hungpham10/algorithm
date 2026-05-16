@@ -147,7 +147,8 @@ impl connect_info::Connected<IncomingStream<'_, UnixListener>> for UdsConnectInf
 #[openapi(
     paths(),
     nest(
-        (path = "/api/investing", api = investing::InvestingApi)
+        (path = "/api/investing", api = investing::InvestingApi),
+        (path = "/ws/investing", api = investing::InvestingSocket)
     ),
     info(
         title = "Investing API Documentation",
@@ -202,6 +203,7 @@ pub async fn routes(
         .route("/docs/admin/openapi.json", get(admin_openapi))
         .nest("/api/admin", admin::routes())
         .nest("/api/investing", investing::routes())
+        .nest("/ws/investing", investing::sockets())
         .merge(SwaggerUi::new("/swagger-ui").url("/docs/openapi.json", InvestingApiDoc::openapi()));
 
     // @TODO: validate of existing input `facebook_source` and `slack_source`
