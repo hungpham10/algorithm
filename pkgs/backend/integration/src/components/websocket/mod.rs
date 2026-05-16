@@ -47,17 +47,9 @@ impl WebSocketClient {
             match connect_async(&self.url).await {
                 Ok((ws_stream, _)) => {
                     let (mut write, mut read) = ws_stream.split();
-                    let mut is_on_started = true;
 
-                    let msg_to_send = if is_on_started {
-                        let res = if let Ok(Some(msg)) = handler.on_start().await {
-                            Ok(Some(msg))
-                        } else {
-                            handler.on_send().await
-                        };
-
-                        is_on_started = false;
-                        res
+                    let msg_to_send = if let Ok(Some(msg)) = handler.on_start().await {
+                        Ok(Some(msg))
                     } else {
                         handler.on_send().await
                     };

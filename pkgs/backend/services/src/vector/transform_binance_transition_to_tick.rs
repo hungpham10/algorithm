@@ -1,8 +1,8 @@
 use std::io::{Error, ErrorKind};
 use tokio::sync::mpsc;
 
-use schemas::Tick;
 use integration::components::websocket::binance::BinanceTradeBatch;
+use schemas::Tick;
 use vector_config_macro::transform;
 use vector_runtime::{Component, Identify, Message, Outbound};
 
@@ -36,7 +36,10 @@ impl_transform_binance_trade_to_tick!(
             let price: f64 = match batch.data.price.parse() {
                 Ok(val) => val,
                 Err(_) => {
-                    eprintln!("Transform [{id}/{}] failed to parse price: {}", self.id, batch.data.price);
+                    eprintln!(
+                        "Transform [{id}/{}] failed to parse price: {}",
+                        self.id, batch.data.price
+                    );
                     continue;
                 }
             };
@@ -44,7 +47,10 @@ impl_transform_binance_trade_to_tick!(
             let quantity: f64 = match batch.data.quantity.parse() {
                 Ok(val) => val,
                 Err(_) => {
-                    eprintln!("Transform [{id}/{}] failed to parse quantity: {}", self.id, batch.data.quantity);
+                    eprintln!(
+                        "Transform [{id}/{}] failed to parse quantity: {}",
+                        self.id, batch.data.quantity
+                    );
                     continue;
                 }
             };

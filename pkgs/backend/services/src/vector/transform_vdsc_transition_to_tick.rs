@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::io::{Error, ErrorKind};
 use tokio::sync::mpsc;
 
-use schemas::Tick;
 use integration::components::websocket::vdsc::Transition;
+use schemas::Tick;
 use vector_config_macro::transform;
 use vector_runtime::{Component, Identify, Message, Outbound};
 
