@@ -611,7 +611,7 @@ impl Runtime {
                     })?
                     .entry(idx)
                     .or_insert_with(|| {
-                        let (tx, _) = broadcast::channel::<Message>(1024);
+                        let (tx, _) = broadcast::channel::<Message>(1);
                         tx
                     });
             }
@@ -1169,7 +1169,6 @@ impl Runtime {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use tokio::sync::broadcast;
@@ -1194,7 +1193,6 @@ mod tests {
             println!("✓ Giai đoạn 1 đúng: Hệ thống báo lỗi Closed vì subscriber = 0: {error}");
         }
 
-
         // ====================================================
         // GIAI ĐOẠN 2: Có 1 Client WebSocket vào subscribe
         // ====================================================
@@ -1205,14 +1203,16 @@ mod tests {
         let result2 = tx.send(msg2.clone());
 
         // Kiểm tra: Kênh PHẢI tự hồi sinh, trả về Ok(1) - số 1 là số lượng người nhận
-        assert!(result2.is_ok(), "Kênh phải tự hồi sinh khi có người subscribe!");
+        assert!(
+            result2.is_ok(),
+            "Kênh phải tự hồi sinh khi có người subscribe!"
+        );
         assert_eq!(result2.unwrap(), 1, "Số lượng nhận được tin nhắn phải là 1");
 
         // Kiểm tra xem client đó có thực sự nhận được dữ liệu không
         let received_msg = client_rx.recv().await.unwrap();
         assert_eq!(received_msg, msg2, "Client phải nhận đúng dữ liệu mới phát");
         println!("✓ Giai đoạn 2 đúng: Kênh tự hồi sinh mượt mà, client nhận data OK!");
-
 
         // ====================================================
         // GIAI ĐOẠN 3: Client WebSocket ngắt kết nối (Drop)
