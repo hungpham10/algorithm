@@ -6,8 +6,6 @@ mod vector;
 use clap::{Parser, Subcommand};
 use std::io::Error;
 
-use vector_components;
-
 #[derive(Parser, Debug)]
 #[command(name = "algorithm", about = "An all in one solution")]
 struct Cli {
