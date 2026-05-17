@@ -46,36 +46,30 @@ pub struct BinanceTradeBatch {
 #[source]
 pub struct BinanceSource {
     pub id: String,
-    pub symbols: Vec<String>,
+    pub streams: Vec<String>,
 }
 
 impl Clone for BinanceSource {
     fn clone(&self) -> Self {
         Self {
             id: self.id.clone(),
-            symbols: self.symbols.clone(),
+            streams: self.streams.clone(),
         }
     }
 }
 
 impl PartialEq for BinanceSource {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id && self.symbols == other.symbols
+        self.id == other.id && self.streams == other.streams
     }
 }
 
 #[async_trait]
 impl WebSocketPolling for BinanceSource {
     async fn on_start(&self) -> Result<Option<String>, Error> {
-        let streams: Vec<String> = self
-            .symbols
-            .iter()
-            .map(|s| format!("{}@trade", s.to_lowercase()))
-            .collect();
-
         let subscribe_payload = serde_json::json!({
             "method": "SUBSCRIBE",
-            "params": streams,
+            "params": self.streams.clone(),
             "id": 1
         });
 
