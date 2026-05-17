@@ -3,9 +3,9 @@ mod v2;
 mod v3;
 
 use axum::Router;
+use axum::routing::any;
 use axum_extra::TypedHeader;
 use axum_macros::FromRequestParts;
-use axum::routing::any;
 use headers::Header;
 use http::{HeaderName, HeaderValue};
 use utoipa::OpenApi;
