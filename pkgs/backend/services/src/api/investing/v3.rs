@@ -4,9 +4,10 @@ use std::sync::Arc;
 use axum::Router;
 use axum::extract::State;
 use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
+use axum_extra::TypedHeader;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json};
-use axum::routing::post;
+use axum::routing::get;
 
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde::{Deserialize, Serialize};
@@ -69,35 +70,65 @@ pub enum OhclResponse {
 }
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/ws", post(into_websocket))
+    Router::new().route("/ws", get(into_websocket))
 }
 
 #[utoipa::path(
-    post,
+    get,
     path = "/ws",
     tag = "WebSocket Gateway",
     summary = "Connect to Gateway Websocket",
     description = "Upgrade data to Websocket and stream data to process flow"
 )]
-pub async fn into_websocket(
+async fn into_websocket(
     ws: WebSocketUpgrade,
+    host: Option<TypedHeader<headers::Host>>,
     State(app_state): State<AppState>,
-    InvestingHeaders { tenant_id, .. }: InvestingHeaders,
 ) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let broadcast = app_state
         .runtime
-        .broadcast("price_gather_output".into())
+        .broadcast(
+            app_state.secret.get("MARKET_PIPELINE_OUTPUT", "/").await.map_err(|_| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(OhclResponse::Error {
+                        message: "MARKET_PIPELINE_OUTPUT not set".into(),
+                    }),
+                )
+            })?
+        )
         .await
-        .map_err(|error| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(OhclResponse::Error {
-                    message: format!("Failed to convert resolution: {}", error),
-                }),
-            )
-        })?;
+        .map_err(|error| (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(OhclResponse::Error{
+                message: format!("Failed fetching broadcaster: {error}"),
+            })
+        ))?;
 
-    Ok(ws.on_upgrade(move |socket| handle_socket(app_state, socket, tenant_id.into(), broadcast)))
+    if let Some(TypedHeader(host)) = host {
+        let tenant_id = app_state.admin_entity.get_tenant_id(&host.to_string())
+        .await
+        .map_err(|error| (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(OhclResponse::Error{
+                message: format!("Failed fetching broadcaster: {error}"),
+            })
+        ))?;
+
+        Ok(ws
+            .on_failed_upgrade(|err| {
+                tracing::error!("WebSocket upgrade failed: {:?}", err);
+            })
+            .on_upgrade(move |socket| handle_socket(app_state, socket, tenant_id.into(), broadcast))
+        )
+    } else {
+        Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(OhclResponse::Error{
+                message: "Http request is missing `Host`".into(),
+            })
+        ))
+    }
 }
 
 enum ControlFlow {

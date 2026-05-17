@@ -83,7 +83,6 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .nest("/v1", v1::routes())
         .nest("/v2", v2::routes())
-        .nest("/v3", v3::routes())
 }
 
 pub fn sockets() -> Router<AppState> {
