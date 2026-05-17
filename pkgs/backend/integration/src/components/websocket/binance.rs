@@ -139,7 +139,7 @@ impl_binance_source!(
         _: &mut mpsc::Receiver<VectorMessage>,
         tx: Outbound,
     ) -> Result<(), std::io::Error> {
-        WebSocketClient::new("wss://stream.binance.com:9443/ws".to_string(), 1)
+        WebSocketClient::new("wss://stream.binance.us:9443/ws".to_string(), 1)
             .run(self.clone(), id, &tx)
             .await
     }
