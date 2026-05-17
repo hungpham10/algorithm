@@ -5,6 +5,7 @@ mod v3;
 use axum::Router;
 use axum_extra::TypedHeader;
 use axum_macros::FromRequestParts;
+use axum::routing::any;
 use headers::Header;
 use http::{HeaderName, HeaderValue};
 use utoipa::OpenApi;
@@ -86,5 +87,5 @@ pub fn routes() -> Router<AppState> {
 }
 
 pub fn sockets() -> Router<AppState> {
-    Router::new().nest("/v3", v3::routes())
+    Router::new().route("/v3", any(v3::into_websocket))
 }

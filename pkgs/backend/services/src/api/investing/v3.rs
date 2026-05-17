@@ -1,12 +1,10 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use axum::Router;
 use axum::extract::State;
 use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json};
-use axum::routing::get;
 use axum_extra::TypedHeader;
 
 use futures_util::{sink::SinkExt, stream::StreamExt};
@@ -68,10 +66,6 @@ pub enum OhclResponse {
     Pong,
 }
 
-pub fn routes() -> Router<AppState> {
-    Router::new().route("/ws", get(into_websocket))
-}
-
 #[utoipa::path(
     get,
     path = "/ws",
@@ -79,7 +73,7 @@ pub fn routes() -> Router<AppState> {
     summary = "Connect to Gateway Websocket",
     description = "Upgrade data to Websocket and stream data to process flow"
 )]
-async fn into_websocket(
+pub async fn into_websocket(
     ws: WebSocketUpgrade,
     host: Option<TypedHeader<headers::Host>>,
     State(app_state): State<AppState>,
