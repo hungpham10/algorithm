@@ -107,9 +107,7 @@ pub async fn into_websocket(
         .on_failed_upgrade(|err| {
             tracing::error!("WebSocket upgrade failed: {:?}", err);
         })
-        .on_upgrade(move |socket| {
-            handle_socket(app_state, socket, tenant_id.into(), broadcast)
-        }))
+        .on_upgrade(move |socket| handle_socket(app_state, socket, tenant_id.into(), broadcast)))
 }
 
 enum ControlFlow {
