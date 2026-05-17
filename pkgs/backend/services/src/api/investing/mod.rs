@@ -3,6 +3,7 @@ mod v2;
 mod v3;
 
 use axum::Router;
+use axum::routing::any;
 use axum_extra::TypedHeader;
 use axum_macros::FromRequestParts;
 use headers::Header;
@@ -83,9 +84,8 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .nest("/v1", v1::routes())
         .nest("/v2", v2::routes())
-        .nest("/v3", v3::routes())
 }
 
 pub fn sockets() -> Router<AppState> {
-    Router::new().nest("/v3", v3::routes())
+    Router::new().route("/v3", any(v3::into_websocket))
 }

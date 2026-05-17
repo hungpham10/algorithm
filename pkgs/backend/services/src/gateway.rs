@@ -264,7 +264,6 @@ pub async fn run() -> std::io::Result<()> {
     // Khởi tạo toàn bộ router và streamer trong một lần gọi
     // Bạn có thể truyền components ban đầu vào đây
     let (router, streamer) = routes(load_components_from_env()?, telemetry_guard.is_none()).await?;
-
     let make_service = router.into_make_service_with_connect_info::<UdsConnectInfo>();
     let usx = UnixListener::bind(path.clone())?;
 

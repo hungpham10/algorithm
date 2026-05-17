@@ -1,12 +1,10 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use axum::Router;
 use axum::extract::State;
 use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json};
-use axum::routing::post;
 
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde::{Deserialize, Serialize};
@@ -15,10 +13,9 @@ use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::channel;
 use utoipa::{OpenApi, ToSchema};
 
+use crate::api::{AppState, investing::InvestingHeaders};
 use schemas::{CandleStick, Tick};
 use vector_runtime::Message as VectorMessage;
-
-use crate::api::{AppState, investing::InvestingHeaders};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -68,12 +65,8 @@ pub enum OhclResponse {
     Pong,
 }
 
-pub fn routes() -> Router<AppState> {
-    Router::new().route("/ws", post(into_websocket))
-}
-
 #[utoipa::path(
-    post,
+    get,
     path = "/ws",
     tag = "WebSocket Gateway",
     summary = "Connect to Gateway Websocket",
@@ -86,18 +79,35 @@ pub async fn into_websocket(
 ) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let broadcast = app_state
         .runtime
-        .broadcast("price_gather_output".into())
+        .broadcast(
+            app_state
+                .secret
+                .get("MARKET_PIPELINE_OUTPUT", "/")
+                .await
+                .map_err(|_| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(OhclResponse::Error {
+                            message: "MARKET_PIPELINE_OUTPUT not set".into(),
+                        }),
+                    )
+                })?,
+        )
         .await
         .map_err(|error| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(OhclResponse::Error {
-                    message: format!("Failed to convert resolution: {}", error),
+                    message: format!("Failed fetching broadcaster: {error}"),
                 }),
             )
         })?;
 
-    Ok(ws.on_upgrade(move |socket| handle_socket(app_state, socket, tenant_id.into(), broadcast)))
+    Ok(ws
+        .on_failed_upgrade(|err| {
+            tracing::error!("WebSocket upgrade failed: {:?}", err);
+        })
+        .on_upgrade(move |socket| handle_socket(app_state, socket, tenant_id.into(), broadcast)))
 }
 
 enum ControlFlow {

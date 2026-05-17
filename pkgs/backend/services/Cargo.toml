@@ -27,7 +27,7 @@ algorithm = { path = "../../libraries/algorithm" }
 integration = { path = "../integration" }
 
 # API
-axum = { version = "0.8.8", features = ["macros", "multipart"] }
+axum = { version = "0.8.8", features = ["macros", "multipart", "ws"] }
 axum-metrics = "0.2.0"
 axum-macros = "0.5.0"
 axum-extra = { version = "0.12.5", features = ["typed-header"] }
