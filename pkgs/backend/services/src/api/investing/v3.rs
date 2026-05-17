@@ -4,10 +4,10 @@ use std::sync::Arc;
 use axum::Router;
 use axum::extract::State;
 use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
-use axum_extra::TypedHeader;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json};
 use axum::routing::get;
+use axum_extra::TypedHeader;
 
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde::{Deserialize, Serialize};
@@ -16,10 +16,9 @@ use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::channel;
 use utoipa::{OpenApi, ToSchema};
 
+use crate::api::AppState;
 use schemas::{CandleStick, Tick};
 use vector_runtime::Message as VectorMessage;
-
-use crate::api::{AppState, investing::InvestingHeaders};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -88,45 +87,56 @@ async fn into_websocket(
     let broadcast = app_state
         .runtime
         .broadcast(
-            app_state.secret.get("MARKET_PIPELINE_OUTPUT", "/").await.map_err(|_| {
+            app_state
+                .secret
+                .get("MARKET_PIPELINE_OUTPUT", "/")
+                .await
+                .map_err(|_| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(OhclResponse::Error {
+                            message: "MARKET_PIPELINE_OUTPUT not set".into(),
+                        }),
+                    )
+                })?,
+        )
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(OhclResponse::Error {
+                    message: format!("Failed fetching broadcaster: {error}"),
+                }),
+            )
+        })?;
+
+    if let Some(TypedHeader(host)) = host {
+        let tenant_id = app_state
+            .admin_entity
+            .get_tenant_id(&host.to_string())
+            .await
+            .map_err(|error| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(OhclResponse::Error {
-                        message: "MARKET_PIPELINE_OUTPUT not set".into(),
+                        message: format!("Failed fetching broadcaster: {error}"),
                     }),
                 )
-            })?
-        )
-        .await
-        .map_err(|error| (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(OhclResponse::Error{
-                message: format!("Failed fetching broadcaster: {error}"),
-            })
-        ))?;
-
-    if let Some(TypedHeader(host)) = host {
-        let tenant_id = app_state.admin_entity.get_tenant_id(&host.to_string())
-        .await
-        .map_err(|error| (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(OhclResponse::Error{
-                message: format!("Failed fetching broadcaster: {error}"),
-            })
-        ))?;
+            })?;
 
         Ok(ws
             .on_failed_upgrade(|err| {
                 tracing::error!("WebSocket upgrade failed: {:?}", err);
             })
-            .on_upgrade(move |socket| handle_socket(app_state, socket, tenant_id.into(), broadcast))
-        )
+            .on_upgrade(move |socket| {
+                handle_socket(app_state, socket, tenant_id.into(), broadcast)
+            }))
     } else {
         Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(OhclResponse::Error{
+            Json(OhclResponse::Error {
                 message: "Http request is missing `Host`".into(),
-            })
+            }),
         ))
     }
 }
