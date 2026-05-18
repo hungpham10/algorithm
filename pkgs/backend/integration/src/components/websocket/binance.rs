@@ -11,69 +11,89 @@ use vector_runtime::{Component, Identify, Message as VectorMessage, Outbound};
 use crate::components::websocket::{WebSocketClient, WebSocketPolling};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct BinanceTrade {
+pub struct BinanceTicker {
     #[serde(rename = "e")]
-    pub event_type: String, // "trade"
+    pub event_type: String, // "1hTicker" hoặc "24hrTicker"
 
     #[serde(rename = "E")]
-    pub event_time: i64, // Event timestamp
+    pub event_time: i64,
 
     #[serde(rename = "s")]
-    pub symbol: String, // Ví dụ: BTCUSDT
-
-    #[serde(rename = "t")]
-    pub trade_id: u64, // Trade ID
+    pub symbol: String, // "BNBBTC"
 
     #[serde(rename = "p")]
-    pub price: String, // Giá khớp lệnh
+    pub price_change: String,
+
+    #[serde(rename = "P")]
+    pub price_change_percent: String,
+
+    #[serde(rename = "o")]
+    pub open_price: String,
+
+    #[serde(rename = "h")]
+    pub high_price: String,
+
+    #[serde(rename = "l")]
+    pub low_price: String,
+
+    #[serde(rename = "c")]
+    pub last_price: String,
+
+    #[serde(rename = "w")]
+    pub weighted_avg_price: String,
+
+    #[serde(rename = "v")]
+    pub total_traded_base_asset_volume: String,
 
     #[serde(rename = "q")]
-    pub quantity: String, // Số lượng khớp
+    pub total_traded_quote_asset_volume: String,
 
-    #[serde(rename = "T")]
-    pub trade_time: u64, // Thời gian khớp lệnh chính xác
+    #[serde(rename = "O")]
+    pub statistics_open_time: i64,
 
-    #[serde(rename = "m")]
-    pub is_buyer_market_maker: bool,
+    #[serde(rename = "C")]
+    pub statistics_close_time: i64,
+
+    #[serde(rename = "F")]
+    pub first_trade_id: i64,
+
+    #[serde(rename = "L")]
+    pub last_trade_id: i64,
+
+    #[serde(rename = "n")]
+    pub total_number_of_trades: u64,
 }
 
+// Cấu trúc Batch mới: chứa toàn bộ mảng data thay vì một object đơn lẻ
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct BinanceTradeBatch {
+pub struct BinanceTickerBatch {
     pub timestamp: i64,
-    pub data: BinanceTrade,
+    pub data: Vec<BinanceTicker>, // Gửi nguyên một mảng để tiết kiệm băng thông
 }
 
 #[source]
 pub struct BinanceSource {
     pub id: String,
-    pub streams: Vec<String>,
 }
 
 impl Clone for BinanceSource {
     fn clone(&self) -> Self {
         Self {
             id: self.id.clone(),
-            streams: self.streams.clone(),
         }
     }
 }
 
 impl PartialEq for BinanceSource {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id && self.streams == other.streams
+        self.id == other.id
     }
 }
 
 #[async_trait]
 impl WebSocketPolling for BinanceSource {
     async fn on_start(&self) -> Result<Option<String>, Error> {
-        let subscribe_payload = serde_json::json!({
-            "method": "SUBSCRIBE",
-            "params": self.streams.clone(),
-            "id": 1
-        });
-
-        Ok(Some(subscribe_payload.to_string()))
+        Ok(None)
     }
 
     async fn on_send(&self) -> Result<Option<String>, Error> {
@@ -85,44 +105,37 @@ impl WebSocketPolling for BinanceSource {
         message: WsMessage,
         txs: &[mpsc::Sender<VectorMessage>],
     ) -> Result<(), Error> {
-        match message {
-            WsMessage::Text(text) => {
-                if text.contains("\"result\"") {
+        if let WsMessage::Text(text) = message {
+            // 1. Parse toàn bộ mảng dữ liệu từ WebSocket
+            if let Ok(tickers) = serde_json::from_str::<Vec<BinanceTicker>>(&text) {
+                if tickers.is_empty() {
                     return Ok(());
                 }
 
-                match serde_json::from_str::<BinanceTrade>(&text) {
-                    Ok(trade) => {
-                        let batch = BinanceTradeBatch {
-                            timestamp: trade.event_time,
-                            data: trade,
-                        };
+                // Lấy timestamp của phần tử đầu tiên làm đại diện cho cả Batch
+                let batch_timestamp = tickers[0].event_time;
 
-                        let payload = serde_json::to_value(batch)
-                            .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+                // 2. Đóng gói toàn bộ danh sách tickers vào một cấu trúc Batch duy nhất
+                let batch = BinanceTickerBatch {
+                    timestamp: batch_timestamp,
+                    data: tickers,
+                };
 
-                        for tx in txs {
-                            let _ = tx
-                                .send(VectorMessage {
-                                    payload: payload.clone(),
-                                })
-                                .await;
-                        }
+                // 3. Serialize một lần duy nhất
+                let payload = serde_json::to_value(batch)
+                    .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
-                        Ok(())
-                    }
-                    Err(e) => Err(Error::new(
-                        ErrorKind::InvalidData,
-                        format!(
-                            "Failed to parse Binance Trade raw event: {}. Raw text: {}",
-                            e, text
-                        ),
-                    )),
+                // 4. Gửi một block payload duy nhất qua kênh truyền
+                for tx in txs {
+                    let _ = tx
+                        .send(VectorMessage {
+                            payload: payload.clone(),
+                        })
+                        .await;
                 }
             }
-            WsMessage::Binary(_) | WsMessage::Ping(_) | WsMessage::Pong(_) => Ok(()),
-            _ => Ok(()),
         }
+        Ok(())
     }
 }
 
@@ -133,7 +146,7 @@ impl_binance_source!(
         _: &mut mpsc::Receiver<VectorMessage>,
         tx: Outbound,
     ) -> Result<(), std::io::Error> {
-        WebSocketClient::new("wss://stream.binance.us:9443/ws".to_string(), 1)
+        WebSocketClient::new("wss://stream.binance.us:9443/ws/!ticker_1h@arr".to_string(), 1)
             .run(self.clone(), id, &tx)
             .await
     }
