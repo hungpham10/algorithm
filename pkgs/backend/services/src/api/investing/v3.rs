@@ -67,8 +67,8 @@ pub enum OhclResponse {
 
 #[utoipa::path(
     get,
-    path = "/ws",
-    tag = "WebSocket Gateway",
+    path = "/v3",
+    tag = "WebSocket Gateway for Investing",
     summary = "Connect to Gateway Websocket",
     description = "Upgrade data to Websocket and stream data to process flow"
 )]

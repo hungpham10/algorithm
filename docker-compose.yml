@@ -13,6 +13,10 @@ services:
         limits:
           cpus: '0.2'
           memory: 512M
+    develop:
+      watch:
+        - action: rebuild
+          path: ./pkgs/backend
     volumes:
       - ./secrets:/app/secrets
       - ./conf/config.alloy:/etc/alloy/config.alloy
