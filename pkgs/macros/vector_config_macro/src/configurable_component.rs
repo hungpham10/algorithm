@@ -15,11 +15,23 @@ pub enum ComponentType {
 
 fn to_snake_case(s: &str) -> String {
     let mut snake = String::new();
-    for (i, ch) in s.chars().enumerate() {
-        if ch.is_uppercase() {
-            if i != 0 {
+    let chars: Vec<char> = s.chars().collect();
+
+    for i in 0..chars.len() {
+        let ch = chars[i];
+
+        if i > 0 {
+            let prev = chars[i - 1];
+            let is_caps_boundary = ch.is_uppercase();
+            let is_numeric_boundary = (prev.is_numeric() && ch.is_alphabetic())
+                || (prev.is_alphabetic() && ch.is_numeric());
+
+            if (is_caps_boundary || is_numeric_boundary) && prev != '_' && ch != '_' {
                 snake.push('_');
             }
+        }
+
+        if ch.is_uppercase() {
             snake.push(ch.to_ascii_lowercase());
         } else {
             snake.push(ch);

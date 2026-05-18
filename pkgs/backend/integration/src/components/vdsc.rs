@@ -12,8 +12,7 @@ use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
 
 use vector_config_macro::source;
 use vector_runtime::{Component, Identify, Message as VectorMessage, Outbound};
-
-use crate::components::websocket::{WebSocketClient, WebSocketPolling};
+use vector_components::{WebSocketClient, WebSocketPolling};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(i32)]

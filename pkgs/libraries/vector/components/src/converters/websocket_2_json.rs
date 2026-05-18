@@ -3,15 +3,14 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
+use serde_json::Value;
 
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message as WsMessage};
 
-use vector_runtime::{Event, Message as VectorMessage, Outbound};
-
-pub mod binance;
-pub mod vdsc;
+use vector_config_macro::source;
+use vector_runtime::{Component, Event, Identify, Message as VectorMessage, Outbound};
 
 #[async_trait]
 pub trait WebSocketPolling {
@@ -24,20 +23,20 @@ pub trait WebSocketPolling {
     ) -> Result<(), Error>;
 }
 
-struct WebSocketClient {
+pub struct WebSocketClient {
     pub url: String,
     pub reconnect_interval_sec: u64,
 }
 
 impl WebSocketClient {
-    fn new(url: String, reconnect_interval_sec: u64) -> Self {
+    pub fn new(url: String, reconnect_interval_sec: u64) -> Self {
         Self {
             url,
             reconnect_interval_sec,
         }
     }
 
-    async fn run<Handler: WebSocketPolling + Send + Sync + 'static>(
+    pub async fn run<Handler: WebSocketPolling + Send + Sync + 'static>(
         &self,
         handler: Handler,
         id: usize,
@@ -58,7 +57,8 @@ impl WebSocketClient {
                         use futures_util::SinkExt;
 
                         if let Err(error) = write.send(WsMessage::Text(msg.into())).await {
-                            tx.event
+                            let _ = tx
+                                .event
                                 .send(Event::Minor((
                                     id,
                                     Error::other(format!(
@@ -66,13 +66,7 @@ impl WebSocketClient {
                                         error
                                     )),
                                 )))
-                                .await
-                                .map_err(|error| {
-                                    Error::new(
-                                        ErrorKind::BrokenPipe,
-                                        format!("Failed to send issue: {}", error,),
-                                    )
-                                })?;
+                                .await;
                             continue;
                         }
                     }
@@ -83,18 +77,12 @@ impl WebSocketClient {
                                 if let Err(error) =
                                     handler.on_receive(msg, tx.streams.as_slice()).await
                                 {
-                                    tx.event.send(Event::Minor((id, error))).await.map_err(
-                                        |error| {
-                                            Error::new(
-                                                ErrorKind::BrokenPipe,
-                                                format!("Failed to send issue: {}", error,),
-                                            )
-                                        },
-                                    )?;
+                                    let _ = tx.event.send(Event::Minor((id, error))).await;
                                 }
                             }
                             Err(error) => {
-                                tx.event
+                                let _ = tx
+                                    .event
                                     .send(Event::Minor((
                                         id,
                                         Error::other(format!(
@@ -102,13 +90,7 @@ impl WebSocketClient {
                                             error
                                         )),
                                     )))
-                                    .await
-                                    .map_err(|error| {
-                                        Error::new(
-                                            ErrorKind::BrokenPipe,
-                                            format!("Failed to send issue: {}", error,),
-                                        )
-                                    })?;
+                                    .await;
                                 break;
                             }
                         }
@@ -117,7 +99,8 @@ impl WebSocketClient {
                             use futures_util::SinkExt;
 
                             if let Err(error) = write.send(WsMessage::Text(msg.into())).await {
-                                tx.event
+                                let _ = tx
+                                    .event
                                     .send(Event::Minor((
                                         id,
                                         Error::other(format!(
@@ -125,13 +108,7 @@ impl WebSocketClient {
                                             error,
                                         )),
                                     )))
-                                    .await
-                                    .map_err(|error| {
-                                        Error::new(
-                                            ErrorKind::BrokenPipe,
-                                            format!("Failed to send issue: {}", error,),
-                                        )
-                                    })?;
+                                    .await;
                                 break;
                             }
 
@@ -140,7 +117,8 @@ impl WebSocketClient {
                     }
                 }
                 Err(error) => {
-                    tx.event
+                    let _ = tx
+                        .event
                         .send(Event::Minor((
                             id,
                             Error::other(format!(
@@ -148,15 +126,110 @@ impl WebSocketClient {
                                 error
                             )),
                         )))
-                        .await
-                        .map_err(|error| {
-                            Error::new(
-                                ErrorKind::BrokenPipe,
-                                format!("Failed to send issue: {}", error,),
-                            )
-                        })?;
+                        .await;
+
+                    sleep(Duration::from_secs(self.reconnect_interval_sec)).await;
                 }
             }
         }
     }
 }
+
+#[source]
+pub struct Websocket2Json {
+    pub id: String,
+    pub uri: String,
+    pub start: Option<Value>,
+    pub send: Option<Value>,
+}
+
+impl Clone for Websocket2Json {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            uri: self.uri.clone(),
+            send: self.send.clone(),
+            start: self.start.clone(),
+        }
+    }
+}
+
+impl PartialEq for Websocket2Json {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.uri == other.uri
+    }
+}
+
+#[async_trait]
+impl WebSocketPolling for Websocket2Json {
+    async fn on_start(&self) -> Result<Option<String>, Error> {
+        match &self.start {
+            Some(value) if !value.is_null() => serde_json::to_string(value).map(Some).map_err(|error| {
+                Error::new(
+                    ErrorKind::InvalidData,
+                    format!("Failed to serialize on_start: {error}"),
+                )
+            }),
+            _ => Ok(None),
+        }
+    }
+
+    async fn on_send(&self) -> Result<Option<String>, Error> {
+        // Sửa lỗi check rỗng cho `Value`: Kiểm tra nếu `Some` và không phải là `Null`
+        match &self.send {
+            Some(value) if !value.is_null() => serde_json::to_string(value).map(Some).map_err(|e| {
+                Error::new(
+                    ErrorKind::InvalidData,
+                    format!("Failed to serialize on_send: {e}"),
+                )
+            }),
+            _ => Ok(None),
+        }
+    }
+
+    async fn on_receive(
+        &self,
+        message: WsMessage,
+        txs: &[mpsc::Sender<VectorMessage>],
+    ) -> Result<(), Error> {
+        let raw_text = match message {
+            WsMessage::Text(text) => text.to_string(),
+            WsMessage::Binary(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            _ => return Ok(()),
+        };
+
+        if raw_text.is_empty() {
+            return Ok(());
+        }
+
+        let json_payload: serde_json::Value = serde_json::from_str(&raw_text).map_err(|e| {
+            Error::new(
+                ErrorKind::InvalidData,
+                format!("Malformed JSON from WS: {e}"),
+            )
+        })?;
+
+        let vector_msg = VectorMessage {
+            payload: json_payload,
+        };
+
+        for tx in txs {
+            let _ = tx.send(vector_msg.clone()).await;
+        }
+
+        Ok(())
+    }
+}
+
+impl_websocket_2_json!(
+    async fn run(
+        &self,
+        id: usize,
+        _: &mut mpsc::Receiver<VectorMessage>,
+        tx: Outbound,
+    ) -> Result<(), Error> {
+        WebSocketClient::new(self.uri.clone(), 3)
+            .run(self.clone(), id, &tx)
+            .await
+    }
+);

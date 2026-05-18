@@ -8,6 +8,7 @@ edition = "2024"
 vector_config_macro = { path = "../../macros/vector_config_macro" }
 
 # Libraries
+vector_components = { path = "../../libraries/vector/components" }
 vector_runtime = { path = "../../libraries/vector/runtime" }
 algorithm = { path = "../../libraries/algorithm" }
 schemas = { path = "../schemas" }
