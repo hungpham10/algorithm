@@ -1,7 +1,7 @@
 use std::io::{Error, ErrorKind};
 use tokio::sync::mpsc;
 
-use integration::components::websocket::binance::{BinanceTickerBatch, BinanceTicker};
+use integration::components::websocket::binance::BinanceTickerBatch;
 use schemas::Tick;
 use vector_config_macro::transform;
 use vector_runtime::{Component, Identify, Message, Outbound};
@@ -63,10 +63,7 @@ impl_transform_binance_trade_to_tick!(
                         {
                             return Err(Error::new(
                                 ErrorKind::BrokenPipe,
-                                format!(
-                                    "Failed to send binance tick for {}: {error}",
-                                    tick.symbol
-                                ),
+                                format!("Failed to send binance tick for {}: {error}", tick.symbol),
                             ));
                         }
                     }
