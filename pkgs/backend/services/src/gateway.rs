@@ -73,7 +73,7 @@ fn load_components_from_env() -> Result<Vec<Arc<dyn Component>>, Error> {
 fn init_telemetry() -> Option<(SdkTracerProvider, SdkMeterProvider)> {
     let agent_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
         .unwrap_or_else(|_| "http://127.0.0.1:4317".to_string());
-    let use_alloy = std::env::var("USE_ALLOY").unwrap_or_else(|_| "false" .to_string());
+    let use_alloy = std::env::var("USE_ALLOY").unwrap_or_else(|_| "false".to_string());
 
     if agent_endpoint == "http://127.0.0.1:4317" && use_alloy != "true" {
         return None;
