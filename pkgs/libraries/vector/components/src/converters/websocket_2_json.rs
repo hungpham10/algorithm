@@ -164,12 +164,14 @@ impl PartialEq for Websocket2Json {
 impl WebSocketPolling for Websocket2Json {
     async fn on_start(&self) -> Result<Option<String>, Error> {
         match &self.start {
-            Some(value) if !value.is_null() => serde_json::to_string(value).map(Some).map_err(|error| {
-                Error::new(
-                    ErrorKind::InvalidData,
-                    format!("Failed to serialize on_start: {error}"),
-                )
-            }),
+            Some(value) if !value.is_null() => {
+                serde_json::to_string(value).map(Some).map_err(|error| {
+                    Error::new(
+                        ErrorKind::InvalidData,
+                        format!("Failed to serialize on_start: {error}"),
+                    )
+                })
+            }
             _ => Ok(None),
         }
     }
@@ -177,12 +179,14 @@ impl WebSocketPolling for Websocket2Json {
     async fn on_send(&self) -> Result<Option<String>, Error> {
         // Sửa lỗi check rỗng cho `Value`: Kiểm tra nếu `Some` và không phải là `Null`
         match &self.send {
-            Some(value) if !value.is_null() => serde_json::to_string(value).map(Some).map_err(|e| {
-                Error::new(
-                    ErrorKind::InvalidData,
-                    format!("Failed to serialize on_send: {e}"),
-                )
-            }),
+            Some(value) if !value.is_null() => {
+                serde_json::to_string(value).map(Some).map_err(|e| {
+                    Error::new(
+                        ErrorKind::InvalidData,
+                        format!("Failed to serialize on_send: {e}"),
+                    )
+                })
+            }
             _ => Ok(None),
         }
     }

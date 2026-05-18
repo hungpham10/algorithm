@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
 
+use vector_components::{WebSocketClient, WebSocketPolling};
 use vector_config_macro::source;
 use vector_runtime::{Component, Identify, Message as VectorMessage, Outbound};
-use vector_components::{WebSocketClient, WebSocketPolling};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(i32)]

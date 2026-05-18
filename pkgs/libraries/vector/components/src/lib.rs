@@ -1,8 +1,8 @@
+mod converters;
 mod file;
 mod input;
 mod null;
 mod print;
-mod converters;
 
-pub use converters::{WebSocketPolling, WebSocketClient};
+pub use converters::{WebSocketClient, WebSocketPolling};
 pub fn used() {}
