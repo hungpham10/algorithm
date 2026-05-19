@@ -430,7 +430,7 @@ impl Runtime {
         // @NOTE: broadcast must be in realtime
         if !self.is_started || broadcasts_guard.contains_key(&idx) {
             let sender = broadcasts_guard.entry(idx).or_insert_with(|| {
-                let (tx, _) = broadcast::channel(1);
+                let (tx, _) = broadcast::channel(1024);
                 tx
             });
 
@@ -611,7 +611,7 @@ impl Runtime {
                     })?
                     .entry(idx)
                     .or_insert_with(|| {
-                        let (tx, _) = broadcast::channel::<Message>(1);
+                        let (tx, _) = broadcast::channel::<Message>(1024);
                         tx
                     });
             }

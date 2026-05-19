@@ -10,6 +10,7 @@ use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tokio::sync::broadcast::Receiver;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc::channel;
 use utoipa::{OpenApi, ToSchema};
 
@@ -146,29 +147,40 @@ async fn handle_socket(
                                     let _ = tx.send(ControlFlow::Reply(OhclResponse::Pong)).await;
                                 }
                                 OhclRequest::Subscribe { symbols } => {
-                                    let mut state = session.write().await;
-
                                     for item in &symbols {
-                                        match app_state
+                                        let is_enabled = app_state
                                             .investing_entity
                                             .is_broker_enabled(tenant_id, &item.broker)
-                                            .await
-                                        {
+                                            .await;
+
+                                        match is_enabled {
                                             Ok(true) => {
+                                                let mut state = session.write().await;
+
                                                 state.subscribed_symbols.insert((
                                                     item.broker.clone(),
                                                     item.symbol.clone(),
                                                 ));
                                             }
                                             Ok(false) => {
-                                                let _ = tx.send(ControlFlow::Reply(OhclResponse::Error {
-                                                    message: format!("Broker '{}' is not enabled or supported.", item.broker),
-                                                })).await;
+                                                let _ = tx
+                                                    .send(ControlFlow::Reply(OhclResponse::Error {
+                                                        message: format!(
+                                                            "Broker '{}' is not enabled.",
+                                                            item.broker
+                                                        ),
+                                                    }))
+                                                    .await;
                                             }
                                             Err(error) => {
-                                                let _ = tx.send(ControlFlow::Reply(OhclResponse::Error {
-                                                    message: format!("Internal system error verifying broker '{}': {}", item.broker, error),
-                                                })).await;
+                                                let _ = tx
+                                                    .send(ControlFlow::Reply(OhclResponse::Error {
+                                                        message: format!(
+                                                            "Internal error: {}",
+                                                            error
+                                                        ),
+                                                    }))
+                                                    .await;
                                             }
                                         }
                                     }
@@ -223,21 +235,35 @@ async fn handle_socket(
         let tx = tx.clone();
 
         tokio::spawn(async move {
-            while let Ok(msg) = broadcast.recv().await {
-                if let Ok(tick_data) = serde_json::from_value::<Tick>(msg.payload) {
-                    let is_subscribed = {
-                        let state = session.read().await;
-                        state
-                            .subscribed_symbols
-                            .contains(&(tick_data.broker.clone(), tick_data.symbol.clone()))
-                    };
+            loop {
+                match broadcast.recv().await {
+                    Ok(msg) => {
+                        if let Ok(tick_data) = serde_json::from_value::<Tick>(msg.payload) {
+                            let is_subscribed = {
+                                let state = session.read().await; // <--- THÊM .await Ở ĐÂY
+                                state
+                                    .subscribed_symbols
+                                    .contains(&(tick_data.broker.clone(), tick_data.symbol.clone()))
+                            };
 
-                    if is_subscribed {
-                        let response = OhclResponse::Tick { data: tick_data };
-
-                        if tx.send(ControlFlow::Reply(response)).await.is_err() {
-                            break;
+                            if is_subscribed {
+                                let response = OhclResponse::Tick { data: tick_data };
+                                if tx.send(ControlFlow::Reply(response)).await.is_err() {
+                                    break;
+                                }
+                            }
                         }
+                    }
+                    Err(RecvError::Lagged(skipped)) => {
+                        tracing::warn!(
+                            "Client tennant {} bị chậm! Đã bỏ qua {} ticks",
+                            tenant_id,
+                            skipped
+                        );
+                        continue;
+                    }
+                    Err(RecvError::Closed) => {
+                        break;
                     }
                 }
             }
@@ -245,8 +271,17 @@ async fn handle_socket(
     };
 
     tokio::select! {
-        _ = &mut send_task => recv_task.abort(),
-        _ = &mut recv_task => send_task.abort(),
-        _ = &mut broadcast_task => send_task.abort(),
+        _ = &mut send_task => {
+            recv_task.abort();
+            broadcast_task.abort();
+        },
+        _ = &mut recv_task => {
+            send_task.abort();
+            broadcast_task.abort();
+        },
+        _ = &mut broadcast_task => {
+            send_task.abort();
+            recv_task.abort();
+        },
     }
 }

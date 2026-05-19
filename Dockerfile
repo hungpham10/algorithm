@@ -28,7 +28,7 @@ RUN apt-get -qq update && DEBIAN_FRONTEND=noninteractive apt-get -qq install --y
 # 2. Cài chef và "cook" trước toàn bộ thư viện bên thứ ba của proxy
 RUN cargo install cargo-chef --locked
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json -p proxy
 
 # 3. Code thật thay đổi sẽ chỉ lọt vào từ đây. Cache từ bước trên vẫn giữ nguyên!
 COPY . .
@@ -41,13 +41,14 @@ FROM rust:bookworm AS backend
 WORKDIR /app
 
 # 1. Cài đặt thư viện hệ thống cho backend
-RUN apt-get -qq update && DEBIAN_FRONTEND=noninteractive apt-get -qq install --yes --no-install-recommends --no-install-suggests \
-	libclang-dev libpcre2-dev libssl-dev zlib1g-dev pkg-config ca-certificates grep gawk gnupg2 sed make wget
+RUN DEBIAN_FRONTEND=noninteractive apt-get -qq install --yes --no-install-recommends --no-install-suggests 	\
+	make 													\
+	pkgconf
 
 # 2. Cài chef và "cook" trước toàn bộ thư viện bên thứ ba của backend
 RUN cargo install cargo-chef --locked
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json -p services
 
 # 3. Khi sửa code backend, Docker chỉ chạy lại từ dòng COPY này đổ xuống
 COPY . .
