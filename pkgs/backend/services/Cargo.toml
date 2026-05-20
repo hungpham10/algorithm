@@ -15,11 +15,11 @@ assets = [
 
 [dependencies]
 # Macros
-vector_config_macro = { path = "../../macros/vector_config_macro" }
+vector_config_macro = { path = "../../macros/vector_config_macro", features = ["sea-orm"] }
 
 # Shared libraries
-vector_runtime = { path = "../../libraries/vector/runtime" }
-vector_components = { path = "../../libraries/vector/components" }
+vector_runtime = { path = "../../libraries/vector/runtime", features = ["sea-orm"] }
+vector_components = { path = "../../libraries/vector/components", features = ["sea-orm"] }
 schemas = { path = "../schemas" }
 models = { path = "../models" }
 analysis = { path = "../../libraries/analysis" }

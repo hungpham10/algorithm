@@ -181,7 +181,7 @@ INSERT IGNORE INTO `ohcl_store_locations` (`id`, `store`, `address_line`, `distr
 
 -- Cập nhật/Bổ sung danh sách chi nhánh cho Kim Khánh Việt Hùng (Store ID: 11)
 INSERT IGNORE INTO `ohcl_store_locations` (`id`, `store`, `address_line`, `district`, `province`) VALUES
-(195, 11, '24 Âu Cơ, Phường Liên Chiểu', 'Liên Chiểu', 'Đà Nẵng')
+(195, 11, '24 Âu Cơ, Phường Liên Chiểu', 'Liên Chiểu', 'Đà Nẵng'),
 (196, 11, '159 Tôn Đức Thắng, Phường An Khê', 'Thanh Khê', 'Đà Nẵng'),
 (197, 11, '354 Hùng Vương, Phường Thanh Khê', 'Thanh Khê', 'Đà Nẵng'),
 (198, 11, '86 Hoàng Xuân Hãn, Phường Cẩm Lệ', 'Cẩm Lệ', 'Đà Nẵng'),

@@ -143,23 +143,6 @@ pub struct Websocket2Json {
     pub send: Option<Value>,
 }
 
-impl Clone for Websocket2Json {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id.clone(),
-            uri: self.uri.clone(),
-            send: self.send.clone(),
-            start: self.start.clone(),
-        }
-    }
-}
-
-impl PartialEq for Websocket2Json {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id && self.uri == other.uri
-    }
-}
-
 #[async_trait]
 impl WebSocketPolling for Websocket2Json {
     async fn on_start(&self) -> Result<Option<String>, Error> {

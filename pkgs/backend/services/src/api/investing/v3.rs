@@ -80,6 +80,8 @@ pub async fn into_websocket(
 ) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
     let broadcast = app_state
         .runtime
+        .read()
+        .await
         .broadcast(
             app_state
                 .secret
@@ -94,7 +96,6 @@ pub async fn into_websocket(
                     )
                 })?,
         )
-        .await
         .map_err(|error| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,

@@ -21,3 +21,9 @@ async-trait = "0.1.89"
 # Future
 futures = "0.3"
 futures-util = "0.3"
+
+# Sea-orm
+sea-orm = { version = "2.0.0-rc.31", features = [ "sqlx-mysql", "runtime-tokio-rustls", "macros" ], optional = true }
+
+[features]
+sea-orm = ["vector_config_macro/sea-orm", "dep:sea-orm"]

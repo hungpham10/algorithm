@@ -15,13 +15,12 @@ use tokio::net::unix::UCred;
 use tokio::signal;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use vector_runtime::{Component, Event};
 
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use std::fs;
-use std::io::{Error, ErrorKind};
+use std::io::Error;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -35,40 +34,9 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
 use crate::api::admin;
-use crate::vector::{AxumBuilder, AxumRuntime};
 //use crate::api::chat;
 use crate::api::investing;
-use crate::api::{AppState, health_check, into_stream, pprof, reload};
-
-#[derive(serde::Deserialize)]
-struct Pipeline {
-    components: Vec<Box<dyn Component>>,
-}
-
-fn load_components_from_env() -> Result<Vec<Arc<dyn Component>>, Error> {
-    let config_json_str = match std::env::var("PIPELINE_CONFIG_JSON") {
-        Ok(val) => val,
-        Err(_) => {
-            return Ok(Vec::new());
-        }
-    };
-
-    if config_json_str.trim().is_empty() {
-        return Ok(Vec::new());
-    }
-
-    Ok(serde_json::from_str::<Pipeline>(&config_json_str)
-        .map_err(|error| {
-            Error::new(
-                ErrorKind::InvalidData,
-                format!("Failed to parse config JSON from env: {error}"),
-            )
-        })?
-        .components
-        .into_iter()
-        .map(Arc::from)
-        .collect::<Vec<_>>())
-}
+use crate::api::{AppState, health_check, pprof, reload};
 
 fn init_telemetry() -> Option<(SdkTracerProvider, SdkMeterProvider)> {
     let agent_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
@@ -191,15 +159,12 @@ async fn admin_openapi() -> Json<utoipa::openapi::OpenApi> {
     Json(AdminApiDoc::openapi())
 }
 
-pub async fn routes(
-    components: Vec<Arc<dyn Component>>,
-    enable_sentry: bool,
-) -> Result<(Router, Arc<AxumRuntime>), Error> {
+pub async fn routes(app_state: AppState, enable_sentry: bool) -> Result<Router, Error> {
     let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
     let environment = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "dev".to_string());
 
     // TODO: xem thử có cách nào load cấu hình từ yaml bên ngoài luôn đươc không
-    let mut router = Router::new()
+    let router = Router::new()
         .route("/health", get(health_check))
         .route("/reload", post(reload))
         .route("/debug/pprof/profile", get(pprof))
@@ -211,30 +176,8 @@ pub async fn routes(
         .nest("/ws/investing", investing::sockets())
         .merge(SwaggerUi::new("/swagger-ui").url("/docs/openapi.json", InvestingApiDoc::openapi()));
 
-    // @TODO: validate of existing input `facebook_source` and `slack_source`
-    let runtime = Arc::new(
-        AxumBuilder::new()
-            .route("/api/chat/v1/facebook/webhook", "facebook_source")
-            .await?
-            .route("/api/chat/v1/slack/webhook", "slack_source")
-            .await?
-            .build(&mut router, |_| post(into_stream))
-            .await,
-    );
-
-    runtime.reload(components).await?;
-    runtime
-        .start(|event| async move {
-            match event {
-                Event::Minor((id, error)) => println!("Minor error in node {id}: {error}"),
-                Event::Major((id, error)) => println!("Major error in node {id}: {error}"),
-                Event::Panic((id, error)) => println!("Panic in node {id}: {error}"),
-            }
-        })
-        .await?;
-
     let router = router
-        .with_state(AppState::new(runtime.clone()).await?)
+        .with_state(app_state)
         .layer(
             TraceLayer::new_for_http().make_span_with(|request: &Request<Body>| {
                 tracing::info_span!(
@@ -257,7 +200,7 @@ pub async fn routes(
         router
     };
 
-    Ok((final_router, runtime))
+    Ok(final_router)
 }
 
 pub async fn run() -> std::io::Result<()> {
@@ -268,7 +211,8 @@ pub async fn run() -> std::io::Result<()> {
 
     // Khởi tạo toàn bộ router và streamer trong một lần gọi
     // Bạn có thể truyền components ban đầu vào đây
-    let (router, streamer) = routes(load_components_from_env()?, telemetry_guard.is_none()).await?;
+    let app_state = AppState::new().await?;
+    let router = routes(app_state.clone(), telemetry_guard.is_none()).await?;
     let make_service = router.into_make_service_with_connect_info::<UdsConnectInfo>();
     let usx = UnixListener::bind(path.clone())?;
 
@@ -281,8 +225,8 @@ pub async fn run() -> std::io::Result<()> {
         .await;
 
     // Shutdown sạch sẽ
-    streamer.stop().await?;
-    streamer.wait_for_shutdown().await?;
+    app_state.stop().await?;
+    app_state.wait_for_shutdown().await?;
 
     if let Some((trace_provider, meter_provider)) = telemetry_guard {
         let _ = trace_provider.force_flush();
