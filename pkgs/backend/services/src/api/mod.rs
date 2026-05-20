@@ -14,12 +14,12 @@ use headers::Header;
 use http::header;
 use http::{HeaderName, HeaderValue};
 
-use tokio::sync::RwLock;
 use aws_sdk_s3::Client as S3Client;
 use pprof::protos::Message;
 use reqwest::Client as HttpClient;
 use reqwest_middleware::ClientBuilder;
 use reqwest_tracing::TracingMiddleware;
+use tokio::sync::RwLock;
 
 use integration::QueryCandleSticks;
 use models::entities::admin::Admin;
@@ -27,7 +27,7 @@ use models::entities::investing::Investing;
 use models::resolver::Resolver;
 use models::secret::Secret;
 use schemas::reload::Reload;
-use vector_runtime::{Runtime, Event};
+use vector_runtime::{Event, Runtime};
 
 #[derive(Debug)]
 pub struct XTenantId(i64);
@@ -103,25 +103,20 @@ impl AppState {
         runtime
             .write()
             .await
-            .reload(
-                admin_entity.into_components(0).await.map_err(|error| {
-                    Error::new(
-                        ErrorKind::BrokenPipe,
-                        format!("Init runtime failed: {error}"),
-                    )
-                })?
-            )?;
+            .reload(admin_entity.into_components(0).await.map_err(|error| {
+                Error::new(
+                    ErrorKind::BrokenPipe,
+                    format!("Init runtime failed: {error}"),
+                )
+            })?)?;
 
-        runtime
-            .write()
-            .await
-            .start(|event| async move {
-                match event {
-                    Event::Minor((id, error)) => println!("Minor error in node {id}: {error}"),
-                    Event::Major((id, error)) => println!("Major error in node {id}: {error}"),
-                    Event::Panic((id, error)) => println!("Panic in node {id}: {error}"),
-                }
-            })?;
+        runtime.write().await.start(|event| async move {
+            match event {
+                Event::Minor((id, error)) => println!("Minor error in node {id}: {error}"),
+                Event::Major((id, error)) => println!("Major error in node {id}: {error}"),
+                Event::Panic((id, error)) => println!("Panic in node {id}: {error}"),
+            }
+        })?;
 
         Ok(Self {
             // @NOTE: setup entity
