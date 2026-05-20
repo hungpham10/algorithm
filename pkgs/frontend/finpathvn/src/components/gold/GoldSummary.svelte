@@ -1,3 +1,4 @@
+
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { PRICE_EVENT_NAME } from '$lib/schema.js';
@@ -10,12 +11,15 @@
   let dataWorld = initialData.world;
 
   let socket;
-  let sessionId = "qs_" + Math.random().toString(36).substring(2, 10);
+
+  // Cache tỷ giá để tránh spam API
+  let usdSellRate = 25000;
+  let lastRateFetch = 0;
+  const RATE_CACHE_TIME = 5 * 60 * 1000; // 5 phút cập nhật 1 lần
 
   // --- Live Update VN (Từ CustomEvent) ---
   function handleVNUpdate(event) {
     const allUpdates = event.detail;
-    // index 0 là SJC Summary từ mảng allProductIds bên index.astro
     const myUpdate = allUpdates[0];
 
     if (myUpdate && !myUpdate.error) {
@@ -27,61 +31,81 @@
     }
   }
 
-  // --- Live Update Thế Giới (Websocket TradingView) ---
-  const encodeTV = (obj) => {
-    const msg = JSON.stringify(obj);
-    return `~m~${msg.length}~m~${msg}`;
-  };
+  // --- Hàm bổ trợ lấy tỷ giá (Có kiểm tra Cache) ---
+  async function updateExchangeRate() {
+    const now = Date.now();
+    if (now - lastRateFetch < RATE_CACHE_TIME) return usdSellRate;
 
-  const decodeTV = (raw) => raw.split(/~m~\d+~m~/).filter(p => p.trim() && p.startsWith('{'));
+    try {
+      const response = await fetch('/api/investing/v2/exchange-rate');
+      if (response.ok) {
+        const rateJson = await response.json();
+        const rate = rateJson.query.find(i => i.currencyCode === "USD")?.sell;
+        if (rate) {
+          usdSellRate = parseFloat(rate);
+          lastRateFetch = now;
+        }
+      }
+    } catch (apiErr) {
+      console.error("API tỷ giá gặp lỗi:", apiErr);
+    }
+    return usdSellRate;
+  }
 
+  // --- Live Update Thế Giới (Websocket Mới) ---
   function connectWorld() {
-    socket = new WebSocket("wss://widgetdata.tradingview.com/socket.io/websocket?from=embed-widget%2Fsingle-quote%2F&type=global");
+    // Tự động nhận diện giao thức ws/wss và host hiện tại của ứng dụng
+    const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const wsUrl = `${protocol}${window.location.host}/ws/investing/v3`;
+
+    socket = new WebSocket(wsUrl);
 
     socket.onopen = () => {
-      socket.send(encodeTV({ "m": "set_auth_token", "p": ["unauthorized_user_token"] }));
-      socket.send(encodeTV({ "m": "quote_create_session", "p": [sessionId] }));
-      socket.send(encodeTV({ "m": "quote_add_symbols", "p": [sessionId, "PEPPERSTONE:XAUUSD"] }));
+      // Gửi sub đúng format bạn yêu cầu
+      socket.send(JSON.stringify({
+        "action": "subscribe",
+        "symbols": [
+          { "broker": "simplefx", "symbol": "XAUUSD" }
+        ]
+      }));
     };
 
-    socket.onmessage = (event) => {
-      const raw = event.data;
-      if (raw.includes('~h~')) { socket.send(raw); return; }
+    socket.onmessage = async (event) => {
+      try {
+        const data = JSON.parse(event.data);
 
-      const packets = decodeTV(raw);
-      packets.forEach(async (packet) => {
-        try {
-          const json = JSON.parse(packet);
-          if (json.m === 'qsd' && json.p[1].v) {
-            const v = json.p[1].v;
-            if (v.lp !== undefined) {
-              dataWorld.price = v.lp.toLocaleString('en-US', { minimumFractionDigits: 2 });
+        // Khớp cấu trúc event: "tick" từ broker và symbol của bạn
+        if (data.event === 'tick' && data.symbol === 'XAUUSD' && data.price) {
+          const currentPrice = data.price;
 
-              try {
-                const res = await fetch('/api/investing/v2/exchange-rate');
-                const rateJson = await res.json();
-                const usdSell = parseFloat(rateJson.query.find(i => i.currencyCode === "USD")?.sell || "25000");
+          // 1. Lưu giá cũ để tính diff trước khi ghi đè giá mới
+          const previousPrice = parseFloat(dataWorld.price?.replace(/,/g, '')) || currentPrice;
 
-                const converted = (v.lp * 1.205 * usdSell) / 1000000;
-                dataWorld.convertedVnd = converted.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " tr";
-              } catch (apiErr) {
-                console.error("API tỷ giá hắt hơi rồi:", apiErr);
-              }
-            }
-            if (v.ch !== undefined) {
-              dataWorld.diff = (v.ch > 0 ? '▲ ' : '▼ ') + Math.abs(v.ch).toFixed(2);
-            }
-            if (v.ch !== undefined && v.lp !== undefined) {
-              const prevPrice = v.lp - v.ch;
-              dataWorld.percent = ((v.ch / prevPrice) * 100).toFixed(2) + '%';
-            }
-            dataWorld = dataWorld; // Trigger re-render
+          // Định dạng hiển thị giá hiện tại (Ví dụ: 4,505.77)
+          dataWorld.price = currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2 });
+
+          // 2. Lấy tỷ giá từ cache/API và tính giá quy đổi
+          const usdRate = await updateExchangeRate();
+          const converted = (currentPrice * 1.205 * usdRate) / 1000000;
+          dataWorld.convertedVnd = converted.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " tr";
+
+          // 3. Tính toán độ lệch tăng giảm (Biến động thực tế giữa các tick)
+          const diffValue = currentPrice - previousPrice;
+          if (diffValue !== 0) {
+            dataWorld.diff = (diffValue > 0 ? '▲ ' : '▼ ') + Math.abs(diffValue).toFixed(2);
+            dataWorld.percent = ((diffValue / previousPrice) * 100).toFixed(2) + '%';
           }
-        } catch (e) {}
-      });
+
+          dataWorld = dataWorld; // Trigger re-render Svelte
+        }
+      } catch (e) {
+        console.error("Lỗi parse dữ liệu mạng:", e);
+      }
     };
 
-    socket.onclose = () => { if (socket) setTimeout(connectWorld, 5000); };
+    socket.onclose = () => {
+      if (socket) setTimeout(connectWorld, 5000);
+    };
   }
 
   onMount(() => {
@@ -108,7 +132,7 @@
 </script>
 
 <div class="grid grid-cols-1 md:grid-cols-2 bg-white border border-gray-200 rounded-lg overflow-hidden font-sans mt-2">
-
+  <!-- Giữ nguyên phần HTML giao diện của bạn bên dưới -->
   <div class="p-4 md:p-6 flex flex-col justify-between border-b md:border-b-0 md:border-r border-gray-200">
     <div class="flex justify-between items-start mb-6">
       <div>

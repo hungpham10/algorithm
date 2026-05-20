@@ -1,63 +1,73 @@
 <script>
-    import { onMount, onDestroy } from 'svelte';
-    import { init, dispose } from 'klinecharts';
+  import { onMount, onDestroy } from 'svelte';
+  import { init } from 'klinecharts';
 
-    export let symbol = 'PLX';
-    export let resolution = '1D';
+  let chart = null;
+  let pollingInterval = null;
+  const stopMap = new Map();
 
-    let chartContainer;
-    let chart;
+  function normalizeToKLineData(data) {
+    return {
+      timestamp: data.t * 1000,   // nếu API trả seconds → đổi sang ms
+      open: Number(data.o),
+      high: Number(data.h),
+      low: Number(data.l),
+      close: Number(data.c),
+      volume: Number(data.v),
+    };
+  }
 
-    onMount(() => {
-        // Khởi tạo chart
-        chart = init(chartContainer, {
-            styles: {
-                grid: { show: true, horizontal: { style: 'dash' } },
-                candle: { type: 'candle_solid' }
-            }
-        });
+  function makeKey(symbol, period) {
+    return `${symbol.ticker}_${period.span}${period.type}`;
+  }
 
-        // Đổ dữ liệu vào
-        chart.applyNewData(generateData());
-
-        // Xử lý resize khi cửa sổ trình duyệt thay đổi
-        const handleResize = () => chart.resize();
-        window.addEventListener('resize', handleResize);
-
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            dispose(chartContainer); // Dọn dẹp memory
-        };
+  onMount(() => {
+    chart = init('chart', {
+      grid: { show: true },
     });
 
-    // Cập nhật khi symbol hoặc resolution thay đổi
-    $: if (chart && (symbol || resolution)) {
-        console.log(`Fetching data for ${symbol} at ${resolution}`);
-        chart.applyNewData(generateData());
+    chart.setSymbol({ ticker: 'BTC/USDT' }); // ← thay bằng symbol của bạn
+    chart.setPeriod({ span: 1, type: 'day' });
+
+    chart.setDataLoader({
+      async getBars({ type, timestamp, symbol, period, callback }) {
+        try {
+          // ⚠️ Thay bằng API thực của bạn
+          const response = await api.getKlineList({
+            symbol: symbol.ticker,
+            period: `${period.span}${period.type}`,
+            endTime: timestamp ?? Date.now(),
+            limit: 500,
+            direction: type,
+          });
+
+          const bars = response.list
+            .map(normalizeToKLineData)
+            .sort((a, b) => a.timestamp - b.timestamp);
+
+          callback(bars, {
+            forward: response.hasMoreBefore,
+            backward: response.hasMoreAfter,
+          });
+        } catch (err) {
+          console.error('getBars error:', err);
+          callback([], { forward: false, backward: false });
+        }
+      },
+
+    });
+  });
+
+  onDestroy(() => {
+    // Dọn hết polling còn sót
+    stopMap.forEach((stop) => stop());
+    stopMap.clear();
+
+    if (chart) {
+      chart.dispose();
+      chart = null;
     }
+  });
 </script>
 
-<div class="chart-wrapper">
-    <div class="info">
-        <h3>{symbol} - {resolution}</h3>
-    </div>
-    <div bind:this={chartContainer} class="chart-container"></div>
-</div>
-
-<style>
-    .chart-wrapper {
-        width: 100%;
-        height: 500px;
-        background: #191b21;
-        padding: 20px;
-        border-radius: 8px;
-    }
-    .chart-container {
-        width: 100%;
-        height: 400px;
-    }
-    .info {
-        color: #eee;
-        margin-bottom: 10px;
-    }
-</style>
+<div id="chart" style="width: 600px; height: 600px; border: 1px solid #ddd;" />

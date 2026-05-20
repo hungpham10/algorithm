@@ -62,3 +62,9 @@ export function calcPercentInitial(diffStr, currentPrice) {
   const percent = (finalDiff / yesterday) * 100;
   return (percent > 0 ? "+" : "") + percent.toFixed(2) + "%";
 };
+
+export async function getIP() {
+  const response = await fetch('https://icanhazip.com');
+  const ip = await response.text();
+  return ip.trim();
+}

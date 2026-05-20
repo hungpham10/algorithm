@@ -1,0 +1,38 @@
+---
+const { data = [], color = "text-gray-300" } = Astro.props;
+
+// Logic tính toán tọa độ cho SVG polyline
+// Giả sử mảng data có 7 phần tử ứng với 7 ngày
+const width = 100;
+const height = 30;
+const padding = 5;
+
+let points = "";
+
+if (data.length > 1) {
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1; // Tránh chia cho 0 nếu các số bằng nhau
+
+  points = data.map((val, i) => {
+    const x = (i / (data.length - 1)) * width;
+    // Quan trọng: Ép giá trị thấp nhất về đáy (height-padding)
+    // và giá trị cao nhất lên đỉnh (padding)
+    const y = height - padding - ((val - min) / range) * (height - 2 * padding);
+    return `${x},${y}`;
+  }).join(' ');
+}
+---
+
+<div class="flex flex-col items-center justify-center">
+  <svg class={`w-16 h-8 ${color} group-hover:text-green-500 transition-colors`} viewBox={`0 0 ${width} ${height}`}>
+    <polyline
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      points={points}
+    />
+  </svg>
+</div>

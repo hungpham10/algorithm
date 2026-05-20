@@ -5,10 +5,6 @@ import viteCompression from 'vite-plugin-compression';
 import obfuscator from 'vite-plugin-javascript-obfuscator';
 import sentry from '@sentry/astro';
 
-/**
- * Cấu hình Astro tối ưu cho hiệu suất và bảo mật
- * Phân tách rõ ràng luồng Client (Fetch/Dispatch) và SSG (Render)
- */
 export default defineConfig({
   integrations: [
     svelte(),
@@ -18,7 +14,6 @@ export default defineConfig({
     }),
   ],
 
-  // Inlining CSS để giảm số lượng request cho trang SSG
   build: {
     inlineStylesheets: 'always',
   },
@@ -35,11 +30,18 @@ export default defineConfig({
 
     plugins: [
       tailwindcss(),
+      // 1. Thêm Gzip song song với Brotli (Brotli tốt cho trình duyệt mới, Gzip làm fallback tránh lãng phí byte)
+      viteCompression({
+        algorithm: 'gzip',
+        ext: '.gz',
+        threshold: 1024,
+      }),
       viteCompression({
         algorithm: 'brotliCompress',
         ext: '.br',
         threshold: 1024,
       }),
+      // 2. Chuyển Obfuscator xuống chạy SAU cùng để không làm hỏng logic chunking
       {
         ...obfuscator({
           options: {
@@ -48,15 +50,18 @@ export default defineConfig({
             deadCodeInjection: false,
             identifierNamesGenerator: 'mangled',
             stringArray: true,
-            stringArrayThreshold: 0.75,
+            stringArrayThreshold: 0.8, // Tăng nhẹ để gộp chuỗi tốt hơn
+            stringArrayEncoding: ['base64'], // Mã hóa base64 để nén Gzip/Brotli bắt được pattern trùng tốt hơn
             unicodeEscapeSequence: false,
             exclude: [
               'node_modules/**/*',
-              '**/@sentry/**'
+              '**/@sentry/**',
+              '**/*.css'
             ],
           },
         }),
         apply: 'build',
+        enforce: 'post', // ÉP BUỘC: Chạy sau khi Vite đã tối ưu xong xuôi
       },
     ],
 
@@ -67,11 +72,16 @@ export default defineConfig({
         compress: {
           drop_console: true,
           drop_debugger: true,
-          pure_funcs: ['console.info', 'console.debug'],
+          pure_funcs: ['console.info', 'console.debug', 'console.warn'], // Xóa thêm cả console.warn
           passes: 3,
+          unsafe: true, // BẬT: Cho phép Terser dùng các hàm tối ưu sâu (khai thác tính chất ES6+)
+          unsafe_arrows: true, // Chuyển function() thường thành arrow function () => để giảm byte
+          unsafe_comps: true,
+          unsafe_math: true, // Tối ưu các biểu thức toán học tĩnh
         },
         mangle: {
           toplevel: true,
+          properties: false, // TUYỆT ĐỐI ĐỂ FALSE: Mangle property sẽ làm hỏng Svelte 5 / Sentry
         },
         format: {
           comments: false,
@@ -81,17 +91,22 @@ export default defineConfig({
       assetsInlineLimit: 4096,
       rollupOptions: {
         output: {
+          // 3. Tối ưu lại phân mảnh ( manualChunks )
           manualChunks(id) {
+            // Tách Sentry ra chunk riêng, vì Obfuscate đè vào Sentry sẽ lỗi crash log telemetry
+            if (id.includes('node_modules/@sentry')) {
+              return 'sentry';
+            }
+            // Gom tất cả node_modules còn lại vào 'v' như cũ
             if (id.includes('node_modules')) {
               return 'v';
             }
-
+            // Code core API/Dispatch của bạn
             if (id.includes('src/lib/api') || id.includes('dispatch.js')) {
               return 'api';
             }
           },
 
-          // Tên file thu gọn để tối ưu metadata
           chunkFileNames: 'a/[hash].js',
           entryFileNames: 'a/[hash].js',
           assetFileNames: (assetInfo) => {

@@ -14,29 +14,49 @@ const SHOW_REGION_TABLE = import.meta.env.SHOW_REGION_TABLE === 'true';
 let dataSource = await FetchIndex.load();
 const goldSummary = dataSource.summary;
 const productIds = dataSource.productIds;
+const degree = 1000000;
 
 const now = new Date();
 const currentDate = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
 const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullYear()}`;
+
+const navMenus = [
+  { label: 'Bảng Giá Vàng', href: '/' },
+];
 ---
-<Layout title="Bảng giá vàng trực tuyến - Cập nhật liên tục 24h" showAds={SHOW_ADS}>
-  <script slot="head" is:inline define:vars={{ productIds }}>
+<Layout title="Bảng giá vàng trực tuyến - Cập nhật liên tục 24h" showAds={SHOW_ADS} navMenus={navMenus}>
+<div id="price-config" data-ids={JSON.stringify(productIds)} data-degree={degree}></div>
+  <script>
     import { fetchPriceByProductId } from '$lib/fetch.js';
     import { PRICE_EVENT_NAME } from '$lib/schema.js';
 
-    document.addEventListener('DOMContentLoaded', () => {
-      fetchPriceByProductId();
-      setInterval(() => window.location.reload(), 300000);
-    });
-  </script>
+    const configEl = document.getElementById('price-config');
+    const productIds = JSON.parse(configEl.dataset.ids || '[]');
+    const degree = configEl.dataset.degree;
 
+    async function initPolling() {
+      if (productIds.length === 0) return;
+      await fetchPriceByProductId(PRICE_EVENT_NAME, productIds, degree);
+
+      setInterval(async () => {
+        console.log('Polling new prices...');
+        await fetchPriceByProductId(PRICE_EVENT_NAME, productIds, degree);
+      }, 30000);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initPolling);
+    } else {
+      initPolling();
+    }
+  </script>
   <GoldSummary initialData={goldSummary} client:load />
 
   <div class="mt-4">
     <div class="bg-white border border-gray-200 rounded-md overflow-hidden shadow-sm">
       <header class="p-4 border-b border-gray-100 flex justify-between items-center bg-white">
         <div class="flex items-baseline gap-2">
-          <h1 class="text-xl font-bold text-gray-800 tracking-tight">Giá vàng hôm nay</h1>
+          <h1 class="text-xl font-bold text-gray-800 tracking-tight">Giá vàng hôm nay </h1>
           <span class="text-gray-400 text-[10px] uppercase tracking-widest font-medium hidden sm:inline">| TRIỆU ĐỒNG/CHỈ</span>
         </div>
         <div class="text-[11px] text-gray-400 font-bold bg-gray-50 px-2 py-1 rounded">{currentDate}</div>
