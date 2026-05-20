@@ -2,7 +2,10 @@ mod api_map;
 mod article_map;
 mod database_map;
 mod file_map;
+mod link_streams_to_sinks;
+mod sinks;
 mod sitemap;
+mod streams;
 mod table_map;
 mod tenant;
 mod token_map;
@@ -11,12 +14,15 @@ pub use api_map::Entity as ApiMap;
 pub use article_map::Entity as ArticleMap;
 pub use database_map::Entity as DatabaseMap;
 pub use file_map::Entity as FileMap;
+pub use link_streams_to_sinks::Entity as LinkStreamsToSinks;
+pub use sinks::Entity as Sinks;
 pub use sitemap::Entity as Sitemap;
+pub use streams::Entity as Streams;
 pub use table_map::Entity as TableMap;
 pub use tenant::Entity as Tenant;
 pub use token_map::Entity as TokenMap;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::sync::{Arc, OnceLock};
@@ -25,8 +31,8 @@ use std::time::Duration;
 use sea_orm::sea_query::{Alias, Condition, Expr, OnConflict, Query};
 use sea_orm::{
     ColumnTrait, ConnectOptions, ConnectionTrait, Database, DatabaseConnection,
-    DatabaseTransaction, DbErr, EntityTrait, ExprTrait, QueryFilter, QuerySelect, RuntimeErr, Set,
-    TransactionTrait, Value as OrmValue,
+    DatabaseTransaction, DbErr, EntityTrait, ExprTrait, JoinType, QueryFilter, QuerySelect,
+    RuntimeErr, Set, TransactionTrait, Value as OrmValue,
 };
 
 use algorithm::{LruCache, Operator, decrypt, encrypt};
@@ -36,6 +42,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use utoipa::{IntoParams, ToSchema};
+use vector_runtime::Component;
 
 use crate::resolver::Resolver;
 
@@ -1429,5 +1436,55 @@ impl Admin {
         }
 
         Ok(result)
+    }
+    // --------------------------------------------------------------
+
+    pub async fn into_components(&self, tenant_id: i64) -> Result<Vec<Arc<dyn Component>>, DbErr> {
+        let mut unique_streams = HashSet::new();
+        let mut unique_sinks = HashSet::new();
+        let mut query = LinkStreamsToSinks::find()
+            .select_only()
+            .column(link_streams_to_sinks::Column::SinkId)
+            .column(link_streams_to_sinks::Column::StreamId)
+            .column(sinks::Column::Handler)
+            .column(streams::Column::Context)
+            .join_rev(
+                JoinType::InnerJoin,
+                sinks::Entity::belongs_to(LinkStreamsToSinks)
+                    .from(sinks::Column::Id)
+                    .to(link_streams_to_sinks::Column::SinkId)
+                    .into(),
+            )
+            .join_rev(
+                JoinType::InnerJoin,
+                streams::Entity::belongs_to(LinkStreamsToSinks)
+                    .from(streams::Column::Id)
+                    .to(link_streams_to_sinks::Column::StreamId)
+                    .into(),
+            )
+            .filter(link_streams_to_sinks::Column::Enabled.eq(true));
+
+        if tenant_id > 0 {
+            query = query.filter(link_streams_to_sinks::Column::TenantId.eq(tenant_id));
+        }
+
+        Ok(query
+            .into_tuple::<(i64, i64, sinks::Handler, streams::Context)>()
+            .all(self.dbt(tenant_id))
+            .await?
+            .into_iter()
+            .flat_map(|(sink_id, stream_id, sink, ctx)| {
+                let mut pair = Vec::with_capacity(2);
+
+                if unique_streams.insert(stream_id) {
+                    pair.extend(ctx.0);
+                }
+                if unique_sinks.insert(sink_id) {
+                    pair.push(sink.0);
+                }
+
+                pair
+            })
+            .collect::<Vec<_>>())
     }
 }

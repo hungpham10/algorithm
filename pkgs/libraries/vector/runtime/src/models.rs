@@ -1,5 +1,6 @@
-use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::io::Error;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -95,6 +96,7 @@ pub struct Outbound {
 pub trait Identify {
     fn id(&self) -> String;
     fn get_inputs(&self) -> Option<&Vec<String>>;
+    fn clone_arc(&self) -> Arc<dyn Component>;
     fn as_any(&self) -> &dyn std::any::Any;
     fn component_type(&self) -> ComponentType;
     fn compare(&self, other: &dyn Component) -> bool;
@@ -102,7 +104,7 @@ pub trait Identify {
 
 #[typetag::serde(tag = "type")]
 #[async_trait]
-pub trait Component: Identify + Send + Sync {
+pub trait Component: Identify + Send + Sync + Debug {
     async fn run(
         &self,
         id: usize,

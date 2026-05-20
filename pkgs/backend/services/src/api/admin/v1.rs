@@ -1262,10 +1262,9 @@ fn admin_error(status: StatusCode, message: String) -> BoxedAdminError {
 
 #[utoipa::path(
     get,
-    path = "/seo/schemas/{id}/query/{path:.*}",
+    path = "/seo/schemas/{id}/query",
     params(
         ("id" = i64, Path, description = "The internal database ID of the API schema"),
-        ("path" = String, Path, description = "The derivative path of the API (can be empty or multiple segments like v1/data)"),
         ("params" = Option<HashMap<String, String>>, Query, description = "Dynamic query arguments for the API")
     ),
     responses(

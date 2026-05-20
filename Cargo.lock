@@ -3785,6 +3785,7 @@ dependencies = [
  "tracing",
  "url",
  "utoipa",
+ "vector_runtime",
 ]
 
 [[package]]
@@ -7436,6 +7437,7 @@ dependencies = [
  "async-trait",
  "futures",
  "futures-util",
+ "sea-orm",
  "serde",
  "serde_json",
  "tokio",
@@ -7449,15 +7451,10 @@ dependencies = [
 name = "vector_config_macro"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "proc-macro2",
  "quote",
- "serde",
  "serde_derive_internals",
- "serde_json",
  "syn 2.0.117",
- "tokio",
- "typetag",
 ]
 
 [[package]]
@@ -7468,6 +7465,7 @@ dependencies = [
  "futures",
  "futures-util",
  "log",
+ "sea-orm",
  "serde",
  "serde_json",
  "tokio",

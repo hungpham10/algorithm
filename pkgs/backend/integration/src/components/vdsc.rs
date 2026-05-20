@@ -104,7 +104,7 @@ pub struct Transition {
     pub change: f64,
 }
 
-#[source]
+#[source(derive(Debug), exclude(PartialEq, Clone))]
 pub struct VdscSource {
     pub id: String,
     pub board: VdscBoard,

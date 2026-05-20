@@ -2,13 +2,13 @@ pub mod admin;
 pub mod investing;
 
 use std::collections::HashMap;
-use std::io::Error;
+use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 use std::time::Duration;
 
 use axum::body::Body;
-use axum::extract::{Json, Query, State};
-use axum::http::{StatusCode, Uri};
+use axum::extract::{Query, State};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response, Result};
 use headers::Header;
 use http::header;
@@ -19,7 +19,7 @@ use pprof::protos::Message;
 use reqwest::Client as HttpClient;
 use reqwest_middleware::ClientBuilder;
 use reqwest_tracing::TracingMiddleware;
-use serde_json::Value;
+use tokio::sync::RwLock;
 
 use integration::QueryCandleSticks;
 use models::entities::admin::Admin;
@@ -27,8 +27,7 @@ use models::entities::investing::Investing;
 use models::resolver::Resolver;
 use models::secret::Secret;
 use schemas::reload::Reload;
-
-use crate::vector::AxumRuntime;
+use vector_runtime::{Event, Runtime};
 
 #[derive(Debug)]
 pub struct XTenantId(i64);
@@ -74,7 +73,7 @@ impl Header for XTenantId {
 pub struct AppState {
     connector: Arc<Resolver>,
     secret: Arc<Secret>,
-    runtime: Arc<AxumRuntime>,
+    runtime: Arc<RwLock<Runtime>>,
 
     // @NOTE: entities configuration
     investing_entity: Arc<Investing>,
@@ -89,7 +88,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub async fn new(runtime: Arc<AxumRuntime>) -> Result<Self, Error> {
+    pub async fn new() -> Result<Self, Error> {
         let secret = Arc::new(Secret::new().await?);
         let connector = Arc::new(Resolver::new(secret.clone()).await?);
         let http_client = Arc::new(
@@ -97,11 +96,32 @@ impl AppState {
                 .with(TracingMiddleware::default())
                 .build(),
         );
+        let investing_entity = Arc::new(Investing::new(&connector));
+        let admin_entity = Arc::new(Admin::new(&connector));
+        let runtime = Arc::new(RwLock::new(Runtime::new()));
+
+        runtime
+            .write()
+            .await
+            .reload(admin_entity.into_components(0).await.map_err(|error| {
+                Error::new(
+                    ErrorKind::BrokenPipe,
+                    format!("Init runtime failed: {error}"),
+                )
+            })?)?;
+
+        runtime.write().await.start(|event| async move {
+            match event {
+                Event::Minor((id, error)) => println!("Minor error in node {id}: {error}"),
+                Event::Major((id, error)) => println!("Major error in node {id}: {error}"),
+                Event::Panic((id, error)) => println!("Panic in node {id}: {error}"),
+            }
+        })?;
 
         Ok(Self {
             // @NOTE: setup entity
-            investing_entity: Arc::new(Investing::new(&connector)),
-            admin_entity: Arc::new(Admin::new(&connector)),
+            investing_entity,
+            admin_entity,
             //chat_entity: Arc::new(Chat::new(&connector)),
 
             // @NOTE: setup integration
@@ -124,6 +144,14 @@ impl AppState {
                     })?,
             ),
         })
+    }
+
+    pub async fn stop(&self) -> Result<(), Error> {
+        self.runtime.read().await.stop()
+    }
+
+    pub async fn wait_for_shutdown(&self) -> Result<(), Error> {
+        self.runtime.read().await.wait_for_shutdown().await
     }
 }
 
@@ -247,14 +275,4 @@ pub async fn pprof(Query(params): Query<HashMap<String, String>>) -> impl IntoRe
                 .into_response(),
         }
     }
-}
-
-pub async fn into_stream(
-    State(app_state): State<AppState>,
-    uri: Uri,
-    Json(payload): Json<Value>,
-) -> impl IntoResponse {
-    let path = uri.path().to_string();
-
-    app_state.runtime.handle(path, payload).await
 }

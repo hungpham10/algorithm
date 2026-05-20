@@ -7,6 +7,7 @@ edition = "2024"
 warnings = "deny"
 
 [dependencies]
+vector_runtime = { path = "../../libraries/vector/runtime", features = ["sea-orm"] }
 algorithm = { path = "../../libraries/algorithm" }
 integration = { path = "../integration" }
 schemas = { path = "../schemas" }

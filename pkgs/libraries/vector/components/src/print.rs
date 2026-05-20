@@ -3,7 +3,7 @@ use vector_config_macro::sink;
 
 use vector_runtime::{Component, Identify, Message, Outbound};
 
-#[sink(derive(PartialEq))]
+#[sink]
 pub struct Print {
     pub id: String,
     pub inputs: Vec<String>,

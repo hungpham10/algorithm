@@ -28,11 +28,12 @@ pub struct TransformConfig {
     cast_to: Option<CastType>,
 }
 
-#[transform(derive(PartialEq))]
+#[transform]
 pub struct Json2Json {
     pub id: String,
     pub inputs: Vec<String>,
     pub constants: Option<HashMap<String, Value>>,
+
     pub transforms: HashMap<String, TransformConfig>,
 }
 

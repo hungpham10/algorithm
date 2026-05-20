@@ -129,6 +129,14 @@ impl AxumBuilder {
         Ok(self)
     }
 
+    pub fn default(self) -> AxumRuntime {
+        AxumRuntime::new(
+            self.runtime
+                .unwrap_or_else(|| Arc::new(RwLock::new(Runtime::new()))),
+            self.storage.clone(),
+        )
+    }
+
     pub async fn build<F, S>(self, axum_router: &mut Router<S>, mut register_cb: F) -> AxumRuntime
     where
         S: Sync + Send + Clone + 'static,

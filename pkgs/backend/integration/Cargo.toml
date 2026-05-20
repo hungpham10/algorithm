@@ -5,11 +5,11 @@ edition = "2024"
 
 [dependencies]
 # Macro
-vector_config_macro = { path = "../../macros/vector_config_macro" }
+vector_config_macro = { path = "../../macros/vector_config_macro", features = ["sea-orm"] }
 
 # Libraries
-vector_components = { path = "../../libraries/vector/components" }
-vector_runtime = { path = "../../libraries/vector/runtime" }
+vector_components = { path = "../../libraries/vector/components", features = ["sea-orm"] }
+vector_runtime = { path = "../../libraries/vector/runtime", features = ["sea-orm"] }
 algorithm = { path = "../../libraries/algorithm" }
 schemas = { path = "../schemas" }
 
