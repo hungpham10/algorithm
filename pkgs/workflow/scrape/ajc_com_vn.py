@@ -19,7 +19,7 @@ def scrape_ajc():
         response.encoding = "utf-8"
 
         if response.status_code != 200:
-            print(f"[{datetime.now()}] Lỗi kết nối AJC: {response.status_code}")
+            print(f"Lỗi kết nối AJC: {response.status_code}")
             return []
 
         soup = BeautifulSoup(response.text, "html.parser")
@@ -85,5 +85,5 @@ def scrape_ajc():
         return prices
 
     except Exception as e:
-        print(f"[{datetime.now()}] Lỗi scrape AJC: {e}")
+        print(f"Lỗi scrape AJC: {e}")
         raise e

@@ -19,29 +19,32 @@ def scrape_kim_hung_phat():
         # Tìm bảng dựa trên style hoặc cấu trúc tbody
         # Vì bảng này không có class riêng, ta tìm bảng có chiều rộng 400px như
         # trong mẫu
-        table = soup.find_all("table")[3]
-        rows = table.find("tbody").find_all("tr")
+        table = soup.find_all("table")[0]
+        rows = table.find("thead").find_all("tr")
 
         for row in rows:
-            cols = row.find_all("td")
-            if len(cols) >= 3:
-                name = cols[0].get_text(strip=True)
-                buy_raw = cols[1].get("x:num")
-                sell_raw = cols[2].get("x:num")
+            try:
+                name = row.find_all("th")[0].find("strong").get_text()
+                cols = row.find_all("td")
+                if len(cols) >= 2:
+                    buy_raw = cols[0].get("x:num")
+                    sell_raw = cols[1].get("x:num")
 
-                try:
-                    buy_val = int(str(buy_raw).replace(".", ""))
-                    sell_val = int(str(sell_raw).replace(".", ""))
+                    try:
+                        buy_val = int(str(buy_raw).replace(".", ""))
+                        sell_val = int(str(sell_raw).replace(".", ""))
 
-                    prices.append(
-                        {
-                            "name": name,
-                            "buy": buy_val,
-                            "sell": sell_val,
-                        }
-                    )
-                except (ValueError, TypeError):
-                    continue
+                        prices.append(
+                            {
+                                "name": name,
+                                "buy": buy_val,
+                                "sell": sell_val,
+                            }
+                        )
+                    except (ValueError, TypeError):
+                        continue
+            except Exception as e:
+                continue
     except Exception as e:
         raise e
 
