@@ -1,6 +1,4 @@
-import os
 import requests
-from bs4 import BeautifulSoup
 from prefect import flow, get_run_logger, task
 from prefect.blocks.system import Secret
 
