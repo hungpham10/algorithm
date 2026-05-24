@@ -28,6 +28,7 @@ use super::{AppState, InvestingHeaders};
 #[openapi(
     paths(
         get_ohcl_from_broker,
+        get_last_price_from_broker,
         get_heatmap_from_broker,
         get_list_of_resolutions,
         get_list_of_brokers,
