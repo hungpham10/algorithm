@@ -13,7 +13,6 @@ use axum::response::{IntoResponse, Json, Response};
 use axum::routing::get;
 use http::header;
 
-use futures_util::stream::{self, Stream};
 use tokio::sync::broadcast::error::RecvError;
 use utoipa::{IntoParams, OpenApi, ToSchema};
 
@@ -130,7 +129,7 @@ struct RecapResponse {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, ToSchema)]
-struct OhclResponse {
+pub struct OhclResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 
@@ -176,28 +175,46 @@ struct OhclResponse {
     path = "/ohcl/last-price/{broker}/{symbol}",
     tag = "SSE Gateway for Investing",
     summary = "Connect to Gateway SSE Stream by Path",
-    description = "Streams market tick data via SSE for a specific broker and symbol",
+    description = "Streams market tick data via SSE for a specific broker and symbol. \
+                   Returns a continuous stream of 'text/event-stream'. \
+                   Each event has type 'tick' and data matching the OhclResponse schema.",
     params(
-        ("broker" = String, Path, description = "Broker name"),
-        ("symbol" = String, Path, description = "Symbol ticker"),
-        GetOhclRequest // Giữ lại Query params của bạn nếu cần cấu hình thêm
+        ("broker" = String, Path, description = "Broker name, e.g., binance, icmarkets"),
+        ("symbol" = String, Path, description = "Symbol ticker, e.g., BTCUSDT, EURUSD"),
     ),
     responses(
-        (status = 200, description = "Success", body = OhclResponse),
-        (status = 500, description = "Internal Server Error", body = OhclResponse)
+        (
+            status = 200,
+            description = "Successfully established SSE connection. Streaming market ticks.",
+            content_type = "text/event-stream",
+            body = OhclResponse,
+        ),
+        (
+            status = 500,
+            description = "Internal Server Error or Broker Disabled",
+            body = String,
+        )
     )
 )]
 pub async fn get_last_price_from_broker(
     State(app_state): State<AppState>,
     Path((broker, symbol)): Path<(String, String)>,
     InvestingHeaders { tenant_id, .. }: InvestingHeaders,
-) -> Result<
-    impl IntoResponse,
-    (
-        StatusCode,
-        Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>>,
-    ),
-> {
+) -> Result<axum::response::Response, (StatusCode, Json<OhclResponse>)> {
+    let tenant_id: i64 = tenant_id.into();
+    let broker = app_state
+        .investing_entity
+        .convert_to_real_broker(tenant_id, &broker.to_lowercase())
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(OhclResponse {
+                    error: Some(format!("Limit data access: {error}")),
+                    ..Default::default()
+                }),
+            )
+        })?;
     let mut broadcast = app_state
         .runtime
         .read()
@@ -207,21 +224,25 @@ pub async fn get_last_price_from_broker(
                 .secret
                 .get("MARKET_PIPELINE_OUTPUT", "/")
                 .await
-                .map_err(|_| error_in_sse("MARKET_PIPELINE_OUTPUT not set".into()))?,
+                .map_err(|_| {
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(OhclResponse {
+                            error: Some("MARKET_PIPELINE_OUTPUT not set".into()),
+                            ..Default::default()
+                        }),
+                    )
+                })?,
         )
-        .map_err(|error| error_in_sse(format!("Failed fetching broadcaster: {error}")))?;
-
-    let tenant_id: i64 = tenant_id.into();
-
-    let is_enabled = app_state
-        .investing_entity
-        .is_broker_enabled(tenant_id, &broker)
-        .await
-        .unwrap_or(false);
-
-    if !is_enabled {
-        return Err(error_in_sse(format!("Broker '{}' is not enabled.", broker)));
-    }
+        .map_err(|error| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(OhclResponse {
+                    error: Some(format!("Fail to setup stream: {error}")),
+                    ..Default::default()
+                }),
+            )
+        })?;
 
     let sse_stream = async_stream::stream! {
         let broker = broker.clone();
@@ -252,7 +273,9 @@ pub async fn get_last_price_from_broker(
         }
     };
 
-    Ok(Sse::new(sse_stream).keep_alive(KeepAlive::default().interval(Duration::from_secs(15))))
+    Ok(Sse::new(sse_stream)
+        .keep_alive(KeepAlive::default().interval(Duration::from_secs(15)))
+        .into_response())
 }
 
 #[utoipa::path(
@@ -1401,22 +1424,4 @@ pub async fn get_latest_price(
     }
 
     None
-}
-
-fn error_in_sse(
-    msg: String,
-) -> (
-    StatusCode,
-    Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>>,
-) {
-    let err_response = OhclResponse {
-        error: Some(msg),
-        ..Default::default()
-    };
-
-    let json_str = serde_json::to_string(&err_response).unwrap_or_default();
-    let err_stream =
-        stream::once(async move { Ok(Event::default().event("error").data(json_str)) });
-
-    (StatusCode::INTERNAL_SERVER_ERROR, Sse::new(err_stream))
 }
