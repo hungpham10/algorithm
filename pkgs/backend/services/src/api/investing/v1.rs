@@ -263,7 +263,18 @@ pub async fn get_last_price_from_broker(
                         );
                     }
                 }
-                Err(RecvError::Lagged(_)) => {
+                Err(RecvError::Lagged(skipped)) => {
+                    let sync_err = OhclResponse {
+                        error: Some(format!("Data feed out of sync. Skipped {} messages.", skipped)),
+                        ..Default::default()
+                    };
+
+                    if let Ok(json_str) = serde_json::to_string(&sync_err) {
+                        yield Result::<Event, std::convert::Infallible>::Ok(
+                            Event::default().event("error").data(json_str)
+                        );
+                    }
+
                     continue;
                 }
                 Err(RecvError::Closed) => {
