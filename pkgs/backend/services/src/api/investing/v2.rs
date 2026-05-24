@@ -33,6 +33,7 @@ use super::{AppState, InvestingHeaders};
         create_stores,
         create_products,
         ingest_price_data,
+        get_price_data_by_provinces,
         get_price_data_by_name,
         get_price_data_by_product_id,
         get_symbol_id_by_product_in_store,
@@ -404,6 +405,26 @@ async fn get_price_data_by_provinces(
         .split(',')
         .map(|s| s.trim().to_string())
         .collect::<Vec<_>>();
+
+    if limit > 10 {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(OhclResponse {
+                error: Some("`limit` mustn't be larger than 100".to_string()),
+                ..Default::default()
+            }),
+        ));
+    }
+
+    if provinces.len() > 5 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            JsonResponse(OhclResponse {
+                error: Some("Too much provinces, please reduce to be bellow 5".into()),
+                ..Default::default()
+            }),
+        ));
+    }
 
     if provinces.is_empty() {
         return Err((
