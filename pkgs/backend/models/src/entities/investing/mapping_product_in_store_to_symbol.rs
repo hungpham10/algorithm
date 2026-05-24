@@ -9,6 +9,7 @@ pub struct Model {
     pub store: i32,
     pub product_name: String,
     pub layer: i32,
+    pub location: Option<i32>,
     pub created_at: Option<DateTimeUtc>,
     pub updated_at: Option<DateTimeUtc>,
 }
