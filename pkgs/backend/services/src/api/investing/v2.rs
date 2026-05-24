@@ -128,6 +128,15 @@ pub struct ListSymbols {
     #[serde(skip_serializing_if = "Option::is_none")]
     next_after: Option<i32>,
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema)]
+pub struct ListPrices {
+    data: HashMap<String, Price>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_after: Option<i32>,
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug, Default, ToSchema)]
 struct OhclResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -146,7 +155,7 @@ struct OhclResponse {
     price: Option<Price>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    prices: Option<HashMap<String, Price>>,
+    prices: Option<ListPrices>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     symbols: Option<ListSymbols>,
@@ -176,10 +185,12 @@ pub fn routes() -> Router<AppState> {
             "/prices/by-product/{product_ids}",
             get(get_price_data_by_product_id),
         )
+        .route(
+            "/prices/by-province/{provinces}",
+            get(get_price_data_by_provinces),
+        )
         .route("/astra-render", post(render_data_using_graphql))
         .layer(Extension(schema))
-
-    //.route("/prices/by-provice/{provice}"
 }
 
 #[utoipa::path(
@@ -332,8 +343,8 @@ async fn list_price_of_store(
         })?;
 
     Ok(JsonResponse(OhclResponse {
-        prices: Some(
-            app_state
+        prices: Some(ListPrices {
+            data: app_state
                 .investing_entity
                 .list_current_price_of_store(tenant_id, store_id)
                 .await
@@ -349,14 +360,157 @@ async fn list_price_of_store(
                         }),
                     )
                 })?,
-        ),
+            ..Default::default()
+        }),
         ..Default::default()
     }))
 }
 
 #[derive(serde::Deserialize, utoipa::IntoParams)]
 pub struct PriceQuery {
+    #[serde(skip_serializing_if = "Option::is_none")]
     degree: Option<f32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after: Option<i32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u64>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/prices/by-province/{provinces}",
+    params(
+        ("provinces" = String, Path, description = "List of provinces, separated by comma"),
+        PriceQuery,
+    ),
+    responses((status = 200, body = [OhclResponse])),
+)]
+async fn get_price_data_by_provinces(
+    State(app_state): State<AppState>,
+    Path(provinces): Path<String>,
+    Query(PriceQuery {
+        degree,
+        after,
+        limit,
+    }): Query<PriceQuery>,
+    InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
+) -> Result<impl IntoResponse, (StatusCode, JsonResponse<OhclResponse>)> {
+    let after = after.unwrap_or(0);
+    let limit = limit.unwrap_or(10);
+    let tenant_id = tenant_id.into();
+    let provinces = provinces
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .collect::<Vec<_>>();
+
+    if provinces.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            JsonResponse(OhclResponse {
+                error: Some("Empty provinces, please missing information".into()),
+                ..Default::default()
+            }),
+        ));
+    }
+
+    let broker = app_state.secret.get("BROKER", "/").await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(OhclResponse {
+                error: Some("BROKER not set".into()),
+                ..Default::default()
+            }),
+        )
+    })?;
+
+    let scopes = app_state
+        .secret
+        .get("SCOPES_FOR_FILTERING_BY_PROVINCES", "/")
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(OhclResponse {
+                    error: Some("SCOPES_FOR_FILTERING_BY_PROVINCES not set".into()),
+                    ..Default::default()
+                }),
+            )
+        })?
+        .split(',')
+        .map(|s| s.trim().parse::<i32>())
+        .collect::<Result<Vec<i32>, _>>()
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(OhclResponse {
+                    error: Some("SCOPES_FOR_FILTERING_BY_PROVINCES contains invalid number".into()),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    app_state
+        .investing_entity
+        .validate_broker_listing_limit(tenant_id, &broker, &user_id.0)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::FORBIDDEN,
+                JsonResponse(OhclResponse {
+                    error: Some(e.to_string()),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    match app_state
+        .investing_entity
+        .list_paginated_price_by_provinces(tenant_id, &provinces, scopes, after, limit)
+        .await
+    {
+        Ok((data, next_after)) => Ok(JsonResponse(
+            provinces
+                .iter()
+                .filter_map(|province| {
+                    data.get(province).map(|store_map| OhclResponse {
+                        prices: Some(ListPrices {
+                            data: store_map
+                                .iter()
+                                .map(|(store, price)| {
+                                    (
+                                        store.clone(),
+                                        if let Some(degree) = degree {
+                                            Price {
+                                                buy: price.buy / degree,
+                                                sell: price.sell / degree,
+                                                diff: price
+                                                    .diff
+                                                    .map(|(db, ds)| (db / degree, ds / degree)),
+                                                ..Default::default()
+                                            }
+                                        } else {
+                                            price.clone()
+                                        },
+                                    )
+                                })
+                                .collect::<HashMap<_, _>>(),
+                            next_after,
+                        }),
+                        ..Default::default()
+                    })
+                })
+                .collect::<Vec<_>>(),
+        )),
+        Err(error) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(OhclResponse {
+                error: Some(format!("Database error: {}", error)),
+                ..Default::default()
+            }),
+        )),
+    }
 }
 
 #[utoipa::path(
@@ -370,12 +524,12 @@ pub struct PriceQuery {
 )]
 async fn get_price_data_by_product_id(
     State(app_state): State<AppState>,
-    Path(product_ids_str): Path<String>,
-    Query(PriceQuery { degree }): Query<PriceQuery>,
+    Path(product_ids): Path<String>,
+    Query(PriceQuery { degree, .. }): Query<PriceQuery>,
     InvestingHeaders { tenant_id, user_id }: InvestingHeaders,
 ) -> Result<impl IntoResponse, (StatusCode, JsonResponse<Vec<OhclResponse>>)> {
     let tenant_id = tenant_id.into();
-    let product_ids = product_ids_str
+    let product_ids = product_ids
         .split(',')
         .map(|s| s.trim())
         .filter_map(|s| s.parse::<i32>().ok())

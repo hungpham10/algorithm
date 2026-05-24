@@ -25,6 +25,7 @@ use stores::Entity as Stores;
 use symbols::Entity as Symbols;
 
 use std::collections::{BTreeMap, HashMap};
+use std::convert::Into;
 use std::sync::Arc;
 
 use chrono::Utc;
@@ -37,12 +38,14 @@ use algorithm::LruCache;
 use sea_orm::entity::prelude::Expr;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, JoinType,
-    QueryFilter, QueryOrder, QuerySelect, RuntimeErr, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, ExprTrait,
+    JoinType, QueryFilter, QueryOrder, QuerySelect, RelationDef, RuntimeErr, Set, TransactionTrait,
 };
 use sea_query::Alias;
 
 pub const TZ_OFFSET_SEC: i64 = 7 * 3600;
+
+pub type PaginatedProvincePrices = (HashMap<String, HashMap<String, Price>>, Option<i32>);
 
 #[derive(Debug)]
 pub struct Investing {
@@ -1618,5 +1621,134 @@ impl Investing {
                 })
                 .collect())
         }
+    }
+
+    #[instrument]
+    pub async fn list_paginated_price_by_provinces(
+        &self,
+        tenant_id: i64,
+        provinces: &Vec<String>,
+        scopes: Vec<i32>,
+        after: i32,
+        limit: u64,
+    ) -> Result<PaginatedProvincePrices, DbErr> {
+        let rows = PriceCurrent::find()
+            .select_only()
+            .column(price_current::Column::Id)
+            .column(stores::Column::Name)
+            .column(price_current::Column::Buy)
+            .column(price_current::Column::Sell)
+            .column(store_locations::Column::Province)
+            .join_rev(
+                JoinType::InnerJoin,
+                mapping_product_in_store_to_symbol::Entity::belongs_to(PriceCurrent)
+                    .from(mapping_product_in_store_to_symbol::Column::Id)
+                    .to(price_current::Column::Id)
+                    .into(),
+            )
+            .join_rev(
+                JoinType::InnerJoin,
+                product_anchors::Entity::belongs_to(MappingProductInStoreToSymbol)
+                    .from(product_anchors::Column::Id)
+                    .to(mapping_product_in_store_to_symbol::Column::Id)
+                    .into(),
+            )
+            .join_rev(
+                JoinType::InnerJoin,
+                stores::Entity::belongs_to(MappingProductInStoreToSymbol)
+                    .from(stores::Column::Id)
+                    .to(mapping_product_in_store_to_symbol::Column::Store)
+                    .into(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                Into::<RelationDef>::into(
+                    store_locations::Entity::belongs_to(Stores)
+                        .from(store_locations::Column::Store)
+                        .to(stores::Column::Id),
+                )
+                .on_condition(|_, _| {
+                    Condition::any()
+                        .add(
+                            Condition::all()
+                                .add(
+                                    mapping_product_in_store_to_symbol::Column::Location
+                                        .is_not_null(),
+                                )
+                                .add(
+                                    Expr::col((
+                                        store_locations::Entity,
+                                        store_locations::Column::Id,
+                                    ))
+                                    .eq(Expr::col((
+                                        mapping_product_in_store_to_symbol::Entity,
+                                        mapping_product_in_store_to_symbol::Column::Location,
+                                    ))),
+                                ),
+                        )
+                        .add(
+                            Condition::all()
+                                .add(mapping_product_in_store_to_symbol::Column::Location.is_null())
+                                .add(
+                                    Expr::col((
+                                        store_locations::Entity,
+                                        store_locations::Column::Store,
+                                    ))
+                                    .eq(Expr::col((stores::Entity, stores::Column::Id))),
+                                ),
+                        )
+                }),
+            )
+            .filter(price_current::Column::Id.gt(after))
+            .filter(product_anchors::Column::Scope.is_in(scopes))
+            .filter(store_locations::Column::Province.is_in(provinces))
+            .limit(limit)
+            .into_tuple::<(i32, String, f32, f32, String)>()
+            .all(self.dbt(tenant_id))
+            .await?;
+
+        if rows.is_empty() {
+            return Ok((HashMap::new(), None));
+        }
+
+        let mut group_map: HashMap<String, HashMap<String, (f32, f32, usize)>> = HashMap::new();
+        let mut result_map: HashMap<String, HashMap<String, Price>> = HashMap::new();
+
+        for (_, store_name, buy, sell, province) in &rows {
+            let store_map = group_map.entry(province.clone()).or_default();
+            let entry = store_map.entry(store_name.clone()).or_insert((0.0, 0.0, 0));
+
+            entry.0 += buy;
+            entry.1 += sell;
+            entry.2 += 1;
+        }
+
+        for (province, store_map) in group_map {
+            let mut inner_map = HashMap::new();
+
+            for (store_name, (total_buy, total_sell, count)) in store_map {
+                let c = count as f32;
+
+                inner_map.insert(
+                    store_name,
+                    Price {
+                        buy: total_buy / c,
+                        sell: total_sell / c,
+                        ..Default::default()
+                    },
+                );
+            }
+
+            result_map.insert(province, inner_map);
+        }
+
+        Ok((
+            result_map,
+            if rows.len() < limit as usize {
+                None
+            } else {
+                rows.last().map(|(id, _, _, _, _)| *id)
+            },
+        ))
     }
 }
