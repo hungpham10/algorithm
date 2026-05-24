@@ -410,7 +410,7 @@ async fn get_price_data_by_provinces(
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             JsonResponse(OhclResponse {
-                error: Some("`limit` mustn't be larger than 100".to_string()),
+                error: Some("`limit` mustn't be larger than 10".to_string()),
                 ..Default::default()
             }),
         ));
