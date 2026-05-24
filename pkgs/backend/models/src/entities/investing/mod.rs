@@ -1702,6 +1702,7 @@ impl Investing {
             .filter(price_current::Column::Id.gt(after))
             .filter(product_anchors::Column::Scope.is_in(scopes))
             .filter(store_locations::Column::Province.is_in(provinces))
+            .order_by_asc(price_current::Column::Id)
             .limit(limit)
             .into_tuple::<(i32, String, f32, f32, String)>()
             .all(self.dbt(tenant_id))
