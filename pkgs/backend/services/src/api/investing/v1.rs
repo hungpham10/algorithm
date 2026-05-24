@@ -2,22 +2,26 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
 use std::io::ErrorKind;
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::get;
 use http::header;
 
+use futures_util::stream::{self, Stream};
+use tokio::sync::broadcast::error::RecvError;
 use utoipa::{IntoParams, OpenApi, ToSchema};
 
 use analysis::{VolumeProfile, calculate_rrg};
 use models::cache::Cache;
 use models::entities::admin::ApiType;
 use models::entities::investing::Price;
-use schemas::CandleStick;
+use schemas::{CandleStick, Tick};
 
 use super::{AppState, InvestingHeaders};
 
@@ -50,6 +54,10 @@ pub struct InvestingV1Api;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/ohcl/candles/{broker}/{symbol}", get(get_ohcl_from_broker))
+        .route(
+            "/ohcl/last-price/{broker}/{symbol}",
+            get(get_last_price_from_broker),
+        )
         .route(
             "/ohcl/heatmap/{broker}/{symbol}",
             get(get_heatmap_from_broker),
@@ -157,7 +165,94 @@ struct OhclResponse {
     price: Option<Price>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    tick: Option<Tick>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     next: Option<i32>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/ohcl/last-price/{broker}/{symbol}",
+    tag = "SSE Gateway for Investing",
+    summary = "Connect to Gateway SSE Stream by Path",
+    description = "Streams market tick data via SSE for a specific broker and symbol",
+    params(
+        ("broker" = String, Path, description = "Broker name"),
+        ("symbol" = String, Path, description = "Symbol ticker"),
+        GetOhclRequest // Giữ lại Query params của bạn nếu cần cấu hình thêm
+    ),
+    responses(
+        (status = 200, description = "Success", body = OhclResponse),
+        (status = 500, description = "Internal Server Error", body = OhclResponse)
+    )
+)]
+pub async fn get_last_price_from_broker(
+    State(app_state): State<AppState>,
+    Path((broker, symbol)): Path<(String, String)>,
+    InvestingHeaders { tenant_id, .. }: InvestingHeaders,
+) -> Result<
+    impl IntoResponse,
+    (
+        StatusCode,
+        Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>>,
+    ),
+> {
+    let mut broadcast = app_state
+        .runtime
+        .read()
+        .await
+        .broadcast(
+            app_state
+                .secret
+                .get("MARKET_PIPELINE_OUTPUT", "/")
+                .await
+                .map_err(|_| error_in_sse("MARKET_PIPELINE_OUTPUT not set".into()))?,
+        )
+        .map_err(|error| error_in_sse(format!("Failed fetching broadcaster: {error}")))?;
+
+    let tenant_id: i64 = tenant_id.into();
+
+    let is_enabled = app_state
+        .investing_entity
+        .is_broker_enabled(tenant_id, &broker)
+        .await
+        .unwrap_or(false);
+
+    if !is_enabled {
+        return Err(error_in_sse(format!("Broker '{}' is not enabled.", broker)));
+    }
+
+    let sse_stream = async_stream::stream! {
+        let broker = broker.clone();
+        let symbol = symbol.clone();
+
+        loop {
+            match broadcast.recv().await {
+                Ok(msg) => {
+                    if let Ok(tick_data) = serde_json::from_value::<Tick>(msg.payload)
+                        && tick_data.broker == broker && tick_data.symbol == symbol
+                        && let Ok(json_str) = serde_json::to_string(&OhclResponse {
+                            tick: Some(tick_data),
+                            ..Default::default()
+                        })
+                    {
+                        yield Result::<Event, std::convert::Infallible>::Ok(
+                            Event::default().event("tick").data(json_str)
+                        );
+                    }
+                }
+                Err(RecvError::Lagged(_)) => {
+                    continue;
+                }
+                Err(RecvError::Closed) => {
+                    break;
+                }
+            }
+        }
+    };
+
+    Ok(Sse::new(sse_stream).keep_alive(KeepAlive::default().interval(Duration::from_secs(15))))
 }
 
 #[utoipa::path(
@@ -1306,4 +1401,22 @@ pub async fn get_latest_price(
     }
 
     None
+}
+
+fn error_in_sse(
+    msg: String,
+) -> (
+    StatusCode,
+    Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>>,
+) {
+    let err_response = OhclResponse {
+        error: Some(msg),
+        ..Default::default()
+    };
+
+    let json_str = serde_json::to_string(&err_response).unwrap_or_default();
+    let err_stream =
+        stream::once(async move { Ok(Event::default().event("error").data(json_str)) });
+
+    (StatusCode::INTERNAL_SERVER_ERROR, Sse::new(err_stream))
 }

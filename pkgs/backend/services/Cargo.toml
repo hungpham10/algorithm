@@ -61,6 +61,7 @@ typetag = "0.2.21"
 rand = "0.8.5"
 aes-gcm = "0.10.3"
 chrono = "0.4.44"
+async-stream = "0.3.6"
 
 # Tracing
 tracing = "0.1.44"
