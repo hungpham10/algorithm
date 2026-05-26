@@ -4,5 +4,5 @@ set -e
 if [ "$USE_ALLOY" = "true" ]; then
     exec /usr/bin/alloy run /etc/alloy/config.alloy --storage.path=/tmp/alloy-data
 else
-    exit 0
+    sleep 315576000
 fi
