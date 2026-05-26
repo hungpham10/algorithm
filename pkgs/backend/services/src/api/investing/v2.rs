@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::Into;
 
 use axum::Extension;
@@ -488,46 +488,75 @@ async fn get_price_data_by_provinces(
 
     match app_state
         .investing_entity
-        .list_paginated_price_by_provinces(tenant_id, &provinces, scopes, after, limit)
+        .list_paginated_product_ids_by_provinces(tenant_id, &provinces, scopes, after, limit)
         .await
     {
-        Ok((data, next_after)) => Ok(JsonResponse(
-            provinces
+        Ok((province_products_map, next_after)) => {
+            let all_product_ids: Vec<i32> = province_products_map
+                .values()
+                .flatten()
+                .copied()
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect();
+
+            let price_map = match app_state
+                .investing_entity
+                .get_price(tenant_id, &all_product_ids, Some(24 * 60 * 60))
+                .await
+            {
+                Ok(map) => map,
+                Err(error) => {
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        JsonResponse(OhclResponse {
+                            error: Some(format!("Database error while getting prices: {}", error)),
+                            ..Default::default()
+                        }),
+                    ));
+                }
+            };
+
+            let response_data = provinces
                 .iter()
                 .filter_map(|province| {
-                    data.get(province).map(|store_map| OhclResponse {
+                    let product_ids_in_province = province_products_map.get(province)?;
+
+                    let localized_prices = product_ids_in_province
+                        .iter()
+                        .filter_map(|id| {
+                            price_map.get(id).map(|price| {
+                                let final_price = if let Some(deg) = degree {
+                                    Price {
+                                        buy: price.buy / deg,
+                                        sell: price.sell / deg,
+                                        diff: price.diff.map(|(db, ds)| (db / deg, ds / deg)),
+                                        ..Default::default()
+                                    }
+                                } else {
+                                    price.clone()
+                                };
+                                (id.to_string(), final_price)
+                            })
+                        })
+                        .collect::<HashMap<String, Price>>();
+
+                    Some(OhclResponse {
                         prices: Some(ListPrices {
-                            data: store_map
-                                .iter()
-                                .map(|(store, price)| {
-                                    (
-                                        store.clone(),
-                                        if let Some(degree) = degree {
-                                            Price {
-                                                buy: price.buy / degree,
-                                                sell: price.sell / degree,
-                                                diff: price
-                                                    .diff
-                                                    .map(|(db, ds)| (db / degree, ds / degree)),
-                                                ..Default::default()
-                                            }
-                                        } else {
-                                            price.clone()
-                                        },
-                                    )
-                                })
-                                .collect::<HashMap<_, _>>(),
+                            data: localized_prices,
                             next_after,
                         }),
                         ..Default::default()
                     })
                 })
-                .collect::<Vec<_>>(),
-        )),
+                .collect::<Vec<OhclResponse>>();
+
+            Ok(JsonResponse(response_data))
+        }
         Err(error) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             JsonResponse(OhclResponse {
-                error: Some(format!("Database error: {}", error)),
+                error: Some(format!("Database error while listing: {}", error)),
                 ..Default::default()
             }),
         )),
