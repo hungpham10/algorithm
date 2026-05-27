@@ -1,48 +1,112 @@
 <script>
   import { onMount } from 'svelte';
-  export let formatVN;
+  import { formatVN } from '$lib/utils.js';
 
   let selectedRegion = "Hồ Chí Minh";
   let items = [];
   let loading = false;
 
-  // Các biến phân trang
+  // Cấu trúc phân trang theo Cursor Lịch Sử
   let currentPage = 1;
-  let totalPages = 1; // Giả sử BE trả về hoặc mặc định
   let pageSize = 10;
+  let nextCursor = null;
+
+  /**
+   * Mảng lưu vết các cursor để quay lại trang trước.
+   * Trang 1: Không dùng cursor (null) -> Nằm ở index 0
+   * Trang 2: Cần dùng cursor thu được từ trang 1 -> Nằm ở index 1
+   * ...
+   */
+  let historyCursors = [null];
 
   const regions = ["Hồ Chí Minh", "Hà Nội", "Đà Nẵng", "Cần Thơ", "Hải Phòng", "Quảng Ninh"];
 
-  async function fetchPricesByRegion(region, page = 1) {
+  // Hàm phụ trách reset trạng thái phân trang khi đổi khu vực
+  function resetAndFetch(region) {
+    currentPage = 1;
+    nextCursor = null;
+    historyCursors = [null];
+    fetchPricesByRegion(region, null);
+  }
+
+  function handleRegionChange(e) {
+    selectedRegion = e.target.value;
+    resetAndFetch(selectedRegion);
+  }
+
+  async function fetchPricesByRegion(region, cursor = null) {
     loading = true;
     try {
-      // Thêm tham số page và limit vào API (tùy chỉnh theo BE của bạn)
-      const response = await fetch(`/api/investing/v2/prices/by-provice?name=${encodeURIComponent(region)}&page=${page}&limit=${pageSize}`);
+      let url = `/api/investing/v2/prices/by-province/${encodeURIComponent(region)}?limit=${pageSize}&degree=1000000`;
+      if (cursor) {
+        url += `&after=${cursor}`;
+      }
+
+      const response = await fetch(url);
       if (response.ok) {
-        const data = await response.json();
-        // Giả sử data có cấu trúc { items: [], totalPages: 5 } hoặc chỉ là mảng
-        if (Array.isArray(data)) {
-          items = data;
-          // Nếu BE không trả về totalPages, bạn có thể tạm tính hoặc ẩn nút Next nếu mảng rỗng
+        const rawData = await response.json();
+        let flattenedItems = [];
+
+        // Map cấu trúc Object lồng nhau của API thành mảng phẳng
+        if (Array.isArray(rawData)) {
+          const priceData = rawData[0].prices.data;
+
+          flattenedItems = Object.keys(priceData).map(brandName => {
+            return {
+              product: brandName,
+              buy: priceData[brandName].buy,
+              sell: priceData[brandName].sell,
+              store: brandName
+            };
+          });
+
+          // Lấy next cursor từ cấu trúc `prices.next_after`
+          nextCursor = rawData[0].prices.next_after || null;
         } else {
-          items = data.items || [];
-          totalPages = data.totalPages || 1;
+          nextCursor = null;
         }
+
+        items = flattenedItems;
       } else {
         items = [];
+        nextCursor = null;
       }
     } catch (e) {
-      console.error("Lỗi:", e);
+      console.error("Lỗi fetch:", e);
       items = [];
+      nextCursor = null;
     } finally {
       loading = false;
     }
   }
 
-  function goToPage(p) {
-    if (p < 1 || (totalPages > 1 && p > totalPages)) return;
-    currentPage = p;
-    fetchPricesByRegion(selectedRegion, currentPage);
+  // Chuyển sang trang tiếp theo
+  function handleNextPage() {
+    if (!nextCursor || loading) return;
+
+    // 1. Lưu lại cursor thu được để chuẩn bị cho trang mới
+    historyCursors[currentPage] = nextCursor;
+
+    // 2. Tăng số trang hiện tại lên
+    currentPage += 1;
+
+    // 3. Fetch dữ liệu trang mới bằng nextCursor vừa nhận
+    fetchPricesByRegion(selectedRegion, nextCursor);
+  }
+
+  // Quay lại trang trước dựa vào mảng Lịch sử lưu trữ
+  function handlePrevPage() {
+    if (currentPage <= 1 || loading) return;
+
+    // 1. Giảm số trang hiện tại xuống
+    currentPage -= 1;
+
+    // 2. Lấy lại chính xác cursor cũ của trang trước đó trong mảng history
+    // Ví dụ: Đang ở trang 2 bấm lùi về trang 1 -> Lấy index 0 (chính là null)
+    const targetCursor = historyCursors[currentPage - 1];
+
+    // 3. Fetch lại dữ liệu
+    fetchPricesByRegion(selectedRegion, targetCursor);
   }
 
   async function handleLocationClick() {
@@ -55,23 +119,16 @@
         const data = await res.json();
         if (data.region) {
           selectedRegion = data.region;
-          currentPage = 1; // Reset về trang 1 khi đổi vùng
         }
+        resetAndFetch(selectedRegion);
       } catch (e) {
         console.error(e);
-      } finally {
         loading = false;
       }
     }, () => { loading = false; });
   }
 
-  // Theo dõi khi đổi vùng thì reset trang và fetch lại
-  $: if (selectedRegion) {
-    currentPage = 1;
-    fetchPricesByRegion(selectedRegion, 1);
-  }
-
-  onMount(() => fetchPricesByRegion(selectedRegion, currentPage));
+  onMount(() => fetchPricesByRegion(selectedRegion, null));
 </script>
 
 <div class="w-full bg-white border border-gray-100 rounded-lg overflow-hidden">
@@ -84,7 +141,8 @@
     <div class="flex items-center gap-2">
       <button
         on:click={handleLocationClick}
-        class="p-1.5 bg-white hover:bg-gray-50 text-gray-400 rounded border border-gray-200 transition-colors flex items-center justify-center"
+        disabled={loading}
+        class="p-1.5 bg-white hover:bg-gray-50 text-gray-400 rounded border border-gray-200 transition-colors flex items-center justify-center disabled:opacity-50"
         title="Định vị"
       >
         <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -93,8 +151,10 @@
       </button>
 
       <select
-        bind:value={selectedRegion}
-        class="bg-white border border-gray-200 text-gray-600 text-[11px] rounded px-2 py-1 outline-none appearance-none cursor-pointer min-w-[110px]"
+        value={selectedRegion}
+        on:change={handleRegionChange}
+        disabled={loading}
+        class="bg-white border border-gray-200 text-gray-600 text-[11px] rounded px-2 py-1 outline-none appearance-none cursor-pointer min-w-[110px] disabled:opacity-50"
       >
         {#each regions as region}
           <option value={region}>{region}</option>
@@ -124,10 +184,10 @@
           {/each}
         {:else if items.length > 0}
           {#each items as item}
-            <tr class="hover:bg-gray-50/50 transition-colors text-[13px]">
+            <tr class="hover:bg-gray-50/50 transition-colors text-[13px] group">
               <td class="px-4 py-3.5 text-gray-600 font-medium truncate">
                 <a
-                  href={`/gia-vang/${item.store || encodeURIComponent(item.store)}`}
+                  href={`/gia-vang/${item.store ? encodeURIComponent(item.store) : ''}`}
                   class="flex items-center gap-2 group-hover:text-blue-600 transition-colors"
                 >
                   <span>{item.product}</span>
@@ -135,7 +195,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                   </svg>
                 </a>
-	      </td>
+              </td>
               <td class="px-4 py-3.5 text-center text-red-600 font-bold">{formatVN(item.buy)}</td>
               <td class="px-4 py-3.5 text-center text-blue-600 font-bold">{formatVN(item.sell)}</td>
             </tr>
@@ -159,7 +219,7 @@
 
     <div class="flex items-center gap-2">
       <button
-        on:click={() => goToPage(currentPage - 1)}
+        on:click={handlePrevPage}
         disabled={currentPage === 1 || loading}
         class="p-1 border border-gray-200 rounded bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
       >
@@ -168,38 +228,27 @@
         </svg>
       </button>
 
-      <div class="flex items-center gap-1">
-        <input
-          type="number"
-          bind:value={currentPage}
-          on:change={(e) => goToPage(parseInt(e.target.value))}
-          class="w-10 h-7 border border-gray-200 rounded text-center text-[11px] font-bold text-gray-600 outline-none focus:border-yellow-400"
-          min="1"
-        />
+      <div class="flex items-center justify-center min-w-8 h-7 border border-gray-200 rounded bg-gray-50 text-[11px] font-bold text-gray-600 select-none">
+        {currentPage}
       </div>
 
-      <button
-        on:click={() => goToPage(currentPage + 1)}
-        disabled={items.length < pageSize || loading}
-        class="p-1 border border-gray-200 rounded bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-        </svg>
-      </button>
+      {#if nextCursor}
+        <button
+          on:click={handleNextPage}
+          disabled={loading}
+          class="p-1 border border-gray-200 rounded bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      {/if}
     </div>
   </div>
   {/if}
 </div>
 
 <style>
-  /* Chrome, Safari, Edge, Opera: Ẩn mũi tên input number */
-  input::-webkit-outer-spin-button,
-  input::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-  }
-
   select {
     background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
     background-position: right 0.4rem center;

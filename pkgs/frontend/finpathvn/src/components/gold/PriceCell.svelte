@@ -28,8 +28,8 @@
       if (myUpdate.error) {
         price = "---";
       } else {
-        price = formatVN(type === "buy" ? myUpdate.price.buy : myUpdate.price.sell);
-	diff = formatDiff(type === "buy"? myUpdate.price.diff[0]: myUpdate.price.diff[1]);
+        price = formatVN(type === "buy" ? myUpdate.buy : myUpdate.sell);
+	      diff = formatDiff(type === "buy"? myUpdate.diffBuy: myUpdate.diffSell);
       }
     }
   }

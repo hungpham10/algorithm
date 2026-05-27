@@ -23,10 +23,10 @@
     const myUpdate = allUpdates[0];
 
     if (myUpdate && !myUpdate.error) {
-      dataVn.buy = formatVN(myUpdate.price?.buy);
-      dataVn.sell = formatVN(myUpdate.price?.sell);
-      dataVn.diffBuy = formatDiff(myUpdate.price?.diff[0]);
-      dataVn.diffSell = formatDiff(myUpdate.price?.diff[1]);
+      dataVn.buy = formatVN(myUpdate.buy);
+      dataVn.sell = formatVN(myUpdate.sell);
+      dataVn.diffBuy = formatDiff(myUpdate.diffBuy);
+      dataVn.diffSell = formatDiff(myUpdate.diffSell);
       dataVn = dataVn; // Trigger re-render
     }
   }

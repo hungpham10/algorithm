@@ -43,6 +43,9 @@ use super::{AppState, InvestingHeaders};
     components(schemas(
         OhclResponse,
         Price,
+        ListSymbols,
+        ListStore,
+        ListPrices,
         GraphQLRequestDTO,
         GraphQLResponseDTO,
     )),
