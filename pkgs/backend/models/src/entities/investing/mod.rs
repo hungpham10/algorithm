@@ -39,7 +39,7 @@ use sea_orm::entity::prelude::Expr;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, JoinType,
-    QueryFilter, QueryOrder, QuerySelect, RelationDef, RuntimeErr, Set, TransactionTrait,
+    QueryFilter, QueryOrder, QuerySelect, RuntimeErr, Set, TransactionTrait,
 };
 use sea_query::Alias;
 
@@ -1686,13 +1686,12 @@ impl Investing {
                         .to(mapping_product_in_store_to_symbol::Column::Store)
                         .into(),
                 )
-                .join(
+                .join_rev(
                     JoinType::InnerJoin,
-                    Into::<RelationDef>::into(
-                        store_locations::Entity::belongs_to(Stores)
-                            .from(store_locations::Column::Store)
-                            .to(stores::Column::Id),
-                    ),
+                    store_locations::Entity::belongs_to(Stores)
+                        .from(store_locations::Column::Store)
+                        .to(stores::Column::Id)
+                        .into(),
                 )
                 .filter(mapping_product_in_store_to_symbol::Column::Location.is_null())
                 .filter(mapping_product_in_store_to_symbol::Column::Id.gt(after))
