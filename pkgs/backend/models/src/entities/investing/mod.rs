@@ -1721,7 +1721,7 @@ impl Investing {
                         .push((*id, store.to_string()));
                     acc
                 }),
-            if raw_rows.len() == limit {
+            if raw_rows.len() == (limit as usize) {
                 raw_rows.last().map(|(id, _, _)| *id)
             } else {
                 None
