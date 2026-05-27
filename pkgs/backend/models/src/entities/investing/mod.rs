@@ -1721,7 +1721,11 @@ impl Investing {
                         .push((*id, store.to_string()));
                     acc
                 }),
-            raw_rows.last().map(|(id, _, _)| *id),
+            if raw_rows.len() == limit {
+                raw_rows.last().map(|(id, _, _)| *id)
+            } else {
+                None
+            },
         ))
     }
 }
