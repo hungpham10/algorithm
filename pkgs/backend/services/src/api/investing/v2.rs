@@ -492,39 +492,36 @@ async fn get_price_data_by_provinces(
         .await
     {
         Ok((province_products_map, next_after)) => {
-            let all_product_ids: Vec<i32> = province_products_map
+            let unique_product_ids = province_products_map
                 .values()
                 .flatten()
-                .copied()
+                .map(|(id, _)| *id)
                 .collect::<HashSet<_>>()
                 .into_iter()
-                .collect();
+                .collect::<Vec<_>>();
 
-            let price_map = match app_state
+            let price_map = app_state
                 .investing_entity
-                .get_price(tenant_id, &all_product_ids, Some(24 * 60 * 60))
+                .get_price(tenant_id, &unique_product_ids, Some(24 * 60 * 60))
                 .await
-            {
-                Ok(map) => map,
-                Err(error) => {
-                    return Err((
+                .map_err(|error| {
+                    (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         JsonResponse(OhclResponse {
                             error: Some(format!("Database error while getting prices: {}", error)),
                             ..Default::default()
                         }),
-                    ));
-                }
-            };
+                    )
+                })?;
 
             let response_data = provinces
                 .iter()
                 .filter_map(|province| {
-                    let product_ids_in_province = province_products_map.get(province)?;
+                    let product_tuples_in_province = province_products_map.get(province)?;
 
-                    let localized_prices = product_ids_in_province
+                    let localized_prices = product_tuples_in_province
                         .iter()
-                        .filter_map(|id| {
+                        .filter_map(|(id, store)| {
                             price_map.get(id).map(|price| {
                                 let final_price = if let Some(deg) = degree {
                                     Price {
@@ -536,7 +533,7 @@ async fn get_price_data_by_provinces(
                                 } else {
                                     price.clone()
                                 };
-                                (id.to_string(), final_price)
+                                (store.clone(), final_price)
                             })
                         })
                         .collect::<HashMap<String, Price>>();

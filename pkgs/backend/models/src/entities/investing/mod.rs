@@ -45,7 +45,7 @@ use sea_query::Alias;
 
 pub const TZ_OFFSET_SEC: i64 = 7 * 3600;
 
-type PaginatedProductIdsByProvince = (HashMap<String, Vec<i32>>, Option<i32>);
+type PaginatedProductIdsByProvince = (HashMap<String, Vec<(i32, String)>>, Option<i32>);
 
 #[derive(Debug)]
 pub struct Investing {
@@ -1636,6 +1636,7 @@ impl Investing {
             .select_only()
             .column(mapping_product_in_store_to_symbol::Column::Id)
             .column(store_locations::Column::Province)
+            .column(stores::Column::Name)
             .join_rev(
                 JoinType::InnerJoin,
                 product_anchors::Entity::belongs_to(MappingProductInStoreToSymbol)
@@ -1663,7 +1664,7 @@ impl Investing {
             .filter(store_locations::Column::Province.is_in(provinces.clone()))
             .order_by_asc(mapping_product_in_store_to_symbol::Column::Id)
             .limit(limit)
-            .into_tuple::<(i32, String)>()
+            .into_tuple::<(i32, String, String)>()
             .all(self.dbt(tenant_id))
             .await?;
 
@@ -1672,6 +1673,7 @@ impl Investing {
                 .select_only()
                 .column(mapping_product_in_store_to_symbol::Column::Id)
                 .column(store_locations::Column::Province)
+                .column(stores::Column::Name)
                 .join_rev(
                     JoinType::InnerJoin,
                     product_anchors::Entity::belongs_to(MappingProductInStoreToSymbol)
@@ -1701,24 +1703,25 @@ impl Investing {
                 .group_by(store_locations::Column::Province)
                 .order_by_asc(mapping_product_in_store_to_symbol::Column::Id)
                 .limit(limit)
-                .into_tuple::<(i32, String)>()
+                .into_tuple::<(i32, String, String)>()
                 .all(self.dbt(tenant_id))
                 .await?,
         );
 
-        raw_rows.sort_unstable_by_key(|(id, _)| *id);
+        raw_rows.sort_unstable_by_key(|(id, _, _)| *id);
         raw_rows.dedup();
         raw_rows.truncate(limit as usize);
 
-        let mut result_map: HashMap<String, Vec<i32>> = HashMap::new();
-
-        for (id, province) in &raw_rows {
-            result_map
-                .entry(province.to_string())
-                .or_default()
-                .push(*id);
-        }
-
-        Ok((result_map, raw_rows.last().map(|(id, _)| *id)))
+        Ok((
+            raw_rows
+                .iter()
+                .fold(HashMap::new(), |mut acc, (id, province, store)| {
+                    acc.entry(province.to_string())
+                        .or_default()
+                        .push((*id, store.to_string()));
+                    acc
+                }),
+            raw_rows.last().map(|(id, _, _)| *id),
+        ))
     }
 }
