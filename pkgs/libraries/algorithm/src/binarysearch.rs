@@ -20,6 +20,45 @@ where
     None
 }
 
+pub fn lower_bound<T, K, F>(arr: &[T], target: &K, comparator: F) -> usize
+where
+    F: Fn(&K, &T) -> Ordering,
+{
+    let mut left = 0;
+    let mut right = arr.len();
+
+    while left < right {
+        let mid = left + (right - left) / 2;
+
+        if comparator(target, &arr[mid]) == Ordering::Greater {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
+    }
+
+    left
+}
+
+pub fn upper_bound<T, K, F>(arr: &[T], target: &K, comparator: F) -> usize
+where
+    F: Fn(&K, &T) -> Ordering,
+{
+    let mut left = 0;
+    let mut right = arr.len();
+
+    while left < right {
+        let mid = left + (right - left) / 2;
+
+        if comparator(target, &arr[mid]) == Ordering::Less {
+            right = mid;
+        } else {
+            left = mid + 1;
+        }
+    }
+    left
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
