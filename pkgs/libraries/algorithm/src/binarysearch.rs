@@ -91,35 +91,29 @@ mod tests {
     #[test]
     fn test_binary_search_with_struct_comparator() {
         struct Person {
-            name: String,
             age: i32,
         }
 
         let people = vec![
             Person {
-                name: "Alice".to_string(),
                 age: 30,
             },
             Person {
-                name: "Bob".to_string(),
                 age: 25,
             },
             Person {
-                name: "Charlie".to_string(),
                 age: 35,
             },
         ];
 
         let age_comparator = |a: &Person, b: &Person| a.age.cmp(&b.age);
         let target = Person {
-            name: "".to_string(),
             age: 25,
-        }; // Name doesn't matter for this search
+        };
 
         assert_eq!(binary_search(&people, &target, age_comparator), Some(1));
 
         let target = Person {
-            name: "".to_string(),
             age: 40,
         };
         assert_eq!(binary_search(&people, &target, age_comparator), None);
