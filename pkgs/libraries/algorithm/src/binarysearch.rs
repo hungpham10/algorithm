@@ -94,28 +94,14 @@ mod tests {
             age: i32,
         }
 
-        let people = vec![
-            Person {
-                age: 30,
-            },
-            Person {
-                age: 25,
-            },
-            Person {
-                age: 35,
-            },
-        ];
+        let people = vec![Person { age: 30 }, Person { age: 25 }, Person { age: 35 }];
 
         let age_comparator = |a: &Person, b: &Person| a.age.cmp(&b.age);
-        let target = Person {
-            age: 25,
-        };
+        let target = Person { age: 25 };
 
         assert_eq!(binary_search(&people, &target, age_comparator), Some(1));
 
-        let target = Person {
-            age: 40,
-        };
+        let target = Person { age: 40 };
         assert_eq!(binary_search(&people, &target, age_comparator), None);
     }
 }
