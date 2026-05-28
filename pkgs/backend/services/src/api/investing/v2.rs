@@ -13,7 +13,10 @@ use async_graphql::{Context, EmptyMutation, EmptySubscription, Object, Result, S
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 
 use chrono::Utc;
-use models::entities::investing::{Filter, Price, Product, Store, Symbol};
+use models::cache::Page;
+use models::entities::investing::{
+    Filter, PaginatedProductIdsByProvince, Price, Product, Store, Symbol,
+};
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 use utoipa::{
@@ -393,7 +396,7 @@ pub struct PriceQuery {
 )]
 async fn get_price_data_by_provinces(
     State(app_state): State<AppState>,
-    Path(provinces): Path<String>,
+    Path(provinces_raw): Path<String>,
     Query(PriceQuery {
         degree,
         after,
@@ -404,10 +407,13 @@ async fn get_price_data_by_provinces(
     let after = after.unwrap_or(0);
     let limit = limit.unwrap_or(10);
     let tenant_id = tenant_id.into();
-    let provinces = provinces
+
+    let mut provinces = provinces_raw
         .split(',')
         .map(|s| s.trim().to_string())
         .collect::<Vec<_>>();
+
+    provinces.sort();
 
     if limit > 10 {
         return Err((
@@ -418,7 +424,6 @@ async fn get_price_data_by_provinces(
             }),
         ));
     }
-
     if provinces.len() > 5 {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -428,8 +433,7 @@ async fn get_price_data_by_provinces(
             }),
         ));
     }
-
-    if provinces.is_empty() {
+    if provinces.is_empty() || provinces_raw.trim().is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
             JsonResponse(OhclResponse {
@@ -449,7 +453,7 @@ async fn get_price_data_by_provinces(
         )
     })?;
 
-    let scopes = app_state
+    let scopes_raw = app_state
         .secret
         .get("SCOPES_FOR_FILTERING_BY_PROVINCES", "/")
         .await
@@ -461,7 +465,9 @@ async fn get_price_data_by_provinces(
                     ..Default::default()
                 }),
             )
-        })?
+        })?;
+
+    let mut scopes = scopes_raw
         .split(',')
         .map(|s| s.trim().parse::<i32>())
         .collect::<Result<Vec<i32>, _>>()
@@ -474,6 +480,7 @@ async fn get_price_data_by_provinces(
                 }),
             )
         })?;
+    scopes.sort();
 
     app_state
         .investing_entity
@@ -489,78 +496,106 @@ async fn get_price_data_by_provinces(
             )
         })?;
 
-    match app_state
-        .investing_entity
-        .list_paginated_product_ids_by_provinces(tenant_id, &provinces, scopes, after, limit)
-        .await
-    {
-        Ok((province_products_map, next_after)) => {
-            let unique_product_ids = province_products_map
-                .values()
-                .flatten()
-                .map(|(id, _)| *id)
-                .collect::<HashSet<_>>()
-                .into_iter()
-                .collect::<Vec<_>>();
+    let page_cache = Page::new(app_state.connector.clone(), tenant_id);
 
-            let price_map = app_state
+    let cache_key = format!(
+        "prices_by_provinces:{}:scopes:{:?}",
+        provinces.join(","),
+        scopes
+    );
+    let ttl = 300;
+
+    let chunk_data = match page_cache.get(&cache_key, after.into(), limit).await {
+        Ok(json_str) => serde_json::from_str::<PaginatedProductIdsByProvince>(&json_str).ok(),
+        Err(_) => None,
+    };
+
+    let (province_products_map, next_after) = match chunk_data {
+        Some(cached) => (cached.province_products_map, cached.next_after),
+        None => {
+            let product_ids = app_state
                 .investing_entity
-                .get_price(tenant_id, &unique_product_ids, Some(24 * 60 * 60))
+                .list_paginated_product_ids_by_provinces(
+                    tenant_id, &provinces, scopes, after, limit,
+                )
                 .await
                 .map_err(|error| {
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         JsonResponse(OhclResponse {
-                            error: Some(format!("Database error while getting prices: {}", error)),
+                            error: Some(format!("Database error while listing: {}", error)),
                             ..Default::default()
                         }),
                     )
                 })?;
 
-            let response_data = provinces
+            if let Ok(serialized) = serde_json::to_string(&product_ids) {
+                let _ = page_cache
+                    .set(&cache_key, &serialized, ttl, after.into(), limit)
+                    .await;
+            }
+
+            (product_ids.province_products_map, product_ids.next_after)
+        }
+    };
+
+    let unique_product_ids = province_products_map
+        .values()
+        .flatten()
+        .map(|(id, _)| *id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    let price_map = app_state
+        .investing_entity
+        .get_price(tenant_id, &unique_product_ids, Some(24 * 60 * 60))
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(OhclResponse {
+                    error: Some(format!("Database error while getting prices: {}", error)),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    let response_data = provinces
+        .iter()
+        .filter_map(|province| {
+            let product_tuples_in_province = province_products_map.get(province)?;
+
+            let localized_prices = product_tuples_in_province
                 .iter()
-                .filter_map(|province| {
-                    let product_tuples_in_province = province_products_map.get(province)?;
-
-                    let localized_prices = product_tuples_in_province
-                        .iter()
-                        .filter_map(|(id, store)| {
-                            price_map.get(id).map(|price| {
-                                let final_price = if let Some(deg) = degree {
-                                    Price {
-                                        buy: price.buy / deg,
-                                        sell: price.sell / deg,
-                                        diff: price.diff.map(|(db, ds)| (db / deg, ds / deg)),
-                                        ..Default::default()
-                                    }
-                                } else {
-                                    price.clone()
-                                };
-                                (store.clone(), final_price)
-                            })
-                        })
-                        .collect::<HashMap<String, Price>>();
-
-                    Some(OhclResponse {
-                        prices: Some(ListPrices {
-                            data: localized_prices,
-                            next_after,
-                        }),
-                        ..Default::default()
+                .filter_map(|(id, store)| {
+                    price_map.get(id).map(|price| {
+                        let final_price = if let Some(deg) = degree {
+                            Price {
+                                buy: price.buy / deg,
+                                sell: price.sell / deg,
+                                diff: price.diff.map(|(db, ds)| (db / deg, ds / deg)),
+                                ..Default::default()
+                            }
+                        } else {
+                            price.clone()
+                        };
+                        (store.clone(), final_price)
                     })
                 })
-                .collect::<Vec<OhclResponse>>();
+                .collect::<HashMap<String, Price>>();
 
-            Ok(JsonResponse(response_data))
-        }
-        Err(error) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            JsonResponse(OhclResponse {
-                error: Some(format!("Database error while listing: {}", error)),
+            Some(OhclResponse {
+                prices: Some(ListPrices {
+                    data: localized_prices,
+                    next_after,
+                }),
                 ..Default::default()
-            }),
-        )),
-    }
+            })
+        })
+        .collect::<Vec<OhclResponse>>();
+
+    Ok(JsonResponse(response_data))
 }
 
 #[utoipa::path(

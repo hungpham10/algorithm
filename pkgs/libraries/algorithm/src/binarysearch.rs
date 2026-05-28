@@ -20,6 +20,45 @@ where
     None
 }
 
+pub fn lower_bound<T, K, F>(arr: &[T], target: &K, comparator: F) -> usize
+where
+    F: Fn(&K, &T) -> Ordering,
+{
+    let mut left = 0;
+    let mut right = arr.len();
+
+    while left < right {
+        let mid = left + (right - left) / 2;
+
+        if comparator(target, &arr[mid]) == Ordering::Greater {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
+    }
+
+    left
+}
+
+pub fn upper_bound<T, K, F>(arr: &[T], target: &K, comparator: F) -> usize
+where
+    F: Fn(&K, &T) -> Ordering,
+{
+    let mut left = 0;
+    let mut right = arr.len();
+
+    while left < right {
+        let mid = left + (right - left) / 2;
+
+        if comparator(target, &arr[mid]) == Ordering::Less {
+            right = mid;
+        } else {
+            left = mid + 1;
+        }
+    }
+    left
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -52,37 +91,17 @@ mod tests {
     #[test]
     fn test_binary_search_with_struct_comparator() {
         struct Person {
-            name: String,
             age: i32,
         }
 
-        let people = vec![
-            Person {
-                name: "Alice".to_string(),
-                age: 30,
-            },
-            Person {
-                name: "Bob".to_string(),
-                age: 25,
-            },
-            Person {
-                name: "Charlie".to_string(),
-                age: 35,
-            },
-        ];
+        let people = vec![Person { age: 30 }, Person { age: 25 }, Person { age: 35 }];
 
         let age_comparator = |a: &Person, b: &Person| a.age.cmp(&b.age);
-        let target = Person {
-            name: "".to_string(),
-            age: 25,
-        }; // Name doesn't matter for this search
+        let target = Person { age: 25 };
 
         assert_eq!(binary_search(&people, &target, age_comparator), Some(1));
 
-        let target = Person {
-            name: "".to_string(),
-            age: 40,
-        };
+        let target = Person { age: 40 };
         assert_eq!(binary_search(&people, &target, age_comparator), None);
     }
 }

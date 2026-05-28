@@ -45,8 +45,6 @@ use sea_query::Alias;
 
 pub const TZ_OFFSET_SEC: i64 = 7 * 3600;
 
-type PaginatedProductIdsByProvince = (HashMap<String, Vec<(i32, String)>>, Option<i32>);
-
 #[derive(Debug)]
 pub struct Investing {
     resolver: Arc<Resolver>,
@@ -54,6 +52,12 @@ pub struct Investing {
     cache_broker_candlesticks_limit: Arc<LruCache<String, Option<i32>, 32>>,
     cache_broker_resolution: Arc<LruCache<(String, String), String, 32>>,
     cache_real_broker: Arc<LruCache<String, String, 32>>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct PaginatedProductIdsByProvince {
+    pub province_products_map: HashMap<String, Vec<(i32, String)>>,
+    pub next_after: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, IntoParams)]
@@ -1712,20 +1716,21 @@ impl Investing {
         raw_rows.dedup();
         raw_rows.truncate(limit as usize);
 
-        Ok((
-            raw_rows
-                .iter()
-                .fold(HashMap::new(), |mut acc, (id, province, store)| {
+        Ok(PaginatedProductIdsByProvince {
+            province_products_map: raw_rows.iter().fold(
+                HashMap::new(),
+                |mut acc, (id, province, store)| {
                     acc.entry(province.to_string())
                         .or_default()
                         .push((*id, store.to_string()));
                     acc
-                }),
-            if raw_rows.len() == (limit as usize) {
+                },
+            ),
+            next_after: if raw_rows.len() == (limit as usize) {
                 raw_rows.last().map(|(id, _, _)| *id)
             } else {
                 None
             },
-        ))
+        })
     }
 }
