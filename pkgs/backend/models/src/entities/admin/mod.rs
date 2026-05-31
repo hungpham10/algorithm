@@ -347,12 +347,12 @@ impl Admin {
     // @TODO: refresh cache
 
     // --------------------------------------------------------------
-    pub async fn get_tenant_id(&self, host: &String) -> Result<i32, DbErr> {
+    pub async fn get_tenant_id(&self, host: &String) -> Result<i64, DbErr> {
         match Tenant::find()
             .filter(tenant::Column::Host.eq(host))
             .select_only()
             .column(tenant::Column::Id)
-            .into_tuple::<i32>()
+            .into_tuple::<i64>()
             .one(self.dbt(0))
             .await?
         {
