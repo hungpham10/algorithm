@@ -9,7 +9,7 @@
 
 function decrypt_secrets() {
   local ENV=${APP_ENV:-dev}
-  local ENCRYPTED_FILE="/app/secrets/secrets.${ENV}.enc.yaml"
+  local ENCRYPTED_FILE="${ENCRYPTED_FILE:-/app/secrets/secrets.${ENV}.enc.yaml}"
 
   if [ -z "$SOPS_AGE_KEY_CONTENT" ]; then
     echo "--- [SOPS] Not found SOPS_AGE_KEY_CONTENT. Ignore decryption. ---"
