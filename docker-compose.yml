@@ -27,12 +27,13 @@ services:
       - APP_ENV=dev
       - SOPS_AGE_KEY_CONTENT=${SOPS_AGE_KEY_CONTENT}
     depends_on:
-      - db
       - valkey
+      - mysql
+      - postgres
     networks:
       - app-network
 
-  db:
+  mysql:
     image: mysql:8.0
     container_name: mysql-db
     restart: always
@@ -45,6 +46,21 @@ services:
       - "3306:3306"
     volumes:
       - db_data:/var/lib/mysql
+    networks:
+      - app-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres-db
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: rootroot
+      POSTGRES_DB: default
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
     networks:
       - app-network
 
@@ -68,3 +84,4 @@ networks:
 
 volumes:
   db_data:
+  pg_data:

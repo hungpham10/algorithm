@@ -49,33 +49,70 @@ function prepare() {
     return
   fi
 
-  local mysql_args="-h $MYSQL_HOST -u $MYSQL_USER -P ${MYSQL_PORT:-3306} --password=$MYSQL_PASSWORD"
+  # --- THỬ KẾT NỐI MYSQL ---
+  local use_mysql=0
+  if [ -n "$MYSQL_HOST" ]; then
+    local mysql_args="-h $MYSQL_HOST -u $MYSQL_USER -P ${MYSQL_PORT:-3306} --password=$MYSQL_PASSWORD"
 
-  for i in {0..30}; do
-    if mysqladmin ping $mysql_args --silent; then
-      break
-    else
+    for i in {1..30}; do
+      if mysqladmin ping $mysql_args --silent >/dev/null 2>&1; then
+        use_mysql=1
+        break
+      fi
       echo "Waiting for MySQL to be ready ($i/30)..."
       sleep 1
-    fi
-  done
-
-  if ! mysqladmin ping $mysql_args --silent; then
-    echo "Error: MySQL is not ready" >&2
-    exit 1
-  fi
-
-  # Thực thi các script SQL khởi tạo
-  if [ -d "$1" ]; then
-    for script_path in $(ls -1c "$1"/*.sql 2>/dev/null | sort); do
-      echo "Executing: $script_path"
-      if ! mysql $mysql_args "$MYSQL_DATABASE" < "$script_path"; then
-        echo "Error: Failed to execute $script_path" >&2
-        exit 1
-      fi
-      rm "$script_path"
     done
   fi
+
+  if [ $use_mysql -eq 1 ]; then
+    if [ -d "$1" ]; then
+      for script_path in $(ls -1c "$1"/mysql/*.sql 2>/dev/null | sort); do
+        echo "Executing: $script_path"
+        if ! mysql $mysql_args "$MYSQL_DATABASE" < "$script_path"; then
+          echo "Error: Failed to execute $script_path" >&2
+          exit 1
+        fi
+        rm "$script_path"
+      done
+    fi
+    return
+  fi
+
+  # --- THỬ KẾT NỐI POSTGRESQL ---
+  local use_pg=0
+  if [ -n "$POSTGRES_HOST" ]; then
+    export PGPASSWORD="$POSTGRES_PASSWORD"
+
+    for i in {1..30}; do
+      if pg_isready -h "$POSTGRES_HOST" -p "${POSTGRES_PORT:-5432}" -U "$POSTGRES_USER" >/dev/null 2>&1; then
+        use_pg=1
+        break
+      fi
+      echo "Waiting for PostgreSQL to be ready ($i/30)..."
+      sleep 1
+    done
+  fi
+
+  if [ $use_pg -eq 1 ]; then
+    local pg_args="-h $POSTGRES_HOST -p ${POSTGRES_PORT:-5432} -U $POSTGRES_USER -d $POSTGRES_DATABASE"
+    if [ -d "$1" ]; then
+      for script_path in $(ls -1c "$1"/postgres/*.sql 2>/dev/null | sort); do
+        echo "Executing: $script_path"
+        if ! psql $pg_args -v ON_ERROR_STOP=1 -f "$script_path"; then
+          echo "Error: Failed to execute $script_path" >&2
+          unset PGPASSWORD
+          exit 1
+        fi
+        rm "$script_path"
+      done
+    fi
+    unset PGPASSWORD
+    return
+  fi
+
+  # Nếu đi đến đây tức là cả 2 DB đều không kết nối được hoặc không cấu hình env
+  echo "Error: No database (MySQL or PostgreSQL) is available or configured." >&2
+  exit 1
 }
 
 function localtonet() {

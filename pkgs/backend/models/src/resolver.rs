@@ -46,7 +46,7 @@ impl Resolver {
         let mysql_user = std::env::var("MYSQL_USER").unwrap_or_else(|_| "".to_string());
         let mysql_db = std::env::var("MYSQL_DATABASE").unwrap_or_else(|_| "".to_string());
 
-        let db_dsn = secret.get("MYSQL_DSN", "/").await.unwrap_or(format!(
+        let db_dsn = secret.get("DB_DSN", "/").await.unwrap_or(format!(
             "mysql://{}:{}@{}:{}/{}",
             mysql_user, mysql_password, mysql_host, mysql_port, mysql_db,
         ));
