@@ -622,7 +622,7 @@ async fn get_price_data_by_product_id(
 
     if product_ids.is_empty() {
         return Err((
-            StatusCode::BAD_REQUEST,
+            StatusCode::INTERNAL_SERVER_ERROR,
             JsonResponse(vec![OhclResponse {
                 error: Some("Invalid product IDs".into()),
                 ..Default::default()
@@ -646,7 +646,7 @@ async fn get_price_data_by_product_id(
         .await
         .map_err(|e| {
             (
-                StatusCode::FORBIDDEN,
+                StatusCode::INTERNAL_SERVER_ERROR,
                 JsonResponse(vec![OhclResponse {
                     error: Some(e.to_string()),
                     ..Default::default()
