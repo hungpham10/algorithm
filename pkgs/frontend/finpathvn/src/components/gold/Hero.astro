@@ -1,0 +1,55 @@
+---
+import Summary from '../../components/gold/Summary.svelte';
+
+const { initialData } = Astro.props;
+const now = new Date();
+const currentDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+---
+<section class="pt-8 pb-10 from-slate-50 via-white">
+  <div class="grid lg:grid-cols-[1.1fr_1fr] gap-12 items-end">
+    <div class="flex flex-col lg:flex-row gap-10 lg:items-start">
+      <!-- Left Content -->
+      <div>
+        <!-- Update Badge -->
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-primary/30 bg-primary/5 text-primary text-xs font-medium mb-6 border-green-100 bg-green-100 text-green-800">
+          <span class="text-mg text-green-800 font-bold">✦</span>
+          Cập nhật {currentDate}
+        </div>
+
+        <!-- Headline -->
+        <h1 class="text-5xl md:text-6xl">
+          Giá vàng <span >hôm nay</span><br>
+          <span >minh bạch, tức thời.</span><br>
+        </h1>
+
+        <!-- Description -->
+        <p class="mt-6 text-lg text-gray-600 max-w-2xl">
+          Bảng giá vàng SJC, PNJ, DOJI, Phú Quý cùng giá vàng thế giới —
+          đối chiếu trực tiếp, biểu đồ xu hướng 7 ngày, và dữ liệu theo từng vùng miền.
+        </p>
+
+        <!-- Buttons -->
+        <div class="mt-8 flex flex-wrap gap-4">
+          <a
+            href="#bang-gia"
+            class="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold px-5 py-3 rounded-full transition"
+          >
+            Xem bảng giá
+            <span class="text-xl">→</span>
+          </a>
+
+          <a
+            href="/gia-vang-the-gioi"
+            class="inline-flex items-center gap-2 px-5 py-3 rounded-full text-primary-foreground transition border border-gray-300"
+          >
+            Giá vàng thế giới
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid gap-4">
+      <Summary initialData={initialData} client:only />
+    </div>
+  </div>
+</section>

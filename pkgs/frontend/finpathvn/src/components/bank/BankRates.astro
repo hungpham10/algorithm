@@ -1,0 +1,225 @@
+---
+// src/components/BankRates.astro
+
+const today = new Date();
+let interestRates = [];
+let errorMsg = null;
+
+try {
+  const payload = {
+    version: '1.0.0',
+    queries: [
+      {
+        Query: {
+          Commands: [
+            {
+              SemanticQueryDataShapeCommand: {
+                Query: {
+                  Version: 2,
+                  From: [
+                    { Name: 'b', Entity: 'Bank Rate', Type: 0 },
+                    {
+                      Name: 'subquery',
+                      Expression: {
+                        Subquery: {
+                          Query: {
+                            Version: 2,
+                            From: [{ Name: 'b1', Entity: 'Bank Rate', Type: 0 }],
+                            Select: [{ Column: { Expression: { SourceRef: { Source: 'b1' } }, Property: 'datereport' }, Name: 'field' }],
+                            Where: [
+                              { Condition: { Comparison: { ComparisonKind: 0, Left: { Column: { Expression: { SourceRef: { Source: 'b1' } }, Property: 'bank' } }, Right: { AnyValue: { DefaultValueOverridesAncestors: true } } } } },
+                              { Condition: { In: { Expressions: [{ Column: { Expression: { SourceRef: { Source: 'b1' } }, Property: 'channel' } }], Values: [[{ Literal: { Value: "'Online'" } }]] } } }
+                            ],
+                            Top: 1
+                          }
+                        }
+                      ],
+                      Type: 2
+                    }
+                  ],
+                  Select: [
+                    { Column: { Expression: { SourceRef: { Source: 'b' } }, Property: 'bank' }, Name: 'Bank Rate.bank' },
+                    { Measure: { Expression: { SourceRef: { Source: 'b' } }, Property: 'rate_1' }, Name: 'Bank Rate.rate_1' },
+                    { Measure: { Expression: { SourceRef: { Source: 'b' } }, Property: 'rate_3' }, Name: 'Bank Rate.rate_3' },
+                    { Measure: { Expression: { SourceRef: { Source: 'b' } }, Property: 'rate_6' }, Name: 'Bank Rate.rate_6' },
+                    { Measure: { Expression: { SourceRef: { Source: 'b' } }, Property: 'rate_9' }, Name: 'Bank Rate.rate_9' },
+                    { Measure: { Expression: { SourceRef: { Source: 'b' } }, Property: 'rate_12' }, Name: 'Bank Rate.rate_12' }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        ApplicationContext: {
+          DatasetId: '3b3e652e-64b1-46a8-9c04-eb7d00eb9413',
+          Sources: [{ ReportId: '5a136594-c183-428a-b977-6d4f8c57abfe', VisualId: '9338a754be742818de8e' }]
+        }
+      }
+    ],
+    modelId: 7245784
+  };
+
+  const response = await fetch('https://wabi-south-east-asia-api.analysis.windows.net/public/reports/querydata?synchronous=true', {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/json, text/plain, */*',
+      'Content-Type': 'application/json;charset=UTF-8'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (response.ok) {
+    const resData = await response.json();
+    const rows = resData.results.result.data.dsr.dataGraphs.rows;
+
+    interestRates = rows.map(row => {
+      let values = Array(6).fill(0);
+      if (row.values) {
+        Object.keys(row.values).forEach(key => {
+          values[parseInt(key)] = row.values[key];
+        });
+      }
+      return {
+        bank: row.c,
+        rate1: values ? (parseFloat(values).toFixed(2) + '%') : '-',
+        rate3: values ? (parseFloat(values).toFixed(2) + '%') : '-',
+        rate6: values ? (parseFloat(values).toFixed(2) + '%') : '-',
+        rate9: values ? (parseFloat(values).toFixed(2) + '%') : '-',
+        rate12: values ? (parseFloat(values).toFixed(2) + '%') : '-'
+      };
+    });
+  } else {
+    errorMsg = "Không thể đồng bộ dữ liệu lãi suất.";
+  }
+} catch (e) {
+  errorMsg = "Lỗi kết nối server dữ liệu.";
+}
+
+const currentDate = today.toLocaleDateString('vi-VN') + " " + today.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+const defaultBank = interestRates || { bank: "-", rate1: "-", rate3: "-", rate6: "-", rate12: "-" };
+---
+
+<section id="interest-rates" class="max-w-[1200px] w-full mx-auto px-4 py-12 border-t border-gray-100 mt-12">
+  <div class="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-2">
+    <div>
+      <div class="flex items-center gap-2">
+        <span class="w-1 h-6 bg-emerald-500 rounded-full block"></span>
+        <h2 class="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">
+          Lãi suất ngân hàng hôm nay
+        </h2>
+      </div>
+      <p class="text-sm text-gray-400 mt-1 pl-3">
+        Bảng so sánh lãi suất gửi tiết kiệm trực tuyến (Online) mới nhất
+      </p>
+    </div>
+    <div class="text-xs text-gray-400 bg-gray-100/80 px-3 py-1.5 rounded-md self-start md:self-auto">
+      Cập nhật: {currentDate}
+    </div>
+  </div>
+
+  {errorMsg ? (
+    <div class="p-4 bg-red-50 text-red-600 rounded-2xl text-center text-sm">{errorMsg}</div>
+  ) : (
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+
+      <div class="lg:col-span-4 lg:sticky lg:top-24">
+        <div class="bg-white rounded-2xl border border-gray-100 p-6 shadow-[0_8px_30px_rgba(0,0,0,0.01)]">
+          <div class="flex items-center justify-between mb-4">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md">
+              ONLINE SAVINGS
+            </span>
+          </div>
+
+          <h3 id="focus-bank-name" class="text-xl font-bold text-gray-800 tracking-tight mb-6">
+            {defaultBank.bank}
+          </h3>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div class="bg-gray-50/50 p-3 rounded-xl border border-gray-100/70">
+              <span class="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Kỳ hạn 1T</span>
+              <p id="focus-rate-1" class="text-lg font-extrabold text-gray-900 mt-0.5">{defaultBank.rate1}</p>
+            </div>
+            <div class="bg-gray-50/50 p-3 rounded-xl border border-gray-100/70">
+              <span class="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Kỳ hạn 3T</span>
+              <p id="focus-rate-3" class="text-lg font-extrabold text-gray-900 mt-0.5">{defaultBank.rate3}</p>
+            </div>
+            <div class="bg-gray-50/50 p-3 rounded-xl border border-gray-100/70">
+              <span class="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Kỳ hạn 6T</span>
+              <p id="focus-rate-6" class="text-lg font-extrabold text-emerald-500 mt-0.5">{defaultBank.rate6}</p>
+            </div>
+            <div class="bg-gray-50/50 p-3 rounded-xl border border-gray-100/70">
+              <span class="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Kỳ hạn 12T</span>
+              <p id="focus-rate-12" class="text-lg font-extrabold text-blue-500 mt-0.5">{defaultBank.rate12}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="lg:col-span-8 bg-white rounded-2xl border border-gray-100 shadow-[0_8px_30px_rgba(0,0,0,0.01)] overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse min-w-[450px]">
+            <thead>
+              <tr class="bg-gray-50/70 border-b border-gray-100 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                <th class="py-4 px-6">Ngân hàng</th>
+                <th class="py-4 px-4 text-center">1T</th>
+                <th class="py-4 px-4 text-center">3T</th>
+                <th class="py-4 px-4 text-center text-emerald-500">6T</th>
+                <th class="py-4 px-4 text-center">9T</th>
+                <th class="py-4 px-6 text-center text-blue-500">12T</th>
+              </tr>
+            </thead>
+            <tbody class="text-sm divide-y divide-gray-50">
+              {interestRates.map((item, index) => (
+                <tr
+                  class={`bank-row hover:bg-gray-50/60 transition-colors cursor-pointer group ${index === 0 ? 'bg-emerald-50/20' : ''}`}
+                  data-bank={item.bank}
+                  data-rate1={item.rate1}
+                  data-rate3={item.rate3}
+                  data-rate6={item.rate6}
+                  data-rate12={item.rate12}
+                >
+                  <td class="py-4 px-6 flex items-center gap-3">
+                    <div class="w-7 h-7 rounded-full bg-gray-100 text-gray-600 font-bold text-[10px] flex items-center justify-center shrink-0 group-hover:bg-emerald-50 group-hover:text-emerald-600 transition-colors">
+                      {item.bank.substring(0, 3).toUpperCase()}
+                    </div>
+                    <span class="font-bold text-gray-800 text-[14px] group-hover:text-emerald-500 transition-colors">
+                      {item.bank}
+                    </span>
+                  </td>
+                  <td class="py-4 px-4 text-center text-gray-500 font-medium">{item.rate1}</td>
+                  <td class="py-4 px-4 text-center text-gray-500 font-medium">{item.rate3}</td>
+                  <td class="py-4 px-4 text-center font-semibold text-emerald-500">{item.rate6}</td>
+                  <td class="py-4 px-4 text-center text-gray-500 font-medium">{item.rate9}</td>
+                  <td class="py-4 px-6 text-center font-bold text-blue-500">{item.rate12}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  )}
+</section>
+
+<script>
+  const rows = document.querySelectorAll('.bank-row');
+  const focusName = document.getElementById('focus-bank-name');
+  const focusR1 = document.getElementById('focus-rate-1');
+  const focusR3 = document.getElementById('focus-rate-3');
+  const focusR6 = document.getElementById('focus-rate-6');
+  const focusR12 = document.getElementById('focus-rate-12');
+
+  rows.forEach(row => {
+    row.addEventListener('click', () => {
+      rows.forEach(r => r.classList.remove('bg-emerald-50/20'));
+      row.classList.add('bg-emerald-50/20');
+
+      if (focusName) focusName.textContent = row.getAttribute('data-bank');
+      if (focusR1) focusR1.textContent = row.getAttribute('data-rate1');
+      if (focusR3) focusR3.textContent = row.getAttribute('data-rate3');
+      if (focusR6) focusR6.textContent = row.getAttribute('data-rate6');
+      if (focusR12) focusR12.textContent = row.getAttribute('data-rate12');
+    });
+  });
+</script>

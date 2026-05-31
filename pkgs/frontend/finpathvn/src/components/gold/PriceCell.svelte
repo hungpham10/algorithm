@@ -43,7 +43,7 @@
 </script>
 
 <div class="flex flex-col items-center justify-center leading-tight mx-auto">
-  <div class="font-medium text-[18px] md:text-[18px] tracking-tight {priceColor}">
+  <div class="font-medium text-[15px] md:text-[16px] tracking-tight {priceColor}">
     {price}
   </div>
 </div>

@@ -1,9 +1,9 @@
 ---
+import Hero from '../components/gold/Hero.astro';
+import TablePrices from '../components/gold/TablePrices.astro';
+import ExchangeRate from '../components/bank/ExchangeRate.svelte';
 import RegionalPriceTable from '../components/gold/RegionalPriceTable.svelte';
-import GoldSummary from '../components/gold/GoldSummary.svelte';
-import TableHead from '../components/gold/TableHead.astro';
-import TableRow from '../components/gold/TableRow.astro';
-import Layout from '../components/Layout.astro';
+import Layout from '../layouts/Layout.astro';
 
 import { FetchIndex } from '../lib/render.js';
 import { formatVN } from '../lib/utils.js';
@@ -21,11 +21,12 @@ const currentDate = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}
 const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullYear()}`;
 
 const navMenus = [
-  { label: 'Bảng Giá Vàng', href: '/' },
+  { label: 'Bảng Giá Vàng', href: '#prices' },
+  { label: 'Tỷ giá ngân hàng', href: '#exchange-rates' }
 ];
 ---
 <Layout title="Bảng giá vàng trực tuyến - Cập nhật liên tục 24h" showAds={SHOW_ADS} navMenus={navMenus}>
-<div id="price-config" data-ids={JSON.stringify(productIds)} data-degree={degree}></div>
+  <div id="price-config" data-ids={JSON.stringify(productIds)} data-degree={degree}></div>
   <script>
     import { fetchPriceByProductId } from '$lib/fetch.js';
     import { PRICE_EVENT_NAME } from '$lib/schema.js';
@@ -50,40 +51,23 @@ const navMenus = [
       initPolling();
     }
   </script>
-  <GoldSummary initialData={goldSummary} client:load />
 
-  <div class="mt-4">
-    <div class="bg-white border border-gray-200 rounded-md overflow-hidden shadow-sm">
-      <header class="p-4 border-b border-gray-100 flex justify-between items-center bg-white">
-        <div class="flex items-baseline gap-2">
-          <h1 class="text-xl font-bold text-gray-800 tracking-tight">Giá vàng hôm nay </h1>
-          <span class="text-gray-400 text-[10px] uppercase tracking-widest font-medium hidden sm:inline">| TRIỆU ĐỒNG/CHỈ</span>
-        </div>
-        <div class="text-[11px] text-gray-400 font-bold bg-gray-50 px-2 py-1 rounded">{currentDate}</div>
-      </header>
+  <Hero
+       initialData={goldSummary}
+  />
+  <TablePrices
+        dataSource={dataSource}
+        currentDate={currentDate}
+        yesterdayDate={yesterdayDate}
+  />
+  <ExchangeRate
+       currentDate={currentDate}
+       client:load
+  />
 
-      <div class="overflow-x-auto">
-        <table class="w-full border-collapse">
-          <TableHead currentDate={currentDate} yesterdayDate={yesterdayDate} />
-          <tbody class="divide-y divide-gray-100">
-            {dataSource.tableLargecapEntries.length > 0 ? (
-              dataSource.tableLargecapEntries.map(([key, item]) => (
-                <TableRow data={item} index={key} />
-              ))
-            ) : (
-              <tr>
-                <td colspan="6" class="p-10 text-center text-gray-400 italic">Đang tải dữ liệu thị trường...</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {SHOW_REGION_TABLE && (
-        <div class="border-t border-gray-100">
-          <RegionalPriceTable formatVN={formatVN} client:visible />
-        </div>
-      )}
+  {SHOW_REGION_TABLE && (
+    <div class="border-t border-gray-100">
+      <RegionalPriceTable formatVN={formatVN} client:visible />
     </div>
-  </div>
+  )}
 </Layout>
