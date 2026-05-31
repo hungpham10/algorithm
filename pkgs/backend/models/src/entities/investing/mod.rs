@@ -1705,6 +1705,7 @@ impl Investing {
                 .filter(store_locations::Column::Province.is_in(provinces.clone()))
                 .group_by(mapping_product_in_store_to_symbol::Column::Id)
                 .group_by(store_locations::Column::Province)
+                .group_by(stores::Column::Name)
                 .order_by_asc(mapping_product_in_store_to_symbol::Column::Id)
                 .limit(limit)
                 .into_tuple::<(i32, String, String)>()

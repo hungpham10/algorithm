@@ -76,7 +76,7 @@
           dataWorld.convertedVnd = converted.toLocaleString('vi-VN', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
-          }) + " tr";
+          });
 
           const diffValue = currentPrice - previousPrice;
           if (diffValue !== 0) {
@@ -139,11 +139,11 @@
     <div class="mt-5 grid grid-cols-2 gap-3">
       <div>
         <div class="text-[10px] uppercase tracking-wider text-gray-500">Mua vào</div>
-        <div class="font-mono text-2xl mt-1 tabular-nums">{dataVn.buy}</div>
+        <div class="font-mono text-xl mt-1 tabular-nums">{dataVn.buy}</div>
       </div>
       <div>
         <div class="text-[10px] uppercase tracking-wider text-gray-500">Bán ra</div>
-        <div class="font-mono text-2xl mt-1 tabular-nums text-blue-600">{dataVn.sell}</div>
+        <div class="font-mono text-xl mt-1 tabular-nums text-blue-600">{dataVn.sell}</div>
       </div>
     </div>
 
@@ -174,11 +174,11 @@
     <div class="mt-5 grid grid-cols-2 gap-3">
       <div>
         <div class="text-[10px] uppercase tracking-wider text-gray-500">Giá</div>
-        <div class="font-mono text-2xl mt-1 tabular-nums">{dataWorld.price}</div>
+        <div class="font-mono text-xl mt-1 tabular-nums">{dataWorld.price}</div>
       </div>
       <div>
         <div class="text-[10px] uppercase tracking-wider text-gray-500">Quy đổi VND</div>
-        <div class="font-mono text-2xl mt-1 tabular-nums text-blue-600">{dataWorld.convertedVnd || '—'}</div>
+        <div class="font-mono text-xl mt-1 tabular-nums text-blue-600">{dataWorld.convertedVnd || '—'}</div>
       </div>
     </div>
 

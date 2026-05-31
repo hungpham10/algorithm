@@ -540,7 +540,7 @@ async fn get_tenant_id(
 ) -> impl IntoResponse {
     match app_state.admin_entity.get_tenant_id(&host).await {
         Ok(response) => (StatusCode::OK, format!("{}", response)),
-        Err(error) => (
+        Err(error) =>(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Fail to get tenant of {}: {:?}", host, error),
         ),
