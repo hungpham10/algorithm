@@ -33,7 +33,13 @@
     if (now - lastRateFetch < RATE_CACHE_TIME) return usdSellRate;
 
     try {
-      const response = await fetch('/api/investing/v2/exchang-rate');
+      const d = new Date();
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const currentDate = `${year}-${month}-${day}`;
+      const response = await fetch(`/api/investing/v2/exchange-rate?date=${currentDate}`);
+
       if (response.ok) {
         const rateJson = await response.json();
         const rate = rateJson.query.find(i => i.currencyCode === "USD")?.sell;
