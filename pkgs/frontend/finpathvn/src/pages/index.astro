@@ -35,6 +35,24 @@ const navMenus = [
     const productIds = JSON.parse(configEl.dataset.ids || '[]');
     const degree = configEl.dataset.degree;
 
+    function updateAllCurrentDates() {
+      const now = new Date();
+      const vietnamTime = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+
+      const options = {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      };
+
+      const currentDateStr = vietnamTime.toLocaleDateString('vi-VN', options);
+
+      // Cập nhật tất cả các phần tử có class="current-date"
+      document.querySelectorAll('.current-date').forEach(el => {
+        el.textContent = currentDateStr;
+      });
+    }
+
     async function initPolling() {
       if (productIds.length === 0) return;
       await fetchPriceByProductId(PRICE_EVENT_NAME, productIds, degree);
@@ -46,8 +64,12 @@ const navMenus = [
     }
 
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initPolling);
+      document.addEventListener('DOMContentLoaded', () => {
+        updateAllCurrentDates();
+        initPolling();
+      });
     } else {
+      updateAllCurrentDates();
       initPolling();
     }
   </script>
