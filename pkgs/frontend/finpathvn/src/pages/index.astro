@@ -37,7 +37,6 @@ const navMenus = [
 
     function updateAllCurrentDates() {
       const now = new Date();
-      const vietnamTime = new Date(now.getTime() + 7 * 60 * 60 * 1000);
 
       const options = {
         day: '2-digit',
@@ -45,7 +44,7 @@ const navMenus = [
         year: 'numeric'
       };
 
-      const currentDateStr = vietnamTime.toLocaleDateString('vi-VN', options);
+      const currentDateStr = now.toLocaleDateString('vi-VN', options);
 
       // Cập nhật tất cả các phần tử có class="current-date"
       document.querySelectorAll('.current-date').forEach(el => {
