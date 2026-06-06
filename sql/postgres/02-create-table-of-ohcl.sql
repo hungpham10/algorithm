@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS ohcl_store_locations (
 );
 
 CREATE TABLE IF NOT EXISTS ohcl_mapping_product_in_store_to_symbol (
-  id INTEGER PRIMARY KEY,
+  id INTEGER GENERATED ALWAYS AS IDENTITY,
   symbol INTEGER,
   store INTEGER NOT NULL,
   product_name VARCHAR(500) NOT NULL,
@@ -92,7 +92,8 @@ CREATE TABLE IF NOT EXISTS ohcl_mapping_product_in_store_to_symbol (
   scope INTEGER NOT NULL DEFAULT 0,
   location INTEGER,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT ohcl_mapping_product_in_store_to_symbol_pkey PRIMARY KEY (id)
 );
 
 CREATE TABLE IF NOT EXISTS ohcl_price_current (

@@ -1254,45 +1254,51 @@ impl Investing {
         products: Vec<Product>,
     ) -> Result<ListProduct, DbErr> {
         let mut active_models = Vec::new();
-        let mut ret = Vec::new();
+        let mut symbol_mappings = Vec::new();
+
         let store = self.get_store_detail(tenant_id, store, 0, 0, false).await?;
+        let store_id = store.id.ok_or_else(|| {
+            DbErr::Query(RuntimeErr::Internal(
+                "`store.id` mustn't be None".to_string(),
+            ))
+        })?;
 
         for product in products {
             let symbol = product.symbol.ok_or_else(|| {
                 DbErr::Query(RuntimeErr::Internal("`id` mustn't be None".to_string()))
             })?;
-            let id = self
+            let symbol_id = self
                 .get_symbol_id(tenant_id, broker_id, None, &symbol)
                 .await?;
             let product_name = product.name.ok_or_else(|| {
                 DbErr::Query(RuntimeErr::Internal("`name` mustn't be None".to_string()))
             })?;
-            let store_id = store.id.ok_or_else(|| {
-                DbErr::Query(RuntimeErr::Internal(
-                    "`store.id` mustn't be None".to_string(),
-                ))
-            })?;
 
             active_models.push(mapping_product_in_store_to_symbol::ActiveModel {
-                id: Set(id),
+                symbol: Set(Some(symbol_id)),
                 store: Set(store_id),
                 product_name: Set(product_name.clone()),
                 ..Default::default()
             });
 
-            ret.push(Product {
-                id: Some(id),
-                name: Some(product_name.clone()),
-                symbol: Some(symbol),
-                ..Default::default()
-            });
+            symbol_mappings.push(symbol);
         }
 
-        mapping_product_in_store_to_symbol::Entity::insert_many(active_models)
-            .exec_with_returning(self.dbt(tenant_id))
-            .await?;
         Ok(ListProduct {
-            data: ret,
+            data: mapping_product_in_store_to_symbol::Entity::insert_many(active_models)
+                .exec_with_returning(self.dbt(tenant_id))
+                .await?
+                .into_iter()
+                .zip(symbol_mappings)
+                .map(|(inserted_model, original_symbol)|
+                    Product {
+                        id: Some(inserted_model.id),
+                        name: Some(inserted_model.product_name),
+                        symbol: Some(original_symbol),
+                        ..Default::default()
+                    }
+                )
+                .collect::<Vec<_>>(),
             next_after: None,
         })
     }
