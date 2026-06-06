@@ -5,13 +5,11 @@ use std::io::ErrorKind;
 use std::time::Duration;
 
 use axum::Router;
-use axum::body::Body;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::response::{IntoResponse, Json, Response};
+use axum::response::{IntoResponse, Json};
 use axum::routing::get;
-use http::header;
 
 use tokio::sync::broadcast::error::RecvError;
 use utoipa::{IntoParams, OpenApi, ToSchema};
@@ -22,7 +20,7 @@ use models::entities::admin::ApiType;
 use models::entities::investing::Price;
 use schemas::{CandleStick, Tick};
 
-use super::{AppState, InvestingHeaders};
+use super::{AppState, InvestingHeaders, fast_cache_response};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -1277,14 +1275,6 @@ pub async fn upsert_symbol(
             ..Default::default()
         }),
     ))
-}
-
-fn fast_cache_response(cached_json: String) -> Response {
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(cached_json))
-        .unwrap()
 }
 
 #[utoipa::path(

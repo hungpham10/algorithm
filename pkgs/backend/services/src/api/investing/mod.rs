@@ -3,10 +3,14 @@ mod v2;
 mod v3;
 
 use axum::Router;
+use axum::body::Body;
+use axum::http::StatusCode;
+use axum::response::Response;
 use axum::routing::any;
 use axum_extra::TypedHeader;
 use axum_macros::FromRequestParts;
 use headers::Header;
+use http::header;
 use http::{HeaderName, HeaderValue};
 use utoipa::OpenApi;
 
@@ -88,4 +92,12 @@ pub fn routes() -> Router<AppState> {
 
 pub fn sockets() -> Router<AppState> {
     Router::new().route("/v3", any(v3::into_websocket))
+}
+
+pub fn fast_cache_response(cached_json: String) -> Response {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(cached_json))
+        .unwrap()
 }

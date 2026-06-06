@@ -1290,14 +1290,12 @@ impl Investing {
                 .await?
                 .into_iter()
                 .zip(symbol_mappings)
-                .map(|(inserted_model, original_symbol)|
-                    Product {
-                        id: Some(inserted_model.id),
-                        name: Some(inserted_model.product_name),
-                        symbol: Some(original_symbol),
-                        ..Default::default()
-                    }
-                )
+                .map(|(inserted_model, original_symbol)| Product {
+                    id: Some(inserted_model.id),
+                    name: Some(inserted_model.product_name),
+                    symbol: Some(original_symbol),
+                    ..Default::default()
+                })
                 .collect::<Vec<_>>(),
             next_after: None,
         })
@@ -1631,6 +1629,17 @@ impl Investing {
                 })
                 .collect())
         }
+    }
+
+    #[instrument]
+    pub async fn list_provinces(&self, tenant_id: i64) -> Result<Vec<String>, DbErr> {
+        StoreLocations::find()
+            .select_only()
+            .column(store_locations::Column::Province)
+            .distinct()
+            .into_tuple()
+            .all(self.dbt(tenant_id))
+            .await
     }
 
     #[instrument]

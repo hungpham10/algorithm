@@ -1268,6 +1268,14 @@ pub struct QueryRoot;
 
 #[Object]
 impl QueryRoot {
+    async fn location_list(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<String>> {
+        ctx.data::<AppState>()?
+            .investing_entity
+            .list_provinces(*(ctx.data::<i64>()?))
+            .await
+            .map_err(|e| async_graphql::Error::new(format!("BROKER not set: {e}")))
+    }
+
     async fn gold_market_list(
         &self,
         ctx: &Context<'_>,
