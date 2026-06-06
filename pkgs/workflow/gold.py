@@ -38,6 +38,7 @@ from scrape import (
     scrape_chien_minh,
     scrape_ngoc_nhu_y,
     scrape_phu_tai,
+    scrape_kimhoancamau,
 )
 
 # --- CONFIG LOADER ---
@@ -90,7 +91,7 @@ def get_token():
 
 @task(retries=0, retry_delay_seconds=5, tags=["price-api-limit"])
 def upload_store_prices(token, store_name, prices):
-    """Task tải dữ liệu lên server và thu thập lỗi chi tiết."""
+    """Task kiểm tra, tạo sản phẩm nếu chưa có, và tải dữ liệu giá lên server."""
     logger = get_run_logger()
 
     if not token:
@@ -102,33 +103,88 @@ def upload_store_prices(token, store_name, prices):
     success_count = 0
     error_details = []
 
-    for item in prices:
-        try:
-            url = f"{CONFIG['API_BASE']}/stores/{store_name}/products/{item['name']}/price"
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            }
-            payload = {"buy": float(item["buy"]), "sell": float(item["sell"])}
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
 
-            resp = requests.post(url, json=payload, headers=headers, timeout=10)
+    for item in prices:
+        product_name = item["name"]
+        try:
+            # --- BƯỚC 1: KIỂM TRA SẢN PHẨM ĐÃ TỒN TẠI CHƯA ---
+            check_url = f"{CONFIG['API_BASE']}/stores/{store_name}/products/{product_name}/symbol"
+            check_resp = requests.get(check_url, headers=headers, timeout=10)
+
+            product_exists = False
+            if check_resp.status_code == 200:
+                product_exists = True
+            elif check_resp.status_code == 404:
+                product_exists = False
+                logger.info(
+                    f"Sản phẩm '{product_name}' chưa tồn tại ở '{store_name}'. Tiến hành tạo mới..."
+                )
+            else:
+                # Nếu gặp lỗi hệ thống khác (500, 403...), tạm thời coi như chưa có hoặc log lỗi
+                logger.warning(
+                    f"Không thể kiểm tra sản phẩm '{product_name}' tại tiệm '{store_name}' (Status: {check_resp.status_code})."
+                )
+
+            # --- BƯỚC 2: TẠO SẢN PHẨM NẾU CHƯA CÓ ---
+            if not product_exists:
+                create_url = f"{CONFIG['API_BASE']}/stores/{store_name}/products"
+
+                # Payload là một Vec (List trong Python) các Product. Không gửi kèm 'id'
+                create_payload = [
+                    {
+                        "name": product_name,
+                        "symbol": product_name,  # Hoặc định danh symbol phù hợp nếu bạn có quy tắc riêng
+                        # "price": có thể bỏ qua hoặc để mặc định vì bước sau sẽ cập nhật giá chi tiết
+                    }
+                ]
+
+                create_resp = requests.post(
+                    create_url, json=create_payload, headers=headers, timeout=10
+                )
+
+                if create_resp.status_code == 200:
+                    logger.info(
+                        f"Đã tạo thành công sản phẩm '{product_name}' tại '{store_name}'."
+                    )
+                else:
+                    server_err = (
+                        create_resp.json()
+                        if create_resp.content
+                        else "No response body"
+                    )
+                    raise Exception(
+                        f"Không thể tạo sản phẩm mới. Server trả về: {server_err}"
+                    )
+
+            # --- BƯỚC 3: CẬP NHẬT GIÁ SẢN PHẨM ---
+            price_url = f"{CONFIG['API_BASE']}/stores/{store_name}/products/{product_name}/price"
+            price_payload = {"buy": float(item["buy"]), "sell": float(item["sell"])}
+
+            resp = requests.post(
+                price_url, json=price_payload, headers=headers, timeout=10
+            )
 
             if resp.status_code == 200:
                 success_count += 1
             else:
                 server_error = resp.json() if resp.content else "No response body"
-                error_msg = f"Product '{item['name']}': {server_error}"
+                error_msg = f"Product '{product_name}': {server_error}"
                 error_details.append(error_msg)
-        except Exception as e:
-            error_details.append(f"Product '{item['name']}': System Error {str(e)}")
 
+        except Exception as e:
+            error_details.append(f"Product '{product_name}': System Error {str(e)}")
+
+    # --- TỔNG KẾT VÀ BÁO LỖI ---
     if error_details:
         total_errors = len(error_details)
         summary_error = (
             f"Thất bại khi publish {total_errors} sản phẩm tại {store_name}."
         )
 
-        # Log một bản tóm tắt cuối cùng trước khi raise
         logger.error(f"--- TỔNG KẾT LỖI [{store_name}] ---")
         for err in error_details:
             logger.error(err)
@@ -188,6 +244,7 @@ def gold_sync_flow():
         (scrape_chien_minh, "CÔNG TY TNHH VÀNG CHIẾN MINH"),
         (scrape_ngoc_nhu_y, "VÀNG NGỌC NHƯ Ý"),
         (scrape_phu_tai, "VÀNG PHÚ TÀI"),
+        (scrape_kimhoancamau, "TIỆM VÀNG HỘI MỸ NGHỆ KIM HOÀN TỈNH CÀ MAU"),
     ]
 
     # 3. Kích hoạt Scrape song song

@@ -86,9 +86,8 @@ const navMenus = [
        client:load
   />
 
-  {SHOW_REGION_TABLE && (
-    <div class="border-t border-gray-100">
-      <RegionalPriceTable formatVN={formatVN} client:visible />
-    </div>
-  )}
+  <RegionalPriceTable
+      formatVN={formatVN}
+      client:visible
+  />
 </Layout>

@@ -1,5 +1,6 @@
 import requests
 import re
+import unicodedata
 from bs4 import BeautifulSoup
 from prefect import task
 from datetime import datetime
@@ -73,6 +74,7 @@ def scrape_kimnganphuc():
                 # Bỏ qua dòng header hoặc dòng trống
                 if len(cols) >= 3:
                     name = cols[0].get_text(strip=True).replace("/", " ")
+                    name = unicodedata.normalize("NFKC", name)
 
                     # Kiểm tra xem có phải dòng chứa dữ liệu thật không
                     if "SẢN PHẨM" in name.upper() or not name:
