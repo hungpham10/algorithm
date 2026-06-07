@@ -1,7 +1,8 @@
-
 <script>
   import { onMount } from 'svelte';
   import { formatVN } from '$lib/utils.js';
+
+  export let regions;
 
   let selectedRegion = "Hồ Chí Minh";
   let items = [];
@@ -11,8 +12,6 @@
   let pageSize = 10;
   let nextCursor = null;
   let historyCursors = [null];
-
-  const regions = ["Hồ Chí Minh", "Hà Nội", "Đà Nẵng", "Cần Thơ", "Hải Phòng", "Quảng Ninh"];
 
   function resetAndFetch(region) {
     currentPage = 1;

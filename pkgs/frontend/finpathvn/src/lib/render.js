@@ -24,10 +24,12 @@ export class FetchIndex {
       return (percent > 0 ? "+" : "") + percent.toFixed(2) + "%";
     };
 
-
     const goldSummary = data?.goldSummary?.[0] || {};
     const largeMarketGold = data?.largeMarketGold || [];
 
+    // 1. Hứng dữ liệu danh sách khu vực tỉnh thành từ API trả về
+    // async-graphql thường tự chuyển snake_case (location_list) thành camelCase (locationList) trên API
+    this._locationList = data?.locationList || data?.location_list || [];
     this._summary = {
       vn: {
         buy: formatVN(goldSummary.buy),
@@ -61,6 +63,11 @@ export class FetchIndex {
     .filter(Boolean);
   }
 
+  // 2. Định nghĩa Getter để phía Astro có thể gọi dataSource.locationList
+  get locationList() {
+    return this._locationList;
+  }
+
   get tableLargecap() {
     return this._tableLargecap;
   }
@@ -90,6 +97,7 @@ export class FetchIndex {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        // 3. Bổ sung trường "locationList" vào khối câu query
         query: `
           query GetGoldData {
             goldSummary: goldMarketList(scopes: [1], after: 0, limit: 1, degree: 1000000) {
@@ -98,6 +106,7 @@ export class FetchIndex {
             largeMarketGold: goldMarketList(scopes: [1, 2], after: 0, limit: 10, degree: 1000000) {
               product, description, buy, sell, diffBuy, diffSell, yesterdayBuy, yesterdaySell, trend, trendData
             }
+            locationList
           }
         `
       }),

@@ -3,6 +3,9 @@
 import OptimizedImage from '../components/OptimizedImage.astro';
 import '../styles/global.css';
 
+// Đọc host cấu hình từ biến môi trường, mặc định fallback nếu chưa cấu hình
+const ASSET_HOST = import.meta.env.PUBLIC_ASSET_HOST || 'https://lighttrading.pp.ua';
+
 interface MenuItem {
   label: string;
   href: string;
@@ -10,12 +13,18 @@ interface MenuItem {
 
 interface Props {
   title: string;
+  description?: string;
+  ogImage?: string;
+  canonicalUrl?: string;
   showAds?: boolean;
   navMenus?: MenuItem[];
 }
 
 const {
   title,
+  description = "Bảng giá vàng trực tuyến SJC, vàng 24K, 9999, nữ trang cập nhật thời gian thực, liên tục 24h nhanh chóng và chính xác nhất.",
+  ogImage = "/logo.svg",
+  canonicalUrl = Astro.url.href,
   showAds = false,
   navMenus = [
     { label: 'Bảng Giá Vàng', href: '#prices' }
@@ -23,6 +32,9 @@ const {
 } = Astro.props;
 
 const shouldShowNav = navMenus && navMenus.length > 1;
+
+// Tổ hợp URL cho Logo từ host bên ngoài
+const logoUrl = `${ASSET_HOST}/logo.svg`;
 ---
 
 <!DOCTYPE html>
@@ -30,20 +42,39 @@ const shouldShowNav = navMenus && navMenus.length > 1;
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
     <title>{title}</title>
+
+    <meta name="description" content={description} />
+    <meta name="robots" content="index, follow" />
+    <link class="canonical" href={canonicalUrl} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={ogImage} />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content={canonicalUrl} />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <slot name="head" />
   </head>
   <body class="pt-10 flex flex-col min-h-screen font-sans text-foreground bg-white">
 
-    <!-- NAVBAR -->
     <nav class="fixed top-0 left-0 right-0 z-50 border-b border-gray-200 bg-white">
       <div class="max-w-[1200px] w-full mx-auto px-4 h-16 md:h-20 flex items-center justify-between gap-4 md:gap-8">
 
         <a href="/" class="flex items-center gap-2 shrink-0">
-          <img
-            src="https://lighttrading.pp.ua/logo.svg"
+          <OptimizedImage
+            src={logoUrl}
+            alt="Logo FinDaily"
             class="h-9 w-auto"
+            format="svg"
           />
         </a>
 
@@ -94,29 +125,22 @@ const shouldShowNav = navMenus && navMenus.length > 1;
       )}
     </nav>
 
-    <!-- ==================== MAIN CONTENT ==================== -->
     <div class={showAds ? "w-full mx-auto px-4 md:px-6 flex-grow" : "max-w-[1200px] w-full mx-auto px-4 md:px-6 flex-grow"}>
       <div class="flex flex-row gap-6 items-start justify-between">
 
-        <!-- Sidebar Left - Thu nhỏ -->
         {showAds && (
           <aside class="hidden lg:block w-[140px] sticky top-[7.5rem] self-start flex-shrink-0">
-            <!-- Ads trái -->
           </aside>
         )}
 
-        <!-- Main Content -->
         <main class="flex-1 min-w-0">
 
-          <!-- HERO SECTION -->
           <slot name="hero" />
 
-          <!-- Nội dung chính -->
           <div class="mt-6">
             <slot />
           </div>
 
-          <!-- Mobile Ads -->
           {showAds && (
             <div class="lg:hidden mt-6 bg-white border border-gray-200 rounded-2xl p-6 text-center text-gray-400">
               <div class="h-32 bg-gray-50 border-2 border-dashed border-gray-100 rounded-xl flex items-center justify-center">
@@ -126,17 +150,14 @@ const shouldShowNav = navMenus && navMenus.length > 1;
           )}
         </main>
 
-        <!-- Sidebar Right - Thu nhỏ -->
         {showAds && (
           <aside class="hidden xl:block w-[260px] sticky top-[7.5rem] self-start flex-shrink-0">
-            <!-- Ads phải -->
           </aside>
         )}
 
       </div>
     </div>
 
-    <!-- Footer -->
     <footer class="mt-auto py-8 text-right text-gray-500 text-sm border-t">
       <div class="mx-auto px-6">
         © 2026 FinDaily.vn - Bảng giá vàng trực tuyến
