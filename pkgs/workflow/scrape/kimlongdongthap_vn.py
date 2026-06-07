@@ -55,8 +55,8 @@ def scrape_kimlong_dt():
 
                 # Cấu trúc:: ID,: Mua,: Bán,: Xu hướng
                 if len(lines) >= 3:
-                    buy_val = clean_gold_price(lines)
-                    sell_val = clean_gold_price(lines)
+                    buy_val = clean_gold_price(lines[1])
+                    sell_val = clean_gold_price(lines[2])
 
                     if buy_val or sell_val:
                         prices.append(

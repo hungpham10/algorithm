@@ -4,6 +4,7 @@
   import { PRICE_EVENT_NAME } from '$lib/schema.js';
 
   export let index;
+  export let enabled = false;
   export let type = "buy";
   export let initialPrice = "";
   export let initialDiff = "";
@@ -35,15 +36,19 @@
   }
 
   onMount(() => {
-    window.addEventListener(PRICE_EVENT_NAME, handleLiveUpdate);
-    return () => {
-      window.removeEventListener(PRICE_EVENT_NAME, handleLiveUpdate);
-    };
+    if (enabled) {
+      window.addEventListener(PRICE_EVENT_NAME, handleLiveUpdate);
+      return () => {
+        window.removeEventListener(PRICE_EVENT_NAME, handleLiveUpdate);
+      };
+    }
+
+    return () => {};
   });
 </script>
 
-<div class="flex flex-col items-center justify-center leading-tight mx-auto">
-  <div class="font-medium text-[15px] md:text-[16px] tracking-tight {priceColor}">
+<div class="flex flex-col items-right justify-center leading-tight mx-auto">
+  <div class="font-medium text-[16px] md:text-[17px] tracking-tight {priceColor}">
     {price}
   </div>
 </div>

@@ -167,7 +167,7 @@
           <path d="M11 21.95V18a2 2 0 0 0-2-2a2 2 0 0 1-2-2v-1a2 2 0 0 0-2-2H2.05"></path>
           <circle cx="12" cy="12" r="10"></circle>
         </svg>
-        World
+        Thế giới
       </span>
       <span class="text-xs font-semibold {getColor(dataWorld.diff)}">+0.18%</span>
     </div>

@@ -3,6 +3,7 @@ import Hero from '../components/gold/Hero.astro';
 import TablePrices from '../components/gold/TablePrices.astro';
 import ExchangeRate from '../components/bank/ExchangeRate.svelte';
 import RegionalPriceTable from '../components/gold/RegionalPriceTable.svelte';
+import FeedbackWidget from '../components/FeedbackWidget.svelte';
 import Layout from '../layouts/Layout.astro';
 
 import { FetchIndex } from '../lib/render.js';
@@ -81,14 +82,15 @@ const navMenus = [
         currentDate={currentDate}
         yesterdayDate={yesterdayDate}
   />
-  <ExchangeRate
-       currentDate={currentDate}
-       client:load
-  />
-
   <RegionalPriceTable
       formatVN={formatVN}
       regions={dataSource.locationList}
       client:visible
   />
+  <ExchangeRate
+       currentDate={currentDate}
+       client:load
+  />
+
+  <FeedbackWidget client:load />
 </Layout>

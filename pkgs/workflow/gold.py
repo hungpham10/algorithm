@@ -213,7 +213,7 @@ def gold_sync_flow():
         (scrape_ajc, "AJC - CÔNG TY CỔ PHẦN VÀNG BẠC ĐÁ QUÝ ASEAN"),
         (scrape_ancarat, "ANCARAT"),
         (scrape_doji, "TẬP ĐOÀN VÀNG BẠC ĐÁ QUÝ DOJI"),
-        (scrape_hhj_adp_p_com, "DOANH NGHIỆP TƯ NHÂN KIM CHÂU"),
+        (scrape_hhj_adp_p_com, "CÔNG TY TNHH HẢI HỒNG JEWELRY"),
         (scrape_hieuvangthanhtau, "CÔNG TY TNHH HIỆU VÀNG THANH TÀU"),
         (scrape_hoakimnguyen, "DOANH NGHIỆP TƯ NHÂN HIỆU VÀNG HOA KIM NGUYÊN"),
         (scrape_hongphucapp_halozend, "CÔNG TY TNHH VÀNG BẠC ĐÁ QUÝ HỒNG PHÚC GOLD"),

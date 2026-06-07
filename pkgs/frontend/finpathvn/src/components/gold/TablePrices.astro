@@ -5,28 +5,19 @@ import TableRow from './TableRow.astro';
 const { dataSource } = Astro.props;
 ---
 
-<section id="prices">
-  <div class="bg-white border border-gray-200 rounded-3xl overflow-hidden">
-    <header class="p-6 border-b border-gray-100 bg-white">
-      <div class="flex items-start justify-between gap-6">
-        <div>
-          <h2 class="text-3xl font-bold text-gray-900 mt-1">Giá vàng thương hiệu quốc gia hôm nay</h2>
-          <p class="text-sm text-gray-500 mt-1">
-            Đơn vị: triệu đồng/chỉ • Cập nhật <span class="current-date font-medium text-gray-700"></span>
-          </p>
-        </div>
-        <a
-          href="#"
-          class="hidden sm:flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium text-sm whitespace-nowrap mt-1"
-        >
-          <span>Xu hướng 7 ngày</span>
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7-7 7" />
-          </svg>
-        </a>
+<section id="prices" class="max-w-[1200px] w-full mx-auto px-4 py-3">
+  <header class="p-6 border-gray-100 bg-white">
+    <div class="flex items-start justify-between gap-6">
+      <div>
+        <h2 class="text-3xl font-bold text-gray-900 mt-1">Giá vàng thương hiệu quốc gia hôm nay</h2>
+        <p class="text-sm text-gray-900 mt-1">
+          Đơn vị: triệu đồng/chỉ • Cập nhật <span class="current-date font-medium text-gray-700"></span>
+        </p>
       </div>
-    </header>
+    </div>
+  </header>
 
+  <div class="bg-white border border-gray-200 rounded-3xl overflow-hidden">
     <div class="overflow-x-auto">
       <table class="w-full border-collapse">
         <TableHead currentDate="" yesterdayDate="" /> <!-- Để trống, sẽ xử lý sau nếu cần -->
@@ -37,18 +28,18 @@ const { dataSource } = Astro.props;
             ))
           ) : (
             <tr>
-              <td colspan="6" class="p-10 text-center text-gray-400 italic">Đang tải dữ liệu thị trường...</td>
+              <td colspan="6" class="p-10 text-center text-gray-900 italic">Đang tải dữ liệu thị trường...</td>
             </tr>
           )}
         </tbody>
       </table>
     </div>
 
-    <div class="px-6 py-4 bg-gray-50/50 border-t border-gray-100 flex items-center gap-2 text-xs text-gray-400 font-medium">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+    <div class="px-6 py-4 bg-gray-50/50 border-t border-gray-100 flex items-center gap-2 text-xs text-gray-900 font-medium">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-gray-900 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
-      <span>* Thông tin giá vàng trên đây chỉ mang tính chất tham khảo và có thể thay đổi tùy thuộc vào biến động thực tế của thị trường.</span>
+      <span>Thông tin giá vàng trên đây chỉ mang tính chất tham khảo và có thể thay đổi tùy thuộc vào biến động thực tế của thị trường.</span>
     </div>
   </div>
 </section>
