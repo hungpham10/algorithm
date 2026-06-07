@@ -32,8 +32,8 @@ def scrape_ngocbinh():
                     prices.append(
                         {
                             "name": name,
-                            "buy": int(buy) if buy else 0,
-                            "sell": int(sell) if sell else 0,
+                            "buy": int(buy) * 1000 if buy else 0,
+                            "sell": int(sell) * 1000 if sell else 0,
                         }
                     )
         return prices
