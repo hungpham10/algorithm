@@ -12,7 +12,7 @@
   let loading = false;
 
   let currentPage = 1;
-  let pageSize = 10;
+  let pageSize = 5;
   let nextCursor = null;
   let historyCursors = [null];
 
