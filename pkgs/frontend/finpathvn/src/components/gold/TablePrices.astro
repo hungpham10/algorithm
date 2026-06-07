@@ -18,7 +18,7 @@ const { dataSource } = Astro.props;
   </header>
 
   <div class="bg-white border border-gray-200 rounded-3xl overflow-hidden">
-    <div class="overflow-x-auto">
+    <div class="w-full overflow-x-auto selection:bg-transparent custom-scrollbar">
       <table class="w-full border-collapse">
         <TableHead currentDate="" yesterdayDate="" /> <!-- Để trống, sẽ xử lý sau nếu cần -->
         <tbody class="divide-y divide-gray-100">

@@ -1306,7 +1306,7 @@ pub async fn query_data_from_api_no_path(
         return Ok(fast_cache_response(cached).into_response());
     }
 
-    let api_result = app_state
+    let (api_result, ttl) = app_state
         .admin_entity
         .perform_api_by_api_id(
             tenant_id,
@@ -1333,7 +1333,9 @@ pub async fn query_data_from_api_no_path(
     };
 
     if let Ok(serialized) = serde_json::to_string(&response_data) {
-        let _ = cache.set(&cache_key, &serialized, 300).await;
+        let _ = cache
+            .set(&cache_key, &serialized, ttl.unwrap_or(300) as usize)
+            .await;
     }
 
     Ok((StatusCode::OK, JsonResponse(response_data)).into_response())
@@ -1395,7 +1397,7 @@ pub async fn query_data_from_api_with_path(
         return Ok(fast_cache_response(cached).into_response());
     }
 
-    let api_result = app_state
+    let (api_result, ttl) = app_state
         .admin_entity
         .perform_api_by_api_id(
             tenant_id,
@@ -1422,7 +1424,9 @@ pub async fn query_data_from_api_with_path(
     };
 
     if let Ok(serialized) = serde_json::to_string(&response_data) {
-        let _ = cache.set(&cache_key, &serialized, 300).await;
+        let _ = cache
+            .set(&cache_key, &serialized, ttl.unwrap_or(300) as usize)
+            .await;
     }
 
     Ok((StatusCode::OK, JsonResponse(response_data)).into_response())

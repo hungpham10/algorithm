@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS sys_api_map (
   name VARCHAR(200),
   url VARCHAR(1000),
   parser JSONB, -- Chuyển từ JSON sang JSONB để tối ưu hiệu năng query
+  ttl INTEGER,
 
   CONSTRAINT unique_tenant_name_mode UNIQUE (tenant_id, name, mode)
 );

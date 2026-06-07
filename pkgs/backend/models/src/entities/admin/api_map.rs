@@ -19,6 +19,7 @@ pub struct Model {
     pub name: String,
     pub url: String,
     pub parser: Parser,
+    pub ttl: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

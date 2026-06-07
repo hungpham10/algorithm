@@ -963,7 +963,7 @@ async fn get_list_of_symbols(
                 )
                 .await
             {
-                Ok(data) => {
+                Ok((data, ttl)) => {
                     let symbols: Vec<String> = data
                         .into_iter()
                         .filter_map(|v| {
@@ -979,7 +979,9 @@ async fn get_list_of_symbols(
                     };
 
                     if let Ok(serialized) = serde_json::to_string(&res_obj) {
-                        let _ = cache.set(&key, &serialized, 3600).await;
+                        let _ = cache
+                            .set(&key, &serialized, ttl.unwrap_or(3600) as usize)
+                            .await;
                         return Ok(fast_cache_response(serialized).into_response());
                     }
 
@@ -1128,7 +1130,7 @@ async fn get_list_of_symbols_by_product(
                 .perform_api_by_api_name(tenant_id, api_name, ApiType::Read, vec![], headers, None)
                 .await
             {
-                Ok(data) => {
+                Ok((data, ttl)) => {
                     let symbols = data
                         .into_iter()
                         .filter_map(|v| {
@@ -1144,7 +1146,9 @@ async fn get_list_of_symbols_by_product(
                     };
 
                     if let Ok(serialized) = serde_json::to_string(&res_obj) {
-                        let _ = cache.set(&key, &serialized, 3600).await;
+                        let _ = cache
+                            .set(&key, &serialized, ttl.unwrap_or(3600) as usize)
+                            .await;
                         return Ok(fast_cache_response(serialized).into_response());
                     }
 
@@ -1407,7 +1411,7 @@ pub async fn get_latest_price(
             headers.insert("Authorization".to_string(), format!("Bearer {}", token));
         }
 
-        if let Ok(api_data_vec) = app_state
+        if let Ok((api_data_vec, _)) = app_state
             .admin_entity
             .perform_api_by_api_name(tenant_id, api_name, ApiType::Read, vec![], headers, None)
             .await

@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS `sys_api_map` (
   `name` varchar(200),
   `url` varchar(1000),
   `parser` json,
+  `ttl` integer,
 
   UNIQUE KEY `unique_tenant_name_mode` (`tenant_id`, `name`, `mode`)
 );

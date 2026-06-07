@@ -39,6 +39,8 @@ from scrape import (
     scrape_ngoc_nhu_y,
     scrape_phu_tai,
     scrape_kimhoancamau,
+    scrape_vangbaclienthanh_com,
+    scrape_kimtin_com_vn,
 )
 
 # --- CONFIG LOADER ---
@@ -245,6 +247,8 @@ def gold_sync_flow():
         (scrape_ngoc_nhu_y, "VÀNG NGỌC NHƯ Ý"),
         (scrape_phu_tai, "VÀNG PHÚ TÀI"),
         (scrape_kimhoancamau, "TIỆM VÀNG HỘI MỸ NGHỆ KIM HOÀN TỈNH CÀ MAU"),
+        (scrape_vangbaclienthanh_com, "CÔNG TY TNHH VÀNG BẠC ĐÁ QUÝ LIÊN THANH"),
+        (scrape_kimtin_com_vn, "TẬP ĐOÀN VÀNG BẠC ĐÁ QUÝ KIM TÍN"),
     ]
 
     # 3. Kích hoạt Scrape song song

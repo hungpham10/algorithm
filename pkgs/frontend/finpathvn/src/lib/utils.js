@@ -64,7 +64,21 @@ export function calcPercentInitial(diffStr, currentPrice) {
 };
 
 export async function getIP() {
-  const response = await fetch('https://icanhazip.com');
-  const ip = await response.text();
-  return ip.trim();
+  const ipResponse = await fetch('https://api.ipify.org?format=json');
+  if (!ipResponse.ok) {
+    throw new Error("Không thể lấy IP");
+  }
+
+  const ipData = await ipResponse.json();
+  return ipData.ip;
+}
+
+
+export function removeVietnameseTones(str) {
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .trim();
 }

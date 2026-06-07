@@ -155,6 +155,7 @@ pub struct Api {
     pub mode: Option<ApiType>,
     pub url: Option<String>,
     pub parser: Option<Vec<Operator>>,
+    pub ttl: Option<i32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, ToSchema)]
@@ -786,17 +787,19 @@ impl Admin {
             .column(api_map::Column::Name)
             .column(api_map::Column::Url)
             .column(api_map::Column::Parser)
+            .column(api_map::Column::Ttl)
             .limit(limit)
-            .into_tuple::<(i64, i32, String, String, api_map::Parser)>()
+            .into_tuple::<(i64, i32, String, String, api_map::Parser, Option<i32>)>()
             .all(self.dbt(tenant_id))
             .await?
             .into_iter()
-            .map(|(id, mode, name, url, parser)| Api {
+            .map(|(id, mode, name, url, parser, ttl)| Api {
                 id: Some(id),
                 mode: Some(ApiType::from(mode)),
                 name: Some(name),
                 url: Some(url),
                 parser: Some(parser.0.clone()),
+                ttl,
             })
             .collect())
     }
@@ -827,20 +830,22 @@ impl Admin {
                     .column(api_map::Column::Name)
                     .column(api_map::Column::Url)
                     .column(api_map::Column::Parser)
+                    .column(api_map::Column::Ttl)
                     .filter(api_map::Column::TenantId.eq(tenant_id))
                     .filter(api_map::Column::Name.eq(name))
                     .filter(api_map::Column::Mode.eq(method as i32))
-                    .into_tuple::<(i64, i32, String, String, api_map::Parser)>()
+                    .into_tuple::<(i64, i32, String, String, api_map::Parser, Option<i32>)>()
                     .one(self.dbt(tenant_id))
                     .await?
                 {
-                    Some((id, mode, name, url, parser)) => {
+                    Some((id, mode, name, url, parser, ttl)) => {
                         let api_info = Api {
                             id: Some(id),
                             mode: Some(ApiType::from(mode)),
                             name: Some(name),
                             url: Some(url),
                             parser: Some(parser.0.clone()),
+                            ttl,
                         };
 
                         self.cache_api_info_by_name
@@ -871,9 +876,10 @@ impl Admin {
                     .column(api_map::Column::Name)
                     .column(api_map::Column::Url)
                     .column(api_map::Column::Parser)
+                    .column(api_map::Column::Ttl)
                     .filter(api_map::Column::TenantId.eq(tenant_id))
                     .filter(api_map::Column::Id.eq(id))
-                    .into_tuple::<(i64, i32, String, String, api_map::Parser)>()
+                    .into_tuple::<(i64, i32, String, String, api_map::Parser, Option<i32>)>()
                     .one(self.dbt(tenant_id))
                     .await
                     .map_err(|error| {
@@ -881,12 +887,13 @@ impl Admin {
                             "Failed to perform SQL of tenant_id {tenant_id} and id {id}: {error}",
                         )))
                     })?
-                    .map(|(id, mode, name, url, parser)| Api {
+                    .map(|(id, mode, name, url, parser, ttl)| Api {
                         id: Some(id),
                         mode: Some(ApiType::from(mode)),
                         name: Some(name),
                         url: Some(url),
                         parser: Some(parser.0.clone()),
+                        ttl,
                     }) {
                     Some(api_info) => {
                         self.cache_api_info_by_id.put(id, Some(api_info.clone()));
@@ -972,6 +979,7 @@ impl Admin {
                 mode: Some(ApiType::from(m.mode)),
                 url: Some(m.url),
                 parser: Some(m.parser.0),
+                ttl: m.ttl,
             })
             .collect::<Vec<_>>())
     }
@@ -984,7 +992,7 @@ impl Admin {
         args: Vec<String>,
         headers: HashMap<String, String>,
         body: Option<JsonValue>,
-    ) -> Result<Vec<JsonValue>, DbErr> {
+    ) -> Result<(Vec<JsonValue>, Option<i32>), DbErr> {
         self.perform_api_by_api_info(
             &self.get_api_schema_by_id(tenant_id, query_id).await?,
             paths,
@@ -1003,7 +1011,7 @@ impl Admin {
         args: Vec<String>,
         headers: HashMap<String, String>,
         body: Option<JsonValue>,
-    ) -> Result<Vec<JsonValue>, DbErr> {
+    ) -> Result<(Vec<JsonValue>, Option<i32>), DbErr> {
         self.perform_api_by_api_info(
             &self.get_api_schema_by_name(tenant_id, name, mode).await?,
             vec![],
@@ -1021,7 +1029,7 @@ impl Admin {
         args: Vec<String>,
         headers: HashMap<String, String>,
         body: Option<JsonValue>,
-    ) -> Result<Vec<JsonValue>, DbErr> {
+    ) -> Result<(Vec<JsonValue>, Option<i32>), DbErr> {
         let mut url = api_info.url.clone().ok_or_else(|| {
             DbErr::Query(RuntimeErr::Internal("Api is broken, missing `url`".into()))
         })?;
@@ -1053,29 +1061,45 @@ impl Admin {
         let query_parser = Arc::new(algorithm::JsonQuery::new(parser.clone()));
 
         match api_type {
-            ApiType::Create => self
-                .api
-                .create(url.as_str(), &query_parser, &headers, body.unwrap())
-                .await
-                .map_err(|e| DbErr::Query(RuntimeErr::Internal(format!("Error creating: {e}")))),
+            ApiType::Create => Ok((
+                self.api
+                    .create(url.as_str(), &query_parser, &headers, body.unwrap())
+                    .await
+                    .map_err(|e| {
+                        DbErr::Query(RuntimeErr::Internal(format!("Error creating: {e}")))
+                    })?,
+                api_info.ttl,
+            )),
 
-            ApiType::Read => self
-                .api
-                .read(url.as_str(), &query_parser, &headers)
-                .await
-                .map_err(|e| DbErr::Query(RuntimeErr::Internal(format!("Error reading: {e}")))),
+            ApiType::Read => Ok((
+                self.api
+                    .read(url.as_str(), &query_parser, &headers)
+                    .await
+                    .map_err(|e| {
+                        DbErr::Query(RuntimeErr::Internal(format!("Error reading: {e}")))
+                    })?,
+                api_info.ttl,
+            )),
 
-            ApiType::Update => self
-                .api
-                .update(url.as_str(), &query_parser, &headers, body.unwrap())
-                .await
-                .map_err(|e| DbErr::Query(RuntimeErr::Internal(format!("Error updating: {e}")))),
+            ApiType::Update => Ok((
+                self.api
+                    .update(url.as_str(), &query_parser, &headers, body.unwrap())
+                    .await
+                    .map_err(|e| {
+                        DbErr::Query(RuntimeErr::Internal(format!("Error updating: {e}")))
+                    })?,
+                api_info.ttl,
+            )),
 
-            ApiType::Delete => self
-                .api
-                .delete(url.as_str(), &query_parser, &headers)
-                .await
-                .map_err(|e| DbErr::Query(RuntimeErr::Internal(format!("Error deleting: {e}")))),
+            ApiType::Delete => Ok((
+                self.api
+                    .delete(url.as_str(), &query_parser, &headers)
+                    .await
+                    .map_err(|e| {
+                        DbErr::Query(RuntimeErr::Internal(format!("Error deleting: {e}")))
+                    })?,
+                api_info.ttl,
+            )),
 
             _ => Err(DbErr::Query(RuntimeErr::Internal(format!(
                 "Unknown API type: {api_type}"

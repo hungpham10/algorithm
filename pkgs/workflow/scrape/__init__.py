@@ -34,3 +34,5 @@ from .vangchienminh_vn import scrape_chien_minh
 from .vangngocnhuy_com import scrape_ngoc_nhu_y
 from .vangphutai_vn import scrape_phu_tai
 from .kimhoancamau_vn import scrape_kimhoancamau
+from .vangbaclienthanh_com import scrape_vangbaclienthanh_com
+from .kimtin_com_vn import scrape_kimtin_com_vn
