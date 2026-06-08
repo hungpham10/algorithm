@@ -81,7 +81,7 @@
       }
 
       const fetchPromises = dateStrings.map(dateStr =>
-        fetch(`https://lighttrading.pp.ua/api/investing/v2/exchange-rate?date=${dateStr}`)
+        fetch(`/api/investing/v2/exchange-rate?date=${dateStr}`)
           .then(res => res.ok ? res.json() : null)
           .catch(() => null)
       );
