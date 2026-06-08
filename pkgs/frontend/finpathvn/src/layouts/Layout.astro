@@ -1,13 +1,9 @@
-
 ---
 // src/layouts/Layout.astro
 import OptimizedImage from '../components/OptimizedImage.astro';
 import '../styles/global.css';
 
-// Đọc host cấu hình từ biến môi trường, mặc định fallback nếu chưa cấu hình
-const ASSET_HOST = import.meta.env.PUBLIC_ASSET_HOST || 'https://lighttrading.pp.ua';
-
-// Đọc biến môi trường cho Google Analytics
+const ASSET_HOST = import.meta.env.PUBLIC_ASSET_HOST || 'https://findaily.vn';
 const GA_TRACKING_ID = import.meta.env.GA_TRACKING_ID;
 
 interface MenuItem {
@@ -36,8 +32,6 @@ const {
 } = Astro.props;
 
 const shouldShowNav = navMenus && navMenus.length > 1;
-
-// Tổ hợp URL cho Logo từ host bên ngoài
 const logoUrl = `${ASSET_HOST}/logo.svg`;
 ---
 
@@ -63,7 +57,7 @@ const logoUrl = `${ASSET_HOST}/logo.svg`;
 
     <meta name="description" content={description} />
     <meta name="robots" content="index, follow" />
-    <link class="canonical" href={canonicalUrl} />
+    <link rel="rel" href={canonicalUrl} />
 
     <meta property="og:type" content="website" />
     <meta property="og:url" content={canonicalUrl} />
@@ -80,9 +74,10 @@ const logoUrl = `${ASSET_HOST}/logo.svg`;
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <slot name="head" />
   </head>
-  <body class="pt-10 flex flex-col min-h-screen font-sans text-foreground bg-white">
 
-    <nav class="fixed top-0 left-0 right-0 z-50 border-b border-gray-200 bg-white">
+  <body class="flex flex-col min-h-screen font-sans text-foreground bg-white">
+
+    <nav class="sticky top-0 z-50 border-b border-gray-200 bg-white shadow-sm">
       <div class="max-w-[1200px] w-full mx-auto px-4 h-16 md:h-20 flex items-center justify-between gap-4 md:gap-8">
 
         <a href="/" class="flex items-center gap-2 shrink-0">
@@ -98,8 +93,7 @@ const logoUrl = `${ASSET_HOST}/logo.svg`;
           <div class="flex-grow overflow-x-auto no-scrollbar hidden sm:block">
             <ul class="flex items-center gap-6 md:gap-8 h-12 whitespace-nowrap justify-start">
               {navMenus.map((menu) => (
-                <li key={menu.href}>
-                  <a
+                <li> <a
                     href={menu.href}
                     class="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors relative group py-2 px-1"
                   >
@@ -126,8 +120,7 @@ const logoUrl = `${ASSET_HOST}/logo.svg`;
           <div class="px-4">
             <ul class="flex items-center gap-6 h-10 whitespace-nowrap">
               {navMenus.map((menu) => (
-                <li key={menu.href}>
-                  <a
+                <li> <a
                     href={menu.href}
                     class="text-xs font-medium text-gray-500 hover:text-blue-600 transition-colors"
                   >
@@ -141,16 +134,15 @@ const logoUrl = `${ASSET_HOST}/logo.svg`;
       )}
     </nav>
 
-    <div class={showAds ? "w-full mx-auto px-4 md:px-6 flex-grow" : "max-w-[1200px] w-full mx-auto px-4 md:px-6 flex-grow"}>
+    <div class={showAds ? "w-full mx-auto px-4 md:px-6 flex-grow mt-4" : "max-w-[1200px] w-full mx-auto px-4 md:px-6 flex-grow mt-4"}>
       <div class="flex flex-row gap-6 items-start justify-between">
 
         {showAds && (
           <aside class="hidden lg:block w-[140px] sticky top-[7.5rem] self-start flex-shrink-0">
-          </aside>
+            </aside>
         )}
 
         <main class="flex-1 min-w-0">
-
           <slot name="hero" />
 
           <div class="mt-6">
@@ -168,7 +160,7 @@ const logoUrl = `${ASSET_HOST}/logo.svg`;
 
         {showAds && (
           <aside class="hidden xl:block w-[260px] sticky top-[7.5rem] self-start flex-shrink-0">
-          </aside>
+            </aside>
         )}
 
       </div>
