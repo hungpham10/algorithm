@@ -1,3 +1,4 @@
+
 ---
 // src/layouts/Layout.astro
 import OptimizedImage from '../components/OptimizedImage.astro';
@@ -5,6 +6,9 @@ import '../styles/global.css';
 
 // Đọc host cấu hình từ biến môi trường, mặc định fallback nếu chưa cấu hình
 const ASSET_HOST = import.meta.env.PUBLIC_ASSET_HOST || 'https://lighttrading.pp.ua';
+
+// Đọc biến môi trường cho Google Analytics
+const GA_TRACKING_ID = import.meta.env.GA_TRACKING_ID;
 
 interface MenuItem {
   label: string;
@@ -42,6 +46,18 @@ const logoUrl = `${ASSET_HOST}/logo.svg`;
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    {GA_TRACKING_ID && (
+      <>
+        <script is:inline async src={`https://www.googletagmanager.com/gtag/js?id=${GA_TRACKING_ID}`}></script>
+        <script is:inline define:vars={{ GA_TRACKING_ID }}>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', GA_TRACKING_ID);
+        </script>
+      </>
+    )}
 
     <title>{title}</title>
 
@@ -160,8 +176,9 @@ const logoUrl = `${ASSET_HOST}/logo.svg`;
 
     <footer class="mt-auto py-10 text-left text-gray-500 text-sm w-full mx-auto border-gray-200 bg-white">
       <div class="mt-auto border-t border-gray-200 bg-white">
-      <div class="mx-auto py-8 px-6 max-w-[1200px]">
-        © 2026 FinDaily.vn - Bảng giá vàng trực tuyến
+        <div class="mx-auto py-8 px-6 max-w-[1200px]">
+          © 2026 FinDaily.vn - Bảng giá vàng trực tuyến
+        </div>
       </div>
     </footer>
   </body>

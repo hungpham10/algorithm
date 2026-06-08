@@ -9,8 +9,8 @@ import Layout from '../layouts/Layout.astro';
 import { FetchIndex } from '../lib/render.js';
 import { formatVN } from '../lib/utils.js';
 
+const SITE_URL = import.meta.env.PUBLIC_SITE_URL || 'https://findaily.vn';
 const SHOW_ADS = import.meta.env.SHOW_ADS === 'true';
-const SHOW_REGION_TABLE = import.meta.env.SHOW_REGION_TABLE === 'true';
 
 let dataSource = await FetchIndex.load();
 const goldSummary = dataSource.summary;
@@ -18,15 +18,26 @@ const productIds = dataSource.productIds;
 const degree = 1000000;
 
 const now = new Date();
+const yesterday = new Date();
+yesterday.setDate(now.getDate() - 1);
+
 const currentDate = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
-const yesterdayDate = `${now.getDate() - 1}/${now.getMonth() + 1}/${now.getFullYear()}`;
+const yesterdayDate = `${yesterday.getDate()}/${yesterday.getMonth() + 1}/${yesterday.getFullYear()}`;
 
 const navMenus = [
   { label: 'Bảng Giá Vàng', href: '#prices' },
   { label: 'Tỷ giá ngân hàng', href: '#exchange-rates' }
 ];
+
+// Tạo đường dẫn canonical động chuẩn xác cho trang này
+const canonicalUrl = `${SITE_URL}${Astro.url.pathname}`;
 ---
-<Layout title="Bảng giá vàng trực tuyến - Cập nhật liên tục 24h" showAds={SHOW_ADS} navMenus={navMenus}>
+<Layout
+  title="Bảng giá vàng trực tuyến - Cập nhật liên tục 24h"
+  showAds={SHOW_ADS}
+  navMenus={navMenus}
+  canonicalUrl={canonicalUrl}
+>
   <div id="price-config" data-ids={JSON.stringify(productIds)} data-degree={degree}></div>
   <script>
     import { fetchPriceByProductId } from '$lib/fetch.js';
@@ -47,7 +58,6 @@ const navMenus = [
 
       const currentDateStr = now.toLocaleDateString('vi-VN', options);
 
-      // Cập nhật tất cả các phần tử có class="current-date"
       document.querySelectorAll('.current-date').forEach(el => {
         el.textContent = currentDateStr;
       });
@@ -74,19 +84,20 @@ const navMenus = [
     }
   </script>
 
-  <Hero
-       initialData={goldSummary}
-  />
+  <Hero initialData={goldSummary} />
+
   <TablePrices
         dataSource={dataSource}
         currentDate={currentDate}
         yesterdayDate={yesterdayDate}
   />
+
   <RegionalPriceTable
       formatVN={formatVN}
       regions={dataSource.locationList}
       client:visible
   />
+
   <ExchangeRate
        currentDate={currentDate}
        client:load

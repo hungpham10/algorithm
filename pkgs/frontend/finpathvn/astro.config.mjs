@@ -5,7 +5,6 @@ import viteCompression from 'vite-plugin-compression';
 import obfuscator from 'vite-plugin-javascript-obfuscator';
 import sentry from '@sentry/astro';
 
-const gaId = process.env.GA_TRACKING_ID;
 
 export default defineConfig({
   integrations: [
@@ -18,30 +17,6 @@ export default defineConfig({
 
   build: {
     inlineStylesheets: 'always',
-
-    // ==========================================
-    // CẤU HÌNH GOOGLE ANALYTICS THẲNG VÀO ĐÂY
-    // Chỉ chèn khi build production để không làm nhiễu data dev
-    // ==========================================
-    head: (gaId) ? [
-      [
-        'script',
-        {
-          async: 'true',
-          src: `https://www.googletagmanager.com/gtag/js?id=${gaId}`,
-        },
-      ],
-      [
-        'script',
-        {},
-        `
-          window.dataLayer = window.dataLayer || [];
-          function gtag(){dataLayer.push(arguments);}
-          gtag('js', new Date());
-          gtag('config', '${gaId}');
-        `,
-      ],
-    ] : [],
   },
 
   vite: {
