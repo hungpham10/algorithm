@@ -1,0 +1,159 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout
+  title="404 - Không tìm thấy trang | FinDaily.vn"
+  description="Trang bạn đang tìm kiếm không tồn tại..."
+  navMenus={[]}
+  hideNavBorder={true}
+>
+    <div class="error-page">
+        <div class="container">
+            <div class="illustration">📊</div>
+
+            <h1 class="error-code">404</h1>
+            <h2 class="title">Ối! Trang không tồn tại</h2>
+
+            <p class="description">
+                Trang bạn đang tìm kiếm có thể đã bị di chuyển, xóa, hoặc chưa từng tồn tại.
+            </p>
+
+            <a href="/" class="btn-home">
+                ← Về Trang Chủ
+            </a>
+        </div>
+    </div>
+</Layout>
+
+<script>
+  // Thu thập thông tin 404
+  function track404() {
+    const data = {
+      timestamp: new Date().toISOString(),
+      url: window.location.href,                    // Trang 404 đang truy cập
+      referrer: document.referrer || null,          // Trang trước đó (rất quan trọng)
+      userAgent: navigator.userAgent,
+      pathname: window.location.pathname,
+    };
+
+    console.log('🚨 404 Error Logged:', data);
+
+    // Gửi lên server (nếu bạn có API endpoint)
+    fetch('/api/track-404', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).catch(() => {}); // Không block UI nếu lỗi
+
+    // Hoặc gửi qua Google Analytics (nếu dùng gtag)
+    if (typeof gtag !== 'undefined') {
+      gtag('event', '404_error', {
+        event_category: 'Error',
+        event_label: data.pathname,
+        value: 1,
+        referrer: data.referrer
+      });
+    }
+  }
+
+  // Chạy khi trang load
+  document.addEventListener('DOMContentLoaded', track404);
+</script>
+
+<style>
+    .error-page {
+        min-height: 100vh;
+        background: linear-gradient(135deg, #f8fafc 0%, #e0f2fe 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 2rem;
+    }
+
+    .container {
+        max-width: 620px;
+    }
+
+    .illustration {
+        font-size: 7rem;
+        margin-bottom: 1rem;
+        animation: float 3s ease-in-out infinite;
+    }
+
+    .error-code {
+        font-size: 9rem;
+        font-weight: 700;
+        background: linear-gradient(90deg, #0ea5e9, #3b82f6);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        line-height: 1;
+        margin: 0.5rem 0;
+    }
+
+    .title {
+        font-size: 2.25rem;
+        color: #1e40af;
+        margin-bottom: 1rem;
+    }
+
+    .description {
+        font-size: 1.15rem;
+        color: #64748b;
+        line-height: 1.7;
+        margin-bottom: 2.5rem;
+    }
+
+    .btn-home {
+        display: inline-block;
+        background: #0ea5e9;
+        color: white;
+        padding: 14px 36px;
+        border-radius: 9999px;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 1.1rem;
+        transition: all 0.3s ease;
+        box-shadow: 0 10px 15px -3px rgba(14, 165, 233, 0.3);
+    }
+
+    .btn-home:hover {
+        background: #0284c8;
+        transform: translateY(-3px);
+        box-shadow: 0 20px 25px -5px rgba(14, 165, 233, 0.4);
+    }
+
+    .quick-links {
+        margin-top: 3rem;
+        display: flex;
+        justify-content: center;
+        gap: 2rem;
+        flex-wrap: wrap;
+    }
+
+    .quick-links a {
+        color: #64748b;
+        text-decoration: none;
+        font-weight: 500;
+        transition: color 0.2s;
+    }
+
+    .quick-links a:hover {
+        color: #0ea5e9;
+    }
+
+    @keyframes float {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-25px); }
+    }
+
+    @media (max-width: 640px) {
+        .error-code {
+            font-size: 6rem;
+        }
+        .title {
+            font-size: 1.8rem;
+        }
+    }
+</style>

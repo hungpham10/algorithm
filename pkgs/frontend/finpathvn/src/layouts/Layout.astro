@@ -18,6 +18,7 @@ interface Props {
   canonicalUrl?: string;
   showAds?: boolean;
   navMenus?: MenuItem[];
+  hideNavBorder?: boolean;
 }
 
 const {
@@ -28,9 +29,11 @@ const {
   showAds = false,
   navMenus = [
     { label: 'Bảng Giá Vàng', href: '#prices' }
-  ]
+  ],
+  hideNavBorder = false,
 } = Astro.props;
 
+console.log(GA_TRACKING_ID);
 const shouldShowNav = navMenus && navMenus.length > 1;
 const logoUrl = `${ASSET_HOST}/logo.svg`;
 ---
@@ -77,7 +80,7 @@ const logoUrl = `${ASSET_HOST}/logo.svg`;
 
   <body class="flex flex-col min-h-screen font-sans text-foreground bg-white">
 
-    <nav class="sticky top-0 z-50 border-b border-gray-200 bg-white shadow-sm">
+    <nav class={`sticky top-0 z-50 bg-white shadow-sm ${hideNavBorder ? '' : 'border-b border-gray-200'}`}>
       <div class="max-w-[1200px] w-full mx-auto px-4 h-16 md:h-20 flex items-center justify-between gap-4 md:gap-8">
 
         <a href="/" class="flex items-center gap-2 shrink-0">
@@ -106,13 +109,15 @@ const logoUrl = `${ASSET_HOST}/logo.svg`;
           </div>
         )}
 
-        <div class="flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1.5 md:px-4 md:py-2 rounded-full border border-green-100 shrink-0">
-          <span class="relative flex h-2 w-2">
-            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-            <span class="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
-          </span>
-          <span class="text-[10px] md:text-xs font-bold uppercase tracking-wider">LIVE DATA</span>
-        </div>
+        {shouldShowNav && (
+          <div class={`flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1.5 md:px-4 md:py-2 rounded-full ${hideNavBorder ? '': 'border border-green-100 shrink-0'}`}>
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
+            </span>
+            <span class="text-[10px] md:text-xs font-bold uppercase tracking-wider">LIVE DATA</span>
+          </div>
+        )}
       </div>
 
       {shouldShowNav && (
