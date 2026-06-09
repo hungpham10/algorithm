@@ -27,37 +27,41 @@ import Layout from '../layouts/Layout.astro';
 </Layout>
 
 <script>
-  // Thu thập thông tin 404
   function track404() {
     const data = {
       timestamp: new Date().toISOString(),
-      url: window.location.href,                    // Trang 404 đang truy cập
-      referrer: document.referrer || null,          // Trang trước đó (rất quan trọng)
-      userAgent: navigator.userAgent,
+      url: window.location.href,
       pathname: window.location.pathname,
+      referrer: document.referrer || null,
+      previousPage: document.referrer ? new URL(document.referrer).pathname : null,
+      userAgent: navigator.userAgent,
+      language: navigator.language,
     };
 
     console.log('🚨 404 Error Logged:', data);
 
-    // Gửi lên server (nếu bạn có API endpoint)
+    // === GOOGLE ANALYTICS (gtag) - Phiên bản chi tiết ===
+    if (typeof gtag !== 'undefined') {
+      gtag('event', '404_error', {
+        event_category: 'Error',
+        event_label: data.pathname,           // Trang 404 nào bị lỗi
+        page_location: data.url,              // URL đầy đủ của trang 404
+        page_referrer: data.referrer,         // Link người dùng vừa bấm vào (quan trọng nhất)
+        previous_page: data.previousPage,     // Đường dẫn tương đối của trang trước
+        value: 1,
+        user_agent: data.userAgent.substring(0, 150),
+        language: data.language,
+      });
+    }
+
+    // Gửi lên server (nếu có API)
     fetch('/api/track-404', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
-    }).catch(() => {}); // Không block UI nếu lỗi
-
-    // Hoặc gửi qua Google Analytics (nếu dùng gtag)
-    if (typeof gtag !== 'undefined') {
-      gtag('event', '404_error', {
-        event_category: 'Error',
-        event_label: data.pathname,
-        value: 1,
-        referrer: data.referrer
-      });
-    }
+    }).catch(() => {});
   }
 
-  // Chạy khi trang load
   document.addEventListener('DOMContentLoaded', track404);
 </script>
 
