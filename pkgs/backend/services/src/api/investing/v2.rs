@@ -542,7 +542,7 @@ async fn get_price_data_by_provinces(
     let unique_product_ids = province_products_map
         .values()
         .flatten()
-        .map(|(id, _)| *id)
+        .map(|(_, id, _)| *id)
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -566,7 +566,7 @@ async fn get_price_data_by_provinces(
 
             let localized_prices = product_tuples_in_province
                 .iter()
-                .filter_map(|(id, store)| {
+                .filter_map(|(_, id, store)| {
                     price_map.get(id).map(|price| {
                         let final_price = if let Some(deg) = degree {
                             Price {
