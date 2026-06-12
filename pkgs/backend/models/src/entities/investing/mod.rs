@@ -1738,9 +1738,11 @@ impl Investing {
             province_products_map: raw_rows.iter().fold(
                 HashMap::new(),
                 |mut acc, (product_id, store_id, store, province)| {
-                    acc.entry(province.to_string())
-                        .or_default()
-                        .push((*product_id, *store_id, store.to_string()));
+                    acc.entry(province.to_string()).or_default().push((
+                        *product_id,
+                        *store_id,
+                        store.to_string(),
+                    ));
                     acc
                 },
             ),

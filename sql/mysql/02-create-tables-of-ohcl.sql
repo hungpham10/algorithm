@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS `ohcl_mapping_product_in_store_to_symbol` (
   `store` integer NOT NULL, -- Link directly to ohcl_store_locations.id
   `product_name` varchar(500) NOT NULL,
   `alias` varchar(500),
-  `scope` integer NOT NULL DEFAULT '0',
+  `layer` integer NOT NULL DEFAULT '0',
   `location` int,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP

@@ -36,3 +36,5 @@ from .vangphutai_vn import scrape_phu_tai
 from .kimhoancamau_vn import scrape_kimhoancamau
 from .vangbaclienthanh_com import scrape_vangbaclienthanh_com
 from .kimtin_com_vn import scrape_kimtin_com_vn
+from .baotinkk_com import scrape_baotinkk
+from .btmc_vn import scrape_btmc

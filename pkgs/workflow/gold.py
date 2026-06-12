@@ -41,6 +41,8 @@ from scrape import (
     scrape_kimhoancamau,
     scrape_vangbaclienthanh_com,
     scrape_kimtin_com_vn,
+    scrape_baotinkk,
+    scrape_btmc,
 )
 
 # --- CONFIG LOADER ---
@@ -139,8 +141,7 @@ def upload_store_prices(token, store_name, prices):
                 create_payload = [
                     {
                         "name": product_name,
-                        "symbol": product_name,  # Hoặc định danh symbol phù hợp nếu bạn có quy tắc riêng
-                        # "price": có thể bỏ qua hoặc để mặc định vì bước sau sẽ cập nhật giá chi tiết
+                        "symbol": "UNK",
                     }
                 ]
 
@@ -249,6 +250,8 @@ def gold_sync_flow():
         (scrape_kimhoancamau, "TIỆM VÀNG HỘI MỸ NGHỆ KIM HOÀN TỈNH CÀ MAU"),
         (scrape_vangbaclienthanh_com, "CÔNG TY TNHH VÀNG BẠC ĐÁ QUÝ LIÊN THANH"),
         (scrape_kimtin_com_vn, "TẬP ĐOÀN VÀNG BẠC ĐÁ QUÝ KIM TÍN"),
+        (scrape_baotinkk, "TIỆM VÀNG BẢO TÍN K&K"),
+        (scrape_btmc, "CÔNG TY TNHH BẢO TÍN MINH CHÂU"),
     ]
 
     # 3. Kích hoạt Scrape song song

@@ -10,7 +10,6 @@ dependencies = [
     "prefect",
     "playwright",
     "requests>=2.33.1",
-    "curl_cffi>=0.7.4",
 ]
 
 [tool.uv]

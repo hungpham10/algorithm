@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS sys_token_map (
 
 CREATE TABLE IF NOT EXISTS sys_tenant (
   host VARCHAR(200) PRIMARY KEY,
-  id BIGINT NOT NULL UNIQUE,
+  id BIGINT NOT NULL,
   jwt_mode VARCHAR(20) DEFAULT NULL,
   jwt_secret BIGINT DEFAULT NULL, -- Trỏ tới sys_token_map.id
   oidc_jwks_url VARCHAR(500) DEFAULT NULL,
