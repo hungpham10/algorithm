@@ -56,7 +56,7 @@ pub struct Investing {
 
 #[derive(Serialize, Deserialize)]
 pub struct PaginatedProductIdsByProvince {
-    pub province_products_map: HashMap<String, Vec<(i32, String)>>,
+    pub province_products_map: HashMap<String, Vec<(i32, i32, String)>>,
     pub next_after: Option<i32>,
 }
 
@@ -1653,9 +1653,10 @@ impl Investing {
     ) -> Result<PaginatedProductIdsByProvince, DbErr> {
         let mut raw_rows = mapping_product_in_store_to_symbol::Entity::find()
             .select_only()
+            .column(stores::Column::Id)
             .column(mapping_product_in_store_to_symbol::Column::Id)
-            .column(store_locations::Column::Province)
             .column(stores::Column::Name)
+            .column(store_locations::Column::Province)
             .join_rev(
                 JoinType::InnerJoin,
                 product_anchors::Entity::belongs_to(MappingProductInStoreToSymbol)
@@ -1683,16 +1684,17 @@ impl Investing {
             .filter(store_locations::Column::Province.is_in(provinces.clone()))
             .order_by_asc(mapping_product_in_store_to_symbol::Column::Id)
             .limit(limit)
-            .into_tuple::<(i32, String, String)>()
+            .into_tuple::<(i32, i32, String, String)>()
             .all(self.dbt(tenant_id))
             .await?;
 
         raw_rows.extend(
             mapping_product_in_store_to_symbol::Entity::find()
                 .select_only()
+                .column(stores::Column::Id)
                 .column(mapping_product_in_store_to_symbol::Column::Id)
-                .column(store_locations::Column::Province)
                 .column(stores::Column::Name)
+                .column(store_locations::Column::Province)
                 .join_rev(
                     JoinType::InnerJoin,
                     product_anchors::Entity::belongs_to(MappingProductInStoreToSymbol)
@@ -1715,35 +1717,35 @@ impl Investing {
                         .into(),
                 )
                 .filter(mapping_product_in_store_to_symbol::Column::Location.is_null())
-                .filter(mapping_product_in_store_to_symbol::Column::Id.gt(after))
+                .filter(stores::Column::Id.gt(after))
                 .filter(product_anchors::Column::Scope.is_in(scopes))
                 .filter(store_locations::Column::Province.is_in(provinces.clone()))
                 .group_by(mapping_product_in_store_to_symbol::Column::Id)
                 .group_by(store_locations::Column::Province)
                 .group_by(stores::Column::Name)
-                .order_by_asc(mapping_product_in_store_to_symbol::Column::Id)
+                .order_by_asc(stores::Column::Id)
                 .limit(limit)
-                .into_tuple::<(i32, String, String)>()
+                .into_tuple::<(i32, i32, String, String)>()
                 .all(self.dbt(tenant_id))
                 .await?,
         );
 
-        raw_rows.sort_unstable_by_key(|(id, _, _)| *id);
+        raw_rows.sort_unstable_by_key(|(id, _, _, _)| *id);
         raw_rows.dedup();
         raw_rows.truncate(limit as usize);
 
         Ok(PaginatedProductIdsByProvince {
             province_products_map: raw_rows.iter().fold(
                 HashMap::new(),
-                |mut acc, (id, province, store)| {
+                |mut acc, (product_id, store_id, store, province)| {
                     acc.entry(province.to_string())
                         .or_default()
-                        .push((*id, store.to_string()));
+                        .push((*product_id, *store_id, store.to_string()));
                     acc
                 },
             ),
             next_after: if raw_rows.len() == (limit as usize) {
-                raw_rows.last().map(|(id, _, _)| *id)
+                raw_rows.last().map(|(id, _, _, _)| *id)
             } else {
                 None
             },
