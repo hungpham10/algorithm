@@ -866,7 +866,7 @@ impl Investing {
     }
 
     #[instrument]
-    pub async fn update_price(&self, symbol_id: i32, price: Price) -> Result<(), DbErr> {
+    pub async fn update_price(&self, symbol_id: i32, price: &Price) -> Result<(), DbErr> {
         let price_active = price_current::ActiveModel {
             id: Set(symbol_id),
             buy: Set(price.buy),

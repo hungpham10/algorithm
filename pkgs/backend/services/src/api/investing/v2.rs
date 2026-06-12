@@ -13,7 +13,7 @@ use async_graphql::{Context, EmptyMutation, EmptySubscription, Object, Result, S
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 
 use chrono::Utc;
-use models::cache::Page;
+use models::cache::{Cache, Page};
 use models::entities::investing::{
     Filter, PaginatedProductIdsByProvince, Price, Product, Store, Symbol,
 };
@@ -547,9 +547,7 @@ async fn get_price_data_by_provinces(
         .into_iter()
         .collect::<Vec<_>>();
 
-    let price_map = app_state
-        .investing_entity
-        .get_price(tenant_id, &unique_product_ids, Some(24 * 60 * 60))
+    let price_map = get_price_with_cache(&app_state, tenant_id, &unique_product_ids)
         .await
         .map_err(|error| {
             (
@@ -654,9 +652,7 @@ async fn get_price_data_by_product_id(
             )
         })?;
 
-    let price_map = app_state
-        .investing_entity
-        .get_price(tenant_id, &product_ids, Some(24 * 60 * 60))
+    let price_map = get_price_with_cache(&app_state, tenant_id, &product_ids)
         .await
         .map_err(|e| {
             (
@@ -754,10 +750,7 @@ async fn get_price_data_by_name(
             )
         })?;
 
-    // Lấy HashMap các giá từ backend
-    let prices_map = app_state
-        .investing_entity
-        .get_price(tenant_id, &[product_id], Some(24 * 60 * 60)) // Truyền slice chứa 1 ID
+    let prices_map = get_price_with_cache(&app_state, tenant_id, &[product_id])
         .await
         .map_err(|error| {
             (
@@ -843,7 +836,7 @@ async fn ingest_price_data(
 
     app_state
         .investing_entity
-        .update_price(product_id, payload)
+        .update_price(product_id, &payload)
         .await
         .map_err(|error| {
             (
@@ -857,6 +850,14 @@ async fn ingest_price_data(
                 }),
             )
         })?;
+
+    let cache = Cache::new(app_state.connector.clone(), tenant_id);
+    let key = format!("price:{tenant_id}:{product_id}");
+    let ttl = 3600;
+
+    if let Ok(serialized) = serde_json::to_string(&payload) {
+        let _ = cache.set(&key, &serialized, ttl).await;
+    }
 
     Ok(JsonResponse(OhclResponse {
         ..Default::default()
@@ -1444,4 +1445,54 @@ async fn render_data_using_graphql(
     req = req.data(Into::<i64>::into(tenant_id));
 
     schema.execute(req).await.into()
+}
+
+async fn get_price_with_cache(
+    app_state: &AppState,
+    tenant_id: i64,
+    product_ids: &[i32],
+) -> Result<HashMap<i32, Price>, String> {
+    let mut final_price_map = HashMap::new();
+    let mut miss_ids = Vec::new();
+
+    if product_ids.is_empty() {
+        return Ok(final_price_map);
+    }
+
+    let cache = Cache::new(app_state.connector.clone(), tenant_id);
+    let ttl = 3600; // 5 phút
+
+    for &product_id in product_ids {
+        let cache_key = format!("price:{tenant_id}:{product_id}");
+
+        if let Ok(json_str) = cache.get(&cache_key).await
+            && let Ok(price) = serde_json::from_str::<Price>(&json_str)
+        {
+            final_price_map.insert(product_id, price);
+            continue;
+        }
+
+        miss_ids.push(product_id);
+    }
+
+    if !miss_ids.is_empty() {
+        let db_price_map = app_state
+            .investing_entity
+            .get_price(tenant_id, &miss_ids, Some(24 * 60 * 60))
+            .await
+            .map_err(|e| format!("Database error while getting prices: {e}"))?;
+
+        for product_id in miss_ids {
+            if let Some(price) = db_price_map.get(&product_id) {
+                final_price_map.insert(product_id, price.clone());
+
+                let cache_key = format!("price:{tenant_id}:{product_id}");
+                if let Ok(serialized) = serde_json::to_string(price) {
+                    let _ = cache.set(&cache_key, &serialized, ttl).await;
+                }
+            }
+        }
+    }
+
+    Ok(final_price_map)
 }
