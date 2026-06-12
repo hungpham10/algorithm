@@ -1723,6 +1723,7 @@ impl Investing {
                 .group_by(mapping_product_in_store_to_symbol::Column::Id)
                 .group_by(store_locations::Column::Province)
                 .group_by(stores::Column::Name)
+                .group_by(stores::Column::Id)
                 .order_by_asc(stores::Column::Id)
                 .limit(limit)
                 .into_tuple::<(i32, i32, String, String)>()
