@@ -19,7 +19,6 @@ services:
           path: ./pkgs/backend
     volumes:
       - ./secrets:/app/secrets
-      - ./conf/config.alloy:/etc/alloy/config.alloy
     sysctls:
       - net.core.somaxconn=65535
       - net.ipv4.ip_local_port_range=1024 65535

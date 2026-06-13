@@ -1646,7 +1646,7 @@ pub async fn list_paginated_table_schemas(
 #[utoipa::path(
     post,
     path = "/seo/tables",
-    request_body = [Api],
+    request_body = [Table],
     responses(
         (status = 200, description = "Successfully created schemas", body = AdminResponse),
         (status = 500, description = "Database error", body = AdminResponse)
