@@ -18,15 +18,6 @@
   let totalPages = 1;
   let pagedData = [];
 
-  const currencyNames = {
-    USD: "Đô la Mỹ", EUR: "Euro", GBP: "Bảng Anh", JPY: "Yên Nhật",
-    AUD: "Đô la Úc", SGD: "Đô la Singapore", THB: "Baht Thái Lan",
-    CAD: "Đô la Canada", CHF: "Franc Thụy Sĩ", HKD: "Đô la Hồng Kông",
-    CNY: "Nhân dân tệ", DKK: "Krone Đan Mạch", INR: "Rupee Ấn Độ",
-    KRW: "Won Hàn Quốc", KWD: "Dinar Kuwait", MYR: "Ringgit Malaysia",
-    NOK: "Krone Na Uy", RUB: "Rúp Nga", SAR: "Riyal Ả Rập Xê Út", SEK: "Krona Thụy Điển"
-  };
-
   function formatMoney(value) {
     const num = parseFloat(value);
     if (isNaN(num)) return value;

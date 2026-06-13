@@ -67,6 +67,8 @@ const currencyNames = {
  */
 export async function getExchangeRatesWithHistory() {
   try {
+    let exchangeData = [];
+
     const today = new Date();
     const currentDate = today.toLocaleDateString('vi-VN') + " " + today.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 
@@ -111,8 +113,7 @@ export async function getExchangeRatesWithHistory() {
     }
 
     // Trích xuất dữ liệu mới nhất (ngày hiện tại) làm bảng hiển thị chính
-    let exchangeData = [];
-    const latestRes = allResults;
+    const latestRes = allResults[0];
 
     if (latestRes && latestRes.query) {
       const validRates = latestRes.query.filter(item => {
@@ -136,7 +137,6 @@ export async function getExchangeRatesWithHistory() {
     };
 
   } catch (error) {
-    console.error("Lỗi tại Exchange Service Layer:", error);
     return { exchangeData: [], historyCache: {}, currentDate: "" };
   }
 }

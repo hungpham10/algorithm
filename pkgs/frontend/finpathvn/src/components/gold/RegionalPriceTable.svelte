@@ -171,7 +171,7 @@
                 <td class="p-2 md:p-4 pl-3 md:pl-6 align-middle w-[40%] md:w-1/3">
                   <div class="flex flex-col min-w-0">
                     <a
-                      href={`/gia-vang/${item.store ? encodeURIComponent(item.store) : ''}`}
+                      href={`/gia-vang/${item.store ? encodeURIComponent(item.store) : ''}/index.html`}
                       class="inline-flex items-start gap-1 hover:text-amber-600 font-semibold text-slate-800 transition-colors"
                     >
                       <span class="text-[14px] md:text-[17px] leading-tight break-words font-semibold text-gray-800 group-hover:text-amber-600 transition-colors">
