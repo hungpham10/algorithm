@@ -303,7 +303,7 @@ async fn publish_site(
             )
         })?;
 
-        let s3_key = format!("https://{}/{}", host, file_name);
+        let s3_key = format!("{}/{}", host, file_name);
 
         app_state
             .s3
@@ -325,7 +325,7 @@ async fn publish_site(
             })?;
 
         sites_to_save.push(Site {
-            loc: s3_key,
+            loc: format!("https://{s3_key}"),
             last_mod: Utc::now(),
             freq: "daily".to_string(),
             ..Default::default()
