@@ -5,6 +5,12 @@
  * @description : utils
  */
 
+export function formatMoney(value) {
+  const num = parseFloat(value);
+  if (isNaN(num)) return value;
+  return num.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export function formatVN(val) {
   if (val === null || val === undefined || val === "" || isNaN(val)) {
     return "---";

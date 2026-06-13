@@ -74,7 +74,11 @@ async function uploadAll() {
       const blob = new Blob([fileBuffer], { type: contentType });
       formData.append('file', blob, relativePath);
 
-      const response = await fetch(process.env.API_PUBLISH_URL, {
+      // Điểm thay đổi: Kiểm tra nếu là file .html thì đổi API Endpoint
+      const isHtml = path.extname(filePath).toLowerCase() === '.html';
+      const uploadUrl = isHtml ? process.env.API_PUBLISH_SITE : process.env.API_PUBLISH_FILE;
+
+      const response = await fetch(uploadUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -83,18 +87,21 @@ async function uploadAll() {
       });
 
       if (response.ok) {
-        console.log(`✅ Uploaded: ${relativePath}`);
+        console.log(`✅ Uploaded (${isHtml ? 'HTML' : 'Asset'}): ${relativePath}`);
       } else {
-        console.error(`❌ Failed: ${relativePath} (${response.status})`);
+        console.error(`❌ Failed: ${relativePath} (${response.status}): ${await response.text()}`);
       }
     }
 
-    await fetch(`${process.env.API_PURGE_URL}`, {
-      method: 'HEAD',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-      },
-    });
+    // Gọi API Purge Cache sau khi hoàn tất
+    if (process.env.API_PURGE_URL) {
+      await fetch(`${process.env.API_PURGE_URL}`, {
+        method: 'HEAD',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+    }
 
     console.log("\n✨ Publish hoàn tất!");
   } catch (error) {

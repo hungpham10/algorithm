@@ -1116,13 +1116,6 @@ impl Investing {
                 .column(price_current::Column::Buy)
                 .column(price_current::Column::Sell)
                 .join_rev(
-                    JoinType::LeftJoin,
-                    PriceCurrent::belongs_to(MappingProductInStoreToSymbol)
-                        .from(price_current::Column::Id)
-                        .to(mapping_product_in_store_to_symbol::Column::Id)
-                        .into(),
-                )
-                .join_rev(
                     JoinType::InnerJoin,
                     StoreLocations::belongs_to(Stores)
                         .from(store_locations::Column::Store)
@@ -1141,6 +1134,13 @@ impl Investing {
                     Symbols::belongs_to(MappingProductInStoreToSymbol)
                         .from(symbols::Column::Id)
                         .to(mapping_product_in_store_to_symbol::Column::Symbol)
+                        .into(),
+                )
+                .join_rev(
+                    JoinType::LeftJoin,
+                    PriceCurrent::belongs_to(MappingProductInStoreToSymbol)
+                        .from(price_current::Column::Id)
+                        .to(mapping_product_in_store_to_symbol::Column::Id)
                         .into(),
                 )
                 .filter(stores::Column::Id.is_in(store_ids))

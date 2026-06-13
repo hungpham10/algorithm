@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { getGoldPricesByRegion } from '$lib/api.js';
   import { formatVN, getIP, removeVietnameseTones } from '$lib/utils.js';
 
   import PriceCell from './PriceCell.svelte';
@@ -31,46 +32,17 @@
   async function fetchPricesByRegion(region, cursor = null) {
     loading = true;
     try {
-      let url = `/api/investing/v2/prices/by-province/${encodeURIComponent(region)}?limit=${pageSize}&degree=1000000`;
-      if (cursor) url += `&after=${cursor}`;
+      const data = await getGoldPricesByRegion(region, cursor, pageSize);
 
-      const response = await fetch(url);
-      if (response.ok) {
-        const rawData = await response.json();
-        let flattenedItems = [];
-
-        // Map cấu trúc Object lồng nhau của API thành mảng phẳng
-        if (Array.isArray(rawData)) {
-          const priceData = rawData[0].prices.data;
-
-          flattenedItems = Object.keys(priceData).map(brandName => {
-            return {
-              product: brandName,
-              buy: priceData[brandName].buy,
-              sell: priceData[brandName].sell,
-              store: brandName
-            };
-          });
-
-          // Lấy next cursor từ cấu trúc `prices.next_after`
-          nextCursor = rawData[0].prices.next_after || null;
-        } else {
-          nextCursor = null;
-        }
-        items = flattenedItems;
-      } else {
-        items = [];
-        nextCursor = null;
-      }
+      items = data?.items || [];
+      nextCursor = data?.nextCursor || null;
     } catch (e) {
-      console.error("Lỗi fetch:", e);
       items = [];
       nextCursor = null;
     } finally {
       loading = false;
     }
   }
-
   function handleNextPage() {
     if (!nextCursor || loading) return;
     historyCursors[currentPage] = nextCursor;

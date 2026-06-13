@@ -303,7 +303,7 @@ async fn publish_site(
             )
         })?;
 
-        let s3_key = format!("{}/{}", host, file_name);
+        let s3_key = format!("https://{}/{}", host, file_name);
 
         app_state
             .s3

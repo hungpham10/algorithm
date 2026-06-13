@@ -480,7 +480,7 @@ impl Admin {
                 .collect::<Vec<_>>(),
         )
         .on_conflict(
-            OnConflict::column(sitemap::Column::Loc)
+            OnConflict::columns([sitemap::Column::TenantId, sitemap::Column::Loc])
                 .update_columns([
                     sitemap::Column::Freq,
                     sitemap::Column::Priority,

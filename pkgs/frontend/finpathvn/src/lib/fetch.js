@@ -7,8 +7,8 @@
 
 import { Prices } from './schema.js';
 
-export const API_V2_ENDPOINT = "/api/investing/v2";
-export const API_V1_ENDPOINT = "/api/investing/v1";
+export const API_V2_ENDPOINT = "https://findaily.vn/api/investing/v2";
+export const API_V1_ENDPOINT = "https://findaily.vn/api/investing/v1";
 
 export async function fetchPriceByProductId(eventName, productIds, degree) {
   if (!productIds.length) {

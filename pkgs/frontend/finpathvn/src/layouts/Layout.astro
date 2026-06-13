@@ -28,12 +28,14 @@ const {
   canonicalUrl = Astro.url.href,
   showAds = false,
   navMenus = [
-    { label: 'Bảng Giá Vàng', href: '#prices' }
+    { label: 'Trang Chủ', href: '/' },
+    { label: 'Bảng Giá Vàng', href: '/#prices' },
+    { label: 'Tỷ giá ngân hàng', href: '/#exchange-rates' },
+    { label: 'Tiệm Vàng', href: '/gia-vang' }
   ],
   hideNavBorder = false,
 } = Astro.props;
 
-console.log(GA_TRACKING_ID);
 const shouldShowNav = navMenus && navMenus.length > 1;
 const logoUrl = `${ASSET_HOST}/logo.svg`;
 ---

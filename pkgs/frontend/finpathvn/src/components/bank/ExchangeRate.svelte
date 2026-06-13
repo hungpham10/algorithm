@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { getExchangeRatesWithHistory } from '$lib/api.js';
 
   let exchangeData = [];
   let currentDate = "";
@@ -64,76 +65,21 @@
     currentTrendPoints = `M ${points.join(' L ')}`;
   }
 
-  // --- HÀM TẢI DỮ LIỆU ĐƯỢC TÁCH RIÊNG ---
   async function fetchExchangeRates() {
-    try {
-      const today = new Date();
-      currentDate = today.toLocaleDateString('vi-VN') + " " + today.toLocaleTimeString('vi-VN', { hour: '2-digit', minute:'2-digit' });
+    const data = await getExchangeRatesWithHistory();
 
-      // Reset cache cũ để tránh trùng lặp dữ liệu khi làm mới
-      historyCache = {};
+    exchangeData = data.exchangeData;
+    historyCache = data.historyCache;
+    currentDate = data.currentDate;
 
-      const dateStrings = [];
-      for (let i = 0; i < 30; i++) {
-        const d = new Date();
-        d.setDate(today.getDate() - i);
-        dateStrings.push(`${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`);
-      }
+    updatePagedData();
 
-      const fetchPromises = dateStrings.map(dateStr =>
-        fetch(`/api/investing/v2/exchange-rate?date=${dateStr}`)
-          .then(res => res.ok ? res.json() : null)
-          .catch(() => null)
-      );
+    // Giữ tiêu điểm cũ hoặc thiết lập mặc định USD
+    const currentCode = focusedCurrency ? focusedCurrency.code : "USD";
+    focusedCurrency = exchangeData.find(i => i.code === currentCode) || exchangeData;
 
-      const allResults = await Promise.all(fetchPromises);
-
-      for (let i = allResults.length - 1; i >= 0; i--) {
-        const resData = allResults[i];
-        if (resData && resData.query) {
-          resData.query.forEach(item => {
-            const cashVal = parseFloat(item.cash);
-            const sellVal = parseFloat(item.sell);
-            if (item.currencyCode && !isNaN(cashVal) && cashVal !== 0) {
-              if (!historyCache[item.currencyCode]) {
-                historyCache[item.currencyCode] = [];
-              }
-              historyCache[item.currencyCode].push({
-                date: dateStrings[i],
-                cash: cashVal,
-                sell: sellVal
-              });
-            }
-          });
-        }
-      }
-
-      const latestRes = allResults[0];
-      if (latestRes && latestRes.query) {
-        const validRates = latestRes.query.filter(item => {
-          if (!item.cash) return false;
-          const cashVal = parseFloat(item.cash);
-          return !isNaN(cashVal) && cashVal !== 0;
-        });
-
-        exchangeData = validRates.map(item => ({
-          code: item.currencyCode,
-          name: currencyNames[item.currencyCode] || "Ngoại tệ khác",
-          cash: formatMoney(item.cash),
-          sell: formatMoney(item.sell)
-        }));
-
-        updatePagedData();
-
-        // Giữ nguyên tiêu điểm đang chọn nếu có, hoặc mặc định là USD
-        const currentCode = focusedCurrency ? focusedCurrency.code : "USD";
-        focusedCurrency = exchangeData.find(i => i.code === currentCode) || exchangeData;
-        if (focusedCurrency) {
-          generateTrendPoints(focusedCurrency.code);
-        }
-      }
-    } catch (error) {
-      console.error("Lỗi xử lý dữ liệu tỷ giá:", error);
+    if (focusedCurrency) {
+      generateTrendPoints(focusedCurrency.code);
     }
   }
 
