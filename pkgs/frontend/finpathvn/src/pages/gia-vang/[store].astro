@@ -19,11 +19,15 @@ export async function getStaticPaths() {
   return Promise.all(stores.map(async (store) => {
     let locations = [];
     let prices = {};
+    let name = "";
 
     try {
       const detailRes = await fetch(`https://findaily.vn/api/investing/v2/stores/${encodeURIComponent(store.name)}/products?detail=true`);
       if (detailRes.ok) {
-        locations = (await detailRes.json()).store?.locations || [];
+        const data = await detailRes.json();
+
+        name = data.store?.name || "";
+        locations = data.store?.locations || [];
       }
     } catch (e) {
       console.error(`Lỗi build chi nhánh cho ${store.name}:`, e);
@@ -42,7 +46,7 @@ export async function getStaticPaths() {
     return {
       params: { store: store.name },
       props: {
-        storeName: store.name,
+        storeName: name,
         locations,
         initialPrices: prices
       }
@@ -78,7 +82,7 @@ const navMenus = [
 ---
 
 <Layout
-  title={`Giá vàng ${meta.shortName} hôm nay - Bảng giá trực tuyến chi tiết`}
+  title={`Giá vàng ${storeName} hôm nay - Bảng giá trực tuyến chi tiết`}
   description={`Cập nhật liên tục giá vàng mua vào - bán ra của tiệm vàng ${storeName} hôm nay. Tra cứu mạng lưới chi nhánh, địa chỉ cửa hàng giao dịch.`}
   showAds={SHOW_ADS}
   navMenus={navMenus}
@@ -92,7 +96,7 @@ const navMenus = [
       <span>/</span>
       <a href="/gia-vang" class="hover:text-amber-600 transition-colors">Tiệm vàng</a>
       <span>/</span>
-      <span class="text-slate-600 line-clamp-1">{meta.shortName}</span>
+      <span class="text-slate-600 line-clamp-1">{storeName}</span>
     </nav>
 
     <!-- Brand Hero Header -->
