@@ -11,6 +11,7 @@ export default class Draw {
     this._chart = chart;
     this._activeTool = "cursor";
     this._selectedOverlayId = null;
+    this._pendingOverlayId = null;
 
     /** Callback(state) — được gọi mỗi khi activeTool hoặc selectedOverlayId thay đổi */
     this.onChange = null;
@@ -115,9 +116,23 @@ export default class Draw {
     }
     if (!this._chart) return;
 
+    // Huỷ thao tác vẽ trước đó nếu đang vẽ dở
+    if (this._pendingOverlayId) {
+      try {
+        this._chart.removeOverlay({ id: this._pendingOverlayId });
+      } catch (_) {}
+      this._pendingOverlayId = null;
+    }
+
+    // Dùng ID duy nhất để có thể remove sau này
+    const sessionId = `__draw_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     this._chart.createOverlay({
       name: toolId,
+      id: sessionId,
       onDrawEnd: () => {
+        if (this._pendingOverlayId === sessionId) {
+          this._pendingOverlayId = null;
+        }
         this._activeTool = "cursor";
         this._notify();
       },
@@ -130,7 +145,7 @@ export default class Draw {
         this._notify();
       },
     });
-
+    this._pendingOverlayId = sessionId;
     this._notify();
   }
 
@@ -146,6 +161,7 @@ export default class Draw {
   clearAll() {
     if (!this._chart) return;
     this._chart.removeOverlay();
+    this._pendingOverlayId = null;
     this._activeTool = "cursor";
     this._selectedOverlayId = null;
     this._notify();
@@ -162,6 +178,13 @@ export default class Draw {
       return;
     }
     if (event.key === "Escape") {
+      // Huỷ overlay đang vẽ dở nếu có
+      if (this._pendingOverlayId) {
+        try {
+          this._chart?.removeOverlay({ id: this._pendingOverlayId });
+        } catch (_) {}
+        this._pendingOverlayId = null;
+      }
       this._activeTool = "cursor";
       this._selectedOverlayId = null;
       this._notify();

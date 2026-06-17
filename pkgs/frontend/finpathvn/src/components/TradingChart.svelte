@@ -25,6 +25,12 @@
     let activeDrawingTool = $state("cursor");
     let selectedOverlayId = null;
 
+    // Resolution được tách riêng để đảm bảo reactivity với Svelte 5
+    let activeResolution = $state("1H");
+
+    // Indicators state — track riêng, không phụ thuộc class proxy
+    let activeIndicatorNames = $state({});
+
     // --- DOM ref ---
     let chartContainer;
 
@@ -52,19 +58,30 @@
 
     // --- Handlers ---
     function selectDrawingTool(toolId) {
+        activeDrawingTool = toolId;
         drawingTools?.selectTool(toolId);
     }
 
     function clearAllDrawings() {
+        activeDrawingTool = "cursor";
         drawingTools?.clearAll();
     }
 
     function handleKeydown(event) {
+        if (event.key === "Escape") {
+            activeDrawingTool = "cursor";
+        }
         drawingTools?.handleKeydown(event);
     }
 
     function toggleIndicator(name, paneId = "candle_pane") {
         chartEngine.toggleIndicator(name, paneId);
+        // Sync local reactive state
+        if (activeIndicatorNames[name]) {
+            activeIndicatorNames[name] = false;
+        } else {
+            activeIndicatorNames[name] = true;
+        }
     }
 
     function changeChartType(type) {
@@ -72,6 +89,7 @@
     }
 
     function selectResolution(res) {
+        activeResolution = res.value;
         chartEngine.setResolution(res.value);
     }
 </script>
@@ -149,7 +167,7 @@
                         {#each chartEngine.resolutions as res}
                             <button
                                 class="px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer
-                  {chartEngine.activeResolution === res.value
+                  {activeResolution === res.value
                                     ? 'bg-indigo-600 text-white shadow-sm'
                                     : tc.resInactive}"
                                 onclick={() => selectResolution(res)}
@@ -191,9 +209,9 @@
                         >
                         {#each chartEngine.indicators as ind}
                             <button
-                                class="px-2 py-1 text-xs font-semibold rounded border transition-all cursor-pointer {chartEngine.activeIndicators.has(
-                                    ind.name,
-                                )
+                                class="px-2 py-1 text-xs font-semibold rounded border transition-all cursor-pointer {activeIndicatorNames[
+                                    ind.name
+                                ]
                                     ? tc.indicatorActiveBtn
                                     : tc.indicatorBtn}"
                                 onclick={() =>
