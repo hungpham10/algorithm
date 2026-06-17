@@ -117,7 +117,7 @@ impl QueryCandleSticks {
             ),
             (
                 "binance",
-                "https://api.binance.us/api/v3/klines?startTime={from}&endTime={to}&symbol={stock}&interval={res}&limit={limit}",
+                "https://api.binance.com/api/v3/klines?startTime={from}&endTime={to}&symbol={stock}&interval={res}&limit={limit}",
                 ["[].0", "[].1", "[].2", "[].3", "[].4", "[].5"],
             ),
             (
@@ -144,6 +144,19 @@ impl QueryCandleSticks {
                     "chart.result.indicators.quote.low[]",
                     "chart.result.indicators.quote.close[]",
                     "chart.result.indicators.quote.volume[]",
+                ],
+            ),
+            (
+                "simplefx",
+                "https://candles.simplefx.com/api/v3/candles?symbol={stock}&cPeriod={res}&timeFrom={from}&timeTo={to}",
+                // SimpleFX trả về object data chứa mảng các candle objects
+                [
+                    "data[].time",
+                    "data[].open",
+                    "data[].high",
+                    "data[].low",
+                    "data[].close",
+                    "data[].size",
                 ],
             ),
         ];
