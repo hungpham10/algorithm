@@ -88,3 +88,19 @@ export function removeVietnameseTones(str) {
     .replace(/Đ/g, 'D')
     .trim();
 }
+
+export function formatPrice(val) {
+  if (!val && val !== 0) return "—";
+
+  return val.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+  });
+}
+
+export function formatVolume(val) {
+  if (!val && val !== 0) return "—";
+  if (val >= 1000000) return (val / 1000000).toFixed(2) + "M";
+  if (val >= 1000) return (val / 1000).toFixed(2) + "K";
+  return val.toFixed(2);
+}

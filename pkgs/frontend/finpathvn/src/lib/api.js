@@ -5,7 +5,7 @@
  * @description : api
  */
 
-import { API_V2_ENDPOINT } from './fetch.js';
+import { API_V1_ENDPOINT, API_V2_ENDPOINT } from './fetch.js';
 import { formatMoney } from './utils.js';
 
 /**
@@ -138,5 +138,45 @@ export async function getExchangeRatesWithHistory() {
 
   } catch (error) {
     return { exchangeData: [], historyCache: {}, currentDate: "" };
+  }
+}
+
+function normalise(d) {
+  return {
+    timestamp: d.t * 1000,
+    open: d.o,
+    high: d.h,
+    low: d.l,
+    close: d.c,
+    volume: d.v,
+  };
+}
+
+export async function getHistoryCandles(
+  broker,
+  symbol,
+  resolution,
+  from,
+  to,
+  limit,
+) {
+  try {
+    const url = `${API_V1_ENDPOINT}/ohcl/candles/${broker}/${symbol}?resolution=${resolution}&from=${from}&to=${to}&limit=${limit}`;
+    const res = await fetch(url);
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    } else {
+      const json = await res.json();
+
+      if (!json.ohcl || !json.ohcl.length) {
+        return [];
+      }
+
+      return json.ohcl.map(normalise).sort((a, b) => a.timestamp - b.timestamp);
+    }
+  } catch (err) {
+    console.error('Fetch candles failed:', err);
+    return [];
   }
 }

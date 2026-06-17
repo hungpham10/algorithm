@@ -1,71 +1,79 @@
 ---
-import Layout from '../../layouts/Layout.astro';
-import StorePriceTable from '../../components/gold/StorePriceTable.svelte';
-import { getStoreMeta } from '../../lib/store-meta.js';
+import Layout from "../../layouts/Layout.astro";
+import StorePriceTable from "../../components/gold/StorePriceTable.svelte";
+import { getStoreMeta } from "../../lib/store-meta.js";
 
 export async function getStaticPaths() {
-  let stores = [];
-  try {
-    const storesRes = await fetch('https://findaily.vn/api/investing/v2/stores?limit=100');
-    if (storesRes.ok) {
-      const storesData = await storesRes.json();
-      stores = storesData.stores?.data || [];
-    }
-  } catch (e) {
-    console.error("Lỗi tải cửa hàng trong getStaticPaths:", e);
-  }
-
-  // Tải chi nhánh và bảng giá song song để pre-render tĩnh toàn bộ trang
-  return Promise.all(stores.map(async (store) => {
-    let locations = [];
-    let prices = {};
-    let name = "";
-
+    let stores = [];
     try {
-      const detailRes = await fetch(`https://findaily.vn/api/investing/v2/stores/${encodeURIComponent(store.name)}/products?detail=true`);
-      if (detailRes.ok) {
-        const data = await detailRes.json();
-
-        name = data.store?.name || "";
-        locations = data.store?.locations || [];
-      }
+        const storesRes = await fetch(
+            "https://findaily.vn/api/investing/v2/stores?limit=100",
+        );
+        if (storesRes.ok) {
+            const storesData = await storesRes.json();
+            stores = storesData.stores?.data || [];
+        }
     } catch (e) {
-      console.error(`Lỗi build chi nhánh cho ${store.name}:`, e);
+        console.error("Lỗi tải cửa hàng trong getStaticPaths:", e);
     }
 
-    try {
-      const priceRes = await fetch(`https://findaily.vn/api/investing/v2/stores/${encodeURIComponent(store.name)}/price`);
-      if (priceRes.ok) {
-        const priceJson = await priceRes.json();
-        prices = priceJson.prices?.data || {};
-      }
-    } catch (e) {
-      console.error(`Lỗi build bảng giá cho ${store.name}:`, e);
-    }
+    // Tải chi nhánh và bảng giá song song để pre-render tĩnh toàn bộ trang
+    return Promise.all(
+        stores.map(async (store) => {
+            let locations = [];
+            let prices = {};
+            let name = "";
 
-    return {
-      params: { store: store.name },
-      props: {
-        storeName: name,
-        locations,
-        initialPrices: prices
-      }
-    };
-  }));
+            try {
+                const detailRes = await fetch(
+                    `https://findaily.vn/api/investing/v2/stores/${encodeURIComponent(store.name)}/products?detail=true`,
+                );
+                if (detailRes.ok) {
+                    const data = await detailRes.json();
+
+                    name = data.store?.name || "";
+                    locations = data.store?.locations || [];
+                }
+            } catch (e) {
+                console.error(`Lỗi build chi nhánh cho ${store.name}:`, e);
+            }
+
+            try {
+                const priceRes = await fetch(
+                    `https://findaily.vn/api/investing/v2/stores/${encodeURIComponent(store.name)}/price`,
+                );
+                if (priceRes.ok) {
+                    const priceJson = await priceRes.json();
+                    prices = priceJson.prices?.data || {};
+                }
+            } catch (e) {
+                console.error(`Lỗi build bảng giá cho ${store.name}:`, e);
+            }
+
+            return {
+                params: { store: store.name },
+                props: {
+                    storeName: name,
+                    locations,
+                    initialPrices: prices,
+                },
+            };
+        }),
+    );
 }
 
 const { storeName, locations = [], initialPrices = {} } = Astro.props;
 
 const meta = getStoreMeta(storeName);
-const SITE_URL = import.meta.env.PUBLIC_SITE_URL || 'https://findaily.vn';
-const SHOW_ADS = import.meta.env.SHOW_ADS === 'true';
+const SITE_URL = import.meta.env.PUBLIC_SITE_URL || "https://findaily.vn";
+const SHOW_ADS = import.meta.env.SHOW_ADS === "true";
 
 // Phân nhóm chi nhánh theo tỉnh thành
 const branchesByProvince = locations.reduce((acc, loc) => {
-  const prov = loc.province || "Tỉnh thành khác";
-  if (!acc[prov]) acc[prov] = [];
-  acc[prov].push(loc);
-  return acc;
+    const prov = loc.province || "Tỉnh thành khác";
+    if (!acc[prov]) acc[prov] = [];
+    acc[prov].push(loc);
+    return acc;
 }, {});
 
 const provinceList = Object.keys(branchesByProvince).sort();
@@ -74,117 +82,211 @@ const canonicalUrl = `${SITE_URL}/gia-vang/${encodeURIComponent(storeName)}`;
 
 // Navigation
 const navMenus = [
-  { label: 'Trang Chủ', href: '/' },
-  { label: 'Bảng Giá Vàng', href: '/#prices' },
-  { label: 'Tỷ giá ngân hàng', href: '/#exchange-rates' },
+    { label: "Trang Chủ", href: "/" },
+    { label: "Bảng Giá Vàng", href: "/#prices" },
+    { label: "Tỷ giá ngân hàng", href: "/#exchange-rates" },
 ];
 ---
 
 <Layout
-  title={`Giá vàng ${storeName} hôm nay - Bảng giá trực tuyến chi tiết`}
-  description={`Cập nhật liên tục giá vàng mua vào - bán ra của tiệm vàng ${storeName} hôm nay. Tra cứu mạng lưới chi nhánh, địa chỉ cửa hàng giao dịch.`}
-  showAds={SHOW_ADS}
-  navMenus={navMenus}
-  canonicalUrl={canonicalUrl}
+    title={`Giá vàng ${storeName} hôm nay - Bảng giá trực tuyến chi tiết`}
+    description={`Cập nhật liên tục giá vàng mua vào - bán ra của tiệm vàng ${storeName} hôm nay. Tra cứu mạng lưới chi nhánh, địa chỉ cửa hàng giao dịch.`}
+    showAds={SHOW_ADS}
+    navMenus={navMenus}
+    canonicalUrl={canonicalUrl}
 >
-  <div class="max-w-[1200px] w-full mx-auto px-4 py-6">
+    <div class="max-w-[1200px] w-full mx-auto px-4 py-6">
+        <!-- Breadcrumbs -->
+        <nav
+            class="flex text-xs text-slate-400 font-semibold mb-6 gap-1.5 items-center"
+        >
+            <a href="/" class="hover:text-amber-600 transition-colors"
+                >Trang chủ</a
+            >
+            <span>/</span>
+            <a href="/gia-vang" class="hover:text-amber-600 transition-colors"
+                >Tiệm vàng</a
+            >
+            <span>/</span>
+            <span class="text-slate-600 line-clamp-1">{storeName}</span>
+        </nav>
 
-    <!-- Breadcrumbs -->
-    <nav class="flex text-xs text-slate-400 font-semibold mb-6 gap-1.5 items-center">
-      <a href="/" class="hover:text-amber-600 transition-colors">Trang chủ</a>
-      <span>/</span>
-      <a href="/gia-vang" class="hover:text-amber-600 transition-colors">Tiệm vàng</a>
-      <span>/</span>
-      <span class="text-slate-600 line-clamp-1">{storeName}</span>
-    </nav>
+        <!-- Main Content Layout -->
+        <div class="grid lg:grid-cols-3 gap-8 items-start">
+            <!-- Left Column: Prices table -->
+            <div class="lg:col-span-2">
+                <StorePriceTable
+                    initialPrices={initialPrices}
+                    storeName={storeName}
+                    client:load
+                />
 
-    <!-- Brand Hero Header -->
-
-    <!-- Main Content Layout -->
-    <div class="grid lg:grid-cols-3 gap-8 items-start">
-
-      <!-- Left Column: Prices table -->
-      <div class="lg:col-span-2">
-        <StorePriceTable
-          initialPrices={initialPrices}
-          storeName={storeName}
-          client:load
-        />
-
-        <!-- Transaction Guidelines -->
-        <div class="mt-8 bg-slate-50 border border-slate-100 rounded-2xl p-6">
-          <h4 class="font-bold text-slate-800 text-sm uppercase tracking-wider mb-4 flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            Kinh nghiệm giao dịch mua bán vàng
-          </h4>
-          <ul class="space-y-3 text-xs md:text-sm text-slate-600 list-disc list-inside leading-relaxed">
-            <li><strong>Kiểm tra hóa đơn & giấy tờ:</strong> Khi mua vàng miếng hay trang sức, hãy luôn yêu cầu xuất hóa đơn đỏ (hóa đơn GTGT) ghi rõ hàm lượng vàng, tuổi vàng và trọng lượng cụ thể.</li>
-            <li><strong>Tuổi vàng chuẩn xác:</strong> Vàng ta 9999 có độ tinh khiết 99.99%, vàng trang sức thường là 18K (75%) hoặc 14K (58.5%). Tuổi vàng quyết định trực tiếp đến giá trị thu mua lại sau này.</li>
-            <li><strong>Theo dõi chênh lệch (Spread):</strong> Chênh lệch mua vào - bán ra phản ánh độ thanh khoản và rủi ro thị trường. Khi chênh lệch quá cao, người mua sẽ chịu thiệt hại lớn hơn nếu bán ra ngay lập tức.</li>
-            <li><strong>Bảo quản bao bì ép vỉ:</strong> Đối với vàng miếng hoặc nhẫn tròn trơn ép vỉ, hãy bảo quản vỉ nhựa nguyên vẹn, tránh nứt gãy để không bị trừ chi phí bao bì khi giao dịch lại.</li>
-          </ul>
-        </div>
-      </div>
-
-      <!-- Right Column: Branch Directory list -->
-      <div class="lg:col-span-1">
-        <div class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm">
-          <h3 class="font-bold text-slate-800 text-sm uppercase tracking-wider mb-4 flex items-center gap-2 pb-3 border-b border-slate-100">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-            </svg>
-            Địa chỉ điểm giao dịch
-          </h3>
-
-          {locations.length > 0 ? (
-            <div class="max-h-[500px] overflow-y-auto pr-1 select-none custom-scrollbar space-y-5">
-              {provinceList.map((province) => (
-                <div>
-                  <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center justify-between">
-                    <span>{province}</span>
-                    <span class="px-1.5 py-0.5 rounded-md bg-slate-50 text-[10px] text-slate-400 font-semibold border border-slate-100/50">
-                      {branchesByProvince[province].length} điểm
-                    </span>
-                  </h4>
-                  <ul class="space-y-2">
-                    {branchesByProvince[province].map((loc) => (
-                      <li class="p-3 bg-slate-50 hover:bg-slate-100/50 rounded-xl border border-slate-100/60 transition-all group/branch">
-                        <div class="flex items-start gap-2">
-                          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-400 mt-0.5 group-hover/branch:text-amber-500 transition-colors shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                            <circle cx="12" cy="11" r="2" stroke-width="2"/>
-                          </svg>
-                          <div class="flex flex-col gap-0.5">
-                            <span class="text-xs font-bold text-slate-700 leading-snug">
-                              {loc.address}
-                            </span>
-                            {loc.district && (
-                              <span class="text-[10px] text-slate-400 font-medium">
-                                {loc.district}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+                <!-- Transaction Guidelines -->
+                <div
+                    class="mt-8 bg-slate-50 border border-slate-100 rounded-2xl p-6"
+                >
+                    <h4
+                        class="font-bold text-slate-800 text-sm uppercase tracking-wider mb-4 flex items-center gap-2"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            class="h-5 w-5 text-amber-500"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                        >
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                            ></path>
+                        </svg>
+                        Kinh nghiệm giao dịch mua bán vàng
+                    </h4>
+                    <ul
+                        class="space-y-3 text-xs md:text-sm text-slate-600 list-disc list-inside leading-relaxed"
+                    >
+                        <li>
+                            <strong>Kiểm tra hóa đơn & giấy tờ:</strong> Khi mua vàng
+                            miếng hay trang sức, hãy luôn yêu cầu xuất hóa đơn đỏ
+                            (hóa đơn GTGT) ghi rõ hàm lượng vàng, tuổi vàng và trọng
+                            lượng cụ thể.
+                        </li>
+                        <li>
+                            <strong>Tuổi vàng chuẩn xác:</strong> Vàng ta 9999 có
+                            độ tinh khiết 99.99%, vàng trang sức thường là 18K (75%)
+                            hoặc 14K (58.5%). Tuổi vàng quyết định trực tiếp đến giá
+                            trị thu mua lại sau này.
+                        </li>
+                        <li>
+                            <strong>Theo dõi chênh lệch (Spread):</strong> Chênh lệch
+                            mua vào - bán ra phản ánh độ thanh khoản và rủi ro thị
+                            trường. Khi chênh lệch quá cao, người mua sẽ chịu thiệt
+                            hại lớn hơn nếu bán ra ngay lập tức.
+                        </li>
+                        <li>
+                            <strong>Bảo quản bao bì ép vỉ:</strong> Đối với vàng miếng
+                            hoặc nhẫn tròn trơn ép vỉ, hãy bảo quản vỉ nhựa nguyên
+                            vẹn, tránh nứt gãy để không bị trừ chi phí bao bì khi
+                            giao dịch lại.
+                        </li>
+                    </ul>
                 </div>
-              ))}
             </div>
-          ) : (
-            <div class="text-center py-10 flex flex-col items-center gap-2 text-slate-400 italic">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <p class="text-xs">Đang cập nhật địa chỉ các chi nhánh giao dịch.</p>
+
+            <!-- Right Column: Branch Directory list -->
+            <div class="lg:col-span-1">
+                <div
+                    class="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm"
+                >
+                    <h3
+                        class="font-bold text-slate-800 text-sm uppercase tracking-wider mb-4 flex items-center gap-2 pb-3 border-b border-slate-100"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            class="h-5 w-5 text-slate-700"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                        >
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                            ></path>
+                        </svg>
+                        Địa chỉ điểm giao dịch
+                    </h3>
+
+                    {
+                        locations.length > 0 ? (
+                            <div class="max-h-[500px] overflow-y-auto pr-1 select-none custom-scrollbar space-y-5">
+                                {provinceList.map((province) => (
+                                    <div>
+                                        <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+                                            <span>{province}</span>
+                                            <span class="px-1.5 py-0.5 rounded-md bg-slate-50 text-[10px] text-slate-400 font-semibold border border-slate-100/50">
+                                                {
+                                                    branchesByProvince[province]
+                                                        .length
+                                                }{" "}
+                                                điểm
+                                            </span>
+                                        </h4>
+                                        <ul class="space-y-2">
+                                            {branchesByProvince[province].map(
+                                                (loc) => (
+                                                    <li class="p-3 bg-slate-50 hover:bg-slate-100/50 rounded-xl border border-slate-100/60 transition-all group/branch">
+                                                        <div class="flex items-start gap-2">
+                                                            <svg
+                                                                xmlns="http://www.w3.org/2000/svg"
+                                                                class="h-4 w-4 text-slate-400 mt-0.5 group-hover/branch:text-amber-500 transition-colors shrink-0"
+                                                                fill="none"
+                                                                viewBox="0 0 24 24"
+                                                                stroke="currentColor"
+                                                            >
+                                                                <path
+                                                                    stroke-linecap="round"
+                                                                    stroke-linejoin="round"
+                                                                    stroke-width="2"
+                                                                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                                                                />
+                                                                <circle
+                                                                    cx="12"
+                                                                    cy="11"
+                                                                    r="2"
+                                                                    stroke-width="2"
+                                                                />
+                                                            </svg>
+                                                            <div class="flex flex-col gap-0.5">
+                                                                <span class="text-xs font-bold text-slate-700 leading-snug">
+                                                                    {
+                                                                        loc.address
+                                                                    }
+                                                                </span>
+                                                                {loc.district && (
+                                                                    <span class="text-[10px] text-slate-400 font-medium">
+                                                                        {
+                                                                            loc.district
+                                                                        }
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </li>
+                                                ),
+                                            )}
+                                        </ul>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div class="text-center py-10 flex flex-col items-center gap-2 text-slate-400 italic">
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    class="h-8 w-8 text-slate-300"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                >
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        stroke-width="1.5"
+                                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                                    />
+                                </svg>
+                                <p class="text-xs">
+                                    Đang cập nhật địa chỉ các chi nhánh giao
+                                    dịch.
+                                </p>
+                            </div>
+                        )
+                    }
+                </div>
             </div>
-          )}
         </div>
-      </div>
-
     </div>
-
-  </div>
 </Layout>

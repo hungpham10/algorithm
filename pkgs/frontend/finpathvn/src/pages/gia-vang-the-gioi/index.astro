@@ -1,0 +1,46 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import TradingChart from "../../components/TradingChart.svelte";
+
+const SITE_URL = import.meta.env.PUBLIC_SITE_URL || "https://findaily.vn";
+const SHOW_ADS = import.meta.env.SHOW_ADS === "true";
+
+const navMenus = [
+    { label: "Trang Chủ", href: "/" },
+    { label: "Bảng Giá Vàng", href: "/#prices" },
+    { label: "Tỷ giá ngân hàng", href: "/#exchange-rates" },
+    { label: "Phân Tích Kỹ Thuật", href: "/gia-vang-the-gioi" },
+];
+
+const canonicalUrl = `${SITE_URL}/gia-vang-the-gioi`;
+---
+
+<Layout
+    title="Biểu đồ giá Bitcoin hôm nay - Phân tích kỹ thuật BTCUSDT"
+    description="Xem biểu đồ nến Nhật realtime Bitcoin (BTCUSDT) từ Binance. Phân tích kỹ thuật với biểu đồ nến, khối lượng giao dịch, hỗ trợ đa khung thời gian 1m-1M."
+    showAds={SHOW_ADS}
+    navMenus={navMenus}
+    canonicalUrl={canonicalUrl}
+>
+    <div class="max-w-300 w-full mx-auto px-0 py-6">
+        <!-- Breadcrumbs -->
+        <nav
+            class="flex text-xs text-slate-400 font-semibold mb-6 gap-1.5 items-center px-4"
+        >
+            <a href="/" class="hover:text-amber-600 transition-colors"
+                >Trang chủ</a
+            >
+            <span>/</span>
+            <span class="text-slate-600">Phân tích kỹ thuật</span>
+        </nav>
+
+        <!-- TradingChart component -->
+        <TradingChart
+            broker="simplefx"
+            symbol="XAUUSD"
+            title="XAUUSD"
+            subtitle="Phân tích kỹ thuật realtime"
+            client:load
+        />
+    </div>
+</Layout>
