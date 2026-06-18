@@ -39,7 +39,7 @@ export default class Draw {
       },
       { id: "rayLine", label: "Tia (Ray)", icon: "⇗", visible: true },
       { id: "priceLine", label: "Đường giá", icon: "💰", visible: true },
-      { id: "rect", label: "Hình chữ nhật (Box)", icon: "▭", visible: true },
+      // rect: không phải built-in overlay của klinecharts, cần registerOverlay nếu muốn hỗ trợ
       {
         id: "parallelStraightLine",
         label: "Biên giao động (Channel)",
