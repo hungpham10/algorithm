@@ -275,29 +275,29 @@ CREATE TABLE IF NOT EXISTS wms_picking_items (
 -- GẮN TRIGGER CHO CÁC BẢNG KHÔNG PHÂN VÙNG (CHỈ CẬP NHẬT TIME)
 -- =========================================================================
 
-CREATE TRIGGER trg_wms_stocks_updated_at BEFORE UPDATE ON wms_stocks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_wms_contents_updated_at BEFORE UPDATE ON wms_contents FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_wms_lots_updated_at BEFORE UPDATE ON wms_lots FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_wms_stock_entries_updated_at BEFORE UPDATE ON wms_stock_entries FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_wms_shelves_updated_at BEFORE UPDATE ON wms_shelves FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_wms_stock_shelves_updated_at BEFORE UPDATE ON wms_stock_shelves FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_wms_items_updated_at BEFORE UPDATE ON wms_items FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_wms_zones_updated_at BEFORE UPDATE ON wms_zones FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_wms_nodes_updated_at BEFORE UPDATE ON wms_nodes FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_wms_paths_updated_at BEFORE UPDATE ON wms_paths FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_wms_picking_plans_in_zones_updated_at BEFORE UPDATE ON wms_picking_plans_in_zones FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_wms_picking_plans_in_nodes_updated_at BEFORE UPDATE ON wms_picking_plans_in_nodes FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_wms_stocks_updated_at BEFORE UPDATE ON wms_stocks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_wms_contents_updated_at BEFORE UPDATE ON wms_contents FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_wms_lots_updated_at BEFORE UPDATE ON wms_lots FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_wms_stock_entries_updated_at BEFORE UPDATE ON wms_stock_entries FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_wms_shelves_updated_at BEFORE UPDATE ON wms_shelves FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_wms_stock_shelves_updated_at BEFORE UPDATE ON wms_stock_shelves FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_wms_items_updated_at BEFORE UPDATE ON wms_items FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_wms_zones_updated_at BEFORE UPDATE ON wms_zones FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_wms_nodes_updated_at BEFORE UPDATE ON wms_nodes FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_wms_paths_updated_at BEFORE UPDATE ON wms_paths FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_wms_picking_plans_in_zones_updated_at BEFORE UPDATE ON wms_picking_plans_in_zones FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_wms_picking_plans_in_nodes_updated_at BEFORE UPDATE ON wms_picking_plans_in_nodes FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 
 -- =========================================================================
 -- GẮN TRIGGER TỰ ĐỘNG SINH PHÂN VÙNG KHI INSERT DỮ LIỆU
 -- =========================================================================
 
-CREATE TRIGGER trg_wms_sales_partition BEFORE INSERT ON wms_sales FOR EACH ROW EXECUTE FUNCTION auto_create_monthly_partition();
-CREATE TRIGGER trg_wms_sale_events_partition BEFORE INSERT ON wms_sale_events FOR EACH ROW EXECUTE FUNCTION auto_create_monthly_partition();
-CREATE TRIGGER trg_wms_picking_plans_partition BEFORE INSERT ON wms_picking_plans FOR EACH ROW EXECUTE FUNCTION auto_create_monthly_partition();
-CREATE TRIGGER trg_wms_picking_routes_partition BEFORE INSERT ON wms_picking_routes FOR EACH ROW EXECUTE FUNCTION auto_create_monthly_partition();
-CREATE TRIGGER trg_wms_picking_goods_partition BEFORE INSERT ON wms_picking_goods FOR EACH ROW EXECUTE FUNCTION auto_create_monthly_partition();
-CREATE TRIGGER trg_wms_picking_plan_events_partition BEFORE INSERT ON wms_picking_plan_events FOR EACH ROW EXECUTE FUNCTION auto_create_monthly_partition();
-CREATE TRIGGER trg_wms_picking_route_events_partition BEFORE INSERT ON wms_picking_route_events FOR EACH ROW EXECUTE FUNCTION auto_create_monthly_partition();
-CREATE TRIGGER trg_wms_picking_items_partition BEFORE INSERT ON wms_picking_items FOR EACH ROW EXECUTE FUNCTION auto_create_monthly_partition();
+CREATE OR REPLACE TRIGGER trg_wms_sales_partition BEFORE INSERT ON wms_sales FOR EACH ROW EXECUTE FUNCTION auto_create_monthly_partition();
+CREATE OR REPLACE TRIGGER trg_wms_sale_events_partition BEFORE INSERT ON wms_sale_events FOR EACH ROW EXECUTE FUNCTION auto_create_monthly_partition();
+CREATE OR REPLACE TRIGGER trg_wms_picking_plans_partition BEFORE INSERT ON wms_picking_plans FOR EACH ROW EXECUTE FUNCTION auto_create_monthly_partition();
+CREATE OR REPLACE TRIGGER trg_wms_picking_routes_partition BEFORE INSERT ON wms_picking_routes FOR EACH ROW EXECUTE FUNCTION auto_create_monthly_partition();
+CREATE OR REPLACE TRIGGER trg_wms_picking_goods_partition BEFORE INSERT ON wms_picking_goods FOR EACH ROW EXECUTE FUNCTION auto_create_monthly_partition();
+CREATE OR REPLACE TRIGGER trg_wms_picking_plan_events_partition BEFORE INSERT ON wms_picking_plan_events FOR EACH ROW EXECUTE FUNCTION auto_create_monthly_partition();
+CREATE OR REPLACE TRIGGER trg_wms_picking_route_events_partition BEFORE INSERT ON wms_picking_route_events FOR EACH ROW EXECUTE FUNCTION auto_create_monthly_partition();
+CREATE OR REPLACE TRIGGER trg_wms_picking_items_partition BEFORE INSERT ON wms_picking_items FOR EACH ROW EXECUTE FUNCTION auto_create_monthly_partition();

@@ -53,11 +53,11 @@ INSERT INTO ohcl_brokers (id, name) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO ohcl_brokers (id, name, alias) VALUES
-(8, 'stock'),
+(8, 'stock', 1),
 (9, 'crypto', 2)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO ohcl_products (id, broker_id, name, enabled) VALUES
+INSERT INTO ohcl_products (id, broker_id, name) VALUES
 (1, 1, 'vn30'),
 (2, 1, 'vn100'),
 (3, 1, 'future'),
@@ -81,7 +81,7 @@ INSERT INTO ohcl_products (id, broker_id, name, enabled) VALUES
 (36, 2, 'spot'),
 (37, 2, 'future'),
 (38, 10, 'jewelry'),
-(39, 10, 'gold bullion', 1)
+(39, 10, 'gold bullion')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO ohcl_resolution (id, resolution) VALUES
@@ -95,8 +95,8 @@ INSERT INTO ohcl_resolution (id, resolution) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO ohcl_broker_limitation (id, broker_id, guest_max_history_days, guest_invisible) VALUES
-(1, 3, NULL),
-(2, 10, 7, 0)
+(1, 3, NULL, NULL),
+(2, 10, 7, true)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO ohcl_symbols (id, broker_id, product_id, name, symbol) VALUES

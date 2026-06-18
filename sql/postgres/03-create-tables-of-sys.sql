@@ -124,14 +124,14 @@ CREATE TABLE IF NOT EXISTS sys_link_streams_to_sinks (
   updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TRIGGER trg_sys_sitemap_updated_at BEFORE UPDATE ON sys_sitemap FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_sys_articlemap_updated_at BEFORE UPDATE ON sys_articlemap FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_sys_filemap_updated_at BEFORE UPDATE ON sys_filemap FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_sys_token_map_updated_at BEFORE UPDATE ON sys_token_map FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_sys_tenant_updated_at BEFORE UPDATE ON sys_tenant FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_sys_api_map_updated_at BEFORE UPDATE ON sys_api_map FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_sys_database_map_updated_at BEFORE UPDATE ON sys_database_map FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_sys_table_map_updated_at BEFORE UPDATE ON sys_table_map FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_sys_streams_updated_at BEFORE UPDATE ON sys_streams FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_sys_sinks_updated_at BEFORE UPDATE ON sys_sinks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER trg_sys_link_streams_to_sinks_updated_at BEFORE UPDATE ON sys_link_streams_to_sinks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_sys_sitemap_updated_at BEFORE UPDATE ON sys_sitemap FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_sys_articlemap_updated_at BEFORE UPDATE ON sys_articlemap FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_sys_filemap_updated_at BEFORE UPDATE ON sys_filemap FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_sys_token_map_updated_at BEFORE UPDATE ON sys_token_map FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_sys_tenant_updated_at BEFORE UPDATE ON sys_tenant FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_sys_api_map_updated_at BEFORE UPDATE ON sys_api_map FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_sys_database_map_updated_at BEFORE UPDATE ON sys_database_map FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_sys_table_map_updated_at BEFORE UPDATE ON sys_table_map FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_sys_streams_updated_at BEFORE UPDATE ON sys_streams FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_sys_sinks_updated_at BEFORE UPDATE ON sys_sinks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE OR REPLACE TRIGGER trg_sys_link_streams_to_sinks_updated_at BEFORE UPDATE ON sys_link_streams_to_sinks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

@@ -24,6 +24,11 @@ services:
       - net.ipv4.ip_local_port_range=1024 65535
     environment:
       - APP_ENV=dev
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=admin
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DATABASE=default
+      - POSTGRES_PASSWORD=rootroot
       - SOPS_AGE_KEY_CONTENT=${SOPS_AGE_KEY_CONTENT}
     depends_on:
       - valkey

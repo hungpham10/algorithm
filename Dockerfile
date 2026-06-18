@@ -66,7 +66,7 @@ WORKDIR /app
 RUN mkdir -p /app/secrets
 
 # Install runtime dependencies
-RUN apt update && apt install --no-install-recommends -y supervisor curl git gettext-base default-mysql-client tor gnupg2 && \
+RUN apt update && apt install --no-install-recommends -y supervisor curl git gettext-base default-mysql-client tor gnupg2 postgresql-client && \
     mkdir -p /etc/apt/keyrings/ && \
     curl -fsSL https://apt.grafana.com/gpg.key | gpg --dearmor -o /etc/apt/keyrings/grafana.gpg && \
     echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | tee /etc/apt/sources.list.d/grafana.list && \

@@ -1066,7 +1066,7 @@ pub async fn fetch_file(
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 JsonResponse(AdminResponse {
-                    error: Some(format!("S3 error: {}", error)),
+                    error: Some(format!("S3 error {path_in_str}: {error}")),
                     ..Default::default()
                 }),
             )
