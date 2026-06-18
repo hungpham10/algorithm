@@ -337,18 +337,23 @@ export default class Chart {
 
   _calculateFetchRange(type, timestamp, defaultRange) {
     const now = Math.floor(Date.now() / 1000);
+    const def = this._resolutions.get(this.activeResolution);
+    const periodSec = def ? periodToSeconds(def.period) : 0;
+
     if (type === "init" || type === "backward") {
       return {
         timeFrom:
           type === "backward" && timestamp
-            ? Math.floor(timestamp / 1000)
+            ? Math.floor(timestamp / 1000) + periodSec
             : defaultRange.from,
         timeTo: now,
       };
     }
     return {
       timeFrom: defaultRange.from,
-      timeTo: timestamp ? Math.floor(timestamp / 1000) : defaultRange.to,
+      timeTo: timestamp
+        ? Math.floor(timestamp / 1000) - periodSec
+        : defaultRange.to,
     };
   }
 
