@@ -1,16 +1,16 @@
 ---
-import Hero from '../components/gold/Hero.astro';
-import TablePrices from '../components/gold/TablePrices.astro';
-import ExchangeRate from '../components/bank/ExchangeRate.svelte';
-import RegionalPriceTable from '../components/gold/RegionalPriceTable.svelte';
-import FeedbackWidget from '../components/FeedbackWidget.svelte';
-import Layout from '../layouts/Layout.astro';
+import Hero from "../components/gold/Hero.astro";
+import TablePrices from "../components/gold/TablePrices.astro";
+import ExchangeRate from "../components/bank/ExchangeRate.svelte";
+import RegionalPriceTable from "../components/gold/RegionalPriceTable.svelte";
+import FeedbackWidget from "../components/FeedbackWidget.svelte";
+import Layout from "../layouts/Layout.astro";
 
-import { FetchIndex } from '../lib/render.js';
-import { formatVN } from '../lib/utils.js';
+import { FetchIndex } from "../lib/render.js";
+import { formatVN } from "../lib/utils.js";
 
-const SITE_URL = import.meta.env.PUBLIC_SITE_URL || 'https://findaily.vn';
-const SHOW_ADS = import.meta.env.SHOW_ADS === 'true';
+const SITE_URL = import.meta.env.PUBLIC_SITE_URL || "https://findaily.vn";
+const SHOW_ADS = import.meta.env.SHOW_ADS === "true";
 
 let dataSource = await FetchIndex.load();
 const goldSummary = dataSource.summary;
@@ -25,84 +25,323 @@ const currentDate = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}
 const yesterdayDate = `${yesterday.getDate()}/${yesterday.getMonth() + 1}/${yesterday.getFullYear()}`;
 
 const navMenus = [
-  { label: 'Trang Chủ', href: '/' },
-  { label: 'Bảng Giá Vàng', href: '/#prices' },
-  { label: 'Tỷ giá ngân hàng', href: '/#exchange-rates' },
+    { label: "Trang Chủ", href: "/" },
+    { label: "Bảng Giá Vàng", href: "/#prices" },
+    { label: "Tỷ giá ngân hàng", href: "/#exchange-rates" },
 ];
 
 // Tạo đường dẫn canonical động chuẩn xác cho trang này
 const canonicalUrl = `${SITE_URL}${Astro.url.pathname}`;
 ---
+
 <Layout
-  title="Bảng giá vàng trực tuyến - Cập nhật liên tục 24h"
-  showAds={SHOW_ADS}
-  navMenus={navMenus}
-  canonicalUrl={canonicalUrl}
+    title="Bảng giá vàng trực tuyến - Cập nhật liên tục 24h"
+    showAds={SHOW_ADS}
+    navMenus={navMenus}
+    canonicalUrl={canonicalUrl}
 >
-  <div id="price-config" data-ids={JSON.stringify(productIds)} data-degree={degree}></div>
-  <script>
-    import { fetchPriceByProductId } from '$lib/fetch.js';
-    import { PRICE_EVENT_NAME } from '$lib/schema.js';
+    <div
+        id="price-config"
+        data-ids={JSON.stringify(productIds)}
+        data-degree={degree}
+    >
+    </div>
+    <script>
+        import { fetchPriceByProductId } from "$lib/fetch.js";
+        import { PRICE_EVENT_NAME } from "$lib/schema.js";
 
-    const configEl = document.getElementById('price-config');
-    const productIds = JSON.parse(configEl.dataset.ids || '[]');
-    const degree = configEl.dataset.degree;
+        const configEl = document.getElementById("price-config");
+        const productIds = JSON.parse(configEl.dataset.ids || "[]");
+        const degree = configEl.dataset.degree;
 
-    function updateAllCurrentDates() {
-      const now = new Date();
+        function updateAllCurrentDates() {
+            const now = new Date();
 
-      const options = {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      };
+            const options = {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+            };
 
-      const currentDateStr = now.toLocaleDateString('vi-VN', options);
+            const currentDateStr = now.toLocaleDateString("vi-VN", options);
 
-      document.querySelectorAll('.current-date').forEach(el => {
-        el.textContent = currentDateStr;
-      });
-    }
+            document.querySelectorAll(".current-date").forEach((el) => {
+                el.textContent = currentDateStr;
+            });
+        }
 
-    async function initPolling() {
-      if (productIds.length === 0) return;
-      await fetchPriceByProductId(PRICE_EVENT_NAME, productIds, degree);
+        async function initPolling() {
+            if (productIds.length === 0) return;
+            await fetchPriceByProductId(PRICE_EVENT_NAME, productIds, degree);
 
-      setInterval(async () => {
-        console.log('Polling new prices...');
-        await fetchPriceByProductId(PRICE_EVENT_NAME, productIds, degree);
-      }, 30000);
-    }
+            setInterval(async () => {
+                console.log("Polling new prices...");
+                await fetchPriceByProductId(
+                    PRICE_EVENT_NAME,
+                    productIds,
+                    degree,
+                );
+            }, 30000);
+        }
 
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => {
-        updateAllCurrentDates();
-        initPolling();
-      });
-    } else {
-      updateAllCurrentDates();
-      initPolling();
-    }
-  </script>
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", () => {
+                updateAllCurrentDates();
+                initPolling();
+            });
+        } else {
+            updateAllCurrentDates();
+            initPolling();
+        }
+    </script>
 
-  <Hero initialData={goldSummary} />
+    <Hero initialData={goldSummary} />
 
-  <TablePrices
+    <TablePrices
         dataSource={dataSource}
         currentDate={currentDate}
         yesterdayDate={yesterdayDate}
-  />
+    />
 
-  <RegionalPriceTable
-      formatVN={formatVN}
-      regions={dataSource.locationList}
-      client:visible
-  />
+    <RegionalPriceTable
+        formatVN={formatVN}
+        regions={dataSource.locationList}
+        client:visible
+    />
 
-  <ExchangeRate
-       currentDate={currentDate}
-       client:load
-  />
+    <ExchangeRate currentDate={currentDate} client:load />
 
-  <FeedbackWidget client:load />
+    <!-- FAQ Section with FAQ Schema -->
+    <section
+        id="faq"
+        class="max-w-[1200px] w-full mx-auto px-4 py-12 border-t border-gray-100 mt-12"
+    >
+        <div class="flex items-center gap-2 mb-8">
+            <span class="w-1 h-6 bg-blue-500 rounded-full block"></span>
+            <h2
+                class="text-xl md:text-2xl font-bold text-gray-900 tracking-tight"
+            >
+                Câu hỏi thường gặp về giá vàng
+            </h2>
+        </div>
+
+        <div class="grid gap-4 max-w-3xl">
+            <details
+                class="group bg-white border border-gray-200 rounded-2xl overflow-hidden transition-all open:border-blue-200 open:shadow-sm"
+            >
+                <summary
+                    class="flex items-center justify-between px-5 py-4 cursor-pointer text-sm font-semibold text-gray-800 hover:bg-gray-50 transition-colors list-none"
+                >
+                    Giá vàng SJC hôm nay bao nhiêu?
+                    <svg
+                        class="w-4 h-4 text-gray-400 shrink-0 transition-transform group-open:rotate-180"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        ><path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M19 9l-7 7-7-7"></path></svg
+                    >
+                </summary>
+                <div class="px-5 pb-4 text-sm text-gray-600 leading-relaxed">
+                    Giá vàng SJC được cập nhật trực tuyến trên bảng giá vàng
+                    FinDaily.vn theo thời gian thực. Bạn có thể xem chi tiết giá
+                    mua vào, bán ra của vàng miếng SJC cùng biểu đồ xu hướng 7
+                    ngày tại mục <a
+                        href="/#prices"
+                        class="text-blue-600 hover:underline"
+                        >Bảng giá vàng thương hiệu quốc gia</a
+                    > trên trang chủ.
+                </div>
+            </details>
+
+            <details
+                class="group bg-white border border-gray-200 rounded-2xl overflow-hidden transition-all open:border-blue-200 open:shadow-sm"
+            >
+                <summary
+                    class="flex items-center justify-between px-5 py-4 cursor-pointer text-sm font-semibold text-gray-800 hover:bg-gray-50 transition-colors list-none"
+                >
+                    Mua vàng SJC ở đâu uy tín?
+                    <svg
+                        class="w-4 h-4 text-gray-400 shrink-0 transition-transform group-open:rotate-180"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        ><path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M19 9l-7 7-7-7"></path></svg
+                    >
+                </summary>
+                <div class="px-5 pb-4 text-sm text-gray-600 leading-relaxed">
+                    Vàng miếng SJC được phân phối chính thức bởi Công ty Vàng
+                    bạc Đá quý Sài Gòn (SJC) và các đại lý ủy quyền trên toàn
+                    quốc như DOJI, Phú Quý, Bảo Tín Minh Châu. Xem danh sách đầy
+                    đủ 40+ thương hiệu và địa chỉ chi nhánh tại mục <a
+                        href="/gia-vang"
+                        class="text-blue-600 hover:underline">Tiệm Vàng</a
+                    >.
+                </div>
+            </details>
+
+            <details
+                class="group bg-white border border-gray-200 rounded-2xl overflow-hidden transition-all open:border-blue-200 open:shadow-sm"
+            >
+                <summary
+                    class="flex items-center justify-between px-5 py-4 cursor-pointer text-sm font-semibold text-gray-800 hover:bg-gray-50 transition-colors list-none"
+                >
+                    Giá vàng thế giới hôm nay tăng hay giảm?
+                    <svg
+                        class="w-4 h-4 text-gray-400 shrink-0 transition-transform group-open:rotate-180"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        ><path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M19 9l-7 7-7-7"></path></svg
+                    >
+                </summary>
+                <div class="px-5 pb-4 text-sm text-gray-600 leading-relaxed">
+                    Giá vàng thế giới (XAUUSD) biến động liên tục theo giờ giao
+                    dịch New York, London và Hong Kong. Theo dõi biểu đồ nến
+                    realtime và phân tích kỹ thuật RSI, MACD tại mục <a
+                        href="/gia-vang-the-gioi"
+                        class="text-blue-600 hover:underline"
+                        >Biểu đồ vàng thế giới</a
+                    >.
+                </div>
+            </details>
+
+            <details
+                class="group bg-white border border-gray-200 rounded-2xl overflow-hidden transition-all open:border-blue-200 open:shadow-sm"
+            >
+                <summary
+                    class="flex items-center justify-between px-5 py-4 cursor-pointer text-sm font-semibold text-gray-800 hover:bg-gray-50 transition-colors list-none"
+                >
+                    Tỷ giá đô la Mỹ (USD) hôm nay tại Vietcombank là bao nhiêu?
+                    <svg
+                        class="w-4 h-4 text-gray-400 shrink-0 transition-transform group-open:rotate-180"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        ><path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M19 9l-7 7-7-7"></path></svg
+                    >
+                </summary>
+                <div class="px-5 pb-4 text-sm text-gray-600 leading-relaxed">
+                    Tỷ giá ngoại tệ Vietcombank được cập nhật realtime trên
+                    FinDaily.vn, bao gồm tỷ giá mua vào (cash) và bán ra của
+                    USD, EUR, JPY, GBP, AUD cùng nhiều ngoại tệ khác kèm biểu đồ
+                    xu hướng 30 ngày. Xem chi tiết tại mục <a
+                        href="/#exchange-rates"
+                        class="text-blue-600 hover:underline">Tỷ giá ngoại tệ</a
+                    >.
+                </div>
+            </details>
+
+            <details
+                class="group bg-white border border-gray-200 rounded-2xl overflow-hidden transition-all open:border-blue-200 open:shadow-sm"
+            >
+                <summary
+                    class="flex items-center justify-between px-5 py-4 cursor-pointer text-sm font-semibold text-gray-800 hover:bg-gray-50 transition-colors list-none"
+                >
+                    Vàng 9999 là gì? Khác gì vàng 24K, 18K?
+                    <svg
+                        class="w-4 h-4 text-gray-400 shrink-0 transition-transform group-open:rotate-180"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        ><path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M19 9l-7 7-7-7"></path></svg
+                    >
+                </summary>
+                <div class="px-5 pb-4 text-sm text-gray-600 leading-relaxed">
+                    Vàng 9999 (còn gọi là vàng 24K) là vàng nguyên chất với độ
+                    tinh khiết 99.99%. Đây là loại vàng được sử dụng phổ biến
+                    trong đầu tư và tích lũy. Vàng 18K chứa 75% vàng nguyên chất
+                    pha hợp kim, thường dùng làm trang sức. FinDaily.vn cập nhật
+                    giá cả 3 loại vàng này theo thời gian thực.
+                </div>
+            </details>
+        </div>
+
+        <!-- Nguồn dữ liệu -->
+        <div class="mt-8 p-5 bg-slate-50 border border-slate-100 rounded-2xl">
+            <h3
+                class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2"
+            >
+                Nguồn dữ liệu
+            </h3>
+            <p class="text-xs text-slate-400 leading-relaxed">
+                Dữ liệu giá vàng được tổng hợp từ SJC, DOJI, Phú Quý, Bảo Tín
+                Minh Châu và các thương hiệu kim hoàn lớn tại Việt Nam. Tỷ giá
+                ngoại tệ từ Vietcombank. Lãi suất ngân hàng được tổng hợp từ các
+                ngân hàng thương mại Việt Nam. Giá vàng thế giới từ
+                Investing.com. Dữ liệu có độ trễ tối đa 30 giây.
+            </p>
+        </div>
+    </section>
+
+    <!-- FAQ JSON-LD Structured Data -->
+    <script is:inline type="application/ld+json">
+        {
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            "mainEntity": [
+                {
+                    "@type": "Question",
+                    "name": "Giá vàng SJC hôm nay bao nhiêu?",
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": "Giá vàng SJC được cập nhật trực tuyến trên bảng giá vàng FinDaily.vn theo thời gian thực. Bạn có thể xem chi tiết giá mua vào, bán ra của vàng miếng SJC cùng biểu đồ xu hướng 7 ngày tại mục Bảng giá vàng thương hiệu quốc gia trên trang chủ."
+                    }
+                },
+                {
+                    "@type": "Question",
+                    "name": "Mua vàng SJC ở đâu uy tín?",
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": "Vàng miếng SJC được phân phối chính thức bởi Công ty Vàng bạc Đá quý Sài Gòn (SJC) và các đại lý ủy quyền trên toàn quốc như DOJI, Phú Quý, Bảo Tín Minh Châu."
+                    }
+                },
+                {
+                    "@type": "Question",
+                    "name": "Giá vàng thế giới hôm nay tăng hay giảm?",
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": "Giá vàng thế giới (XAUUSD) biến động liên tục theo giờ giao dịch New York, London và Hong Kong. Theo dõi biểu đồ nến realtime và phân tích kỹ thuật RSI, MACD tại FinDaily.vn."
+                    }
+                },
+                {
+                    "@type": "Question",
+                    "name": "Tỷ giá đô la Mỹ USD hôm nay tại Vietcombank là bao nhiêu?",
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": "Tỷ giá ngoại tệ Vietcombank được cập nhật realtime trên FinDaily.vn, bao gồm tỷ giá mua vào (cash) và bán ra của USD, EUR, JPY, GBP, AUD cùng nhiều ngoại tệ khác kèm biểu đồ xu hướng 30 ngày."
+                    }
+                },
+                {
+                    "@type": "Question",
+                    "name": "Vàng 9999 là gì? Khác gì vàng 24K, 18K?",
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": "Vàng 9999 (còn gọi là vàng 24K) là vàng nguyên chất với độ tinh khiết 99.99%. Đây là loại vàng được sử dụng phổ biến trong đầu tư và tích lũy. Vàng 18K chứa 75% vàng nguyên chất pha hợp kim, thường dùng làm trang sức."
+                    }
+                }
+            ]
+        }
+    </script>
+
+    <FeedbackWidget client:load />
 </Layout>

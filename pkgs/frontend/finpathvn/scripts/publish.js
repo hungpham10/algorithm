@@ -1,11 +1,11 @@
-import 'dotenv/config';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import mime from 'mime';
+import "dotenv/config";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import mime from "mime";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DIST_DIR = path.join(__dirname, '../dist');
+const DIST_DIR = path.join(__dirname, "../dist");
 
 /**
  * Hàm lấy Access Token từ Auth0 (M2M)
@@ -13,14 +13,14 @@ const DIST_DIR = path.join(__dirname, '../dist');
 async function getAuth0Token() {
   console.log("🔑 Đang lấy token từ Auth0...");
   const response = await fetch(process.env.AUTH0_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       client_id: process.env.CLIENT_ID,
       client_secret: process.env.CLIENT_SECRET,
       audience: process.env.AUDIENCE,
-      grant_type: 'client_credentials'
-    })
+      grant_type: "client_credentials",
+    }),
   });
 
   if (!response.ok) {
@@ -58,7 +58,9 @@ async function uploadAll() {
     console.log("✅ Lấy token thành công.");
 
     if (!fs.existsSync(DIST_DIR)) {
-      console.error("❌ Thư mục dist không tồn tại. Chạy 'npm run build' trước.");
+      console.error(
+        "❌ Thư mục dist không tồn tại. Chạy 'npm run build' trước.",
+      );
       return;
     }
 
@@ -66,39 +68,45 @@ async function uploadAll() {
     console.log(`🚀 Bắt đầu upload ${allFiles.length} files...`);
 
     for (const filePath of allFiles) {
-      const relativePath = path.relative(DIST_DIR, filePath).replace(/\\/g, '/');
+      const relativePath = path
+        .relative(DIST_DIR, filePath)
+        .replace(/\\/g, "/");
       const fileBuffer = fs.readFileSync(filePath);
-      const contentType = mime.getType(filePath) || 'application/octet-stream';
+      const contentType = mime.getType(filePath) || "application/octet-stream";
 
       const formData = new FormData();
       const blob = new Blob([fileBuffer], { type: contentType });
-      formData.append('file', blob, relativePath);
+      formData.append("file", blob, relativePath);
 
       // Điểm thay đổi: Kiểm tra nếu là file .html thì đổi API Endpoint
       const isHtml = path.extname(filePath).toLowerCase() === '.html';
       const uploadUrl = isHtml ? process.env.API_PUBLISH_SITE : process.env.API_PUBLISH_FILE;
 
       const response = await fetch(uploadUrl, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
+          Authorization: `Bearer ${accessToken}`,
         },
-        body: formData
+        body: formData,
       });
 
       if (response.ok) {
-        console.log(`✅ Uploaded (${isHtml ? 'HTML' : 'Asset'}): ${relativePath}`);
+        console.log(
+          `✅ Uploaded (${isHtml ? "HTML" : "Asset"}): ${relativePath}`,
+        );
       } else {
-        console.error(`❌ Failed: ${relativePath} (${response.status}): ${await response.text()}`);
+        console.error(
+          `❌ Failed: ${relativePath} (${response.status}): ${await response.text()}`,
+        );
       }
     }
 
     // Gọi API Purge Cache sau khi hoàn tất
     if (process.env.API_PURGE_URL) {
       await fetch(`${process.env.API_PURGE_URL}`, {
-        method: 'HEAD',
+        method: "HEAD",
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
+          Authorization: `Bearer ${accessToken}`,
         },
       });
     }

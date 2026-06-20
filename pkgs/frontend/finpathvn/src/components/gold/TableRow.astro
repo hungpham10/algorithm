@@ -1,14 +1,14 @@
 ---
 // src/components/TableRow.astro
-import Sparkline from './Sparkline.astro';
-import PriceCell from './PriceCell.svelte';
+import Sparkline from "./Sparkline.astro";
+import PriceCell from "./PriceCell.svelte";
 
 const { data, index } = Astro.props;
 
 // Logic xử lý màu sắc và giá trị xu hướng
 const rawTrend = data.trend || "0";
-const isNegative = rawTrend.includes('-');
-const numericPart = parseFloat(rawTrend.replace(/[^0-9.]/g, '')) || 0;
+const isNegative = rawTrend.includes("-");
+const numericPart = parseFloat(rawTrend.replace(/[^0-9.]/g, "")) || 0;
 const trendValue = isNegative ? -numericPart : numericPart;
 
 // Thiết lập màu sắc và background badge theo xu hướng
@@ -16,43 +16,54 @@ let badgeClass = "bg-yellow-50 text-yellow-700";
 let trendIcon = "→";
 
 if (trendValue > 0) {
-  badgeClass = "bg-green-50 text-green-700";
-  trendIcon = "↗";
+    badgeClass = "bg-green-50 text-green-700";
+    trendIcon = "↗";
 } else if (trendValue < 0) {
-  badgeClass = "bg-red-50 text-red-600";
-  trendIcon = "↘";
+    badgeClass = "bg-red-50 text-red-600";
+    trendIcon = "↘";
 }
 
 // Map mã thương hiệu để hiển thị Logo hình tròn bên trái
 const brandMap: Record<string, string> = {
-  "Vàng miếng SJC": "SJC",
-  "Vàng miếng Phú Quý 999.9": "PQ",
-  "Vàng 999 Mi Hồng": "MH",
-  "Vàng nguyên liệu 9999 DOJI": "DOJI",
-  "Bạc thỏi Phú Quý 999": "Ag"
+    "Vàng miếng SJC": "SJC",
+    "Vàng miếng Phú Quý 999.9": "PQ",
+    "Vàng 999 Mi Hồng": "MH",
+    "Vàng nguyên liệu 9999 DOJI": "DOJI",
+    "Bạc thỏi Phú Quý 999": "Ag",
 };
 const brandCode = brandMap[data.description] || "AU";
 
 // Đảm bảo trendData là mảng hợp lệ cho Sparkline
-const sparklineData = typeof data.trendData === 'string' ? JSON.parse(data.trendData) : data.trendData;
+const sparklineData =
+    typeof data.trendData === "string"
+        ? JSON.parse(data.trendData)
+        : data.trendData;
 ---
 
-<tr class="border-b border-gray-100 hover:bg-gray-50/50 transition-colors group">
-  <td class="p-2 md:p-4 pl-3 md:pl-6 align-middle w-[40%] md:w-1/3">
-    <div class="flex items-center gap-2 md:gap-3">
-      <div class="w-7 h-7 md:w-10 md:h-10 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-[10px] md:text-xs tracking-tight shrink-0">
-        {brandCode}
-      </div>
-      <div class="flex flex-col">
-        <span class="font-semibold text-gray-800 text-[14px] md:text-[17px] group-hover:text-blue-600 transition-colors leading-tight break-words">
-          {data.description}
-        </span>
-        <span class="text-[10px] md:text-xs text-gray-400 mt-0.5 whitespace-nowrap">
-          Triệu đồng/chỉ
-        </span>
-      </div>
-    </div>
-  </td>
+<tr
+    class="border-b border-gray-100 hover:bg-gray-50/50 transition-colors group"
+>
+    <td class="p-2 md:p-4 pl-3 md:pl-6 align-middle w-[40%] md:w-1/3">
+        <div class="flex items-center gap-2 md:gap-3">
+            <div
+                class="w-7 h-7 md:w-10 md:h-10 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-[10px] md:text-xs tracking-tight shrink-0"
+            >
+                {brandCode}
+            </div>
+            <div class="flex flex-col">
+                <span
+                    class="font-semibold text-gray-800 text-[14px] md:text-[17px] group-hover:text-blue-600 transition-colors leading-tight break-words"
+                >
+                    {data.description}
+                </span>
+                <span
+                    class="text-[10px] md:text-xs text-gray-400 mt-0.5 whitespace-nowrap"
+                >
+                    Triệu đồng/chỉ
+                </span>
+            </div>
+        </div>
+    </td>
 
   <td class="p-3 md:p-4 text-right font-semibold text-gray-900 text-[16px] md:text-[17px]">
     <PriceCell
@@ -76,33 +87,41 @@ const sparklineData = typeof data.trendData === 'string' ? JSON.parse(data.trend
     />
   </td>
 
-  <td class="hidden md:table-cell p-4 text-right text-gray-500 font-medium text-[16px] md:text-[17px]">
-    <PriceCell
-      index={index}
-      initialPrice={data.yesterdayBuy || "---"}
-      type="buy"
-      client:load
-    />
-  </td>
+    <td
+        class="hidden md:table-cell p-4 text-right text-gray-500 font-medium text-[16px] md:text-[17px]"
+    >
+        <PriceCell
+            index={index}
+            initialPrice={data.yesterdayBuy || "---"}
+            type="buy"
+            client:load
+        />
+    </td>
 
-  <td class="hidden md:table-cell p-4 text-right text-gray-500 font-medium text-[16px] md:text-[17px]">
-    <PriceCell
-      index={index}
-      initialPrice={data.yesterdaySell || "---"}
-      type="sell"
-      client:load
-    />
-  </td>
+    <td
+        class="hidden md:table-cell p-4 text-right text-gray-500 font-medium text-[16px] md:text-[17px]"
+    >
+        <PriceCell
+            index={index}
+            initialPrice={data.yesterdaySell || "---"}
+            type="sell"
+            client:load
+        />
+    </td>
 
-  <td class="hidden sm:table-cell p-3 md:p-4 pr-4 md:pr-6 align-middle">
-    <div class="flex items-center justify-end gap-2 md:gap-4 min-w-[120px] md:min-w-[160px]">
-      <div class="w-14 md:w-20 opacity-90 block">
-        <Sparkline data={sparklineData} />
-      </div>
-      <div class={`flex items-center gap-0.5 md:gap-1 px-1.5 md:px-2.5 py-1 rounded-md text-[11px] md:text-xs font-bold shrink-0 ${badgeClass}`}>
-        <span>{trendIcon}</span>
-        <span>{data.trend}</span>
-      </div>
-    </div>
-  </td>
+    <td class="hidden sm:table-cell p-3 md:p-4 pr-4 md:pr-6 align-middle">
+        <div
+            class="flex items-center justify-end gap-2 md:gap-4 min-w-[120px] md:min-w-[160px]"
+        >
+            <div class="w-14 md:w-20 opacity-90 block">
+                <Sparkline data={sparklineData} />
+            </div>
+            <div
+                class={`flex items-center gap-0.5 md:gap-1 px-1.5 md:px-2.5 py-1 rounded-md text-[11px] md:text-xs font-bold shrink-0 ${badgeClass}`}
+            >
+                <span>{trendIcon}</span>
+                <span>{data.trend}</span>
+            </div>
+        </div>
+    </td>
 </tr>

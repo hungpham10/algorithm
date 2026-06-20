@@ -16,29 +16,29 @@ export default defineConfig({
   ],
 
   build: {
-    inlineStylesheets: 'always',
+    inlineStylesheets: "always",
   },
 
   vite: {
     css: {
-      transformer: 'lightningcss',
+      transformer: "lightningcss",
       lightningcss: {
         targets: {
-          safari: (13 << 16),
+          safari: 13 << 16,
         },
-      }
+      },
     },
 
     plugins: [
       tailwindcss(),
       viteCompression({
-        algorithm: 'gzip',
-        ext: '.gz',
+        algorithm: "gzip",
+        ext: ".gz",
         threshold: 1024,
       }),
       viteCompression({
-        algorithm: 'brotliCompress',
-        ext: '.br',
+        algorithm: "brotliCompress",
+        ext: ".br",
         threshold: 1024,
       }),
       {
@@ -47,31 +47,27 @@ export default defineConfig({
             compact: true,
             controlFlowFlattening: false,
             deadCodeInjection: false,
-            identifierNamesGenerator: 'mangled',
+            identifierNamesGenerator: "mangled",
             stringArray: true,
             stringArrayThreshold: 0.8,
-            stringArrayEncoding: ['base64'],
+            stringArrayEncoding: ["base64"],
             unicodeEscapeSequence: false,
-            exclude: [
-              'node_modules/**/*',
-              '**/@sentry/**/*',
-              '**/*.css'
-            ],
+            exclude: ["node_modules/**/*", "**/@sentry/**/*", "**/*.css"],
           },
         }),
-        apply: 'build',
-        enforce: 'post',
+        apply: "build",
+        enforce: "post",
       },
     ],
 
     build: {
-      cssMinify: 'lightningcss',
-      minify: 'terser',
+      cssMinify: "lightningcss",
+      minify: "terser",
       terserOptions: {
         compress: {
           drop_console: true,
           drop_debugger: true,
-          pure_funcs: ['console.info', 'console.debug', 'console.warn'],
+          pure_funcs: ["console.info", "console.debug", "console.warn"],
           passes: 3,
           unsafe: true,
           unsafe_arrows: true,
@@ -91,24 +87,24 @@ export default defineConfig({
       rollupOptions: {
         output: {
           manualChunks(id) {
-            if (id.includes('node_modules/@sentry')) {
-              return 'sentry';
+            if (id.includes("node_modules/@sentry")) {
+              return "sentry";
             }
-            if (id.includes('node_modules')) {
-              return 'v';
+            if (id.includes("node_modules")) {
+              return "v";
             }
-            if (id.includes('src/lib/api') || id.includes('dispatch.js')) {
-              return 'api';
+            if (id.includes("src/lib/api") || id.includes("dispatch.js")) {
+              return "api";
             }
           },
 
-          chunkFileNames: 'a/[hash].js',
-          entryFileNames: 'a/[hash].js',
+          chunkFileNames: "a/[hash].js",
+          entryFileNames: "a/[hash].js",
           assetFileNames: (assetInfo) => {
-            if (assetInfo.name?.endsWith('.css')) {
-              return 'c/[hash].css';
+            if (assetInfo.name?.endsWith(".css")) {
+              return "c/[hash].css";
             }
-            return 'assets/[hash][extname]';
+            return "assets/[hash][extname]";
           },
         },
       },
