@@ -177,6 +177,29 @@ pub async fn health_check(State(_): State<AppState>) -> impl IntoResponse {
 pub async fn reload(
     State(app_state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
+    app_state
+        .runtime
+        .write()
+        .await
+        .reload(
+            app_state
+                .admin_entity
+                .into_components(0)
+                .await
+                .map_err(|error| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Reload runtime failed: {error}"),
+                    )
+                })?,
+        )
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Reload runtime failed: {error}"),
+            )
+        })?;
+
     for key in app_state.query_candlesticks.keys() {
         app_state
             .secret
@@ -209,12 +232,14 @@ pub async fn reload(
                 )
             })?;
     }
+
     app_state.reload().map_err(|error| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("fail to reload `app_state`: {}", error),
         )
     })?;
+
     Ok("Success")
 }
 
