@@ -3,7 +3,6 @@ import Layout from "../../layouts/Layout.astro";
 import StoreDirectory from "../../components/gold/StoreDirectory.svelte";
 import { FetchIndex } from "../../lib/render.js";
 
-const SITE_URL = import.meta.env.PUBLIC_SITE_URL || "https://findaily.vn";
 const SHOW_ADS = import.meta.env.SHOW_ADS === "true";
 
 // 1. Tải danh sách tỉnh thành từ GraphQL
@@ -63,7 +62,7 @@ const navMenus = [
     { label: "Tỷ giá ngân hàng", href: "/#exchange-rates" },
 ];
 
-const canonicalUrl = `${SITE_URL}/gia-vang`;
+const canonicalUrl = "/gia-vang";
 ---
 
 <Layout

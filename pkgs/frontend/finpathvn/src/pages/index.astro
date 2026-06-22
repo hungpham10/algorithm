@@ -9,7 +9,6 @@ import Layout from "../layouts/Layout.astro";
 import { FetchIndex } from "../lib/render.js";
 import { formatVN } from "../lib/utils.js";
 
-const SITE_URL = import.meta.env.PUBLIC_SITE_URL || "https://findaily.vn";
 const SHOW_ADS = import.meta.env.SHOW_ADS === "true";
 
 let dataSource = await FetchIndex.load();
@@ -30,8 +29,7 @@ const navMenus = [
     { label: "Tỷ giá ngân hàng", href: "/#exchange-rates" },
 ];
 
-// Tạo đường dẫn canonical động chuẩn xác cho trang này
-const canonicalUrl = `${SITE_URL}${Astro.url.pathname}`;
+const canonicalUrl = Astro.url.pathname;
 ---
 
 <Layout

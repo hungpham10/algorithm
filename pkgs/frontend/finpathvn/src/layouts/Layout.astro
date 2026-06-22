@@ -3,15 +3,11 @@
 import OptimizedImage from '../components/OptimizedImage.astro';
 import '../styles/global.css';
 
-const ASSET_HOST = import.meta.env.PUBLIC_ASSET_HOST || 'https://findaily.vn';
+const SITE_URL = import.meta.env.PUBLIC_SITE_URL || 'https://findaily.vn';
+const ASSET_HOST = import.meta.env.PUBLIC_ASSET_HOST || SITE_URL;
 const GA_TRACKING_ID = import.meta.env.GA_TRACKING_ID;
 
 interface MenuItem {
-  label: string;
-  href: string;
-}
-
-interface BreadcrumbItem {
   label: string;
   href: string;
 }
@@ -24,14 +20,13 @@ interface Props {
   showAds?: boolean;
   navMenus?: MenuItem[];
   hideNavBorder?: boolean;
-  breadcrumbs?: BreadcrumbItem[];
 }
 
 const {
   title,
   description = "Bảng giá vàng trực tuyến SJC, vàng 24K, 9999, nữ trang cập nhật thời gian thực, liên tục 24h nhanh chóng và chính xác nhất.",
   ogImage = "/logo.svg",
-  canonicalUrl = Astro.url.href,
+  canonicalUrl = "/",
   showAds = false,
   navMenus = [
     { label: 'Trang Chủ', href: '/' },
@@ -45,44 +40,10 @@ const {
 const shouldShowNav = navMenus && navMenus.length > 1;
 const logoUrl = `${ASSET_HOST}/logo.svg`;
 
-// Xác định trang hiện tại để breadcrumb schema
-const pageName = navMenus.find(m => m.href !== '/' && canonicalUrl.includes(m.href))?.label || '';
-
-// Generate Organization + WebSite structured data
-const organizationSchema = {
-  "@context": "https://schema.org",
-  "@type": "Organization",
-  "name": "FinDaily.vn",
-  "url": "https://findaily.vn",
-  "logo": `${ASSET_HOST}/logo.svg`,
-  "description": "Bảng giá vàng trực tuyến SJC, tỷ giá ngoại tệ, lãi suất ngân hàng cập nhật thời gian thực.",
-  "sameAs": [
-    "https://www.facebook.com/findaily.vn",
-    "https://www.youtube.com/@findailyvn"
-  ],
-  "contactPoint": {
-    "@type": "ContactPoint",
-    "contactType": "customer service",
-    "email": "contact@findaily.vn"
-  }
-};
-
-const websiteSchema = {
-  "@context": "https://schema.org",
-  "@type": "WebSite",
-  "name": "FinDaily.vn",
-  "url": "https://findaily.vn",
-  "description": "Bảng giá vàng, tỷ giá ngoại tệ, lãi suất ngân hàng trực tuyến.",
-  "inLanguage": "vi",
-  "potentialAction": {
-    "@type": "SearchAction",
-    "target": {
-      "@type": "EntryPoint",
-      "urlTemplate": "https://findaily.vn/gia-vang/{search_term_string}"
-    },
-    "query-input": "required name=search_term_string"
-  }
-};
+// Build full canonical URL từ path + SITE_URL
+const fullCanonicalUrl = canonicalUrl.startsWith('http')
+  ? canonicalUrl
+  : new URL(canonicalUrl, SITE_URL).href;
 ---
 
 <!DOCTYPE html>
@@ -107,32 +68,21 @@ const websiteSchema = {
 
     <meta name="description" content={description} />
     <meta name="robots" content="index, follow" />
-    <link rel="canonical" href={canonicalUrl} />
+    <link rel="canonical" href={fullCanonicalUrl} />
 
     <meta property="og:type" content="website" />
-    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:url" content={fullCanonicalUrl} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:image" content={ogImage} />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:url" content={canonicalUrl} />
+    <meta name="twitter:url" content={fullCanonicalUrl} />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImage} />
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-
-    <!-- JSON-LD Structured Data: Organization -->
-    <script is:inline type="application/ld+json">
-      {JSON.stringify(organizationSchema)}
-    </script>
-
-    <!-- JSON-LD Structured Data: WebSite -->
-    <script is:inline type="application/ld+json">
-      {JSON.stringify(websiteSchema)}
-    </script>
-
     <slot name="head" />
   </head>
 
@@ -229,49 +179,10 @@ const websiteSchema = {
       </div>
     </div>
 
-    <footer class="mt-auto w-full border-t border-gray-200 bg-white">
-      <div class="mx-auto max-w-[1200px] px-6 py-10">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <!-- Brand -->
-          <div>
-            <a href="/" class="text-lg font-bold text-gray-800">FinDaily.vn</a>
-            <p class="mt-2 text-xs text-gray-500 leading-relaxed max-w-xs">
-              Bảng giá vàng trực tuyến SJC, PNJ, DOJI — tỷ giá ngoại tệ Vietcombank, lãi suất ngân hàng và phân tích kỹ thuật thị trường tài chính. Dữ liệu cập nhật liên tục 24/7.
-            </p>
-          </div>
-
-          <!-- Quick Links -->
-          <div>
-            <h4 class="text-xs font-bold uppercase tracking-wider text-gray-700 mb-3">Danh mục</h4>
-            <ul class="space-y-2">
-              <li><a href="/" class="text-xs text-gray-500 hover:text-blue-600 transition-colors">Trang chủ</a></li>
-              <li><a href="/#prices" class="text-xs text-gray-500 hover:text-blue-600 transition-colors">Bảng giá vàng</a></li>
-              <li><a href="/#exchange-rates" class="text-xs text-gray-500 hover:text-blue-600 transition-colors">Tỷ giá ngoại tệ</a></li>
-              <li><a href="/gia-vang" class="text-xs text-gray-500 hover:text-blue-600 transition-colors">Tiệm vàng</a></li>
-              <li><a href="/gia-vang-the-gioi" class="text-xs text-gray-500 hover:text-blue-600 transition-colors">Phân tích kỹ thuật</a></li>
-            </ul>
-          </div>
-
-          <!-- Social & Contact -->
-          <div>
-            <h4 class="text-xs font-bold uppercase tracking-wider text-gray-700 mb-3">Kết nối</h4>
-            <div class="flex items-center gap-3 mb-4">
-              <a href="https://www.facebook.com/findaily.vn" target="_blank" rel="noopener noreferrer" class="w-8 h-8 rounded-full bg-gray-100 hover:bg-blue-100 text-gray-500 hover:text-blue-600 flex items-center justify-center transition-all" aria-label="Facebook FinDaily">
-                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-              </a>
-              <a href="https://www.youtube.com/@findailyvn" target="_blank" rel="noopener noreferrer" class="w-8 h-8 rounded-full bg-gray-100 hover:bg-red-100 text-gray-500 hover:text-red-600 flex items-center justify-center transition-all" aria-label="YouTube FinDaily">
-                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
-              </a>
-            </div>
-            <p class="text-xs text-gray-400">
-              Liên hệ: <a href="mailto:contact@findaily.vn" class="text-gray-500 hover:text-blue-600 transition-colors">contact@findaily.vn</a>
-            </p>
-          </div>
-        </div>
-
-        <div class="mt-8 pt-6 border-t border-gray-100 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-gray-400">
-          <p>© 2026 FinDaily.vn — Bảng giá vàng trực tuyến. Dữ liệu tham khảo từ các thương hiệu vàng và ngân hàng Việt Nam.</p>
-          <p class="text-gray-400">Trang web không phải là lời khuyên tài chính.</p>
+    <footer class="mt-auto py-10 text-left text-gray-500 text-sm w-full mx-auto border-gray-200 bg-white">
+      <div class="mt-auto border-t border-gray-200 bg-white">
+        <div class="mx-auto py-8 px-6 max-w-[1200px]">
+          © 2026 FinDaily.vn - Bảng giá vàng trực tuyến
         </div>
       </div>
     </footer>

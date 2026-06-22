@@ -226,17 +226,7 @@ export default class Chart {
       });
     };
 
-    _defineInd("VOL", "Volume", "pane_volume", {
-      create: (chart, paneId) => {
-        chart.createIndicator({ name: "VOL" }, false, {
-          id: paneId,
-          height: 100,
-        });
-      },
-      remove: (chart, paneId) => {
-        chart.removeIndicator(paneId, "VOL");
-      },
-    });
+    // VOL không qua _defineInd vì volume luôn bật — không cần nút toggle
     _defineInd("MA", "MA");
     _defineInd("EMA", "EMA");
     _defineInd("BOLL", "Bollinger Bands");
@@ -272,8 +262,11 @@ export default class Chart {
 
     this.chart.setStyles(CANVAS_THEMES[this.theme]);
 
-    // Bật VOL indicator mặc định
-    this.toggleIndicator("VOL");
+    // Luôn tạo Volume pane bên dưới (không toggle)
+    this.chart.createIndicator("VOL", false, {
+      id: "pane_volume",
+      height: 100,
+    });
 
     return true;
   }
@@ -315,7 +308,7 @@ export default class Chart {
       if (def.remove) {
         def.remove(this.chart, existingPaneId);
       } else {
-        this.chart.removeIndicator(existingPaneId, name);
+        this.chart.removeIndicator({ paneId: existingPaneId, name });
       }
       this.activeIndicators.delete(name);
     } else {
@@ -323,7 +316,7 @@ export default class Chart {
       if (def.create) {
         def.create(this.chart, targetPaneId);
       } else {
-        this.chart.createIndicator({ name }, true, { id: targetPaneId });
+        this.chart.createIndicator(name, true, { id: targetPaneId });
       }
       this.activeIndicators.set(name, targetPaneId);
     }

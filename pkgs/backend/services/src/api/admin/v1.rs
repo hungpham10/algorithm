@@ -100,6 +100,8 @@ pub struct AdminResponse {
         query_data_from_api_with_path,
         list_paginated_table_schemas,
         create_table_schemas,
+        query_data_from_table,
+        push_data_to_table,
         get_token,
         put_token,
         get_appended_log,
@@ -119,7 +121,9 @@ pub struct AdminResponse {
             // Ensure these external models also derive ToSchema
             models::entities::admin::Api,
             models::entities::admin::Site,
-            models::entities::admin::Article
+            models::entities::admin::Article,
+            models::entities::admin::Table,
+            ListTableSchema
         )
     ),
     // 3. Organize them under a clear Tag
@@ -167,6 +171,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/seo/tables",
             get(list_paginated_table_schemas).post(create_table_schemas),
+        )
+        .route(
+            "/seo/tables/{id}",
+            get(query_data_from_table).post(push_data_to_table),
         )
         .route("/seo/tokens/{name}", get(get_token).post(put_token))
         .route(
@@ -1671,6 +1679,99 @@ pub async fn create_table_schemas(
                 data,
                 next_after: None,
             }),
+            ..Default::default()
+        })),
+        Err(error) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(AdminResponse {
+                error: Some(format!("Database error: {}", error)),
+                ..Default::default()
+            }),
+        )),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/seo/tables/{id}",
+    params(
+        ("id" = i64, Path, description = "The internal database ID of the table schema"),
+        QueryPagingInput
+    ),
+    responses(
+        (status = 200, description = "Returns queried table data", body = AdminResponse),
+        (status = 500, description = "Database or execution error", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "Tables"
+)]
+pub async fn query_data_from_table(
+    State(app_state): State<AppState>,
+    Path(id): Path<i64>,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
+    Query(QueryPagingInput { after, limit }): Query<QueryPagingInput>,
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
+    let after = after.unwrap_or(0);
+    let limit = limit.unwrap_or(10);
+
+    match app_state
+        .admin_entity
+        .read_from_table_by_id(tenant_id.into(), id, after, limit)
+        .await
+    {
+        Ok(data) => {
+            let result = vec![serde_json::to_value(data).unwrap_or(JsonValue::Null)];
+            Ok(JsonResponse(AdminResponse {
+                query: Some(result),
+                ..Default::default()
+            }))
+        }
+        Err(error) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonResponse(AdminResponse {
+                error: Some(format!("Database error: {}", error)),
+                ..Default::default()
+            }),
+        )),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/seo/tables/{id}",
+    params(
+        ("id" = i64, Path, description = "The internal database ID of the table schema")
+    ),
+    request_body(
+        content = serde_json::Value,
+        description = "JSON object with column-value pairs to insert"
+    ),
+    responses(
+        (status = 200, description = "Data pushed successfully", body = AdminResponse),
+        (status = 500, description = "Database or execution error", body = AdminResponse)
+    ),
+    security(
+        ("admin_auth" = [])
+    ),
+    tag = "Tables"
+)]
+pub async fn push_data_to_table(
+    State(app_state): State<AppState>,
+    Path(id): Path<i64>,
+    AdminHeaders { tenant_id, .. }: AdminHeaders,
+    JsonRequest(body): JsonRequest<JsonValue>,
+) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
+    match app_state
+        .admin_entity
+        .write_to_table_by_id(tenant_id.into(), id, Some(body))
+        .await
+    {
+        Ok(rows_affected) => Ok(JsonResponse(AdminResponse {
+            query: Some(vec![serde_json::json!({
+                "rows_affected": rows_affected
+            })]),
             ..Default::default()
         })),
         Err(error) => Err((
