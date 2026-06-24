@@ -45,7 +45,7 @@ test-services:
 	$(CARGO) test -p services
 
 test-models:
-    $(CARGO) test -p models
+	$(CARGO) test -p models
 
 test: test-services test-algorithm test-integration test-models
 
