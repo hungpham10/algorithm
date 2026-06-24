@@ -87,7 +87,6 @@ hmac = "0.12.1"
 sha2 = "0.10.9"
 md-5 = "0.10.6"
 
-# Optimization
 tikv-jemallocator = "0.6"
 
 [profile.release]

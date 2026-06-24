@@ -2,7 +2,7 @@ name: CI/CD
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_VERSION: 'stable'
+  RUST_VERSION: "stable"
 
   INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
   INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
@@ -11,7 +11,7 @@ env:
 on:
   push:
     branches: ["feat/**", "main"]
-    tags: ['v*.*.*', '*.*.*']
+    tags: ["v*.*.*", "*.*.*"]
   pull_request:
     branches: ["main"]
 
@@ -64,21 +64,23 @@ jobs:
     name: Test Suite
     runs-on: ubuntu-22.04
     services:
-      mysql:
-        image: mysql:8.0
+      postgres:
+        image: postgres:16-alpine
         env:
-          MYSQL_ROOT_PASSWORD: 'rootroot'
-          MYSQL_DATABASE: test
-        ports: ["3306:3306"]
-        options: --health-cmd "mysqladmin ping" --health-interval 10s --health-timeout 5s --health-retries 3
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: rootroot
+          POSTGRES_DB: test
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 3
       redis:
         image: redis:7-alpine
         ports: ["6379:6379"]
         options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 3
     env:
       ENVIRONMENT: dev
-      MYSQL_DSN: mysql://root:rootroot@127.0.0.1:3306/test
+      DB_DSN: postgres://postgres:rootroot@127.0.0.1:5432/test
       REDIS_DSN: redis://127.0.0.1:6379
+      TEST_DATABASE_URL: postgres://postgres:rootroot@127.0.0.1:5432/test
     steps:
       - uses: actions/checkout@v4
 
@@ -92,7 +94,7 @@ jobs:
         uses: swatinem/rust-cache@v2
 
       - name: Setup Database
-        run: ./scripts/dataload.sh "mysql" ./sql
+        run: ./scripts/dataload.sh "postgres" ./sql/postgres
 
       - name: Run Tests
         run: |
