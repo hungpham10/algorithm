@@ -1449,9 +1449,45 @@ impl Admin {
             result.insert(col.clone(), Vec::with_capacity(rows.len()));
         }
 
+        // Build column name -> ColumnType lookup
+        let col_type_map: HashMap<&str, &ColumnType> = columns
+            .iter()
+            .filter_map(|c| {
+                c.name
+                    .as_deref()
+                    .map(|n| (n, c.kind.as_ref().unwrap_or(&ColumnType::Text)))
+            })
+            .collect();
+
         for row in rows {
             for col_name in &col_names {
-                let val = row.try_get("", col_name).unwrap_or(JsonValue::Null);
+                let col_type = col_type_map
+                    .get(col_name.as_str())
+                    .copied()
+                    .unwrap_or(&ColumnType::Text);
+
+                let val: JsonValue = match col_type {
+                    ColumnType::Int32 => row
+                        .try_get::<Option<i32>>("", col_name.as_str())
+                        .ok()
+                        .flatten()
+                        .map(|v| serde_json::json!(v))
+                        .unwrap_or(JsonValue::Null),
+                    ColumnType::Int64 => row
+                        .try_get::<Option<i64>>("", col_name.as_str())
+                        .ok()
+                        .flatten()
+                        .map(|v| serde_json::json!(v))
+                        .unwrap_or(JsonValue::Null),
+                    _ => {
+                        // Text / default
+                        row.try_get::<Option<String>>("", col_name.as_str())
+                            .ok()
+                            .flatten()
+                            .map(JsonValue::String)
+                            .unwrap_or(JsonValue::Null)
+                    }
+                };
 
                 if let Some(vec) = result.get_mut(col_name) {
                     vec.push(val);
@@ -1550,7 +1586,7 @@ mod tests {
     /// Insert a tenant using the private entity (accessible because tests are inside the module)
     async fn setup_tenant(db: &DatabaseConnection, tenant_id: i64) {
         Tenant::insert(tenant::ActiveModel {
-            host: Set("test.unit.local".to_string()),
+            host: Set(format!("test.unit.local.{}", tenant_id)),
             id: Set(tenant_id),
             ..Default::default()
         })
