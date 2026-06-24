@@ -44,7 +44,10 @@ test-integration:
 test-services:
 	$(CARGO) test -p services
 
-test: test-services test-algorithm test-integration
+test-models:
+    $(CARGO) test -p models
+
+test: test-services test-algorithm test-integration test-models
 
 all: lint test server proxy client
 
