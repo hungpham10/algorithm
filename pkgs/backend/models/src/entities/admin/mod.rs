@@ -1526,17 +1526,14 @@ mod tests {
 
     fn setup_env() {
         TEST_ENV.get_or_init(|| {
-            let db_url = std::env::var("TEST_DATABASE_URL").expect(
-                "TEST_DATABASE_URL must be set (e.g. postgres://postgres:rootroot@127.0.0.1:5432/test)",
+            let _db = std::env::var("DB_DSN").expect(
+                "DB_DSN must be set (e.g. postgres://postgres:rootroot@127.0.0.1:5432/test)",
             );
-            let _redis = std::env::var("REDIS_DSN").expect(
-                "REDIS_DSN must be set (e.g. redis://127.0.0.1:6379)",
+            let _redis = std::env::var("REDIS_DSN")
+                .expect("REDIS_DSN must be set (e.g. redis://127.0.0.1:6379)");
+            let _master_key = std::env::var("MASTER_KEY").expect(
+                "MASTER_KEY must be set (32 bytes for AES-256-GCM, e.g. 'test-master-key-32-bytes-for-aes')",
             );
-            unsafe {
-                std::env::set_var("DB_DSN", &db_url);
-                std::env::set_var("MASTER_KEY", "test-master-key-32-bytes-for-aes");
-                std::env::set_var("ENVIRONMENT", "test");
-            }
         });
     }
 
@@ -1681,7 +1678,7 @@ mod tests {
         drop_real_table(db).await;
 
         setup_tenant(db, tenant_id).await;
-        let db_url = std::env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL must be set");
+        let db_url = std::env::var("DB_DSN").expect("DB_DSN must be set");
 
         // Use Admin's own method to set up DB connection (encrypts token, creates database_map)
         admin
@@ -1788,7 +1785,7 @@ mod tests {
         cleanup_tenant_data(db, tenant_id).await;
         setup_tenant(db, tenant_id).await;
 
-        let db_url = std::env::var("TEST_DATABASE_URL").unwrap();
+        let db_url = std::env::var("DB_DSN").unwrap();
         admin
             .setup_database_connection(tenant_id, service.to_string(), db_url)
             .await

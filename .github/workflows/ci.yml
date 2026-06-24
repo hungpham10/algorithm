@@ -80,7 +80,7 @@ jobs:
       ENVIRONMENT: dev
       DB_DSN: postgres://postgres:rootroot@127.0.0.1:5432/test
       REDIS_DSN: redis://127.0.0.1:6379
-      TEST_DATABASE_URL: postgres://postgres:rootroot@127.0.0.1:5432/test
+      MASTER_KEY: test-master-key-32-bytes-for-aes
     steps:
       - uses: actions/checkout@v4
 
