@@ -78,6 +78,7 @@ jobs:
         options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 3
     env:
       ENVIRONMENT: dev
+      LAVINMQ_DSN: ""
       DB_DSN: postgres://postgres:rootroot@127.0.0.1:5432/test
       REDIS_DSN: redis://127.0.0.1:6379
       MASTER_KEY: test-master-key-32-bytes-for-aes
