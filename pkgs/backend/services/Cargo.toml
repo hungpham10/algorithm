@@ -23,7 +23,7 @@ vector_components = { path = "../../libraries/vector/components", features = ["s
 schemas = { path = "../schemas" }
 models = { path = "../models" }
 analysis = { path = "../../libraries/analysis" }
-algorithm = { path = "../../libraries/algorithm" }
+algorithm = { path = "../../libraries/algorithm", features = ["redis"] }
 integration = { path = "../integration" }
 
 # API

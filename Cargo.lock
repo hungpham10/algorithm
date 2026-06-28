@@ -245,14 +245,20 @@ name = "algorithm"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
+ "async-trait",
+ "bytes",
  "core_affinity",
  "dashmap",
  "log",
  "parking_lot",
  "rand 0.8.5",
  "rayon",
+ "redis",
  "serde",
  "serde_json",
+ "smallvec",
+ "thiserror 2.0.18",
+ "tokio",
  "utoipa",
 ]
 
@@ -6255,9 +6261,9 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smallvec"
-version = "1.15.1"
+version = "1.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 dependencies = [
  "serde",
 ]

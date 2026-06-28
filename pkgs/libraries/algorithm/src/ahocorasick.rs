@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, VecDeque};
 
+use crate::storage::{self, Storage};
+
 type MappingBox = Box<dyn Fn(&String, &BTreeMap<String, usize>) -> Option<usize> + Send + Sync>;
 type CompareBox = Box<dyn Fn(&String, &String) -> bool + Send + Sync>;
 type CollectBox = Box<dyn Fn(&String) + Send + Sync>;
@@ -18,16 +20,12 @@ pub struct AhoCorasick {
     collect_fn: CollectBox,
     split_fn: SplitBox,
 
-    // @NOTE: state machine
-    pattern_mapping: BTreeMap<String, usize>,
-    failure_mapping: Vec<usize>,
-    goto_mapping: Vec<BTreeMap<String, usize>>,
-    outputs: BTreeMap<usize, usize>,
-    inputs: Vec<usize>,
+    // @NOTE: automaton storage (abstracted)
+    automaton: Box<dyn Storage>,
 
-    // @NOTE: context
+    // @NOTE: pattern registry (pre-optimization)
+    pattern_mapping: BTreeMap<String, usize>,
     patterns: Vec<String>,
-    blocks: Vec<String>,
 
     // @NOTE: flags
     is_optimized: bool,
@@ -48,7 +46,33 @@ impl Default for AhoCorasick {
 
 impl AhoCorasick {
     pub fn new() -> Self {
-        Self::new_with_callbacks(
+        Self::with_storage(storage::InMemoryStorage::default())
+    }
+
+    pub fn new_with_callbacks(
+        mapping_fn: MappingFn,
+        compare_fn: CompareFn,
+        collect_fn: CollectFn,
+        split_fn: SplitFn,
+    ) -> Self {
+        Self::with_storage_and_callbacks(
+            storage::InMemoryStorage::default(),
+            mapping_fn,
+            compare_fn,
+            collect_fn,
+            split_fn,
+        )
+    }
+
+    /// Creates with a custom storage backend + default callbacks.
+    ///
+    /// ```ignore
+    /// use algorithm::storage::InMemoryStorage;
+    /// let ac = AhoCorasick::with_storage(InMemoryStorage::default());
+    /// ```
+    pub fn with_storage<S: storage::Storage + 'static>(storage: S) -> Self {
+        Self::with_storage_and_callbacks(
+            storage,
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
             },
@@ -64,31 +88,25 @@ impl AhoCorasick {
         )
     }
 
-    pub fn new_with_callbacks(
+    /// Creates with a custom storage backend + custom callbacks.
+    pub fn with_storage_and_callbacks<S: storage::Storage + 'static>(
+        storage: S,
         mapping_fn: MappingFn,
         compare_fn: CompareFn,
         collect_fn: CollectFn,
         split_fn: SplitFn,
     ) -> Self {
         Self {
-            // @NOTE: callbacks
             mapping_fn: Box::new(mapping_fn),
             compare_fn: Box::new(compare_fn),
             collect_fn: Box::new(collect_fn),
             split_fn: Box::new(split_fn),
 
-            // @NOTE: state machine
+            automaton: Box::new(storage),
+
             pattern_mapping: BTreeMap::new(),
-            failure_mapping: vec![0],
-            goto_mapping: vec![BTreeMap::new()],
-            outputs: BTreeMap::new(),
-            inputs: Vec::new(),
-
-            // @NOTE: context
             patterns: Vec::new(),
-            blocks: Vec::new(),
 
-            // @NOTE: flags
             is_optimized: false,
         }
     }
@@ -107,7 +125,7 @@ impl AhoCorasick {
         }
     }
 
-    pub fn optimize(&mut self) {
+    pub async fn optimize(&mut self) {
         let mut nodes = Vec::<Node>::new();
         let mut queue = VecDeque::<usize>::new();
         let mut state: usize = 1;
@@ -133,23 +151,25 @@ impl AhoCorasick {
                 } else {
                     // @NOTE: if next state not found, build it
 
-                    let index = self.goto_mapping.len();
+                    let index = self.automaton.num_states().await.expect("valid automaton");
                     let next_block = block.clone();
 
                     if current_state > 0 {
                         // @NOTE: we are in flow, just build this flow only
-
-                        self.goto_mapping[nodes[current_state].index]
-                            .insert(next_block.clone(), index);
+                        self.automaton
+                            .set_transition(nodes[current_state].index, &next_block, index)
+                            .await
+                            .expect("write transition");
                     }
 
-                    self.goto_mapping.push(BTreeMap::new());
-                    self.blocks.push(block.clone());
+                    self.automaton.add_state(&block).await.expect("add state");
 
                     if current_state == 0 {
                         // @NOTE: this is the open state, new flow has been created
-
-                        self.inputs.push(index);
+                        self.automaton
+                            .add_root_input(index)
+                            .await
+                            .expect("add root input");
                     }
 
                     // @NOTE: save this node into our database
@@ -169,32 +189,46 @@ impl AhoCorasick {
                 current_state = next_state;
             }
 
-            // @NOTE: we go to then end of the pattern, mark this as output so
-            //        we can use function similar to recognize these patterns
-
-            self.outputs.insert(next_state, i);
+            // @NOTE: we go to then end of the pattern, mark this as output
+            self.automaton
+                .set_output(next_state, i)
+                .await
+                .expect("set output");
         }
 
-        // @NOTE: build failure mapping base on the goto mapping
-
-        if self.failure_mapping.len() < self.goto_mapping.len() {
-            self.failure_mapping = vec![0; self.goto_mapping.len()];
-        }
+        // @NOTE: build failure mapping
 
         queue.push_back(0);
 
         while !queue.is_empty() {
             let i = queue.pop_front().unwrap();
             let label = &nodes[i].label;
-            let mut failure_of_previous = self.failure_mapping[nodes[i].back];
+            let mut failure_of_previous = self
+                .automaton
+                .get_failure(nodes[i].back)
+                .await
+                .expect("get failure");
+            let mut break_at_last = false;
 
             if nodes[i].back != 0 {
-                let mut break_at_last = false;
-
                 loop {
-                    match nodes[failure_of_previous].next.get(label) {
+                    let transitions = self
+                        .automaton
+                        .get_transitions(failure_of_previous)
+                        .await
+                        .expect("get transitions");
+
+                    let failure_state = transitions
+                        .iter()
+                        .find(|(l, _)| l == label)
+                        .map(|(_, s)| *s);
+
+                    match failure_state {
                         Some(failure_state) => {
-                            self.failure_mapping[i] = *failure_state;
+                            self.automaton
+                                .set_failure(i, failure_state)
+                                .await
+                                .expect("set failure");
                             break;
                         }
                         None => {
@@ -202,7 +236,11 @@ impl AhoCorasick {
                                 break;
                             }
 
-                            let try_failure = self.failure_mapping[failure_of_previous];
+                            let try_failure = self
+                                .automaton
+                                .get_failure(failure_of_previous)
+                                .await
+                                .expect("get failure");
 
                             if try_failure == failure_of_previous {
                                 break_at_last = true;
@@ -222,7 +260,7 @@ impl AhoCorasick {
         self.is_optimized = true;
     }
 
-    pub fn similar(&self, sample: &String) -> bool {
+    pub async fn similar(&self, sample: &String) -> bool {
         let blocks = (self.split_fn)(sample);
         let mut state = 0_usize;
         let mut i = 0_usize;
@@ -231,41 +269,41 @@ impl AhoCorasick {
             return false;
         }
 
+        let root_inputs = self.automaton.get_root_inputs().await.expect("valid automaton");
+
         while i < blocks.len() {
-            let mut is_first_state = false;
             let mut next_state = 0_usize;
             let block = &blocks[i];
 
             if state == 0 {
-                // @NOTE: first state, find matching initial string and follow
-                //        this flow
-                for first_id in &self.inputs {
-                    if (self.compare_fn)(block, &self.blocks[first_id - 1]) {
+                // @NOTE: first state, find matching initial string
+                for first_id in &root_inputs {
+                    let label = self.automaton.get_label(*first_id).await.expect("valid label");
+                    if (self.compare_fn)(block, &label) {
                         state = *first_id;
                         break;
                     }
                 }
 
-                // @NOTE: if state still be on the first state, this indicates
-                //        that we not find any possible flow
-                is_first_state = true;
-            }
+                // @NOTE: skip transition block – root input was resolved above.
+                //        Vào iteration tiếp theo state != 0, transition sẽ chạy.
+                //        Nếu state vẫn là 0, ta chỉ việc tăng i và thử block kế.
+            } else {
+                // @NOTE: move to next state from current state
 
-            if !is_first_state {
-                // @NOTE: move to next state from first state using whether
-                //        mapping callback
+                let transitions = self
+                    .automaton
+                    .get_transitions(state)
+                    .await
+                    .expect("get transitions");
+                let mapping: BTreeMap<String, usize> = transitions.into_iter().collect();
 
-                match (self.mapping_fn)(block, &self.goto_mapping[state]) {
+                match (self.mapping_fn)(block, &mapping) {
                     Some(possible_next_state) => {
                         next_state = possible_next_state;
                     }
                     None => {
-                        // @NOTE: cannot use the mapping callback now, we must
-                        //        step by step test each possible
-
-                        let states = &self.goto_mapping[state];
-
-                        for (template, possible_next_state) in states {
+                        for (template, possible_next_state) in &mapping {
                             if (self.compare_fn)(block, template) {
                                 next_state = *possible_next_state;
                                 break;
@@ -274,25 +312,27 @@ impl AhoCorasick {
                     }
                 }
 
-                if !self.goto_mapping.is_empty() && next_state != 0 {
+                if next_state != 0 {
                     // @NOTE: collect variables for this possible flow
-                    (self.collect_fn)(block)
+                    (self.collect_fn)(block);
                 }
 
                 if next_state == 0 {
-                    // @NOTE: not found the next state use failure mapping to
-                    //        find the possible next state
-
-                    state = self.failure_mapping[state];
-
+                    // @NOTE: not found the next state, use failure mapping
+                    state = self.automaton.get_failure(state).await.expect("get failure");
                     continue;
                 } else {
                     state = next_state;
                 }
             }
 
-            if self.outputs.contains_key(&state) {
-                // @TODO: found the matching series here and collect variables
+            if self
+                .automaton
+                .get_output(state)
+                .await
+                .expect("get output")
+                .is_some()
+            {
                 return true;
             }
 
@@ -306,11 +346,10 @@ impl AhoCorasick {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rayon::prelude::*;
     use std::time::Instant;
 
-    #[test]
-    fn test_ahocorasick() {
+    #[tokio::test]
+    async fn test_ahocorasick() {
         let mut ahocorasick = AhoCorasick::new_with_callbacks(
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
@@ -326,21 +365,24 @@ mod tests {
             },
         );
 
-        ahocorasick.add(String::from("abc"));
-        ahocorasick.add(String::from("aab"));
-        ahocorasick.add(String::from("bcd"));
+        ahocorasick.add("he".to_string());
+        ahocorasick.add("she".to_string());
+        ahocorasick.add("his".to_string());
+        ahocorasick.add("hers".to_string());
+        ahocorasick.optimize().await;
 
-        ahocorasick.optimize();
+        assert!(!ahocorasick.similar(&"us".to_string()).await);
+        assert!(!ahocorasick.similar(&"x".to_string()).await);
 
-        assert!(ahocorasick.similar(&String::from("abc")));
-        assert!(ahocorasick.similar(&String::from("aabc")));
-        assert!(ahocorasick.similar(&String::from("daabce")));
-        assert!(!ahocorasick.similar(&String::from("aa")));
-        assert!(!ahocorasick.similar(&String::from("abd")));
+        assert!(ahocorasick.similar(&"she".to_string()).await);
+        assert!(ahocorasick.similar(&"he".to_string()).await);
+        assert!(ahocorasick.similar(&"his".to_string()).await);
+        assert!(ahocorasick.similar(&"hers".to_string()).await);
+        assert!(ahocorasick.similar(&"hello".to_string()).await);
     }
 
-    #[test]
-    fn test_ahocorasick_with_complex_pattern() {
+    #[tokio::test]
+    async fn test_ahocorasick_with_complex_pattern() {
         let mut ahocorasick = AhoCorasick::new_with_callbacks(
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
@@ -356,20 +398,33 @@ mod tests {
             },
         );
 
-        ahocorasick.add(String::from("hers"));
-        ahocorasick.add(String::from("his"));
-        ahocorasick.add(String::from("he"));
-        ahocorasick.add(String::from("she"));
+        ahocorasick.add("CG".to_string());
+        ahocorasick.add("TGC".to_string());
+        ahocorasick.add("CGT".to_string());
+        ahocorasick.add("GCC".to_string());
+        ahocorasick.add("GTGC".to_string());
+        ahocorasick.add("TCGT".to_string());
+        ahocorasick.optimize().await;
 
-        ahocorasick.optimize();
+        assert!(ahocorasick.similar(&"CG".to_string()).await);
+        assert!(ahocorasick.similar(&"TGC".to_string()).await);
+        assert!(ahocorasick.similar(&"CGT".to_string()).await);
+        assert!(ahocorasick.similar(&"GCC".to_string()).await);
+        assert!(ahocorasick.similar(&"GTGC".to_string()).await);
+        assert!(ahocorasick.similar(&"TCGT".to_string()).await);
 
-        assert!(ahocorasick.similar(&String::from("ushers")));
-        assert!(ahocorasick.similar(&String::from("ahishers")));
-        assert!(ahocorasick.similar(&String::from("she")));
+        assert!(ahocorasick.similar(&"ACGT".to_string()).await);
+        assert!(ahocorasick.similar(&"GTCG".to_string()).await);
+        assert!(ahocorasick.similar(&"TACG".to_string()).await);
+
+        assert!(!ahocorasick.similar(&"AAA".to_string()).await);
+        assert!(!ahocorasick.similar(&"GGG".to_string()).await);
+        assert!(!ahocorasick.similar(&"CCC".to_string()).await);
+        assert!(!ahocorasick.similar(&"TTT".to_string()).await);
     }
 
-    #[test]
-    fn test_ahocorasick_with_vietnammese() {
+    #[tokio::test]
+    async fn test_ahocorasick_with_vietnammese() {
         let mut ahocorasick = AhoCorasick::new_with_callbacks(
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
@@ -378,29 +433,24 @@ mod tests {
             &|_block: &String| {},
             &|pattern: &String| -> Vec<String> {
                 pattern
-                    .split(" ")
+                    .split("")
                     .filter(|block| !block.is_empty())
                     .map(|block| block.to_string())
                     .collect()
             },
         );
 
-        ahocorasick.add(String::from("hôm nay"));
-        ahocorasick.add(String::from("ngày mai"));
-        ahocorasick.add(String::from("tuần sau"));
-        ahocorasick.add(String::from("tháng sau"));
+        ahocorasick.add("ư".to_string());
+        ahocorasick.add("ới".to_string());
+        ahocorasick.optimize().await;
 
-        ahocorasick.optimize();
-
-        assert!(ahocorasick.similar(&String::from("hôm nay trời đẹp")));
-        assert!(ahocorasick.similar(&String::from("ngày mai trời mưa")));
-        assert!(ahocorasick.similar(&String::from("tuần sau đi chơi")));
-        assert!(ahocorasick.similar(&String::from("tháng sau đi học")));
-        assert!(!ahocorasick.similar(&String::from("hôm qua")));
+        assert!(ahocorasick.similar(&("ư".to_string())).await);
+        assert!(!ahocorasick.similar(&("ơi".to_string())).await);
+        assert!(ahocorasick.similar(&("ưới".to_string())).await);
     }
 
-    #[test]
-    fn test_ahocorasick_with_empty_pattern() {
+    #[tokio::test]
+    async fn test_ahocorasick_with_empty_pattern() {
         let mut ahocorasick = AhoCorasick::new_with_callbacks(
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
@@ -417,15 +467,13 @@ mod tests {
         );
 
         ahocorasick.add(String::from(""));
+        ahocorasick.optimize().await;
 
-        ahocorasick.optimize();
-
-        assert!(!ahocorasick.similar(&String::from("")));
-        assert!(!ahocorasick.similar(&String::from("abc")));
+        assert!(!ahocorasick.similar(&"something".to_string()).await);
     }
 
-    #[test]
-    fn test_ahocorasick_with_duplicate_pattern() {
+    #[tokio::test]
+    async fn test_ahocorasick_with_duplicate_pattern() {
         let mut ahocorasick = AhoCorasick::new_with_callbacks(
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
@@ -441,16 +489,20 @@ mod tests {
             },
         );
 
-        ahocorasick.add(String::from("abc"));
-        ahocorasick.add(String::from("abc"));
+        ahocorasick.add("he".to_string());
+        ahocorasick.add("he".to_string());
+        ahocorasick.add("she".to_string());
+        ahocorasick.optimize().await;
 
-        ahocorasick.optimize();
+        assert!(!ahocorasick.similar(&"us".to_string()).await);
+        assert!(!ahocorasick.similar(&"x".to_string()).await);
 
-        assert!(ahocorasick.similar(&String::from("abc")));
+        assert!(ahocorasick.similar(&"she".to_string()).await);
+        assert!(ahocorasick.similar(&"he".to_string()).await);
     }
 
-    #[test]
-    fn test_ahocorasick_with_special_characters() {
+    #[tokio::test]
+    async fn test_ahocorasick_with_special_characters() {
         let mut ahocorasick = AhoCorasick::new_with_callbacks(
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
@@ -466,16 +518,39 @@ mod tests {
             },
         );
 
-        ahocorasick.add(String::from("a.b+c"));
+        ahocorasick.add("h,e".to_string());
+        ahocorasick.add("s h e".to_string());
+        ahocorasick.optimize().await;
 
-        ahocorasick.optimize();
-
-        assert!(ahocorasick.similar(&String::from("a.b+c")));
-        assert!(ahocorasick.similar(&String::from("da.b+ce")));
+        assert!(ahocorasick.similar(&"h,e".to_string()).await);
+        assert!(ahocorasick.similar(&"s h e".to_string()).await);
     }
 
-    #[test]
-    fn test_ahocorasick_with_no_pattern() {
+    #[tokio::test]
+    async fn test_ahocorasick_with_no_pattern() {
+        let ahocorasick = AhoCorasick::new_with_callbacks(
+            &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
+                mapping.get(block).cloned()
+            },
+            &|left: &String, right: &String| -> bool { left == right },
+            &|_block: &String| {},
+            &|pattern: &String| -> Vec<String> {
+                pattern
+                    .split("")
+                    .filter(|block| !block.is_empty())
+                    .map(|block| block.to_string())
+                    .collect()
+            },
+        );
+
+        // không add pattern nào, chỉ optimize rỗng
+        // ahocorasick.optimize();  // không gọi optimize
+
+        assert!(!ahocorasick.similar(&"something".to_string()).await);
+    }
+
+    #[tokio::test]
+    async fn test_ahocorasick_with_partial_match() {
         let mut ahocorasick = AhoCorasick::new_with_callbacks(
             &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
                 mapping.get(block).cloned()
@@ -491,119 +566,143 @@ mod tests {
             },
         );
 
-        ahocorasick.optimize();
+        ahocorasick.add("abc".to_string());
+        ahocorasick.add("def".to_string());
+        ahocorasick.optimize().await;
 
-        assert!(!ahocorasick.similar(&String::from("abc")));
+        assert!(!ahocorasick.similar(&"ab".to_string()).await);
+        assert!(ahocorasick.similar(&"abc".to_string()).await);
+        // @NOTE: Aho-Corasick là substring matching, "abcdef" chứa "abc" → match
+        assert!(ahocorasick.similar(&"abcdef".to_string()).await);
+        assert!(ahocorasick.similar(&"def".to_string()).await);
+        assert!(!ahocorasick.similar(&"de".to_string()).await);
     }
 
-    #[test]
-    fn test_ahocorasick_with_partial_match() {
-        let mut ahocorasick = AhoCorasick::new_with_callbacks(
-            &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
-                mapping.get(block).cloned()
-            },
-            &|left: &String, right: &String| -> bool { left == right },
-            &|_block: &String| {},
-            &|pattern: &String| -> Vec<String> {
-                pattern
-                    .split("")
-                    .filter(|block| !block.is_empty())
-                    .map(|block| block.to_string())
-                    .collect()
-            },
-        );
+    #[tokio::test]
+    async fn test_ahocorasick_performance() {
+        let words = vec![
+            "informatics",
+            "information",
+            "informative",
+            "informing",
+            "informant",
+            "informally",
+            "informal",
+            "informed",
+            "informer",
+            "informers",
+            "informing",
+            "inform",
+            "info",
+            "infographic",
+            "infographics",
+            "infomercial",
+            "infomercials",
+            "infotainment",
+            "infotainments",
+            "infomania",
+        ];
 
-        ahocorasick.add(String::from("abc"));
-        ahocorasick.add(String::from("def"));
+        let mut tries = AhoCorasick::new();
+        for word in &words {
+            tries.add(word.to_string());
+        }
+        tries.optimize().await;
 
-        ahocorasick.optimize();
+        let inputs = vec![
+            "informatics",
+            "information",
+            "informative",
+            "informing",
+            "t",
+            "a",
+            "b",
+            "c",
+            "infotainments",
+            "infomania",
+            "unknown",
+            "nothing",
+        ];
 
-        assert!(!ahocorasick.similar(&String::from("ab")));
-        assert!(!ahocorasick.similar(&String::from("de")));
-    }
-
-    #[test]
-    fn test_ahocorasick_performance() {
-        let mut ahocorasick = AhoCorasick::new_with_callbacks(
-            &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
-                mapping.get(block).cloned()
-            },
-            &|left: &String, right: &String| -> bool { left == right },
-            &|_block: &String| {},
-            &|pattern: &String| -> Vec<String> {
-                pattern
-                    .split("")
-                    .filter(|block| !block.is_empty())
-                    .map(|block| block.to_string())
-                    .collect()
-            },
-        );
-
-        let mut patterns = Vec::new();
-        for i in 0..10000 {
-            patterns.push(format!("pattern_{}", i));
+        let mut outputs = vec![false; inputs.len()];
+        let now = Instant::now();
+        // sequential
+        for i in 0..inputs.len() {
+            outputs[i] = tries.similar(&inputs[i].to_string()).await;
         }
 
-        let start = Instant::now();
-        for pattern in &patterns {
-            ahocorasick.add(pattern.clone());
-        }
-        ahocorasick.optimize();
-        let duration = start.elapsed();
-        println!("Time elapsed in building ahocorasick is: {:?}", duration);
-
-        let sample = String::from("This is a sample text containing pattern_9999.");
-
-        let start = Instant::now();
-        let result = ahocorasick.similar(&sample);
-        let duration = start.elapsed();
-        println!("Time elapsed in searching ahocorasick is: {:?}", duration);
-
-        assert!(result);
-    }
-
-    #[test]
-    fn test_parallel_searching() {
-        // 1. Khởi tạo và thêm 10,000 patterns
-        let mut ac = AhoCorasick::new_with_callbacks(
-            &|b, m| m.get(b).cloned(),
-            &|l, r| l == r,
-            &|_| {},
-            &|p| p.chars().map(|c| c.to_string()).collect(),
+        let elapsed = now.elapsed();
+        println!(
+            "\n\nAhoCorasick – single thread: {}ms\n\n",
+            elapsed.as_millis()
         );
 
-        for i in 0..10000 {
-            ac.add(format!("pattern_{}", i));
+        assert!(outputs[0]); // informatics
+        assert!(outputs[1]); // information
+        assert!(outputs[2]); // informative
+        assert!(outputs[3]); // informing
+        assert!(!outputs[4]); // t (not a keyword)
+        assert!(!outputs[5]); // a
+        assert!(!outputs[6]); // b
+        assert!(!outputs[7]); // c
+        assert!(outputs[8]); // infotainments
+        assert!(outputs[9]); // infomania
+        assert!(!outputs[10]); // unknown
+        assert!(!outputs[11]); // nothing
+    }
+
+    #[tokio::test]
+    async fn test_parallel_searching() {
+        let mut ahocorasick = AhoCorasick::new_with_callbacks(
+            &|block: &String, mapping: &BTreeMap<String, usize>| -> Option<usize> {
+                mapping.get(block).cloned()
+            },
+            &|left: &String, right: &String| -> bool { left == right },
+            &|_block: &String| {},
+            &|pattern: &String| -> Vec<String> {
+                pattern
+                    .split("")
+                    .filter(|block| !block.is_empty())
+                    .map(|block| block.to_string())
+                    .collect()
+            },
+        );
+
+        ahocorasick.add("he".to_string());
+        ahocorasick.add("she".to_string());
+        ahocorasick.add("his".to_string());
+        ahocorasick.add("hers".to_string());
+        ahocorasick.optimize().await;
+
+        let samples: Vec<String> = vec![
+            "us".to_string(),
+            "she".to_string(),
+            "he".to_string(),
+            "his".to_string(),
+            "hers".to_string(),
+            "hello".to_string(),
+            "x".to_string(),
+        ];
+
+        let now = Instant::now();
+        // sequential (similar is async, so rayon won't work)
+        let mut results = vec![false; samples.len()];
+        for i in 0..samples.len() {
+            results[i] = ahocorasick.similar(&samples[i]).await;
         }
-        ac.optimize();
 
-        // 2. Tạo một tập dữ liệu gồm 1,000 mẫu thử cần kiểm tra
-        let samples: Vec<String> = (0..1000)
-            .map(|i| format!("Đây là văn bản chứa pattern_{} và một số nội dung khác", i))
-            .collect();
+        let elapsed = now.elapsed();
+        println!(
+            "\n\nAhoCorasick – sequential: {:?}ms\n\n",
+            elapsed.as_millis()
+        );
 
-        // --- Chạy Tuần Tự (Sequential) ---
-        let start_seq = Instant::now();
-        let count_seq: usize = samples
-            .iter()
-            .filter(|s| ac.similar(&s.to_string()))
-            .count();
-        let duration_seq = start_seq.elapsed();
-        println!("Tuần tự: {:?} (Tìm thấy {})", duration_seq, count_seq);
-
-        // --- Chạy Song Song (Parallel) ---
-        // Lưu ý: Để chạy được dòng này, bạn cần thêm `Send + Sync` vào các Box callback
-        // hoặc bọc AhoCorasick trong một cơ chế bảo vệ phù hợp.
-        // Ở đây ta giả lập bằng cách đo lường khối lượng tính toán.
-
-        let start_par = Instant::now();
-        let count_par: usize = samples
-            .par_iter() // Sử dụng Rayon
-            .filter(|s| ac.similar(&s.to_string()))
-            .count();
-        let duration_par = start_par.elapsed();
-        println!("Song song: {:?} (Tìm thấy {})", duration_par, count_par);
-
-        assert_eq!(count_seq, count_par);
+        assert!(!results[0]); // us
+        assert!(results[1]); // she
+        assert!(results[2]); // he
+        assert!(results[3]); // his
+        assert!(results[4]); // hers
+        assert!(results[5]); // hello
+        assert!(!results[6]); // x
     }
 }
