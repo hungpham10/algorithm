@@ -269,7 +269,11 @@ impl AhoCorasick {
             return false;
         }
 
-        let root_inputs = self.automaton.get_root_inputs().await.expect("valid automaton");
+        let root_inputs = self
+            .automaton
+            .get_root_inputs()
+            .await
+            .expect("valid automaton");
 
         while i < blocks.len() {
             let mut next_state = 0_usize;
@@ -278,7 +282,11 @@ impl AhoCorasick {
             if state == 0 {
                 // @NOTE: first state, find matching initial string
                 for first_id in &root_inputs {
-                    let label = self.automaton.get_label(*first_id).await.expect("valid label");
+                    let label = self
+                        .automaton
+                        .get_label(*first_id)
+                        .await
+                        .expect("valid label");
                     if (self.compare_fn)(block, &label) {
                         state = *first_id;
                         break;
@@ -319,7 +327,11 @@ impl AhoCorasick {
 
                 if next_state == 0 {
                     // @NOTE: not found the next state, use failure mapping
-                    state = self.automaton.get_failure(state).await.expect("get failure");
+                    state = self
+                        .automaton
+                        .get_failure(state)
+                        .await
+                        .expect("get failure");
                     continue;
                 } else {
                     state = next_state;

@@ -100,18 +100,17 @@ impl SearchIndex {
 
                 let sharding = sc.len();
 
-                for pos in breakpoint..old_prefix.len() {
-                    let byte = old_prefix[pos];
-                    let si = radixtree::shard_of(byte, sharding);
+                for (pos, byte) in old_prefix.iter().enumerate().skip(breakpoint) {
+                    let si = radixtree::shard_of(*byte, sharding);
                     let rel_pos = pos - breakpoint;
 
-                    let byte_map = sc[si].entry(byte).or_default();
+                    let byte_map = sc[si].entry(*byte).or_default();
 
                     // Remove parent entry nếu nó ở vị trí ≥ breakpoint (stale)
-                    if let Some(&old_pos) = byte_map.get(&parent_id) {
-                        if old_pos >= breakpoint {
-                            byte_map.remove(&parent_id);
-                        }
+                    if let Some(&old_pos) = byte_map.get(&parent_id)
+                        && old_pos >= breakpoint
+                    {
+                        byte_map.remove(&parent_id);
                     }
 
                     // Luôn thêm entry cho leg với vị trí tương đối
@@ -121,7 +120,7 @@ impl SearchIndex {
                     }
 
                     if byte_map.is_empty() {
-                        sc[si].remove(&byte);
+                        sc[si].remove(byte);
                     }
                 }
 
@@ -171,13 +170,12 @@ impl SearchIndex {
     fn update_shortcuts(&self, key: &[u8], breakpoint: usize, node_id: usize) {
         if let Ok(mut shortcuts) = self.shortcuts.lock() {
             let sharding = shortcuts.len();
-            for pos in breakpoint..key.len() {
-                let byte = key[pos];
-                let si = radixtree::shard_of(byte, sharding);
-                let byte_map = shortcuts[si].entry(byte).or_default();
+            for (pos, byte) in key.iter().enumerate().skip(breakpoint) {
+                let si = radixtree::shard_of(*byte, sharding);
+                let byte_map = shortcuts[si].entry(*byte).or_default();
                 let entry = byte_map.entry(node_id).or_insert(INF);
-                // Lưu position tương đối trong node prefix
                 let rel_pos = pos - breakpoint;
+
                 if rel_pos < *entry {
                     *entry = rel_pos;
                 }

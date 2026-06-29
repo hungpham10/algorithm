@@ -20,6 +20,8 @@
     "@tailwindcss/vite": "^4.2.2",
     "astro": "^6.1.2",
     "klinecharts": "^10.0.0-beta1",
+    "lightweight-charts": "^5.2.0",
+    "lightweight-charts-drawing": "^0.1.1",
     "lucide-svelte": "^1.0.1",
     "svelte": "^5.55.4",
     "typescript": "^5.9.3"

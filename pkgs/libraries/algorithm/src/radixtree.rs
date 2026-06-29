@@ -9,8 +9,6 @@ pub const EMPTY: usize = 0;
 pub enum RadixError {
     #[error("index must not be zero or negative")]
     InvalidIndex,
-    #[error("branch id {0} out of range")]
-    BranchOutOfRange(usize),
     #[error("key not found")]
     NotFound,
     #[error("storage error: {0}")]
@@ -76,7 +74,9 @@ impl RadixTree {
 
             if common < prefix.len() {
                 let split_off = tail + common;
-                let id = self.new_split(node_id, common, &key[split_off..], index).await?;
+                let id = self
+                    .new_split(node_id, common, &key[split_off..], index)
+                    .await?;
                 return Ok((id, tail));
             }
 
@@ -129,11 +129,12 @@ impl RadixTree {
                 let children = self.storage.get_children(node_id).await?;
                 let mut found_child = None;
                 for &c in &children {
-                    if let Ok((p, _)) = self.storage.get_node(c).await {
-                        if !p.is_empty() && p[0] == next_byte {
-                            found_child = Some(c);
-                            break;
-                        }
+                    if let Ok((p, _)) = self.storage.get_node(c).await
+                        && !p.is_empty()
+                        && p[0] == next_byte
+                    {
+                        found_child = Some(c);
+                        break;
                     }
                 }
                 if let Some(child) = found_child {
@@ -168,7 +169,8 @@ impl RadixTree {
         let leg_id = self.storage.new_node(leg_prefix, old_record).await?;
 
         self.storage
-            .update_node(parent, Some(root_prefix), Some(EMPTY)).await?;
+            .update_node(parent, Some(root_prefix), Some(EMPTY))
+            .await?;
         self.storage.add_child(parent, leg_id).await?;
         self.storage.add_child(parent, new_id).await?;
 
@@ -239,7 +241,8 @@ impl RadixTree {
                     // full key: path + toàn bộ node_prefix
                     path.extend_from_slice(&node_prefix);
                     let mut results = Vec::new();
-                    self.collect_records_from(node_id, path, &mut results).await?;
+                    self.collect_records_from(node_id, path, &mut results)
+                        .await?;
                     return Ok(results);
                 }
                 // Node_prefix khác với prefix – không match
@@ -253,7 +256,8 @@ impl RadixTree {
             if pos == prefix.len() {
                 // Đã match hết prefix – collect từ node này trở xuống
                 let mut results = Vec::new();
-                self.collect_records_from(node_id, path, &mut results).await?;
+                self.collect_records_from(node_id, path, &mut results)
+                    .await?;
                 return Ok(results);
             }
 

@@ -1,401 +1,503 @@
 /**
- * Chart — Quản lý klinecharts core: init, data loader, SSE, indicators & themes
+ * LightChart — Lightweight Charts v5 wrapper
+ * Minimal, clean, just works.
  */
-import { init, dispose } from "klinecharts";
+import {
+  createChart,
+  ColorType,
+  CandlestickSeries,
+  HistogramSeries,
+} from "lightweight-charts";
 import { getHistoryCandles } from "../api.js";
 import { API_V1_ENDPOINT } from "../fetch.js";
+import {
+  INDICATOR_DEFS,
+  getIndicatorList,
+  getDefaultParams,
+} from "./indicators/index.js";
 
-// ===================== TAILWIND THEMES =====================
-
+// ── Tailwind theme classes (used by TradingChart.svelte) ──
 const TAILWIND_THEMES = {
   light: {
     outer: "bg-white text-gray-900 border border-gray-200",
     headerBorder: "border-b border-gray-200",
     titleText: "text-gray-900",
     subtitleText: "text-gray-500",
-    labelMuted: "text-gray-500",
-    valueMuted: "text-gray-600",
     chartArea: "border border-gray-200 bg-white",
     sidebar: "border-r border-gray-200 bg-gray-50",
-    toolBtnInactive: "text-gray-500 hover:text-gray-800 hover:bg-gray-200",
-    tooltip: "bg-white border border-gray-200 text-gray-700",
+    toolBtnInactive: "text-gray-500 hover:bg-gray-200",
+    tooltip: "bg-gray-900 text-white",
     divider: "border-t border-gray-200",
-    deleteBtn: "text-gray-500 hover:text-red-500 hover:bg-red-50",
+    deleteBtn: "text-gray-400 hover:text-red-500 hover:bg-red-50",
     chartBg: "bg-white",
     toolbar: "border-b border-gray-200 bg-gray-50/80",
-    segGroup: "bg-gray-100 border-gray-200",
-    resInactive: "text-gray-500 hover:text-gray-800",
+    segGroup: "border-gray-200 bg-gray-100/50",
+    resInactive: "text-gray-600 hover:bg-gray-200",
     separator: "bg-gray-200",
-    chartTypeBtn:
-      "text-gray-500 hover:text-gray-800 hover:bg-gray-100 hover:border-gray-200",
+    chartTypeBtn: "text-gray-600 hover:bg-gray-200",
     indicatorLabel: "text-gray-500",
-    indicatorBtn: "text-gray-600 bg-gray-100 hover:bg-gray-200 border-gray-200",
-    indicatorActiveBtn: "bg-indigo-600 text-white shadow-sm border-indigo-600",
-    themeBtn: "bg-amber-100 text-amber-700 hover:bg-amber-200 border-amber-200",
-    sseBox: "text-gray-500 bg-gray-100 border-gray-200",
+    indicatorActiveBtn: "bg-indigo-600 text-white border-indigo-600",
+    indicatorBtn: "text-gray-600 border-gray-300 hover:bg-gray-100",
+    sseBox: "bg-green-50 border-green-200 text-green-700",
   },
   dark: {
     outer: "bg-slate-900 text-slate-100",
     headerBorder: "border-b border-slate-800",
     titleText: "text-white",
     subtitleText: "text-slate-400",
-    labelMuted: "text-slate-500",
-    valueMuted: "text-slate-300",
     chartArea: "border border-slate-800 bg-slate-950",
     sidebar: "border-r border-slate-800 bg-slate-900/90",
-    toolBtnInactive: "text-slate-400 hover:text-white hover:bg-slate-800",
-    tooltip: "bg-slate-800 border border-slate-700 text-white",
+    toolBtnInactive: "text-slate-400 hover:bg-slate-800",
+    tooltip: "bg-slate-700 text-white",
     divider: "border-t border-slate-800",
-    deleteBtn: "text-slate-400 hover:text-red-400 hover:bg-red-500/10",
+    deleteBtn: "text-slate-400 hover:text-red-400 hover:bg-red-900/20",
     chartBg: "bg-slate-950",
     toolbar: "border-b border-slate-800 bg-slate-900/40",
-    segGroup: "bg-slate-800/60 border-slate-700/50",
-    resInactive: "text-slate-400 hover:text-slate-200",
+    segGroup: "border-slate-700 bg-slate-800/50",
+    resInactive: "text-slate-400 hover:bg-slate-800",
     separator: "bg-slate-800",
-    chartTypeBtn:
-      "text-slate-400 hover:text-white hover:bg-slate-800 hover:border-slate-700",
-    indicatorLabel: "text-slate-500",
-    indicatorBtn:
-      "text-slate-300 bg-slate-800 hover:bg-slate-700 border-slate-700",
-    indicatorActiveBtn: "bg-indigo-500 text-white shadow-sm border-indigo-500",
-    themeBtn:
-      "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border-amber-500/20",
-    sseBox: "text-slate-500 bg-slate-900/60 border-slate-800",
+    chartTypeBtn: "text-slate-400 hover:bg-slate-800",
+    indicatorLabel: "text-slate-400",
+    indicatorActiveBtn: "bg-indigo-600 text-white border-indigo-600",
+    indicatorBtn: "text-slate-400 border-slate-700 hover:bg-slate-800",
+    sseBox: "bg-green-900/20 border-green-800 text-green-400",
   },
 };
 
-// ===================== CANVAS THEMES =====================
-
+// ── Canvas themes ──
 const CANVAS_THEMES = {
-  light: {
-    grid: {
-      horizontal: { color: "#d1d5db", size: 0.5 },
-      vertical: { color: "#d1d5db", size: 0.5 },
-    },
-    candle: {
-      bar: {
-        upColor: "#16a34a",
-        downColor: "#dc2626",
-        noChangeColor: "#888888",
-      },
-      priceMark: {
-        high: { color: "#6b7280", textSize: 10 },
-        low: { color: "#6b7280", textSize: 10 },
-      },
-    },
-    xAxis: {
-      axisLine: { color: "#d1d5db" },
-      tickText: { color: "#6b7280", size: 11 },
-    },
-    yAxis: {
-      axisLine: { color: "#d1d5db" },
-      tickText: { color: "#6b7280", size: 11 },
-    },
-    crosshair: {
-      horizontal: { color: "#9ca3af", lineStyle: "dashed" },
-      vertical: { color: "#9ca3af", lineStyle: "dashed" },
-    },
-    separator: { color: "#e5e7eb" },
-    bg: "#ffffff",
-  },
-  dark: {
-    grid: {
-      horizontal: { color: "#64748b", size: 0.5 },
-      vertical: { color: "#64748b", size: 0.5 },
-    },
-    candle: {
-      bar: {
-        upColor: "#22c55e",
-        downColor: "#ef4444",
-        noChangeColor: "#888888",
-      },
-      priceMark: {
-        high: { color: "#64748b", textSize: 10 },
-        low: { color: "#64748b", textSize: 10 },
-      },
-    },
-    xAxis: {
-      axisLine: { color: "#334155" },
-      tickText: { color: "#94a3b8", size: 11 },
-    },
-    yAxis: {
-      axisLine: { color: "#334155" },
-      tickText: { color: "#94a3b8", size: 11 },
-    },
-    crosshair: {
-      horizontal: { color: "#64748b", lineStyle: "dashed" },
-      vertical: { color: "#64748b", lineStyle: "dashed" },
-    },
-    separator: { color: "#1e293b" },
-    bg: "#020617",
-  },
+  light: { background: { color: "#ffffff" }, textColor: "#6b7280" },
+  dark: { background: { color: "#0f172a" }, textColor: "#cbd5e1" },
 };
 
-// ===================== HELPER =====================
+// Resolution definitions
+const RESOLUTIONS = [
+  { value: "1m", label: "1m", periodSec: 60 },
+  { value: "5m", label: "5m", periodSec: 300 },
+  { value: "1H", label: "1H", periodSec: 3600 },
+  { value: "4H", label: "4H", periodSec: 14400 },
+  { value: "1D", label: "1D", periodSec: 86400 },
+];
 
-function periodToSeconds(period) {
-  const mult = { minute: 60, hour: 3600, day: 86400 };
-  return (mult[period?.type] || 3600) * (period?.span || 1);
-}
+export default class LightChart {
+  constructor(options = {}) {
+    this.broker = options.broker || "binance";
+    this.symbol = options.symbol || "BTCUSDT";
+    this.title = options.title || "";
+    this.subtitle = options.subtitle || "";
+    this.theme = options.theme || "dark";
 
-// ===================== CHART CLASS =====================
-
-export default class Chart {
-  constructor({
-    broker = "binance",
-    symbol = "BTCUSDT",
-    title = "",
-    subtitle = "",
-    resolution = "1H",
-    theme = "dark",
-  } = {}) {
-    // --- Props ---
-    this.broker = broker;
-    this.symbol = symbol;
-    this.title = title;
-    this.subtitle = subtitle;
-    this.activeResolution = resolution;
-    this.theme = theme;
-
-    /** @type {import('klinecharts').Chart | null} */
     this.chart = null;
-    this.stopRealtime = null;
-    this.currentBar = null;
-
-    // --- Display state (component template đọc trực tiếp) ---
+    this.candlestickSeries = null;
+    this.volumeSeries = null;
     this.currentPrice = 0;
     this.priceChange = 0;
     this.priceChangePercent = 0;
     this.high24h = 0;
     this.low24h = 0;
     this.volume24h = 0;
+    this.stopRealtime = null;
 
-    /** @type {Map<string, string>} Tên indicator → paneId */
-    this.activeIndicators = new Map();
+    this.activeResolution = "1H";
+    this._resolutions = RESOLUTIONS;
+    this._indicatorDefs = INDICATOR_DEFS;
+    this._indicators = getIndicatorList();
+    this._activeIndicators = new Map(); // name → { params, series[] }
+    this._isLoading = false;
 
-    /** Callback(name, activeIndicators) — gọi mỗi khi indicator state thay đổi */
-    this.onIndicatorChange = null;
-
-    // ==================== RESOLUTIONS ====================
-
-    /** @type {Map<string, {value:string, label:string, period:object, getTimeRange:function}>} */
-    this._resolutions = new Map();
-
-    const _defineRes = (value, label, period, getTimeRange) => {
-      this._resolutions.set(value, { value, label, period, getTimeRange });
-    };
-
-    _defineRes("1m", "1m", { type: "minute", span: 1 }, (now) => ({
-      from: now - 4 * 3600,
-      to: now,
-      limit: 500,
-    }));
-    _defineRes("5m", "5m", { type: "minute", span: 5 }, (now) => ({
-      from: now - 24 * 3600,
-      to: now,
-      limit: 500,
-    }));
-    _defineRes("1H", "1H", { type: "hour", span: 1 }, (now) => ({
-      from: now - 30 * 24 * 3600,
-      to: now,
-      limit: 500,
-    }));
-    _defineRes("4H", "4H", { type: "hour", span: 4 }, (now) => ({
-      from: now - 90 * 24 * 3600,
-      to: now,
-      limit: 500,
-    }));
-    _defineRes("1D", "1D", { type: "day", span: 1 }, (now) => ({
-      from: now - 365 * 24 * 3600,
-      to: now,
-      limit: 500,
-    }));
-
-    // ==================== INDICATORS ====================
-
-    /** @type {Map<string, {name:string, label:string, paneId:string, create?:function, remove?:function}>} */
-    this._indicators = new Map();
-
-    const _defineInd = (name, label, paneId, opts = {}) => {
-      this._indicators.set(name, {
-        name,
-        label,
-        paneId: paneId ?? "candle_pane",
-        create: opts.create || null,
-        remove: opts.remove || null,
-      });
-    };
-
-    // VOL không qua _defineInd vì volume luôn bật — không cần nút toggle
-    _defineInd("MA", "MA");
-    _defineInd("EMA", "EMA");
-    _defineInd("BOLL", "Bollinger Bands");
-    _defineInd("RSI", "RSI", "pane_rsi");
-    _defineInd("MACD", "MACD", "pane_macd");
+    /** Callback khi user click indicator — component dùng để hiện popup config */
+    this.onIndicatorConfigRequest = null; // (name, params, isActive) => void
   }
 
-  /** Instance getters — thuận tiện cho template */
+  // ── Public accessors ──
   get resolutions() {
-    return Array.from(this._resolutions.values());
+    return this._resolutions;
   }
-
   get indicators() {
-    return Array.from(this._indicators.values());
+    return this._indicators;
   }
-
+  get activeIndicators() {
+    return this._activeIndicators;
+  }
   get classes() {
-    return TAILWIND_THEMES[this.theme] || TAILWIND_THEMES["dark"];
+    return TAILWIND_THEMES[this.theme] || TAILWIND_THEMES.dark;
   }
 
+  // ── Mount / Destroy ──
   mount(container) {
     if (!container) return false;
-    this.chart = init(container);
-    if (!this.chart) return false;
+    try {
+      this.chart = createChart(container, {
+        layout: {
+          background: {
+            type: ColorType.Solid,
+            color: CANVAS_THEMES[this.theme].background.color,
+          },
+          textColor: CANVAS_THEMES[this.theme].textColor,
+        },
+        timeScale: { timeVisible: true, secondsVisible: false },
+      });
 
-    this.chart.setDataLoader(this._buildDataLoader());
-    this.chart.setSymbol({
-      ticker: this.symbol,
-      pricePrecision: 2,
-      volumePrecision: 4,
-    });
-    this.chart.setPeriod(this._resolutions.get(this.activeResolution).period);
+      this.candlestickSeries = this.chart.addSeries(CandlestickSeries, {
+        upColor: "#16a34a",
+        downColor: "#dc2626",
+        borderDownColor: "#dc2626",
+        borderUpColor: "#16a34a",
+        wickDownColor: "#dc2626",
+        wickUpColor: "#16a34a",
+      });
 
-    this.chart.setStyles(CANVAS_THEMES[this.theme]);
+      // Candles use top 85% of chart height
+      this.candlestickSeries.priceScale().applyOptions({
+        scaleMargins: { top: 0, bottom: 0.15 },
+      });
 
-    // Luôn tạo Volume pane bên dưới (không toggle)
-    this.chart.createIndicator("VOL", false, {
-      id: "pane_volume",
-      height: 100,
-    });
+      this.volumeSeries = this.chart.addSeries(HistogramSeries, {
+        color: "#26a69a",
+        priceFormat: { type: "volume" },
+        priceScaleId: "volume",
+      });
 
-    return true;
+      // Volume occupies bottom 15% only
+      const volScale = this.chart.priceScale("volume");
+      if (volScale) {
+        volScale.applyOptions({
+          scaleMargins: { top: 0.85, bottom: 0 },
+        });
+      }
+
+      this._loadData();
+      this._subscribeRealtime();
+      this._setupScrollLoad();
+
+      return true;
+    } catch (err) {
+      console.error("[LightChart] Mount error:", err);
+      return false;
+    }
   }
 
   destroy() {
+    this._removeAllIndicators();
     this.unsubscribeRealtime();
     if (this.chart) {
-      dispose(this.chart);
+      this.chart.remove();
       this.chart = null;
     }
   }
 
-  setTheme(theme) {
-    if (theme !== "light" && theme !== "dark") return;
-    this.theme = theme;
-    if (this.chart) {
-      this.chart.setStyles(CANVAS_THEMES[theme]);
+  // ── Indicator management ──
+
+  /** Gọi khi user click vào nút indicator — component sẽ hiện popup */
+  requestIndicatorConfig(name) {
+    const existing = this._activeIndicators.get(name);
+    const params = existing ? { ...existing.params } : getDefaultParams(name);
+    const isActive = !!existing;
+    if (this.onIndicatorConfigRequest) {
+      this.onIndicatorConfigRequest(name, params, isActive);
     }
   }
 
-  setResolution(res) {
-    if (res === this.activeResolution) return;
-    this.activeResolution = res;
-    const def = this._resolutions.get(res);
-    if (this.chart && def) this.chart.setPeriod(def.period);
-  }
+  /** Apply config từ popup — tạo mới hoặc cập nhật indicator */
+  async applyIndicatorConfig(name, params) {
+    // Xoá cũ nếu có
+    this.removeIndicator(name);
 
-  changeChartType(type) {
-    if (this.chart) this.chart.setStyles({ candle: { type } });
-  }
-
-  toggleIndicator(name, paneId) {
-    if (!this.chart) return;
-    const def = this._indicators.get(name);
+    const def = this._indicatorDefs[name];
     if (!def) return;
 
-    if (this.activeIndicators.has(name)) {
-      const existingPaneId = this.activeIndicators.get(name);
-      if (def.remove) {
-        def.remove(this.chart, existingPaneId);
-      } else {
-        this.chart.removeIndicator({ paneId: existingPaneId, name });
-      }
-      this.activeIndicators.delete(name);
-    } else {
-      const targetPaneId = paneId || def.paneId;
-      if (def.create) {
-        def.create(this.chart, targetPaneId);
-      } else {
-        this.chart.createIndicator(name, true, { id: targetPaneId });
-      }
-      this.activeIndicators.set(name, targetPaneId);
-    }
-
-    if (this.onIndicatorChange) {
-      this.onIndicatorChange(name, new Map(this.activeIndicators));
-    }
-  }
-
-  // ---------- Internal helpers ----------
-
-  _calculateFetchRange(type, timestamp, defaultRange) {
-    const now = Math.floor(Date.now() / 1000);
-    const def = this._resolutions.get(this.activeResolution);
-    const periodSec = def ? periodToSeconds(def.period) : 0;
-
-    if (type === "init" || type === "backward") {
-      return {
-        timeFrom:
-          type === "backward" && timestamp
-            ? Math.floor(timestamp / 1000) + periodSec
-            : defaultRange.from,
-        timeTo: now,
-      };
-    }
-    return {
-      timeFrom: defaultRange.from,
-      timeTo: timestamp
-        ? Math.floor(timestamp / 1000) - periodSec
-        : defaultRange.to,
+    const context = {
+      broker: this.broker,
+      symbol: this.symbol,
+      resolution: this.activeResolution,
     };
+
+    try {
+      const handle = await def.create(
+        this.chart,
+        this.candlestickSeries,
+        params,
+        context,
+      );
+      if (handle) {
+        handle.params = { ...params };
+        this._activeIndicators.set(name, handle);
+        console.log(`[LightChart] Indicator added: ${name}`, params);
+      }
+    } catch (err) {
+      console.error(`[LightChart] Indicator ${name} error:`, err);
+    }
   }
 
-  _getLatestBarFromChart(barTimestamp) {
-    if (!this.chart) return null;
-    const dataList = this.chart.getDataList();
-    if (dataList && dataList.length > 0) {
-      const last = dataList[dataList.length - 1];
-      if (last.timestamp === barTimestamp) return { ...last };
+  /** Xoá indicator khỏi chart */
+  removeIndicator(name) {
+    const handle = this._activeIndicators.get(name);
+    if (!handle) return;
+    const def = this._indicatorDefs[name];
+    if (def?.destroy) {
+      def.destroy(handle);
     }
-    return null;
+    this._activeIndicators.delete(name);
+    console.log(`[LightChart] Indicator removed: ${name}`);
   }
 
-  _getBarTimestamp(tickTimestamp) {
-    const def = this._resolutions.get(this.activeResolution);
-    const spanSeconds = def ? periodToSeconds(def.period) : 3600;
-    const spanMs = spanSeconds * 1000;
-    return Math.floor(tickTimestamp / spanMs) * spanMs;
+  _removeAllIndicators() {
+    for (const name of this._activeIndicators.keys()) {
+      this.removeIndicator(name);
+    }
   }
 
-  _aggragateTickToBar(tick, barTimestamp) {
-    const { price, quantity } = tick;
-    if (!this.currentBar || this.currentBar.timestamp !== barTimestamp) {
-      this.currentBar = this._getLatestBarFromChart(barTimestamp);
+  /** Kiểm tra indicator có đang active không */
+  isIndicatorActive(name) {
+    return this._activeIndicators.has(name);
+  }
+
+  // ── Data loading ──
+  async _loadData() {
+    if (this._isLoading) return;
+    this._isLoading = true;
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const res =
+        this._resolutions.find((r) => r.value === this.activeResolution) ||
+        this._resolutions[2];
+      const limit = 500;
+      const from = now - limit * res.periodSec;
+
+      const data = await getHistoryCandles(
+        this.broker,
+        this.symbol,
+        this.activeResolution,
+        from,
+        now,
+        limit,
+      );
+
+      if (data?.length) {
+        this._setChartData(data);
+      }
+    } catch (err) {
+      console.error("[LightChart] Load data failed:", err);
+    } finally {
+      this._isLoading = false;
     }
-    if (!this.currentBar || this.currentBar.timestamp !== barTimestamp) {
-      this.currentBar = {
-        timestamp: barTimestamp,
-        open: price,
-        high: price,
-        low: price,
-        close: price,
-        volume: quantity,
-      };
-    } else {
-      this.currentBar.close = price;
-      if (price > this.currentBar.high) this.currentBar.high = price;
-      if (price < this.currentBar.low) this.currentBar.low = price;
-      this.currentBar.volume += quantity;
+  }
+
+  async _loadMore() {
+    if (this._isLoading) return;
+    this._isLoading = true;
+
+    try {
+      const currentCandles = this.candlestickSeries?.data();
+      if (!currentCandles?.length) return;
+
+      const firstTime = currentCandles[0].time;
+      const res =
+        this._resolutions.find((r) => r.value === this.activeResolution) ||
+        this._resolutions[2];
+      const limit = 500;
+      const timeTo = firstTime - res.periodSec;
+      const timeFrom = Math.max(0, timeTo - limit * res.periodSec);
+
+      const raw = await getHistoryCandles(
+        this.broker,
+        this.symbol,
+        this.activeResolution,
+        timeFrom,
+        timeTo,
+        limit,
+      );
+
+      if (!raw?.length) return;
+
+      const seen = new Set();
+      const deduped = [...raw]
+        .sort((a, b) => a.timestamp - b.timestamp)
+        .filter((d) => {
+          const t = Math.floor(d.timestamp / 1000);
+          if (seen.has(t)) return false;
+          seen.add(t);
+          return true;
+        });
+
+      if (!deduped.length) return;
+
+      const existingTimes = new Set(currentCandles.map((c) => c.time));
+
+      const newCandles = deduped
+        .filter((d) => !existingTimes.has(Math.floor(d.timestamp / 1000)))
+        .map((d) => ({
+          time: Math.floor(d.timestamp / 1000),
+          open: d.open,
+          high: d.high,
+          low: d.low,
+          close: d.close,
+        }));
+
+      const newVolumes = deduped
+        .filter((d) => !existingTimes.has(Math.floor(d.timestamp / 1000)))
+        .map((d) => ({
+          time: Math.floor(d.timestamp / 1000),
+          value: d.volume || 0,
+          color: d.close >= d.open ? "#26a69a80" : "#f2315580",
+        }));
+
+      if (newCandles.length) {
+        const mergedCandles = [...newCandles, ...currentCandles];
+        const currentVolumes = this.volumeSeries?.data() || [];
+        const mergedVolumes = [...newVolumes, ...currentVolumes];
+        this.candlestickSeries.setData(mergedCandles);
+        this.volumeSeries.setData(mergedVolumes);
+      }
+    } catch (err) {
+      console.error("[LightChart] Load more failed:", err);
+    } finally {
+      this._isLoading = false;
     }
-    return this.currentBar;
+  }
+
+  _setChartData(data) {
+    const seen = new Set();
+    const deduped = [...data]
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .filter((d) => {
+        const t = Math.floor(d.timestamp / 1000);
+        if (seen.has(t)) return false;
+        seen.add(t);
+        return true;
+      });
+
+    if (!deduped.length) return;
+
+    const candles = deduped.map((d) => ({
+      time: Math.floor(d.timestamp / 1000),
+      open: d.open,
+      high: d.high,
+      low: d.low,
+      close: d.close,
+    }));
+
+    const volumes = deduped.map((d) => ({
+      time: Math.floor(d.timestamp / 1000),
+      value: d.volume || 0,
+      color: d.close >= d.open ? "#26a69a80" : "#f2315580",
+    }));
+
+    this.candlestickSeries.setData(candles);
+    this.volumeSeries.setData(volumes);
+    this._updateStats(deduped);
+    this.chart.timeScale().fitContent();
+  }
+
+  // ── Scroll to load more ──
+  _setupScrollLoad() {
+    if (!this.chart) return;
+    this.chart
+      .timeScale()
+      .subscribeVisibleLogicalRangeChange((logicalRange) => {
+        if (!logicalRange || this._isLoading) return;
+        const barsInfo =
+          this.candlestickSeries.barsInLogicalRange(logicalRange);
+        if (barsInfo && barsInfo.barsBefore < 50) {
+          this._loadMore();
+        }
+      });
+  }
+
+  // ── Realtime SSE ──
+  _subscribeRealtime() {
+    const url = `${API_V1_ENDPOINT}/ohcl/last-price/${this.broker}/${this.symbol}`;
+    const es = new EventSource(url);
+
+    es.addEventListener("tick", (event) => {
+      try {
+        const p = JSON.parse(event.data);
+        if (!p?.tick) return;
+        const { price, quantity, timestamp } = p.tick;
+
+        this.currentPrice = price;
+
+        const res =
+          this._resolutions.find((r) => r.value === this.activeResolution) ||
+          this._resolutions[2];
+        const barTime =
+          Math.floor(timestamp / 1000 / res.periodSec) * res.periodSec;
+
+        const lastData = this.candlestickSeries.data();
+        const last = lastData?.[lastData.length - 1];
+
+        if (last && last.time === barTime) {
+          this.candlestickSeries.update({
+            time: barTime,
+            open: last.open,
+            high: Math.max(last.high, price),
+            low: Math.min(last.low, price),
+            close: price,
+          });
+        } else {
+          this.candlestickSeries.update({
+            time: barTime,
+            open: price,
+            high: price,
+            low: price,
+            close: price,
+          });
+        }
+
+        this.volumeSeries.update({
+          time: barTime,
+          value: quantity || 0,
+          color: price >= (last?.close ?? price) ? "#26a69a80" : "#f2315580",
+        });
+      } catch (e) {
+        // skip bad ticks
+      }
+    });
+
+    this.stopRealtime = () => {
+      es.close();
+      this.stopRealtime = null;
+    };
   }
 
   unsubscribeRealtime() {
     if (this.stopRealtime) this.stopRealtime();
   }
 
+  // ── Public methods used by template ──
+  setTheme(theme) {
+    if (theme !== "light" && theme !== "dark") return;
+    this.theme = theme;
+    if (this.chart) {
+      this.chart.applyOptions({
+        layout: {
+          background: {
+            type: ColorType.Solid,
+            color: CANVAS_THEMES[theme].background.color,
+          },
+          textColor: CANVAS_THEMES[theme].textColor,
+        },
+      });
+    }
+  }
+
+  setResolution(res) {
+    if (res === this.activeResolution) return;
+    this.activeResolution = res;
+    if (this.chart) {
+      this.candlestickSeries.setData([]);
+      this.volumeSeries.setData([]);
+      this._loadData();
+    }
+  }
+
+  changeChartType(_type) {
+    console.log("[LightChart] Chart type:", _type);
+  }
+
+  // ── Internal ──
   _updateStats(data) {
-    if (!data || !data.length) return;
+    if (!data?.length) return;
     const latest = data[data.length - 1];
     const prev = data.length > 1 ? data[data.length - 2] : null;
 
@@ -408,7 +510,6 @@ export default class Chart {
       volSum += d.volume || 0;
     }
 
-    // Cập nhật trực tiếp — $state proxy bắt được
     this.currentPrice = latest.close;
     this.priceChange = prev ? latest.close - prev.close : 0;
     this.priceChangePercent =
@@ -416,72 +517,5 @@ export default class Chart {
     this.high24h = maxH > -Infinity ? maxH : 0;
     this.low24h = minL < Infinity ? minL : 0;
     this.volume24h = volSum;
-  }
-
-  _buildDataLoader() {
-    return {
-      getBars: async ({ type, timestamp, callback }) => {
-        const def = this._resolutions.get(this.activeResolution);
-        const defaultRange = def.getTimeRange(Math.floor(Date.now() / 1000));
-        const { timeFrom, timeTo } = this._calculateFetchRange(
-          type,
-          timestamp,
-          defaultRange,
-        );
-
-        const data = await getHistoryCandles(
-          this.broker,
-          this.symbol,
-          this.activeResolution,
-          timeFrom,
-          timeTo,
-          defaultRange.limit,
-        );
-        this._updateStats(data);
-        callback(data, {
-          backward: type === "init",
-          forward: data.length >= defaultRange.limit,
-        });
-      },
-
-      subscribeBar: ({ callback }) => {
-        const sseUrl = `${API_V1_ENDPOINT}/ohcl/last-price/${this.broker}/${this.symbol}`;
-        const es = new EventSource(sseUrl);
-        this.currentBar = null;
-
-        es.addEventListener("tick", (event) => {
-          try {
-            const payload = JSON.parse(event.data);
-            if (!payload?.tick) return;
-
-            const barTimestamp = this._getBarTimestamp(payload.tick.timestamp);
-            const updatedBar = this._aggragateTickToBar(
-              payload.tick,
-              barTimestamp,
-            );
-
-            // Cập nhật trực tiếp — $state proxy bắt được
-            this.currentPrice = payload.tick.price;
-            this.priceChange = updatedBar.close - updatedBar.open;
-            this.priceChangePercent = updatedBar.open
-              ? ((updatedBar.close - updatedBar.open) / updatedBar.open) * 100
-              : 0;
-
-            callback(updatedBar);
-          } catch (e) {
-            console.error("SSE parse error:", e);
-          }
-        });
-
-        this.stopRealtime = () => {
-          es.close();
-          this.stopRealtime = null;
-        };
-      },
-
-      unsubscribeBar: () => {
-        this.unsubscribeRealtime();
-      },
-    };
   }
 }

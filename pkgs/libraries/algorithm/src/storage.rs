@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use std::collections::BTreeMap;
 use std::fmt;
 
-
 // ==================== Error Type ====================
 
 #[derive(Debug)]
@@ -235,12 +234,14 @@ pub mod redis {
 
     use std::sync::Arc;
 
-    use tokio::sync::Mutex;
     use redis::aio::MultiplexedConnection;
+    use tokio::sync::Mutex;
 
     use super::{Result, Storage, StorageError};
 
     // ==================== KeyBuilder ====================
+
+    type KeyFormatter = Arc<dyn Fn(&str) -> String + Send + Sync>;
 
     /// Cấu hình key cho Redis storage.
     ///
@@ -248,7 +249,7 @@ pub mod redis {
     /// Có thể dùng `with_formatter` để custom hoàn toàn.
     pub struct KeyBuilder {
         prefix: String,
-        formatter: Option<Arc<dyn Fn(&str) -> String + Send + Sync>>,
+        formatter: Option<KeyFormatter>,
     }
 
     impl KeyBuilder {
@@ -260,7 +261,7 @@ pub mod redis {
         }
 
         /// Dùng custom formatter thay vì default `{prefix}:{name}`.
-        pub fn with_formatter(prefix: &str, f: Arc<dyn Fn(&str) -> String + Send + Sync>) -> Self {
+        pub fn with_formatter(prefix: &str, f: KeyFormatter) -> Self {
             Self {
                 prefix: prefix.to_string(),
                 formatter: Some(f),
