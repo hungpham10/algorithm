@@ -476,7 +476,7 @@ mod tests {
         let mut idx = SearchIndex::in_memory(4);
         for i in 0..10 {
             let name = format!("Item {i}");
-            idx.insert(format!("item_{i}").as_bytes(), i as i32, &name)
+            idx.insert(format!("item_{i}").as_bytes(), i, &name)
                 .await
                 .unwrap();
         }
@@ -678,7 +678,7 @@ mod tests {
         let mut idx = SearchIndex::in_memory(4);
         for i in 0..100 {
             let key = format!("store_{i}");
-            idx.insert(key.as_bytes(), i as i32, &key).await.unwrap();
+            idx.insert(key.as_bytes(), i, &key).await.unwrap();
         }
 
         // Pattern không tồn tại — đo tốc độ fail fast
