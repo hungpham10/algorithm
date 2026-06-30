@@ -10,8 +10,8 @@ use axum::{
 use axum::response::Json;
 use axum_prometheus::PrometheusMetricLayer;
 use sentry::integrations::tower::{NewSentryLayer, SentryHttpLayer};
-use tokio::net::UnixListener;
 use tokio::net::unix::UCred;
+use tokio::net::{TcpListener, UnixListener};
 use tokio::signal;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
@@ -205,26 +205,40 @@ pub async fn routes(app_state: AppState, enable_sentry: bool) -> Result<Router, 
 
 pub async fn run() -> std::io::Result<()> {
     let telemetry_guard = init_telemetry();
-    let path = PathBuf::from("/var/run/axum");
-    let _ = tokio::fs::remove_file(&path).await;
-    tokio::fs::create_dir_all(path.parent().unwrap()).await?;
 
-    // Khởi tạo toàn bộ router và streamer trong một lần gọi
-    // Bạn có thể truyền components ban đầu vào đây
     let app_state = AppState::new().await?;
     let router = routes(app_state.clone(), telemetry_guard.is_none()).await?;
-    let make_service = router.into_make_service_with_connect_info::<UdsConnectInfo>();
-    let usx = UnixListener::bind(path.clone())?;
 
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o666))?;
+    let listener_mode = std::env::var("GATEWAY_LISTENER").unwrap_or_else(|_| "unix".to_string());
 
-    println!("Server starting on Unix Socket: {:?}", path);
+    let serve_result = match listener_mode.as_str() {
+        "http" => {
+            let addr = std::env::var("GATEWAY_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
+            let tcp = TcpListener::bind(&addr).await?;
+            println!("Server starting on HTTP: {}", addr);
+            axum::serve(tcp, router.into_make_service())
+                .with_graceful_shutdown(shutdown_signal())
+                .await
+        }
+        _ => {
+            // Default: Unix socket mode
+            let path = PathBuf::from("/var/run/axum");
+            let _ = tokio::fs::remove_file(&path).await;
+            tokio::fs::create_dir_all(path.parent().unwrap()).await?;
 
-    let result = axum::serve(usx, make_service)
-        .with_graceful_shutdown(shutdown_signal())
-        .await;
+            let make_service = router.into_make_service_with_connect_info::<UdsConnectInfo>();
+            let usx = UnixListener::bind(path.clone())?;
 
-    // Shutdown sạch sẽ
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o666))?;
+
+            println!("Server starting on Unix Socket: {:?}", path);
+
+            axum::serve(usx, make_service)
+                .with_graceful_shutdown(shutdown_signal())
+                .await
+        }
+    };
+
     app_state.stop().await?;
     app_state.wait_for_shutdown().await?;
 
@@ -232,7 +246,7 @@ pub async fn run() -> std::io::Result<()> {
         let _ = trace_provider.force_flush();
         let _ = meter_provider.force_flush();
     }
-    result
+    serve_result
 }
 
 async fn shutdown_signal() {

@@ -1,7 +1,6 @@
 ---
 import Layout from "../../layouts/Layout.astro";
 import StorePriceTable from "../../components/gold/StorePriceTable.svelte";
-import { getStoreMeta } from "../../lib/store-meta.js";
 
 export async function getStaticPaths() {
     let stores = [];
@@ -64,10 +63,6 @@ export async function getStaticPaths() {
 
 const { storeName, locations = [], initialPrices = {} } = Astro.props;
 
-const meta = getStoreMeta(storeName);
-const SITE_URL = import.meta.env.PUBLIC_SITE_URL || "https://findaily.vn";
-const SHOW_ADS = import.meta.env.SHOW_ADS === "true";
-
 // Phân nhóm chi nhánh theo tỉnh thành
 const branchesByProvince = locations.reduce((acc, loc) => {
     const prov = loc.province || "Tỉnh thành khác";
@@ -78,7 +73,7 @@ const branchesByProvince = locations.reduce((acc, loc) => {
 
 const provinceList = Object.keys(branchesByProvince).sort();
 
-const canonicalUrl = `${SITE_URL}/gia-vang/${encodeURIComponent(storeName)}`;
+const canonicalUrl = `/gia-vang/${encodeURIComponent(storeName)}`;
 
 // Navigation
 const navMenus = [
@@ -91,7 +86,6 @@ const navMenus = [
 <Layout
     title={`Giá vàng ${storeName} hôm nay - Bảng giá trực tuyến chi tiết`}
     description={`Cập nhật liên tục giá vàng mua vào - bán ra của tiệm vàng ${storeName} hôm nay. Tra cứu mạng lưới chi nhánh, địa chỉ cửa hàng giao dịch.`}
-    showAds={SHOW_ADS}
     navMenus={navMenus}
     canonicalUrl={canonicalUrl}
 >

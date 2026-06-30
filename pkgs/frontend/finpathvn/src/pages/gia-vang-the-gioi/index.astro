@@ -1,8 +1,7 @@
 ---
 import Layout from "../../layouts/Layout.astro";
-import TradingChart from "../../components/TradingChart.svelte";
+import TradingChart from "../../components/trading/TradingChart.svelte";
 
-const SITE_URL = import.meta.env.PUBLIC_SITE_URL || "https://findaily.vn";
 const SHOW_ADS = import.meta.env.SHOW_ADS === "true";
 
 const navMenus = [
@@ -12,7 +11,7 @@ const navMenus = [
     { label: "Phân Tích Kỹ Thuật", href: "/gia-vang-the-gioi" },
 ];
 
-const canonicalUrl = `${SITE_URL}/gia-vang-the-gioi`;
+const canonicalUrl = "/gia-vang-the-gioi";
 ---
 
 <Layout

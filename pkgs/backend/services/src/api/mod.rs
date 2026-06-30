@@ -4,7 +4,7 @@ pub mod investing;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::extract::{Query, State};
@@ -14,6 +14,7 @@ use headers::Header;
 use http::header;
 use http::{HeaderName, HeaderValue};
 
+use algorithm::SearchIndex;
 use aws_sdk_s3::Client as S3Client;
 use pprof::protos::Message;
 use reqwest::Client as HttpClient;
@@ -69,10 +70,16 @@ impl Header for XTenantId {
     }
 }
 
+/// Index tìm kiếm cửa hàng – dùng RadixTree + KMP/DFS LIKE search
+pub struct StoreSearchIndex {
+    pub inner: SearchIndex,
+    pub built_at: Instant,
+}
+
 #[derive(Clone)]
 pub struct AppState {
-    connector: Arc<Resolver>,
-    secret: Arc<Secret>,
+    pub(crate) connector: Arc<Resolver>,
+    pub(crate) secret: Arc<Secret>,
     runtime: Arc<RwLock<Runtime>>,
 
     // @NOTE: entities configuration
@@ -85,6 +92,9 @@ pub struct AppState {
 
     // @NOTE: investing
     investing_apis: Arc<HashMap<String, String>>,
+
+    // @NOTE: search engines
+    store_search_indices: Arc<RwLock<HashMap<String, StoreSearchIndex>>>,
 }
 
 impl AppState {
@@ -143,6 +153,9 @@ impl AppState {
                         ))
                     })?,
             ),
+
+            // @NOTE: store search cache
+            store_search_indices: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -177,6 +190,29 @@ pub async fn health_check(State(_): State<AppState>) -> impl IntoResponse {
 pub async fn reload(
     State(app_state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, impl IntoResponse)> {
+    app_state
+        .runtime
+        .write()
+        .await
+        .reload(
+            app_state
+                .admin_entity
+                .into_components(0)
+                .await
+                .map_err(|error| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Reload runtime failed: {error}"),
+                    )
+                })?,
+        )
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Reload runtime failed: {error}"),
+            )
+        })?;
+
     for key in app_state.query_candlesticks.keys() {
         app_state
             .secret
@@ -209,12 +245,14 @@ pub async fn reload(
                 )
             })?;
     }
+
     app_state.reload().map_err(|error| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("fail to reload `app_state`: {}", error),
         )
     })?;
+
     Ok("Success")
 }
 

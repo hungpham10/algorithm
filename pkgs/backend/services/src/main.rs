@@ -1,9 +1,7 @@
-mod api;
-mod gateway;
-mod token;
-
 use clap::{Parser, Subcommand};
 use std::io::Error;
+
+use services::{gateway, token};
 
 #[derive(Parser, Debug)]
 #[command(name = "algorithm", about = "An all in one solution")]

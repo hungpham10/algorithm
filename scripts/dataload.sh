@@ -50,14 +50,14 @@ prepare() {
             pg_isready -h "$PG_HOST"
             exit $?
         fi
-        for script_path in "$2"/*; do  # Fix: dùng $2 thay $1, và /* thay ls
+        for script_path in "$2"/*; do
             if [ ! -f "$script_path" ]; then
                 continue
             fi
             if ! PGPASSWORD="${PG_PASSWORD:-rootroot}" psql -h "${PG_HOST:-127.0.0.1}" \
-                    -U "${PG_USERNAME:-postgres}" \  # Thường là 'postgres' cho PG, không phải 'root'
+                    -U "${PG_USERNAME:-postgres}" \
                     -d "${PG_DATABASE:-test}" \
-                    -a -f "$script_path"; then  # Fix: $2/$script_path → trực tiếp $script_path vì loop trên $2/*
+                    -a -f "$script_path"; then
                 exit $?
             fi
         done

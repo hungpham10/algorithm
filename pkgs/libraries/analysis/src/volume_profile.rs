@@ -110,11 +110,12 @@ pub struct VolumeProfile {
     heatmap: Vec<Vec<f64>>,
     levels: Vec<f64>,
     ranges: Vec<(usize, usize, usize)>,
-    timelines: Vec<Vec<Vec<(usize, usize)>>>,
+    /// Mỗi phần tử là segments (start, end) của một range —
+    /// thời điểm volume bắt đầu xuất hiện & tích luỹ trong vùng giá đó.
+    timelines: Vec<Vec<(usize, usize)>>,
 }
 type VolumeRange = (usize, usize);
-type VolumeSegments = Vec<VolumeRange>;
-type VolumeTimeline = Vec<VolumeSegments>;
+type VolumeTimeline = Vec<VolumeRange>;
 
 impl Default for VolumeProfile {
     fn default() -> Self {
@@ -178,7 +179,7 @@ impl VolumeProfile {
     pub fn ranges(&self) -> &Vec<(usize, usize, usize)> {
         &self.ranges
     }
-    pub fn timelines(&self) -> &Vec<Vec<Vec<(usize, usize)>>> {
+    pub fn timelines(&self) -> &Vec<Vec<(usize, usize)>> {
         &self.timelines
     }
 
@@ -187,54 +188,66 @@ impl VolumeProfile {
         t / (interval_in_hour * 60 * 60)
     }
 
-    /// Tối ưu hóa Timeline bằng Rayon
+    /// Tính timeline cho mỗi range: tìm các khoảng thời gian (row index) liên tục
+    /// mà **tổng volume** của tất cả cột (price level) trong range vượt ngưỡng.
+    ///
+    /// Ngưỡng = 1% của tổng volume tối đa một row trong range đó,
+    /// giúp loại bỏ nhiễu và chỉ giữ lại các khoảng tích luỹ thực sự.
+    /// Các segment chỉ có 1 row (isolated) bị lọc bỏ vì "tích luỹ" cần >= 2 row liên tục.
+    ///
+    /// Trả về `Vec<Vec<(usize, usize)>>` — mỗi range một danh sách các segment (start, end).
     pub fn calculate_cumulate_volume_timeline(
         heatmap: &[Vec<f64>],
         ranges: &[(usize, usize, usize)],
     ) -> Result<Vec<VolumeTimeline>, Error> {
+        if heatmap.is_empty() || ranges.is_empty() {
+            return Ok(Vec::new());
+        }
+
         Ok(ranges
-            .par_iter() // Song song hóa các cụm range
+            .par_iter()
             .map(|(_, l_beg, l_end)| {
-                (*l_beg..*l_end)
+                let cols: Vec<usize> = (*l_beg..=*l_end).collect();
+                let row_count = heatmap.len();
+
+                // Tính tổng volume mỗi row trong range
+                let row_totals: Vec<f64> = (0..row_count)
                     .into_par_iter()
-                    .map(|col| {
-                        let mut ret = Vec::new();
-                        let mut t_cursor = 0;
-                        let row_count = heatmap.len();
+                    .map(|row| cols.iter().map(|&col| heatmap[row][col]).sum())
+                    .collect();
 
-                        while t_cursor < row_count {
-                            let mut t_beg = None;
+                // Ngưỡng: 1% của max row total, nhưng tối thiểu > 0 để tránh nhiễu
+                let max_total = row_totals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                let threshold = if max_total > 0.0 {
+                    (max_total * 0.01).max(f64::EPSILON)
+                } else {
+                    f64::EPSILON
+                };
 
-                            if let Some(pos) = heatmap
-                                .iter()
-                                .take(row_count)
-                                .skip(t_cursor)
-                                .position(|row| row[col] > 0.0)
-                            {
-                                t_beg = Some(t_cursor + pos);
-                            }
+                // Xác định các row có volume tích luỹ > ngưỡng
+                let active_rows: Vec<bool> = (0..row_count)
+                    .into_par_iter()
+                    .map(|row| row_totals[row] > threshold)
+                    .collect();
 
-                            if let Some(start) = t_beg {
-                                let mut t_end = row_count;
-
-                                if let Some(found_idx) = heatmap
-                                    .iter()
-                                    .take(row_count)
-                                    .skip(start)
-                                    .position(|row| row[col] <= 0.0)
-                                {
-                                    t_end = start + found_idx;
-                                }
-
-                                ret.push((start, t_end));
-                                t_cursor = t_end;
-                            } else {
-                                break;
-                            }
+                // Gom các row liên tục thành segments, lọc bỏ segment đơn (cần >= 2 row để gọi là tích luỹ)
+                let mut segments = Vec::new();
+                let mut i = 0;
+                while i < row_count {
+                    if active_rows[i] {
+                        let seg_start = i;
+                        while i < row_count && active_rows[i] {
+                            i += 1;
                         }
-                        ret
-                    })
-                    .collect()
+                        // Chỉ giữ segment có ít nhất 2 row (tích luỹ thực sự)
+                        if i - seg_start >= 2 {
+                            segments.push((seg_start, i));
+                        }
+                    } else {
+                        i += 1;
+                    }
+                }
+                segments
             })
             .collect())
     }
@@ -310,7 +323,7 @@ impl VolumeProfile {
         Ok(centers
             .into_iter()
             .sorted_by_key(|k| k.1.2)
-            .map(|(center, (begin, end, _))| (center, begin, end))
+            .map(|(center, (begin, end, _))| (begin, center, end))
             .collect())
     }
 

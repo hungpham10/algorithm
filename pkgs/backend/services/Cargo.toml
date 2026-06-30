@@ -23,7 +23,7 @@ vector_components = { path = "../../libraries/vector/components", features = ["s
 schemas = { path = "../schemas" }
 models = { path = "../models" }
 analysis = { path = "../../libraries/analysis" }
-algorithm = { path = "../../libraries/algorithm" }
+algorithm = { path = "../../libraries/algorithm", features = ["redis"] }
 integration = { path = "../integration" }
 
 # API
@@ -87,7 +87,6 @@ hmac = "0.12.1"
 sha2 = "0.10.9"
 md-5 = "0.10.6"
 
-# Optimization
 tikv-jemallocator = "0.6"
 
 [profile.release]

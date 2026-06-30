@@ -1,9 +1,15 @@
 <script>
     import { onMount, onDestroy, untrack } from "svelte";
-    import Chart from "$lib/trading/chart.js";
-    import Draw from "$lib/trading/draw.js";
+    import LightChart from "$lib/trading/chart.js";
+    import LightDraw from "$lib/trading/draw.js";
+    import IndicatorList from "./IndicatorList.svelte";
+    import IndicatorConfig from "./IndicatorConfig.svelte";
+    import {
+        INDICATOR_DEFS,
+        getDefaultParams,
+    } from "$lib/trading/indicators/index.js";
 
-    /** Props — destructure ngay để tránh Svelte 5 state_referenced_locally */
+    /** Props */
     let {
         broker = "binance",
         symbol = "BTCUSDT",
@@ -12,30 +18,39 @@
     } = $props();
 
     // ===================== Model =====================
-    // untrack để đọc init-only props một lần, tránh state_referenced_locally
     let chartEngine = $state(
         untrack(
             () =>
-                new Chart({ broker, symbol, title, subtitle, theme: "light" }),
+                new LightChart({
+                    broker,
+                    symbol,
+                    title,
+                    subtitle,
+                    theme: "light",
+                }),
         ),
     );
 
-    // Drawing tools không thuộc Chart model
-    let drawingTools = $state(new Draw());
+    let drawingTools = new LightDraw();
     let activeDrawingTool = $state("cursor");
-    let selectedOverlayId = null;
 
-    // Resolution được tách riêng để đảm bảo reactivity với Svelte 5
     let activeResolution = $state("1H");
 
-    // Indicators state — track riêng, không phụ thuộc class proxy
+    // Popup state
+    let showIndicatorList = $state(false);
+    let configPopup = $state(null); // { name, params, paramDefs, isActive } | null
     let activeIndicatorNames = $state({});
 
-    // --- DOM ref ---
     let chartContainer;
-
-    // --- Theme classes reactive ---
     let tc = $derived(chartEngine.classes);
+
+    function _refreshActiveNames() {
+        const names = {};
+        for (const name of chartEngine._activeIndicators.keys()) {
+            names[name] = true;
+        }
+        activeIndicatorNames = names;
+    }
 
     // --- Mount / Destroy ---
     onMount(() => {
@@ -43,17 +58,32 @@
             return;
         }
 
-        drawingTools.setChart(chartEngine.chart);
+        const dt = drawingTools;
+        dt.setChart(
+            chartEngine.chart,
+            chartContainer,
+            chartEngine.candlestickSeries,
+        );
 
-        // Trạng thái drawing → reactive state
-        drawingTools.onChange = (state) => {
+        dt.onChange = (state) => {
             activeDrawingTool = state.activeTool;
-            selectedOverlayId = state.selectedOverlayId;
+        };
+
+        // Callback khi indicator cần mở config popup
+        chartEngine.onIndicatorConfigRequest = (name, params, isActive) => {
+            const def = INDICATOR_DEFS[name];
+            configPopup = {
+                name,
+                params,
+                paramDefs: def?.params || [],
+                isActive,
+            };
         };
     });
 
     onDestroy(() => {
         chartEngine.destroy();
+        drawingTools.destroy();
     });
 
     // --- Handlers ---
@@ -68,20 +98,45 @@
     }
 
     function handleKeydown(event) {
-        if (event.key === "Escape") {
-            activeDrawingTool = "cursor";
-        }
         drawingTools?.handleKeydown(event);
+        if (drawingTools) {
+            activeDrawingTool = drawingTools.activeTool;
+        }
+        if (event.key === "Escape") {
+            showIndicatorList = false;
+            configPopup = null;
+        }
     }
 
-    function toggleIndicator(name, paneId = "candle_pane") {
-        chartEngine.toggleIndicator(name, paneId);
-        // Sync local reactive state
-        if (activeIndicatorNames[name]) {
-            activeIndicatorNames[name] = false;
+    // Indicator list handlers
+    async function toggleIndicatorFromList(name, active) {
+        if (active) {
+            const params = getDefaultParams(name);
+            await chartEngine.applyIndicatorConfig(name, params);
         } else {
-            activeIndicatorNames[name] = true;
+            chartEngine.removeIndicator(name);
         }
+        _refreshActiveNames();
+    }
+
+    function openIndicatorConfig(name) {
+        showIndicatorList = false;
+        chartEngine.requestIndicatorConfig(name);
+    }
+
+    // Config popup handlers
+    async function handleIndicatorApply(params) {
+        if (!configPopup) return;
+        await chartEngine.applyIndicatorConfig(configPopup.name, params);
+        _refreshActiveNames();
+        configPopup = null;
+    }
+
+    function handleIndicatorRemove() {
+        if (!configPopup) return;
+        chartEngine.removeIndicator(configPopup.name);
+        _refreshActiveNames();
+        configPopup = null;
     }
 
     function changeChartType(type) {
@@ -95,6 +150,30 @@
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
+
+<!-- Indicator List Popup -->
+{#if showIndicatorList}
+    <IndicatorList
+        indicators={chartEngine.indicators}
+        activeNames={activeIndicatorNames}
+        onToggle={toggleIndicatorFromList}
+        onConfigure={openIndicatorConfig}
+        onclose={() => (showIndicatorList = false)}
+    />
+{/if}
+
+<!-- Indicator Config Popup -->
+{#if configPopup}
+    <IndicatorConfig
+        name={configPopup.name}
+        params={configPopup.params}
+        paramDefs={configPopup.paramDefs}
+        isActive={configPopup.isActive}
+        onapply={handleIndicatorApply}
+        onremove={handleIndicatorRemove}
+        onclose={() => (configPopup = null)}
+    />
+{/if}
 
 <div
     class="w-full max-w-400 mx-auto p-2 md:p-4 rounded-xl shadow-2xl transition-colors {tc.outer}"
@@ -180,46 +259,47 @@
                         class="h-4 w-px transition-colors {tc.separator}"
                     ></div>
 
-                    <div class="flex items-center gap-1">
-                        <button
-                            class="px-2 py-1 text-xs font-medium rounded border border-transparent transition-all cursor-pointer {tc.chartTypeBtn}"
-                            onclick={() => changeChartType("candle_solid")}
-                            >📊 Nến</button
+                    <!-- Nút Chỉ báo -->
+                    <button
+                        class="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded border transition-all cursor-pointer
+                        {Object.keys(activeIndicatorNames).length > 0
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                            : tc.indicatorBtn}"
+                        onclick={() => (showIndicatorList = !showIndicatorList)}
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2.5"
+                            class="shrink-0"
+                            ><polyline
+                                points="22 12 18 12 15 21 9 3 6 12 2 12"
+                            /></svg
                         >
-                        <button
-                            class="px-2 py-1 text-xs font-medium rounded border border-transparent transition-all cursor-pointer {tc.chartTypeBtn}"
-                            onclick={() => changeChartType("area")}
-                            >📈 Vùng</button
-                        >
-                        <button
-                            class="px-2 py-1 text-xs font-medium rounded border border-transparent transition-all cursor-pointer {tc.chartTypeBtn}"
-                            onclick={() => changeChartType("ohlc")}
-                            >➖ Thanh</button
-                        >
-                    </div>
-
-                    <div
-                        class="h-4 w-px transition-colors {tc.separator}"
-                    ></div>
-
-                    <div class="flex items-center gap-1">
-                        <span
-                            class="text-xs font-medium mr-1 {tc.indicatorLabel}"
-                            >Chỉ báo:</span
-                        >
-                        {#each chartEngine.indicators as ind}
-                            <button
-                                class="px-2 py-1 text-xs font-semibold rounded border transition-all cursor-pointer {activeIndicatorNames[
-                                    ind.name
-                                ]
-                                    ? tc.indicatorActiveBtn
-                                    : tc.indicatorBtn}"
-                                onclick={() =>
-                                    toggleIndicator(ind.name, ind.paneId)}
-                                >{ind.label}</button
+                        Chỉ báo
+                        {#if Object.keys(activeIndicatorNames).length > 0}
+                            <span
+                                class="inline-flex items-center justify-center w-5 h-5 text-[10px] font-bold rounded-full bg-white/20"
+                                >{Object.keys(activeIndicatorNames)
+                                    .length}</span
                             >
-                        {/each}
-                    </div>
+                        {/if}
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            class="shrink-0 opacity-60"
+                            ><polyline points="6 9 12 15 18 9" /></svg
+                        >
+                    </button>
                 </div>
 
                 <div class="flex items-center gap-2">

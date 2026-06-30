@@ -15,7 +15,7 @@ use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use chrono::Utc;
 use models::cache::{Cache, Page};
 use models::entities::investing::{
-    Filter, PaginatedProductIdsByProvince, Price, Product, Store, Symbol,
+    Filter, Investing, PaginatedProductIdsByProvince, Price, Product, Store, Symbol,
 };
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
@@ -23,6 +23,12 @@ use utoipa::{
     IntoParams, Modify, OpenApi, ToSchema,
     openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
 };
+
+use algorithm::SearchIndex;
+use algorithm::storage::redis::RedisStorage;
+use models::resolver::Resolver;
+
+use crate::api::StoreSearchIndex;
 
 use super::v1::get_latest_price;
 use super::{AppState, InvestingHeaders};
@@ -42,6 +48,7 @@ use super::{AppState, InvestingHeaders};
         get_symbol_id_by_product_in_store,
         list_paginated_symbols,
         render_data_using_graphql,
+        search_stores,
     ),
     components(schemas(
         OhclResponse,
@@ -49,6 +56,7 @@ use super::{AppState, InvestingHeaders};
         ListSymbols,
         ListStore,
         ListPrices,
+        StoreSearchSuggestion,
         GraphQLRequestDTO,
         GraphQLResponseDTO,
     )),
@@ -173,6 +181,7 @@ pub fn routes() -> Router<AppState> {
 
     let schema = Schema::build(QueryRoot, EmptyMutation, EmptySubscription).finish();
     Router::new()
+        .route("/stores/search", get(search_stores))
         .route(
             "/stores/{store}/products/{product}/price",
             get(get_price_data_by_name).post(ingest_price_data),
@@ -1495,4 +1504,160 @@ async fn get_price_with_cache(
     }
 
     Ok(final_price_map)
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Store Search (dùng RadixTree)
+// ══════════════════════════════════════════════════════════════════════
+
+/// Kết quả gợi ý tìm kiếm cửa hàng
+#[derive(Serialize, ToSchema)]
+pub struct StoreSearchSuggestion {
+    pub id: i32,
+    pub name: String,
+}
+
+async fn build_store_index(
+    investing: &Investing,
+    tenant_id: i64,
+    resolver: &Resolver,
+) -> Result<StoreSearchIndex, String> {
+    let stores = investing
+        .list_paginated_stores(tenant_id, 0, 10000, false)
+        .await
+        .map_err(|e| format!("Failed to load stores: {e}"))?;
+
+    let prefix = format!("store_index:{}", tenant_id);
+    let mut index = match RedisStorage::from_multiplexed(resolver.cache(tenant_id), &prefix).await {
+        Ok(storage) => SearchIndex::new(26, storage),
+        Err(e) => {
+            tracing::warn!("RedisStorage init failed (in-memory fallback): {e}");
+            SearchIndex::in_memory(26)
+        }
+    };
+
+    for store in &stores {
+        if let (Some(id), Some(name)) = (store.id, &store.name) {
+            if name.is_empty() {
+                continue;
+            }
+            let key = name.to_lowercase().into_bytes();
+            let _ = index.insert(&key, id, name).await;
+        }
+    }
+
+    Ok(StoreSearchIndex {
+        inner: index,
+        built_at: std::time::Instant::now(),
+    })
+}
+
+async fn search_index(
+    index: &StoreSearchIndex,
+    query: &str,
+    limit: usize,
+) -> Vec<StoreSearchSuggestion> {
+    if query.is_empty() {
+        return vec![];
+    }
+
+    let key = query.to_lowercase().into_bytes();
+    match index.inner.search_like(&key, limit).await {
+        Ok(results) => results
+            .into_iter()
+            .map(|(id, name)| StoreSearchSuggestion { id, name })
+            .collect(),
+        Err(_) => vec![],
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/stores/search",
+    params(
+        ("q" = String, Query, description = "LIKE search query (substring match)"),
+    ),
+    responses(
+        (status = 200, body = OhclResponse),
+    ),
+)]
+async fn search_stores(
+    State(app_state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+    InvestingHeaders { tenant_id, .. }: InvestingHeaders,
+) -> Result<impl IntoResponse, (StatusCode, JsonResponse<OhclResponse>)> {
+    let query = match params.get("q") {
+        Some(q) if !q.is_empty() => q.trim(),
+        _ => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                JsonResponse(OhclResponse {
+                    error: Some("Missing or empty query parameter `q`".into()),
+                    ..Default::default()
+                }),
+            ));
+        }
+    };
+
+    let limit: usize = params
+        .get("limit")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(20)
+        .min(100);
+
+    let tid: i64 = tenant_id.into();
+    let tenant_key = tid.to_string();
+
+    {
+        let cache = app_state.store_search_indices.read().await;
+
+        if let Some(index) = cache.get(&tenant_key)
+            && index.built_at.elapsed() <= std::time::Duration::from_secs(300)
+        {
+            return Ok(response_search_results(
+                search_index(index, query, limit).await,
+            ));
+        }
+    }
+
+    let index = build_store_index(&app_state.investing_entity, tid, &app_state.connector)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                JsonResponse(OhclResponse {
+                    error: Some(e),
+                    ..Default::default()
+                }),
+            )
+        })?;
+
+    let results = search_index(&index, query, limit).await;
+
+    {
+        let mut cache = app_state.store_search_indices.write().await;
+        cache.insert(tenant_key, index);
+    }
+
+    Ok(response_search_results(results))
+}
+
+fn response_search_results(results: Vec<StoreSearchSuggestion>) -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        JsonResponse(OhclResponse {
+            stores: Some(ListStore {
+                data: results
+                    .into_iter()
+                    .map(|s| Store {
+                        id: Some(s.id),
+                        name: Some(s.name),
+                        ..Default::default()
+                    })
+                    .collect(),
+                next_after: None,
+            }),
+            ..Default::default()
+        }),
+    )
 }

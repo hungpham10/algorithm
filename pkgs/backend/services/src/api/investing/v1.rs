@@ -106,7 +106,7 @@ struct HeatmapResponse {
     heatmap: Vec<Vec<f64>>,
     levels: Vec<f64>,
     ranges: Vec<(usize, usize, usize)>,
-    timelines: Vec<Vec<Vec<(usize, usize)>>>,
+    timelines: Vec<Vec<(usize, usize)>>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
