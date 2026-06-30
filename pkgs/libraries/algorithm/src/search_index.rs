@@ -7,12 +7,14 @@
 //!
 //! ## Shortcut structure
 //! ```text
-//! shortcuts[shard][byte][node_id] = first_position
+//! shortcuts[shard][byte] = HashSet<node_id>
 //! ```
 //! - `shard` — shard index (0..sharding)
-//! - `byte` — ký tự đầu tiên của pattern
-//! - `node_id` — node trong RadixTree
-//! - `first_position` — vị trí đầu tiên của `byte` trong prefix của node
+//! - `byte` — ký tự bất kỳ (0..255)
+//! - `HashSet<node_id>` — các node có chứa byte đó trong prefix
+//!
+//! Shortcuts chỉ là **index nhanh** để tìm candidate node, không lưu vị trí.
+//! Vị trí được scan trực tiếp từ prefix của node khi search.
 //!
 //! Shortcuts được cập nhật:
 //! - Khi **insert** node mới → `update_shortcuts()`
@@ -55,14 +57,12 @@ impl From<radixtree::RadixError> for SearchError {
 
 pub type Result<T> = std::result::Result<T, SearchError>;
 
-// ==================== Constants ====================
-
-const INF: usize = usize::MAX;
-
 // ==================== Shortcut Data ====================
 
-/// shortcuts[shard][byte][node_id] = first_position_of_byte_in_node_prefix
-type ShortcutData = Vec<HashMap<u8, HashMap<usize, usize>>>;
+/// shortcuts[shard][byte] = HashSet<node_id>
+/// Chỉ lưu node nào có chứa byte đó, không lưu vị trí.
+/// Vị trí được scan trực tiếp từ prefix khi search.
+type ShortcutData = Vec<HashMap<u8, HashSet<usize>>>;
 
 // ==================== SearchIndex ====================
 
@@ -81,15 +81,15 @@ impl SearchIndex {
         let sharding = sharding.max(1);
         let shortcuts = Arc::new(Mutex::new(
             (0..sharding)
-                .map(|_| HashMap::<u8, HashMap<usize, usize>>::new())
+                .map(|_| HashMap::<u8, HashSet<usize>>::new())
                 .collect::<Vec<_>>(),
         ));
 
         let mut tree = RadixTree::new(sharding, storage);
 
         // Register split callback
-        // 1. Chuyển entries của parent (tại vị trí ≥ breakpoint) → leg
-        // 2. Thêm shortcuts cho từng byte trong leg prefix
+        // 1. Thêm shortcuts cho từng byte trong leg prefix
+        // 2. Xoá parent khỏi byte nào không còn trong parent prefix sau split
         let cb_shortcuts = shortcuts.clone();
         tree.with_callback(Arc::new(
             move |parent_id, leg_id, old_prefix, breakpoint| {
@@ -100,26 +100,20 @@ impl SearchIndex {
 
                 let sharding = sc.len();
 
-                for (pos, byte) in old_prefix.iter().enumerate().skip(breakpoint) {
+                for (_, byte) in old_prefix.iter().enumerate().skip(breakpoint) {
                     let si = radixtree::shard_of(*byte, sharding);
-                    let rel_pos = pos - breakpoint;
+                    let byte_set = sc[si].entry(*byte).or_default();
 
-                    let byte_map = sc[si].entry(*byte).or_default();
-
-                    // Remove parent entry nếu nó ở vị trí ≥ breakpoint (stale)
-                    if let Some(&old_pos) = byte_map.get(&parent_id)
-                        && old_pos >= breakpoint
-                    {
-                        byte_map.remove(&parent_id);
+                    // Nếu byte này không còn trong prefix mới của parent → xoá parent
+                    let parent_still_has = old_prefix[..breakpoint].contains(byte);
+                    if !parent_still_has {
+                        byte_set.remove(&parent_id);
                     }
 
-                    // Luôn thêm entry cho leg với vị trí tương đối
-                    let entry = byte_map.entry(leg_id).or_insert(INF);
-                    if rel_pos < *entry {
-                        *entry = rel_pos;
-                    }
+                    // Leg node chắc chắn có byte này
+                    byte_set.insert(leg_id);
 
-                    if byte_map.is_empty() {
+                    if byte_set.is_empty() {
                         sc[si].remove(byte);
                     }
                 }
@@ -166,19 +160,13 @@ impl SearchIndex {
         Ok(())
     }
 
-    /// Cập nhật shortcuts cho một node mới.
+    /// Cập nhật shortcuts cho một node mới: thêm node_id vào set của từng byte.
     fn update_shortcuts(&self, key: &[u8], breakpoint: usize, node_id: usize) {
         if let Ok(mut shortcuts) = self.shortcuts.lock() {
             let sharding = shortcuts.len();
-            for (pos, byte) in key.iter().enumerate().skip(breakpoint) {
+            for (_, byte) in key.iter().enumerate().skip(breakpoint) {
                 let si = radixtree::shard_of(*byte, sharding);
-                let byte_map = shortcuts[si].entry(*byte).or_default();
-                let entry = byte_map.entry(node_id).or_insert(INF);
-                let rel_pos = pos - breakpoint;
-
-                if rel_pos < *entry {
-                    *entry = rel_pos;
-                }
+                shortcuts[si].entry(*byte).or_default().insert(node_id);
             }
         }
     }
@@ -201,7 +189,7 @@ impl SearchIndex {
         let si = radixtree::shard_of(first_byte, sharding);
 
         // Collect candidates upfront, drop lock before any .await
-        let candidates: Vec<(usize, usize)> = {
+        let candidates: Vec<usize> = {
             let shortcuts = self
                 .shortcuts
                 .lock()
@@ -209,10 +197,9 @@ impl SearchIndex {
 
             shortcuts[si]
                 .get(&first_byte)
-                .map(|byte_map| {
-                    let mut cands: Vec<(usize, usize)> =
-                        byte_map.iter().map(|(&nid, &pos)| (nid, pos)).collect();
-                    cands.sort_by_key(|&(_, pos)| pos);
+                .map(|byte_set| {
+                    let mut cands: Vec<usize> = byte_set.iter().copied().collect();
+                    cands.sort();
                     cands
                 })
                 .unwrap_or_default()
@@ -221,14 +208,12 @@ impl SearchIndex {
         let mut results = Vec::new();
         let mut seen = HashSet::new();
 
-        for &(node_id, first_pos) in &candidates {
+        for &node_id in &candidates {
             if results.len() >= limit {
                 break;
             }
 
-            let found = self
-                .dfs_search(node_id, pattern, &lps, 0, first_pos, limit)
-                .await?;
+            let found = self.dfs_search(node_id, pattern, &lps, 0, 0, limit).await?;
 
             for entry in found {
                 if seen.insert(entry.0) {
@@ -294,6 +279,25 @@ impl SearchIndex {
             // Match hoàn chỉnh → collect toàn bộ records trong subtree
             let record_ids = self.collect_subtree_records(node_id).await?;
             return Ok(self.resolve_records(&record_ids, limit));
+        }
+
+        // Nếu match thất bại và ta đang bắt đầu fresh (pattern_pos == 0),
+        // thử tất cả vị trí còn lại của pattern[0] trong cùng prefix
+        // Dùng data_pos làm mốc (vị trí đã thử), không dùng new_data_pos
+        // vì KMP có thể đã consume hết prefix (do_recursive=true) nhưng
+        // vẫn còn vị trí hợp lệ chưa được thử làm điểm xuất phát.
+        if !found && pattern_pos == 0 && (data_pos + 1) < prefix.len() {
+            for next_start in (data_pos + 1)..prefix.len() {
+                if prefix[next_start] == pattern[0] {
+                    let result =
+                        Box::pin(self.dfs_search(node_id, pattern, lps, 0, next_start, limit))
+                            .await?;
+                    if !result.is_empty() {
+                        return Ok(result);
+                    }
+                    // Kết quả rỗng → thử vị trí tiếp theo
+                }
+            }
         }
 
         // Nếu còn có thể match tiếp và prefix đã hết → DFS xuống children
@@ -690,5 +694,147 @@ mod tests {
         let avg_ns = elapsed.as_nanos() as f64 / 50.0;
 
         eprintln!("[bench] search_like not-found: {:.0} ns/call", avg_ns);
+    }
+
+    #[tokio::test]
+    async fn test_search_like_false_negative_case_abaa() {
+        let mut idx = SearchIndex::in_memory(4);
+
+        // Chèn chuỗi chứa prefix đặc biệt "abaa"
+        // Giả sử RadixTree lưu nguyên cụm này thành 1 node prefix hoặc bị split
+        idx.insert(b"abaadata", 1, "Target Node abaa")
+            .await
+            .unwrap();
+
+        // Tìm kiếm "aa"
+        // - Vị trí đầu tiên của 'a' là index 0 -> bắt đầu khớp 'a', gặp 'b' -> FAIL.
+        // - Nếu lưu mọi vị trí, shortcut sẽ thử tiếp index 2 (chữ 'a' đầu của cặp "aa") -> SUCCESS.
+        let results = idx.search_like(b"aa", 10).await;
+
+        assert!(
+            results.is_ok(),
+            "False negative! Bản cũ chỉ lưu vị trí 'a' đầu tiên nên không bao giờ quét tới cặp 'aa' phía sau."
+        );
+
+        let res = results.unwrap();
+        assert_eq!(res.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_search_like_multiple_positions_in_single_prefix() {
+        let mut idx = SearchIndex::in_memory(4);
+
+        // Chuỗi có ký tự đầu tiên 'a' lặp lại liên tục ở nhiều cụm khác nhau
+        idx.insert(b"xyz_ab_ab_ab", 1, "Repeated Pattern")
+            .await
+            .unwrap();
+
+        // Tìm kiếm "ab"
+        let results = idx.search_like(b"ab", 10).await.unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_search_like_overlapping_candidates() {
+        let mut idx = SearchIndex::in_memory(4);
+
+        // Khớp chồng lấn (Overlapping)
+        idx.insert(b"aaaaa", 1, "Five A").await.unwrap();
+
+        // Tìm kiếm "aaa"
+        let results = idx.search_like(b"aaa", 10).await.unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_search_like_split_retains_all_valid_positions() {
+        let mut idx = SearchIndex::in_memory(4);
+
+        // Tạo một node dài chứa nhiều ký tự 'a'
+        idx.insert(b"test_abaadata_one", 1, "First").await.unwrap();
+
+        // Kích hoạt split tại vị trí "test_" bằng cách chèn key chung prefix
+        // Callback OnSplit phải giữ lại chính xác các vị trí tương đối (rel_pos) của 'a' ở node leg phía sau
+        idx.insert(b"test_other_route", 2, "Second").await.unwrap();
+
+        // Kiểm tra xem sau khi split, các shortcut 'a' ở leg node vẫn tìm được "aa" hay không
+        let results = idx.search_like(b"aa", 10).await.unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    // ── Edge case: retry từ vị trí mà KMP đã match nhưng không phải start —
+
+    #[tokio::test]
+    async fn test_retry_from_within_kmp_matched_bytes() {
+        // pattern "aab", key "aaab".
+        // KMP từ data_pos=0: match 'a'=p0, 'a'=p1, fail 'a'≠'b' (p2).
+        // new_data_pos=2. data_pos+1=1 → 'a' ở 1 → start tại 1 → FOUND.
+        let mut idx = SearchIndex::in_memory(4);
+        idx.insert(b"aaabyz", 1, "Target").await.unwrap();
+        let results = idx.search_like(b"aab", 10).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, 1);
+    }
+
+    #[tokio::test]
+    async fn test_retry_cascade_across_dfs_boundary() {
+        // pattern "abc", keys: "xaa" + "xaabcde"
+        // Tree: Node_A "xaa", Child "bcde"
+        // shortcut['a'] = {A}. 'a' ở A[1] và A[2].
+        // - data_pos=1: KMP keep=true, DFS không match vì 'b' ở child → Vec::new()
+        // - data_pos=2: KMP keep=true, DFS match vì 'b' ở child → FOUND
+        // Retry loop KHÔNG return ngay nếu data_pos=1 rỗng → thử data_pos=2 → OK.
+        let mut idx = SearchIndex::in_memory(4);
+        idx.insert(b"xaa", 1, "First").await.unwrap();
+        idx.insert(b"xaabcde", 2, "Target").await.unwrap();
+
+        let results = idx.search_like(b"abc", 10).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, 2);
+    }
+
+    #[tokio::test]
+    async fn test_retry_cascade_all_empty() {
+        // pattern "abc" nhưng KHÔNG có trong tree → retry hết mọi vị trí đều rỗng
+        let mut idx = SearchIndex::in_memory(4);
+        idx.insert(b"xaa", 1, "First").await.unwrap();
+        idx.insert(b"xaaxyzw", 2, "Other").await.unwrap();
+
+        let result = idx.search_like(b"abc", 10).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_span_three_nodes() {
+        // Tree: "ab" + "cde" + "f"  (keys "abcde" + "abcdef")
+        // Insert "ab" → Node_A = "ab"
+        // Insert "abcde" → split A: "ab" + "cde"
+        // Insert "abcdef" → thêm child "f" dưới "cde"
+        // Pattern "bcdef" trải A + B + C
+        let mut idx = SearchIndex::in_memory(4);
+        idx.insert(b"ab", 1, "AB").await.unwrap();
+        idx.insert(b"abcde", 2, "ABCDE").await.unwrap();
+        idx.insert(b"abcdef", 3, "ABCDEF").await.unwrap();
+
+        let results = idx.search_like(b"bcdef", 10).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, 3);
+    }
+
+    #[tokio::test]
+    async fn test_partial_match_exhausts_prefix_then_child() {
+        // Prefix đủ dài tính toán (do_recursive=false) nhưng KMP match hết prefix
+        // cần tiếp tục ở child
+        // Tree như test 3 node ở trên
+        let mut idx = SearchIndex::in_memory(4);
+        idx.insert(b"ab", 1, "AB").await.unwrap();
+        idx.insert(b"abcde", 2, "ABCDE").await.unwrap();
+        idx.insert(b"abcdef", 3, "ABCDEF").await.unwrap();
+
+        // "cdef" bắt đầu từ vị trí 2 ở A, match 'c','d','e' hết prefix B,
+        // cần 'f' ở C
+        let results = idx.search_like(b"cdef", 10).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, 3);
     }
 }
