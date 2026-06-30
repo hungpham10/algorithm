@@ -287,8 +287,8 @@ impl SearchIndex {
         // vì KMP có thể đã consume hết prefix (do_recursive=true) nhưng
         // vẫn còn vị trí hợp lệ chưa được thử làm điểm xuất phát.
         if !found && pattern_pos == 0 && (data_pos + 1) < prefix.len() {
-            for next_start in (data_pos + 1)..prefix.len() {
-                if prefix[next_start] == pattern[0] {
+            for (next_start, item) in prefix.iter().enumerate().skip((data_pos + 1)) {
+                if *item == pattern[0] {
                     let result =
                         Box::pin(self.dfs_search(node_id, pattern, lps, 0, next_start, limit))
                             .await?;
