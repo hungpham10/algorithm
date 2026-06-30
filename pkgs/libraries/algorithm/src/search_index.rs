@@ -272,7 +272,7 @@ impl SearchIndex {
         let effective_prefix_len = prefix.len().saturating_sub(data_pos);
         let do_recursive = effective_prefix_len < remaining;
 
-        let (found, keep, _new_data_pos, new_pattern_pos) =
+        let (found, keep, _, new_pattern_pos) =
             Self::kmp_match(pattern, &prefix, lps, pattern_pos, data_pos, do_recursive);
 
         if found {
