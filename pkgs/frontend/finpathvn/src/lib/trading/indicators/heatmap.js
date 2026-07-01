@@ -5,7 +5,7 @@
  */
 import { LineSeries } from "lightweight-charts";
 import { API_V1_ENDPOINT } from "../../fetch.js";
-import { resolutionToIntervalHours, hsla } from "./helpers.js";
+import { resolutionToIntervalHours, hsla } from "../../utils.js";
 
 export const HEATMAP = {
   name: "HEATMAP",
